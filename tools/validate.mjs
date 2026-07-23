@@ -37,6 +37,7 @@ const REPO_ROOT = resolve(HERE, '..');
 const ONE_MB = 1024 * 1024;
 const ALLOWED_EXTENSIONS = new Set(['.json', '.md', '.html', '.svg']);
 const HF_URL_PREFIX = 'https://huggingface.co/';
+const URI_TEMPLATE_VARIABLE = /\{[A-Za-z_][A-Za-z0-9_-]*\}/g;
 
 function parseArgs(argv) {
   const out = { mode: 'human', root: join(REPO_ROOT, 'data') };
@@ -121,6 +122,16 @@ function main() {
   // ── Layer 2 setup: ajv, one compilation per schema ─────────────────
   const ajv = new Ajv2020.default({ strict: false, allErrors: true });
   addFormats.default(ajv);
+  // Registry-authored HTTP MCP URLs may contain runtime-substituted
+  // variables such as https://{host}/mcp or ?key={api_key}. Validate the
+  // expanded shape as a URI while still rejecting malformed templates and
+  // ordinary invalid URLs. The runtime intentionally accepts these strings.
+  const strictUriFormat = ajv.formats.uri;
+  ajv.formats.uri = (value) => {
+    if (strictUriFormat(value)) return true;
+    const expanded = value.replace(URI_TEMPLATE_VARIABLE, 'template-value');
+    return expanded !== value && !/[{}]/.test(expanded) && strictUriFormat(expanded);
+  };
   const validators = new Map();
   const validatorFor = (schemaName) => {
     let v = validators.get(schemaName);
@@ -295,7 +306,13 @@ function main() {
               continue;
             }
             onDiskVersions.push(entry.name);
-            checkVersionDir(item, kind, entry.name, join(versionsDir, entry.name));
+            checkVersionDir(
+              item,
+              kind,
+              entry.name,
+              join(versionsDir, entry.name),
+              (identity.yankedVersions ?? []).includes(entry.name),
+            );
           }
         }
 
@@ -336,7 +353,7 @@ function main() {
   }
 
   /** Per-version-directory checks (schema, payload/folder agreement, kind rules). */
-  function checkVersionDir(item, kind, versionName, versionDir) {
+  function checkVersionDir(item, kind, versionName, versionDir, yanked) {
     const isCraftbook = kind === 'craftbook-template';
     const docPath = join(versionDir, 'craftbook.json');
     const manifestPath = join(versionDir, 'manifest.json');
@@ -353,7 +370,7 @@ function main() {
       if (typeof doc.releasedAt !== 'string') {
         c.error(docPath, '/releasedAt', 'missing-releasedAt', 'catalog craftbooks must carry releasedAt (the runtime skips the version without it)');
       }
-      checkCraftbookDoc(docPath, doc);
+      checkCraftbookDoc(docPath, doc, yanked);
 
       const testPath = join(versionDir, 'test.json');
       if (existsSync(testPath)) {
@@ -435,7 +452,7 @@ function main() {
   }
 
   /** Craftbook graph + fully-resolved invariant + toolset refs. */
-  function checkCraftbookDoc(path, doc) {
+  function checkCraftbookDoc(path, doc, yanked) {
     const steps = Array.isArray(doc.steps) ? doc.steps : [];
     const ids = new Set();
     steps.forEach((step, i) => {
@@ -472,7 +489,10 @@ function main() {
       // builtin.* toolset groups are synthetic - they ship inside the
       // gezel app binary (BUILTIN_TOOLSETS), never as data/ folders, so
       // they are resolvable at runtime despite having no catalog dir.
-      if (typeof toolsetId !== 'string' || toolsetId.startsWith('builtin.')) continue;
+      // Yanked releases remain immutable and cannot be installed, so a
+      // dependency that disappeared (or was misnamed before the yank)
+      // should not keep producing an actionable catalog warning.
+      if (yanked || typeof toolsetId !== 'string' || toolsetId.startsWith('builtin.')) continue;
       if (!knownToolsetIds.has(toolsetId)) {
         c.warn(path, `/toolsets/${i}/toolsetId`, 'unresolvable-toolset-ref', `"${toolsetId}" is not a bundled or community toolset id`);
       }
