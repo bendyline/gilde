@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "title": "Reliability & Resilience Review failure-path eval",
+  "objective": "Measure whether the review traces seeded retry, timeout, idempotency, cleanup, and recovery risks and proposes failure-injection tests.",
+  "tags": ["corpus"],
+  "prompt": "Use the Reliability & Resilience Review craftbook for a weekly production-hardening pass. Review the seeded worker and write reliability-review.md. Do not change source.",
+  "setup": {
+    "projectName": "Reliability Maintenance Eval",
+    "about": "A tiny background worker with deliberate unbounded retries, missing timeout/cancellation, duplicate side-effect, and leaked interval risks.",
+    "missionObjectives": "Trace how failures propagate and leave concrete controls plus regression/failure-injection tests.",
+    "files": [
+      {
+        "path": "src/worker.ts",
+        "content": "let running = false;\nexport function startWorker(queue, billing, db) {\n  running = true;\n  setInterval(async () => {\n    if (!running) return;\n    const job = await queue.next();\n    if (!job) return;\n    while (true) {\n      try {\n        await billing.charge(job.customerId, job.amount);\n        await db.markProcessed(job.id);\n        break;\n      } catch (_err) {\n        // retry immediately forever\n      }\n    }\n  }, 10);\n}\nexport function stopWorker() { running = false; }\n"
+      },
+      {
+        "path": "test/worker.test.ts",
+        "content": "test('starts', () => { startWorker(queue, billing, db); expect(true).toBe(true); });\n"
+      },
+      {
+        "path": "docs/slo.md",
+        "content": "# Worker contract\n\nA job may be delivered more than once. Billing must happen at most once. Shutdown must finish or return the active job within 5 seconds. Transient dependencies should be retried with bounded exponential backoff.\n"
+      }
+    ],
+    "worker": { "name": "Rae", "role": "Reviewer" }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "reliability-review.md traces every seeded failure mode and pairs remediations with exact failure-injection tests.",
+    "deliverables": [
+      {
+        "path": "reliability-review.md",
+        "kind": "markdown-report",
+        "minBytes": 1500,
+        "checks": [
+          { "kind": "contains", "file": "reliability-review.md", "pattern": "src/worker\\.ts:[0-9]+|src/worker\\.ts", "flags": "i" },
+          { "kind": "contains", "file": "reliability-review.md", "pattern": "unbounded|while \\(true\\)|retry", "flags": "i" },
+          { "kind": "contains", "file": "reliability-review.md", "pattern": "backoff|jitter|retry cap", "flags": "i" },
+          { "kind": "contains", "file": "reliability-review.md", "pattern": "timeout|cancellation|Abort", "flags": "i" },
+          { "kind": "contains", "file": "reliability-review.md", "pattern": "idempoten|at most once|duplicate.*charge", "flags": "i" },
+          { "kind": "contains", "file": "reliability-review.md", "pattern": "clearInterval|interval|shutdown|cleanup", "flags": "i" },
+          { "kind": "contains", "file": "reliability-review.md", "pattern": "failure-injection|test[\\s\\S]{0,160}(duplicate|transient|shutdown|timeout)", "flags": "i" }
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": { "path": "reliability-review.md", "kind": "markdown" },
+    "axes": [
+      { "name": "failure modeling", "description": "Initiating failures, propagation, and user/operator impact are explicit." },
+      { "name": "control coverage", "description": "Timeouts, retries, idempotency, cancellation, cleanup, and shutdown are addressed." },
+      { "name": "verification plan", "description": "Each remediation has a concrete failure-injection or regression test." }
+    ]
+  },
+  "qualityFocus": ["failure propagation", "bounded resilience controls", "failure-injection tests"]
+}

@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "releasedAt": "2026-07-18T00:00:00Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "goal": {
+        "type": "string",
+        "title": "What are you training toward?",
+        "description": "e.g. 'feel strong again', 'a 10k in October'.",
+        "default": "feeling strong and consistent"
+      },
+      "weeklyTarget": {
+        "type": "number",
+        "title": "Sessions per week",
+        "description": "How many training sessions a week to aim for.",
+        "default": 3
+      }
+    },
+    "required": [
+      "goal",
+      "weeklyTarget"
+    ]
+  },
+  "nameTemplate": "Fitness: {{goal}}",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "coach",
+      "voorman": true
+    }
+  ],
+  "tools": [
+    {
+      "name": "log_workout",
+      "description": "Log a training session the moment it is reported (activity + minutes).",
+      "script": "training-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "activity": {
+            "type": "string"
+          },
+          "minutes": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "activity"
+        ]
+      },
+      "bind": {
+        "action": "log_workout"
+      }
+    },
+    {
+      "name": "set_target",
+      "description": "Change the weekly session target.",
+      "script": "training-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "weeklyTarget": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "weeklyTarget"
+        ]
+      },
+      "bind": {
+        "action": "set_target"
+      }
+    },
+    {
+      "name": "training_status",
+      "description": "Streak, this week against the target, all-time count.",
+      "script": "training-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "status"
+      }
+    },
+    {
+      "name": "workout_history",
+      "description": "The recent sessions, most recent last.",
+      "script": "training-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "history"
+      }
+    }
+  ],
+  "craftbooks": [
+    "weekly-review"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "dashboard/index.html",
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "training.json"
+      }
+    ]
+  },
+  "workspaceSeed": [
+    "training.json"
+  ],
+  "scripts": {
+    "training-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { logStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'training-store',\n  description:\n    \"Read and update the training log (training.json). Call action:'status' for streak + this week vs the target; 'log_workout' the moment a session is reported (activity + minutes); 'set_target' to change the weekly session target; 'history' for the recent sessions.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'status', 'log_workout', 'set_target', or 'history'.\",\n      required: true,\n    },\n    activity: { type: 'string', description: \"What they did, e.g. 'run', 'gym', 'long walk'.\" },\n    minutes: { type: 'number', description: 'How long the session ran, in minutes.' },\n    note: { type: 'string', description: 'Anything worth remembering about the session.' },\n    weeklyTarget: { type: 'number', description: 'Sessions per week to aim for (set_target).' },\n  },\n  outputs: {\n    streakDays: { type: 'number', description: 'Consecutive days with a session, ending at the latest.' },\n    thisWeek: { type: 'number', description: 'Sessions logged this week (Monday UTC start).' },\n    weeklyTarget: { type: 'number', description: 'The current weekly session target.' },\n    summary: { type: 'string', description: 'The training picture.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── fitness-rules-start ──\n// Pure derivations over logStore-shaped workout events: kind 'workout',\n// data {activity, minutes}. Weeks start Monday 00:00 UTC; nowIso is a\n// parameter so the rules stay clock-independent and testable.\n\nfunction weekStartMs(nowIso) {\n  var day = new Date(nowIso.slice(0, 10) + 'T00:00:00Z');\n  var sinceMonday = (day.getUTCDay() + 6) % 7;\n  return day.getTime() - sinceMonday * 86400000;\n}\n\nfunction thisWeekCount(events, nowIso) {\n  var start = weekStartMs(nowIso);\n  return events.filter(function (e) {\n    return Date.parse(e.at) >= start;\n  }).length;\n}\n\nfunction trainingLine(stats, weekCount, weeklyTarget) {\n  var target = weeklyTarget > 0 ? weeklyTarget : 0;\n  var weekPart =\n    'This week: ' +\n    weekCount +\n    (target > 0 ? ' of ' + target + ' session(s)' : ' session(s)') +\n    (target > 0 && weekCount >= target ? ' — target met.' : '.');\n  var streakPart =\n    stats.total === 0\n      ? 'No sessions logged yet.'\n      : 'Streak: ' + stats.streakDays + ' day(s); ' + stats.total + ' session(s) all time.';\n  return weekPart + ' ' + streakPart;\n}\n// ── fitness-rules-end ──\n\nconst training = logStore(gezel.fs, 'training.json');\n\nasync function readWeeklyTarget(): Promise<number> {\n  try {\n    const parsed = JSON.parse(await gezel.fs.read('training.json')) as { weeklyTarget?: unknown };\n    const target = Number(parsed.weeklyTarget);\n    return Number.isFinite(target) && target > 0 ? Math.round(target) : 0;\n  } catch {\n    return 0;\n  }\n}\n\nif (input.action === 'log_workout') {\n  if (!input.activity) throw new Error(\"log_workout needs 'activity' (what they did).\");\n  await training.append({\n    kind: 'workout',\n    ...(input.note ? { note: input.note } : {}),\n    data: {\n      activity: input.activity,\n      ...(typeof input.minutes === 'number' && input.minutes > 0\n        ? { minutes: Math.round(input.minutes) }\n        : {}),\n    },\n  });\n} else if (input.action === 'set_target') {\n  const target = Number(input.weeklyTarget);\n  if (!Number.isFinite(target) || target <= 0) {\n    throw new Error(\"set_target needs a positive 'weeklyTarget' (sessions per week).\");\n  }\n  // logStore has no field API; the passenger key flips via a targeted\n  // read-modify-write that preserves the rest of the file.\n  const raw = JSON.parse(await gezel.fs.read('training.json')) as Record<string, unknown>;\n  raw.weeklyTarget = Math.round(target);\n  await gezel.fs.write('training.json', `${JSON.stringify(raw, null, 2)}\\n`);\n} else if (input.action !== 'status' && input.action !== 'history') {\n  throw new Error(`Unknown action '${input.action}'. Use status, log_workout, set_target, or history.`);\n}\n\nconst events = await training.list();\nconst stats = await training.stats();\nconst weeklyTarget = await readWeeklyTarget();\nconst nowIso = new Date().toISOString();\nconst weekCount = thisWeekCount(events, nowIso);\nconst listing =\n  input.action === 'history'\n    ? events\n        .slice(-12)\n        .map(\n          (e) =>\n            `${e.at.slice(0, 10)} ${String(e.data?.activity ?? 'session')}${typeof e.data?.minutes === 'number' ? ` (${e.data.minutes} min)` : ''}${e.note ? ` — ${e.note}` : ''}`,\n        )\n        .join('\\n') || 'No sessions yet.'\n    : '';\n\ngezel.output({\n  streakDays: stats.streakDays,\n  thisWeek: weekCount,\n  weeklyTarget,\n  summary: listing || trainingLine(stats, weekCount, weeklyTarget),\n});\n"
+  }
+}

@@ -1,0 +1,97 @@
+{
+  "id": "image-seo-rename",
+  "name": "Image SEO Rename & Tag",
+  "description": "Rename and tag a folder of images for SEO and findability — descriptive, hyphenated, keyword-rich filenames plus consistent metadata (title, caption, keyword tags) — driven by what each image actually depicts, while preserving a mapping back to the originals so links don't break silently. Scope FIRST the naming convention, keyword strategy, and collision/mapping rules, because bulk-renaming without a plan creates duplicate-name clashes and broken references; then process the folder and emit the rename map. Covers image SEO, filename optimization, descriptive renaming, alt/metadata tagging, and asset findability.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the rename (planner) — lock naming convention, keywords, and collision/mapping rules → gated on `notes/scope.md` (markdown-notes)\n2. Process the folder (developer) — derive names from content, rename, and emit the map → gated on `rename-map.json` (json)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "rename images for seo",
+    "make descriptive image filenames",
+    "tag images for search",
+    "seo image filenames",
+    "optimize image names"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the rename",
+      "description": "lock naming convention, keywords, and collision/mapping rules",
+      "prompt": "1) List the folder and inventory current filenames and formats. 2) Lock the naming CONVENTION: lowercase, hyphen-separated, descriptive, keyword-first, no spaces/underscores/special chars, max length, and whether to keep a stable id suffix to guarantee uniqueness (e.g. red-running-shoe-side-01.jpg). 3) Define the keyword strategy (primary subject + 1-2 descriptive modifiers) and the metadata to attach (title, caption, keyword tags). 4) Lock collision handling (append -01/-02) and require a complete OLD→NEW mapping so references can be updated and nothing is lost. 5) Write an acceptance-criteria checklist: 'every new name is lowercase-hyphenated and describes the image', 'names are unique (no collisions)', 'a complete old→new map exists', 'metadata fields are populated from the image content', 'file extensions are preserved'. 6) Record convention + checklist via write_task_note AND to notes/scope.md.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "process"
+    },
+    {
+      "id": "process",
+      "name": "Process the folder",
+      "description": "derive names from content, rename, and emit the map",
+      "prompt": "1) Read scope.md. 2) For each image, LOOK at it via the vision capability to derive an accurate descriptive name (primary subject + modifiers) and the metadata (title, caption, keyword tags) — never base the name on a meaningless original name. 3) Apply the naming convention exactly (lowercase, hyphens, keyword-first, extension preserved) and resolve collisions with the agreed suffix scheme. 4) Perform the renames (or stage to an out/ folder if non-destructive is requested) and write a complete OLD→NEW mapping to rename-map.json including the per-image metadata. 5) Validate the JSON parses and that no two new names collide and every original is represented. 6) write_task_note the map path and the count renamed. The gated deliverable is rename-map.json.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "rename-map.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "rename-map.json",
+            "bytes": 2
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "rename-map.json"
+            }
+          }
+        ],
+        "onReject": "process",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "1) Open rename-map.json and confirm it parses as valid JSON (PASS/FAIL). 2) Confirm every original file has an entry and the count matches the folder (PASS/FAIL). 3) Check new names against scope.md: lowercase-hyphenated, keyword-first, no collisions, extensions preserved (PASS/FAIL). 4) Spot-check 3-4 entries by opening the images — does the name actually describe the image and are metadata fields populated (PASS/FAIL)? 5) Write PASS/FAIL per criterion. Collisions, generic names, or missing entries → loop back to process.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"process\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "process"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

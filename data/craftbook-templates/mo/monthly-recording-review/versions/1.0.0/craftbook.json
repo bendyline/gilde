@@ -1,0 +1,129 @@
+{
+  "id": "monthly-recording-review",
+  "name": "Monthly Recording Review",
+  "description": "Sit with the month's recordings the way a teacher would: compare each against last month's marks, hear the progress your own ears stopped noticing, and pick next month's one focus — proof over impression, once a month. Locks the review criteria FIRST (every recording assessed, deltas versus last month, exactly one focus), then assesses each recording with evidence, then writes the month's review. Use for monthly practice reviews, listening back to recordings, progress checks, and 'how did this month go'.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the review (coach) — recording inventory, comparison baseline, review rules → gated on `notes/scope.md` (markdown-notes)\n2. Assess each recording (reviewer) — per-recording assessment with concrete observations → gated on `notes/review.md` (markdown-notes)\n3. Write the month's review (copywriter) — deltas per piece, verdict on last month's focus, one next focus → gated on `report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "monthly recording review",
+    "review this month's recordings",
+    "how did this month of practice go",
+    "listen back to the month",
+    "pick next month's focus"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the review",
+      "description": "recording inventory, comparison baseline, review rules",
+      "prompt": "Frame the review before listening back. Step 1: read recordings/index.json from the workspace — the month's recordings with their dates and pieces — and the previous month's review from the reviews folder if one exists. Step 2: confirm the comparison baseline with the owner: last month's marks per piece, and what last month's single focus was. Step 3: lock the review rules — every recording in the index gets assessed; every assessment names concrete observations (tempo held, voicing, rushing at a named spot — things a teacher would point at); each piece gets a delta versus last month; and the review ends with exactly ONE next-month focus. Step 4: write the acceptance-criteria checklist from those rules, call write_task_note with the recording count + baseline, and write notes/scope.md.",
+      "suggestedRole": "coach",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "review"
+    },
+    {
+      "id": "review",
+      "name": "Assess each recording",
+      "description": "per-recording assessment with concrete observations",
+      "prompt": "Assess each recording the way a teacher would. Step 1: for every recording in the index, work through its notes and the piece's history — what is concretely better, steadier, or cleaner than last month, and what regressed or plateaued. Step 2: name the evidence per observation — the passage, the tempo, the habit — never a bare 'sounds better'. Step 3: check last month's focus: did the month's work actually move it? Say so plainly. Step 4: write the per-recording assessments to notes/review.md and call write_task_note with the biggest improvement and the biggest concern.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/review.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/review.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/review.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "review",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the month's review",
+      "description": "deltas per piece, verdict on last month's focus, one next focus",
+      "prompt": "Write the month's review from the assessments. Step 1: open with what the month proved — the progress the owner's own ears stopped noticing, with the recording that shows it. Step 2: per piece, the delta versus last month in a line or two, honest in both directions. Step 3: the verdict on last month's focus — moved, stalled, or abandoned. Step 4: close with exactly one next-month focus, chosen from the evidence, with why this one and not the runner-up. Step 5: warm, specific, and honest — proof over impression. Write report.md and call write_task_note with the focus chosen.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "report.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.md",
+            "bytes": 1500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "report.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open report.md and notes/review.md and verify every criterion from notes/scope.md: every recording in recordings/index.json is assessed (count them), every assessment carries concrete observations with evidence, every piece has a last-month delta, last month's focus gets an explicit verdict, and exactly one next-month focus is named — not two, not zero. Write PASS/FAIL per criterion; on any failure, name the gap and loop back to report.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "report"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

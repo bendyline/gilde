@@ -1,0 +1,139 @@
+{
+  "id": "backup-routine",
+  "name": "Scheduled Backup or Export",
+  "description": "Build a scheduled, idempotent backup/export routine that snapshots data (files, a database, or an app export) to a timestamped, optionally compressed destination, prunes old backups by a retention policy, and verifies each backup is restorable. Locks what to back up, the destination layout, the retention policy, and the integrity check FIRST, then builds the snapshot-write-verify-prune routine, then verifies a fresh backup is created, integrity-checked, and that retention deletes only what it should. Defining retention and an integrity check up front is the wisdom that turns backups from a false sense of safety into a tested recovery path.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the backup (planner) — sources, destination layout, retention, integrity check → gated on `notes/scope.md` (markdown-notes)\n2. Build the routine (developer) — snapshot, write, integrity-check, prune, log → gated on `backup.sh` (code-module)\n3. Verify the routine (reviewer) — fresh backup, integrity, safe retention, idempotency → gated on `notes/verify.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "set up a backup",
+    "scheduled export",
+    "automate backups",
+    "backup my database",
+    "nightly backup routine"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the backup",
+      "description": "sources, destination layout, retention, integrity check",
+      "prompt": "Define the backup contract before building. Step 1: list exactly what to back up (which directories / which database / which export endpoint) and what to exclude. Step 2: define the destination and naming layout (e.g. backups/{name}-{YYYYMMDD-HHMMSS}.tar.gz) and whether to compress and/or checksum. Step 3: define the retention policy precisely (e.g. keep last N, or keep dailies 7d + weeklies 4w) and confirm it can never delete the only/most-recent backup. Step 4: define the integrity check that proves a backup is restorable (verify the archive lists/extracts, the checksum matches, or a row-count/sentinel survives a test restore). Step 5: write an acceptance-criteria checklist ('a fresh timestamped backup is produced each run', 'backup passes the integrity check', 'retention prunes only out-of-policy backups and never the newest', 'run is idempotent and logs each backup', 'a failed source aborts with a non-zero status, no silent empty backup'). Call write_task_note with sources + layout + retention + integrity + checklist and write notes/scope.md. No code yet.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the routine",
+      "description": "snapshot, write, integrity-check, prune, log",
+      "prompt": "Implement the backup routine to the locked contract. Step 1: snapshot the sources into a timestamped artifact at the destination (compress/checksum as scoped); fail loudly with a non-zero exit if a source is missing or empty rather than writing a hollow archive. Step 2: run the integrity check immediately after writing (list/extract the archive, verify the checksum) and mark the backup verified only if it passes. Step 3: apply the retention policy — compute which backups are out-of-policy and delete only those, with a hard guard that never removes the most-recent verified backup. Step 4: append a backup-log entry (timestamp, size, checksum, verified, pruned list). Step 5: write the routine as a cron-friendly runnable module. Call write_task_note with the module path, the destination layout, and how integrity + retention are enforced.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "backup.sh",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "backup.sh",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "backup.sh",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "backup.sh"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "backup.sh"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify the routine",
+      "description": "fresh backup, integrity, safe retention, idempotency",
+      "prompt": "Verify the routine against scope. Step 1: confirm a run produces a fresh timestamped backup at the destination. Step 2: confirm the integrity check actually runs and that a corrupted/empty backup would be caught (the verified flag is meaningful). Step 3: confirm retention deletes only out-of-policy backups and that the newest verified backup is protected even at the retention boundary. Step 4: confirm idempotency and failure handling — a re-run does not clobber prior backups, and a missing source causes a non-zero exit with no hollow archive written. Step 5: confirm each backup is logged. Write PASS/FAIL per criterion to notes/verify.md and task notes; on failure, name it and loop back to build.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "backup.sh",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "backup.sh",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "backup.sh"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "backup.sh"
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Run backup.sh in a scratch location (or trace it) and verify every criterion from notes/scope.md: a fresh timestamped backup is created, the integrity check runs and is meaningful, retention prunes only out-of-policy backups and never the newest verified one, a missing source aborts non-zero with no hollow archive, runs are idempotent, and each backup is logged. Write PASS/FAIL per criterion; on any failure, name it and loop back to build.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

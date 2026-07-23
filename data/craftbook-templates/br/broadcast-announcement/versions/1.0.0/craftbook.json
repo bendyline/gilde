@@ -1,0 +1,99 @@
+{
+  "id": "broadcast-announcement",
+  "name": "Multi-Channel Broadcast Announcement",
+  "description": "Adapt a single announcement (launch, policy change, maintenance window, org news) into channel-tailored variants — email, Slack/Teams post, status-page note, and a short SMS/push — that carry one consistent core message at the right length and tone for each surface. Scopes the core message and the per-channel constraints FIRST (the single source of truth, the CTA, character/format limits and tone per channel, the must-include facts), then a copywriter writes every variant from that locked core so nothing contradicts across channels. Scoping the core before adapting is what keeps the facts, dates, and CTA identical everywhere while the voice fits each surface. Use for announcements, multi-channel comms, launch messaging, maintenance notices, and broadcasting one message everywhere.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the message (planner) — lock the core message, CTA, and per-channel constraints → gated on `notes/scope.md` (markdown-notes)\n2. Write the variants (copywriter) — adapt the core into channel-tailored variants → gated on `announcement.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "multi-channel announcement",
+    "broadcast a message",
+    "launch announcement",
+    "maintenance notice",
+    "announce this everywhere"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the message",
+      "description": "lock the core message, CTA, and per-channel constraints",
+      "prompt": "Define the announcement's single source of truth before writing variants. (1) Write the CORE message: the one thing being announced, the must-include facts (what, when/effective date, who's affected, why), and the single CTA. (2) Lock the channel list and each channel's constraints: email (subject + ~150 words, formal-friendly), Slack/Teams (~60 words, conversational, threaded details), status-page note (~40 words, neutral/factual), SMS/push (≤160 chars, urgent-but-calm, link only). (3) State the tone per channel and any compliance/do-not-say constraints. Write an acceptance-criteria checklist ('a variant exists for every channel', 'the core facts/dates/CTA are identical across all variants', 'each variant respects its length/format limit', 'each variant matches its channel tone', 'no variant contradicts another') plus the core message + per-channel constraint table to notes/scope.md via write_task_note AND the produces path. No variants yet.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the variants",
+      "description": "adapt the core into channel-tailored variants",
+      "prompt": "Write announcement.md with one labeled section per channel, all derived from the locked core. (1) Email: a subject line plus a ~150-word body covering all must-include facts and the CTA, formal-friendly. (2) Slack/Teams: ~60 conversational words with the headline + CTA and a note that details follow. (3) Status-page: ~40 neutral, factual words stating what/when/impact. (4) SMS/push: ≤160 characters, the essential fact + CTA link, calm. Keep the facts, the effective date, and the CTA WORD-FOR-WORD consistent (where the medium allows) across every variant — only length and voice change. Stay within each length limit; count characters for SMS. Invent no facts beyond the core. On a loop-back fix only the flagged variants. Write the path and the per-channel lengths to notes via write_task_note.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "announcement.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "announcement.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "announcement.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "QA announcement.md against the locked criteria. (1) Confirm a variant exists for every channel in scope. (2) Cross-check the core facts, the effective date, and the CTA across all variants — any contradiction or drifted date/CTA is FAIL. (3) Check each variant against its length/format limit (count the SMS characters, ~word counts for the others). (4) Read each for channel-appropriate tone. (5) Confirm no fact was invented beyond the locked core. Write PASS/FAIL per criterion with the specific variants at fault.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

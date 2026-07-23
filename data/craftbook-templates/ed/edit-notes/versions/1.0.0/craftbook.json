@@ -1,0 +1,158 @@
+{
+  "id": "edit-notes",
+  "name": "Edit Notes Pass",
+  "description": "Review the footage like an editor: timestamped notes on pacing and cuts read against the transcript and the media index, then a machine-readable cut list the assembly step can execute — opinion upstream, precision downstream. Locks the review criteria FIRST (every keep or cut carries a timecode and a reason, b-roll gaps get named), then writes the edit notes, then distills them into the cut list — so the creative call and the executable record never drift apart. Use for edit passes, footage reviews, 'what should we cut', cutlist prep, and tightening a video that drags.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the review (regisseur) — footage inventory, transcript read, review criteria locked → gated on `notes/scope.md` (markdown-notes)\n2. Write the edit notes (reviewer) — timestamped pacing and cut notes, clip by clip → gated on `notes/edit-notes.md` (markdown-notes)\n3. Build the cut list (developer) — the machine-readable record of every edit decision → gated on `cutlist.json` (json)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "edit pass",
+    "review the footage",
+    "make a cutlist",
+    "what should we cut",
+    "tighten the video"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the review",
+      "description": "footage inventory, transcript read, review criteria locked",
+      "prompt": "Define the edit pass before forming a single opinion. Step 1: read media/index.json from the workspace — every clip with its id and duration — and read the transcript under transcripts/ plus the storyboard or brief if one exists, so you know what the piece is trying to be. Step 2: lock the review criteria — every keep-or-cut call carries a timecode and a stated reason, pacing judgments name the specific stretch that drags or rushes, b-roll gaps are named where the footage cannot carry the point, and no note references footage that is not in the index. Step 3: define what the cut list must record for each decision — which clip, the in and out points, the action (keep, cut, trim, reorder), and a short note tying it back to the edit notes. Step 4: write an acceptance-criteria checklist ('every note carries a timecode', 'every cut decision has a reason', 'every cut-list row points at a real clip', 'in and out points sit inside that clip's duration', 'the draggy stretches are addressed, not just observed'). Call write_task_note with the clip count + criteria + checklist and write notes/scope.md. No reviewing yet.",
+      "suggestedRole": "regisseur",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "review"
+    },
+    {
+      "id": "review",
+      "name": "Write the edit notes",
+      "description": "timestamped pacing and cut notes, clip by clip",
+      "prompt": "Review the footage against the locked criteria. Step 1: walk the transcript and the media index clip by clip, in story order, and write timestamped notes — what works, what drags, where the energy dips, where a cut or trim would help. Every observation carries a timecode in mm:ss form and names its clip. Step 2: for each stretch that drags, say exactly what to do about it — trim from where to where, cut entirely, or reorder — and why the piece is better for it. Step 3: name the b-roll gaps: the moments where the words need cover the footage does not have, so the owner can plan pickups. Step 4: keep opinions honest and concrete — 'the intro runs long' is a note, 'trim 0:12-0:38, the point lands at 0:39' is an edit. Write the notes to notes/edit-notes.md and call write_task_note with the count of cut decisions and the biggest pacing problem found.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/edit-notes.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/edit-notes.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/edit-notes.md",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "contains",
+            "file": "notes/edit-notes.md",
+            "pattern": "\\d{1,2}:\\d{2}",
+            "label": "the edit notes carry mm:ss timecodes"
+          }
+        ],
+        "onReject": "review",
+        "maxAttempts": 3
+      },
+      "next": "cutlist"
+    },
+    {
+      "id": "cutlist",
+      "name": "Build the cut list",
+      "description": "the machine-readable record of every edit decision",
+      "prompt": "Distill the edit notes into the cut list the assembly step can execute. Step 1: for every decision in notes/edit-notes.md, write one record to cutlist.json as a JSON array — each record with the clip id exactly as it appears in media/index.json, the in and out points, the action (keep, cut, trim, or reorder), and a short note carrying the reason over from the edit notes. Step 2: verify precision as you go — every clip id must exist in the media index, and every in and out point must sit within that clip's duration; a cut list that references invented footage or impossible timecodes is worse than no cut list. Step 3: order the records in final-piece order so the assembly reads top to bottom. Step 4: re-read the result once as JSON — valid, complete, no decision from the notes left behind. Call write_task_note with the record count and the total runtime the kept material adds up to.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "cutlist.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "cutlist.json",
+            "bytes": 2
+          },
+          {
+            "kind": "recordSchema",
+            "file": "cutlist.json",
+            "fields": [
+              {
+                "name": "clip",
+                "type": "nonempty"
+              },
+              {
+                "name": "in"
+              },
+              {
+                "name": "out"
+              },
+              {
+                "name": "action",
+                "type": "nonempty"
+              },
+              {
+                "name": "note",
+                "required": false
+              }
+            ],
+            "minRows": 3
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "cutlist.json"
+            }
+          }
+        ],
+        "onReject": "cutlist",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open cutlist.json, notes/edit-notes.md, and media/index.json and verify every criterion from notes/scope.md: every cut-list record names a clip id that exists in the media index, every in and out point sits inside that clip's duration, every record's action traces back to a timestamped note with a reason, the notes address the pacing problems rather than just observing them, and the b-roll gaps are named. Write PASS/FAIL per criterion; on any failure, name the offending record or note and loop back to cutlist.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"cutlist\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "cutlist"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

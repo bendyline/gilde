@@ -1,0 +1,81 @@
+{
+  "id": "investigate",
+  "name": "Investigate",
+  "description": "Systematic root-cause debugging procedure. Six steps:\n\n1. **Gather symptoms** — observable signals, no theorizing yet\n2. **Search prior** — has this project seen this before? (memory)\n3. **Reproduce** — deterministic repro before any tracing\n4. **Trace to root cause** — keep asking 'and why is THAT?'\n5. **Propose fix** — state it; don't apply unless asked\n6. **Save learning** — stamp (symptom → root cause → fix) into memory\n\nPorted from gstack's `/investigate`. The principle is the Iron Law:\n**no fixes without investigation**. Jumping to a fix without root cause\neither ships a coincidence (the bug comes back), papers over the real\ncause (introduces tech debt), or fixes a symptom you didn't actually\nunderstand.\n\nWhere gstack used `~/.gstack/projects/{slug}/learnings.jsonl`, this\ncraftbook uses the per-gezel/project memory subsystem. The\n`search-prior.ts` script wraps `search_memory` with the symptom-shape\nquery; `save-learning.ts` wraps `save_memory` with structured metadata\nso future `search-prior` queries find the match.\n\nThe Iron Law is not literal: sometimes a one-line typo fix is the right\nmove. The principle is \"if you can't say *why* this fix works, you're\nguessing.\" The craftbook's structure makes that guessing visible.\n",
+  "entryStepId": "gather-symptoms",
+  "triggers": [
+    "investigate this",
+    "debug this",
+    "why is this broken",
+    "find the bug",
+    "root cause"
+  ],
+  "steps": [
+    {
+      "id": "gather-symptoms",
+      "name": "Gather symptoms",
+      "description": "Pull together every observable signal: error messages, stack traces, logs, repro steps, when it started.",
+      "prompt": "**For this task you are an investigator, not an author.** The Iron Law: no fixes without investigation. Resist the urge to `writeFile` a fix — even if your default persona is a developer, this craftbook is about *understanding what broke* and the fix comes later (separate task).\n\n**Your first action this turn:** call `ask_user_question` with the four bullets below if any signal is missing from the chat. If the user already supplied the symptom in their message, skip to `write_task_note`.\n\nElicit (if missing):\n- What's the observable failure? (exact error message, screenshot, stack trace, log line)\n- When did it start? (recent commit? deploy? environment change?)\n- Is it reproducible? (every time? intermittent? specific input?)\n- What's the smallest input that triggers it?\n\nThen `write_task_note({ ref, content: <3-5 line symptom summary> })`. Do NOT theorize yet. Do NOT propose causes — that's the next step. Do NOT call `read_task_notes` to find the procedure; it's right here.",
+      "suggestedRole": "developer",
+      "next": "search-prior"
+    },
+    {
+      "id": "search-prior",
+      "name": "Search prior",
+      "description": "Have we seen this before? Search memory for prior investigations in this project.",
+      "prompt": "Run the `search-prior` script. It searches project memory for prior investigations matching the symptom signature. If we've seen this before, the model returns the prior learning + the fix that landed.\n\nIf there's a match: state what the prior investigation found, and ask the user if this looks like the same bug (with `ask_user_question`). If yes, jump straight to the fix. If no, proceed to fresh investigation.\n\nIf there's no match: note 'no prior matches' to task notes and advance.",
+      "suggestedRole": "developer",
+      "onExit": {
+        "name": "search-prior",
+        "autoAdvanceWhen": {
+          "op": "ok"
+        }
+      },
+      "next": "reproduce"
+    },
+    {
+      "id": "reproduce",
+      "name": "Reproduce",
+      "description": "Get a deterministic repro. Often the longest step. Cannot fix what can't be reproduced.",
+      "prompt": "Get the bug to fire on demand. Strategies:\n\n1. **Read the failing path** — find the function/route from the stack trace (use `readFile` / `search_files`).\n2. **Walk inputs backward** — what user action triggered this? What's the request shape?\n3. **Try the minimal trigger** — strip the user's repro down. Half the bugs disappear when you isolate.\n4. **Run a small script if needed** — `run_nodejs_script` against a synthetic input.\n5. **If it won't reproduce**: state that explicitly. Either get more info from the user (`ask_user_question`) or escalate.\n\nWhen you have a repro, write the minimal trigger to task notes. Do not move on without one.",
+      "suggestedRole": "developer",
+      "next": "trace"
+    },
+    {
+      "id": "trace",
+      "name": "Trace to root cause",
+      "description": "Follow the data from the failure point back to the smallest 'this is the thing that's wrong.'",
+      "prompt": "Trace backward from the failure. Read the code path. The Iron Law: **the cause is not 'the function returned the wrong thing,' it's WHY the function returned the wrong thing.** Keep asking 'and why is THAT?' until you hit one of:\n\n- A coding bug (assignment swapped, condition inverted, type mismatch)\n- A bad invariant (assumed X but the data has Y)\n- A wrong assumption about a dependency (the API returns null in this case)\n- An environment / config issue (the staging DB doesn't have this column)\n\nDocument the chain in task notes. Bullet form is fine. End with: 'Root cause: <one sentence>.'",
+      "suggestedRole": "developer",
+      "next": "propose-fix"
+    },
+    {
+      "id": "propose-fix",
+      "name": "Propose fix",
+      "description": "State the fix. Don't apply it yet — let the user (or a separate craftbook) decide.",
+      "prompt": "Now the easy part. State the fix in plain language:\n\n- What file/function changes?\n- What's the new behavior?\n- What did NOT change (so the user knows you didn't gold-plate)?\n- What test would catch this regressing?\n\nDo NOT apply the fix unless the user explicitly asks. Investigation lives separate from edit-the-code so the diff stays minimal and reviewable. Advance.",
+      "suggestedRole": "developer",
+      "next": "save-learning"
+    },
+    {
+      "id": "save-learning",
+      "name": "Save learning",
+      "description": "Stamp the (symptom → root cause → fix) triple into project memory so future investigations find it.",
+      "prompt": "Run the `save-learning` script with the symptom, root cause, and proposed fix. It saves them to project memory with appropriate tags so `search-prior` finds them next time.\n\nThen report DONE with a one-line summary: 'Investigated <symptom>; root cause: <cause>; fix proposed: <fix>.'",
+      "suggestedRole": "developer",
+      "onExit": {
+        "name": "save-learning",
+        "autoAdvanceWhen": {
+          "op": "ok"
+        }
+      },
+      "terminal": true
+    }
+  ],
+  "scripts": {
+    "search-prior": "import { defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'search-prior',\n  description:\n    'Search project memory for prior investigations matching a symptom signature. Stamps {matches: number, hits: [{text, score}]}.',\n  inputs: {\n    symptom: {\n      type: 'string',\n      description: 'Short symptom description (1-3 sentences). Used as the search query.',\n      required: true,\n    },\n  },\n  outputs: {\n    matches: { type: 'number', description: 'Number of memory hits returned.' },\n    hits: {\n      type: 'array',\n      description: 'Top matches, each with text + score.',\n      itemType: 'object',\n    },\n  },\n  requires: ['memory.read'],\n});\n\ninterface MemoryHit {\n  text: string;\n  score: number;\n}\n\nasync function main(): Promise<void> {\n  const input = gezel.input as { symptom: string };\n  const query = `investigation: ${input.symptom}`;\n  const results = (await gezel.memory.search(query)) as MemoryHit[];\n  const filtered = (results ?? []).filter(\n    (r): r is MemoryHit => Boolean(r) && typeof r.text === 'string' && typeof r.score === 'number',\n  );\n  gezel.log(`Memory search for \"${query}\" returned ${filtered.length} hit(s)`);\n  gezel.output({ matches: filtered.length, hits: filtered.slice(0, 5) });\n}\n\nawait main();\n",
+    "save-learning": "import { defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'save-learning',\n  description:\n    'Stamp a (symptom → root cause → fix) investigation triple into project memory so future `search-prior` queries find it.',\n  inputs: {\n    symptom: { type: 'string', description: 'Observable failure.', required: true },\n    rootCause: { type: 'string', description: 'Root cause in one sentence.', required: true },\n    fix: { type: 'string', description: 'Proposed fix.', required: true },\n    files: {\n      type: 'string',\n      description: 'Comma-separated list of files touched (or expected to be touched).',\n    },\n  },\n  outputs: {\n    ok: { type: 'boolean', description: 'True on successful save.' },\n  },\n  requires: ['memory.write'],\n});\n\nasync function main(): Promise<void> {\n  const input = gezel.input as {\n    symptom: string;\n    rootCause: string;\n    fix: string;\n    files?: string;\n  };\n  const text = [\n    'investigation:',\n    `symptom: ${input.symptom}`,\n    `root cause: ${input.rootCause}`,\n    `fix: ${input.fix}`,\n    ...(input.files ? [`files: ${input.files}`] : []),\n  ].join('\\n');\n  await gezel.memory.save(text, {\n    kind: 'investigation',\n    ...(input.files ? { files: input.files } : {}),\n  });\n  gezel.log('Saved investigation to memory.');\n  gezel.output({ ok: true });\n}\n\nawait main();\n"
+  },
+  "version": "1.0.0",
+  "releasedAt": "2026-05-16T00:00:00Z"
+}

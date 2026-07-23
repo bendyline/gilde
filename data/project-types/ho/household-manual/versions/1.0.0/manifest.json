@@ -1,0 +1,152 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "releasedAt": "2026-07-18T00:00:00Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "home": {
+        "type": "string",
+        "title": "What kind of home?",
+        "description": "e.g. 'a 1960s house', 'a third-floor apartment'.",
+        "default": "our home"
+      }
+    },
+    "required": [
+      "home"
+    ]
+  },
+  "nameTemplate": "Household Manual",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "huismeester",
+      "voorman": true
+    }
+  ],
+  "tools": [
+    {
+      "name": "record_system",
+      "description": "Add a system or appliance card (with a care interval in days when known).",
+      "script": "house-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "care": {
+            "type": "string"
+          },
+          "intervalDays": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "bind": {
+        "action": "record_system"
+      }
+    },
+    {
+      "name": "log_maintenance",
+      "description": "Log that care happened (resets the due clock).",
+      "script": "house-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "log_maintenance"
+      }
+    },
+    {
+      "name": "flag_attention",
+      "description": "Flag a problem on a system (a noise, a drip, a trip).",
+      "script": "house-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "note"
+        ]
+      },
+      "bind": {
+        "action": "flag_attention"
+      }
+    },
+    {
+      "name": "house_status",
+      "description": "What the house needs: care due and flagged problems.",
+      "script": "house-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "status"
+      }
+    },
+    {
+      "name": "house_list",
+      "description": "Read every system card.",
+      "script": "house-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "house_list"
+      }
+    }
+  ],
+  "craftbooks": [
+    "seasonal-maintenance-sweep"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "dashboard/index.html",
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "systems.json"
+      }
+    ]
+  },
+  "workspaceSeed": [
+    "systems.json"
+  ],
+  "scripts": {
+    "house-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'house-store',\n  description:\n    \"Read and update the home's system cards (systems.json). Call action:'status' for what's due or flagged; 'record_system' when an appliance/system comes up (with care interval in days when known); 'log_maintenance' when care happens; 'flag_attention' for problems; 'house_list' to read every card.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description:\n        \"One of 'status', 'record_system', 'log_maintenance', 'flag_attention', or 'house_list'.\",\n      required: true,\n    },\n    name: { type: 'string', description: \"System name, e.g. 'Furnace', 'Smoke alarms'.\" },\n    kind: { type: 'string', description: 'What it is (appliance, safety, structure, utility).' },\n    location: { type: 'string', description: 'Where it lives in the house.' },\n    care: { type: 'string', description: \"The care it needs, e.g. 'replace filter'.\" },\n    intervalDays: { type: 'number', description: 'Care interval in days, when known.' },\n    note: { type: 'string', description: 'Maintenance or attention note.' },\n    id: { type: 'string', description: \"System id, e.g. 'sys-2'.\" },\n  },\n  outputs: {\n    systems: { type: 'number', description: 'System cards in the manual.' },\n    due: { type: 'number', description: 'Systems with care due.' },\n    flagged: { type: 'number', description: 'Systems flagged for attention.' },\n    summary: { type: 'string', description: 'What the house needs.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── house-rules-start ──\n// Pure derivations over rosterStore-shaped system cards: statuses are\n// ok -> attention; \"due\" derives from lastDoneAt + intervalDays.\n\nvar DAY_MS = 24 * 60 * 60 * 1000;\n\nfunction isDue(record, nowMs) {\n  var f = record.fields || {};\n  if (typeof f.intervalDays !== 'number' || f.intervalDays <= 0) return false;\n  var last = typeof f.lastDoneAt === 'string' ? Date.parse(f.lastDoneAt) : Date.parse(record.createdAt);\n  return isFinite(last) && nowMs - last >= f.intervalDays * DAY_MS;\n}\n\nfunction houseShape(records, nowMs) {\n  var due = [];\n  var flagged = [];\n  records.forEach(function (r) {\n    if (isDue(r, nowMs)) due.push(r);\n    if (r.status === 'attention') flagged.push(r);\n  });\n  return { due: due, flagged: flagged };\n}\n\nfunction houseLine(records, nowMs) {\n  var shape = houseShape(records, nowMs);\n  var names = function (rows) {\n    return rows\n      .map(function (r) {\n        return (r.fields && r.fields.name) || r.id;\n      })\n      .join(', ');\n  };\n  if (records.length === 0) return 'No systems recorded yet — start with the ones that need regular care.';\n  var bits = [];\n  if (shape.due.length) bits.push('care due: ' + names(shape.due));\n  if (shape.flagged.length) bits.push('flagged: ' + names(shape.flagged));\n  return records.length + ' system(s) on record. ' + (bits.length ? bits.join('; ') + '.' : 'Nothing due — the house is quiet.');\n}\n// ── house-rules-end ──\n\nconst house = rosterStore(gezel.fs, 'systems.json', {\n  stages: ['ok', 'attention'],\n  idPrefix: 'sys',\n});\n\nasync function resolveSystem(): Promise<string> {\n  if (input.id) return input.id;\n  if (input.name) {\n    const wanted = input.name.toLowerCase();\n    const matches = (await house.list()).filter(\n      (r) => String(r.fields.name ?? '').toLowerCase() === wanted,\n    );\n    if (matches.length === 1) return matches[0]!.id;\n  }\n  throw new Error(\"Pass 'id' (e.g. 'sys-2') or an exact system 'name'.\");\n}\n\nif (input.action === 'record_system') {\n  if (!input.name) throw new Error(\"record_system needs 'name'.\");\n  await house.add({\n    status: 'ok',\n    fields: {\n      name: input.name,\n      ...(input.kind ? { kind: input.kind } : {}),\n      ...(input.location ? { location: input.location } : {}),\n      ...(input.care ? { care: input.care } : {}),\n      ...(typeof input.intervalDays === 'number' ? { intervalDays: input.intervalDays } : {}),\n      lastDoneAt: new Date().toISOString(),\n    },\n  });\n} else if (input.action === 'log_maintenance') {\n  const id = await resolveSystem();\n  await house.update(id, {\n    fields: { lastDoneAt: new Date().toISOString() },\n    ...(input.note ? { note: input.note } : {}),\n  });\n  await house.transition(id, 'ok');\n} else if (input.action === 'flag_attention') {\n  const id = await resolveSystem();\n  await house.transition(id, 'attention', input.note ? { note: input.note } : {});\n} else if (input.action !== 'status' && input.action !== 'house_list') {\n  throw new Error(\n    `Unknown action '${input.action}'. Use status, record_system, log_maintenance, flag_attention, or house_list.`,\n  );\n}\n\nconst records = await house.list();\nconst shape = houseShape(records, Date.now());\nconst listing =\n  input.action === 'house_list'\n    ? records\n        .map(\n          (r) =>\n            `${r.id} [${r.status}${isDue(r, Date.now()) ? ', due' : ''}] ${String(r.fields.name ?? '?')}${r.fields.location ? ` — ${String(r.fields.location)}` : ''}${r.fields.care ? ` (${String(r.fields.care)}${r.fields.intervalDays ? ` every ${String(r.fields.intervalDays)}d` : ''})` : ''}`,\n        )\n        .join('\\n') || 'No systems recorded yet.'\n    : '';\n\ngezel.output({\n  systems: records.length,\n  due: shape.due.length,\n  flagged: shape.flagged.length,\n  summary: listing || houseLine(records, Date.now()),\n});\n"
+  }
+}

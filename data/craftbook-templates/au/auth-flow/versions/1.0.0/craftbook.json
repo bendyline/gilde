@@ -1,0 +1,139 @@
+{
+  "id": "auth-flow",
+  "name": "Auth / Session Implementation",
+  "description": "Implement an authentication and session flow — login, session/token issuance, verification, and logout — with the security fundamentals baked in. Threat-models FIRST to lock the security requirements — credential hashing, token/session strategy, expiry, CSRF/XSS posture, and the attacks in scope — then implements registration/login/verify/logout to those requirements, then a security-minded reviewer audits for the classic auth pitfalls. Covers password hashing (bcrypt/argon2), session vs JWT, token expiry/refresh, secure cookie flags, timing-safe comparison, CSRF protection, and brute-force throttling.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Threat scope (planner) — lock the security requirements and threats in scope → gated on `notes/threat-scope.md` (markdown-notes)\n2. Build the auth flow (developer) — implement register/login/verify/logout securely → gated on `src/auth.js` (code-module)\n3. Security review (reviewer) — audit for the classic auth pitfalls → gated on `notes/review.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "threat-scope",
+  "triggers": [
+    "implement login",
+    "build an auth flow",
+    "session handling",
+    "add authentication",
+    "jwt or session auth"
+  ],
+  "steps": [
+    {
+      "id": "threat-scope",
+      "name": "Threat scope",
+      "description": "lock the security requirements and threats in scope",
+      "prompt": "Lock the security requirements before implementing auth — auth done casually is a vulnerability. Step 1: Decide the session strategy: server sessions vs JWT, where the token lives (httpOnly cookie vs header), and expiry/refresh. Step 2: Lock credential handling: passwords hashed with a strong adaptive function (bcrypt/argon2) and never stored or logged in plaintext, with timing-safe verification. Step 3: Enumerate the threats in scope and the mitigations: brute force (throttling/lockout), CSRF (token or SameSite cookie), XSS (httpOnly), session fixation (rotate on login), and enumeration (uniform error messages). Step 4: Write a numbered acceptance-criteria checklist of 6-9 items (e.g. 'passwords are hashed, never plaintext', 'wrong password and unknown user return the same error', 'sessions expire and rotate on login', 'logout invalidates the session', 'cookies are httpOnly/secure/SameSite'). `write_task_note` the requirements + threat list + checklist and write the same to the produces path.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/threat-scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/threat-scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/threat-scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "threat-scope",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the auth flow",
+      "description": "implement register/login/verify/logout securely",
+      "prompt": "Implement the auth flow to the security requirements. Step 1: Registration — hash passwords with the chosen adaptive function and a per-user salt; never store/log plaintext. Step 2: Login — look up the user and verify with a timing-safe comparison; on success issue the session/token with expiry and set the cookie with httpOnly/secure/SameSite (rotate the session id to prevent fixation). Step 3: Use a UNIFORM error for both unknown-user and wrong-password to avoid enumeration; add basic brute-force throttling. Step 4: Verify — middleware/function that validates the session/token and rejects expired/invalid ones. Step 5: Logout — invalidate the session server-side and clear the cookie. Add CSRF protection for state-changing routes. Write the implementation to the produces path. On a loop-back, fix only the flagged issue. `write_task_note` the file path and which criteria now pass.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/auth.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/auth.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/auth.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/auth.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/auth.js"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "review"
+    },
+    {
+      "id": "review",
+      "name": "Security review",
+      "description": "audit for the classic auth pitfalls",
+      "prompt": "Audit the auth implementation against the threat scope and the classic pitfalls. Step 1: Confirm passwords are hashed with a strong adaptive function (not MD5/SHA-1/plaintext) and never logged. Step 2: Confirm login uses timing-safe comparison and that unknown-user vs wrong-password are indistinguishable (no enumeration). Step 3: Confirm sessions/tokens expire, rotate on login, and are invalidated on logout, and that cookies carry httpOnly/secure/SameSite. Step 4: Confirm CSRF protection on state-changing routes and that brute force is throttled. Step 5: Look for secrets hardcoded in source. Write an audit note listing each threat and PASS/FAIL with the specific finding to the produces path.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/review.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/auth.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/auth.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/auth.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/auth.js"
+          }
+        ],
+        "onReject": "review",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Exercise the auth flow and audit the code. For EACH acceptance criterion: confirm passwords are hashed (never plaintext/logged), confirm unknown-user and wrong-password return identical errors, confirm sessions expire/rotate and logout invalidates, confirm cookies are httpOnly/secure/SameSite, and confirm CSRF + brute-force protections exist. Write PASS/FAIL per criterion; plaintext passwords or user enumeration is an automatic FAIL.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

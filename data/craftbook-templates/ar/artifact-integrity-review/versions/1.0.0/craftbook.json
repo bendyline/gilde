@@ -1,0 +1,147 @@
+{
+  "id": "artifact-integrity-review",
+  "name": "Artifact Integrity & Ship Review",
+  "description": "Perform an isolated ship-readiness review of the actual built artifacts of a project—sites, npm packages, archives, CLIs, binaries, installers, checksums, signatures, and release bundles—rather than trusting source or CI status. Inventories expected versus present assets, stages immutable copies, inspects archive contents and metadata, runs safe sandboxed smoke checks where possible, and leaves per-artifact GO/NO-GO verdicts plus a release-wide decision. Can review locally staged assets or public-release evidence supplied to the project. Use before shipping a release or as a recurring artifact-integrity night-shift audit.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Inventory and stage the release (reviewer) — lock the expected matrix and immutable evidence set before inspecting it → gated on `notes/artifacts/inventory.md` (markdown-notes)\n2. Inspect each artifact (developer) — verify identity, contents, installability, safety, and cross-artifact consistency → gated on `notes/artifacts/checks.md` (markdown-notes)\n3. Write the artifact ship report (reviewer) — per-artifact verdicts and a release-wide ship decision → gated on `artifact-integrity-review.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "inventory",
+  "triggers": [
+    "artifact integrity review",
+    "review the built artifacts",
+    "test the release assets",
+    "are these installers ready to ship",
+    "audit a public github release",
+    "nightly artifact review"
+  ],
+  "toolsets": [
+    {
+      "toolsetId": "builtin.archives",
+      "autoAllow": true,
+      "reason": "inspect zip, tar, tgz, and package contents without trusting filenames"
+    },
+    {
+      "toolsetId": "builtin.code-execution",
+      "autoAllow": true,
+      "reason": "perform bounded, sandboxed metadata and smoke checks on staged artifacts"
+    },
+    {
+      "toolsetId": "builtin.web",
+      "autoAllow": true,
+      "reason": "read public release metadata and verify supplied public asset URLs when allowed"
+    }
+  ],
+  "steps": [
+    {
+      "id": "inventory",
+      "name": "Inventory and stage the release",
+      "description": "lock the expected matrix and immutable evidence set before inspecting it",
+      "prompt": "Define the exact release under review (version, commit/tag, target platforms, artifact types). Derive the expected asset matrix from release manifests, package metadata, CI/release configuration, checksums, and supplied release notes. Inventory every locally staged artifact with path, byte size, type/magic when available, and a cryptographic hash. If public release metadata or URLs were supplied and Web Access is allowed, verify the public listing and headers; never claim a remote binary was downloaded or inspected unless it is actually present in the workspace. Preserve the originals and work only on isolated extracted/staged copies. Record missing, duplicate, unexpected, truncated, or zero-byte assets immediately. Write the expected-vs-present matrix, provenance, hashes, acquisition limitations, and isolation plan to `notes/artifacts/inventory.md`.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/artifacts/inventory.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/artifacts/inventory.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/artifacts/inventory.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "inventory",
+        "maxAttempts": 3
+      },
+      "next": "inspect"
+    },
+    {
+      "id": "inspect",
+      "name": "Inspect each artifact",
+      "description": "verify identity, contents, installability, safety, and cross-artifact consistency",
+      "prompt": "Inspect every artifact independently. Use `list_archive` before extraction, then extract into isolated paths. Verify filename/type/magic, version and commit identity, checksums/signatures when provided, expected entrypoints, executable bits, package manifests, dependency/lock and license/SBOM notices, source-map/debug-symbol policy, update/uninstall metadata, and absence of secrets, private keys, `.env`, build caches, absolute developer paths, or unexpected source. Check sites for missing referenced assets. For npm/CLI/packages, perform only safe sandboxed pack/install/help/version/smoke checks; never run an untrusted native installer on the host. For platform artifacts that cannot run here, inspect statically and mark the platform smoke test NOT VERIFIED. Compare all artifacts for one version/commit and consistent bundled files. Record commands, exit codes, and evidence per artifact in `notes/artifacts/checks.md`.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "notes/artifacts/checks.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/artifacts/checks.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/artifacts/checks.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "inspect",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the artifact ship report",
+      "description": "per-artifact verdicts and a release-wide ship decision",
+      "prompt": "Write `artifact-integrity-review.md` with: `## Release verdict`, `## Evidence provenance`, `## Artifact matrix`, `## Blocking findings`, `## Advisory findings`, `## Cross-artifact consistency`, `## Not verified`, and `## Reproduction commands`. Give every artifact its own GO / NO-GO / NOT-VERIFIED verdict. Every claim must point to a staged path, hash, manifest field, archive member, command/exit code, or supplied public-release record. Any missing expected artifact, secret/private key, checksum/signature mismatch, version/commit mismatch, broken entrypoint, failed smoke test, or missing referenced site asset is a blocker unless explicitly justified. A release cannot be GO when any required artifact is NO-GO or materially unverified. Keep source-code readiness outside scope except where needed to explain artifact provenance.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "artifact-integrity-review.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "artifact-integrity-review.md",
+            "bytes": 2000
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "artifact-integrity-review.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Grade `artifact-integrity-review.md`: (1) expected and present assets are reconciled; (2) each artifact has provenance, size/type/hash, checks, and an individual verdict; (3) archive/package contents and metadata were inspected in isolation; (4) safe smoke tests include commands and exit codes while unrun platform tests are NOT VERIFIED; (5) versions/commits and bundled content agree across artifacts; (6) secrets, licenses/SBOM, source maps/debug files, signatures/checksums, entrypoints, and missing site assets were considered where applicable; (7) the release verdict follows blockers and uncertainty. PASS all or loop back with exact gaps.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "report"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

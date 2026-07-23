@@ -1,0 +1,139 @@
+{
+  "id": "library-package",
+  "name": "Reusable Library Package",
+  "description": "Build a reusable library/SDK with a clean public API surface, sensible defaults, and published documentation. Designs the public API FIRST — exported functions/classes, signatures, types, error contract, and what stays internal — because a library's API is a long-lived promise, then implements it, then writes user-facing docs with installation, quickstart, and a worked example per public function. Covers public-vs-private surface, function signatures, JSDoc/typedoc, README, semantic versioning posture, and usage examples.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Public API design (planner) — lock exports, signatures, types, error contract → gated on `notes/api-design.md` (markdown-notes)\n2. Build the library (developer) — implement the public API + internals → gated on `src/index.js` (code-module)\n3. Write the docs (copywriter) — README with install, quickstart, per-function examples → gated on `README.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "api-design",
+  "triggers": [
+    "build a library",
+    "create an sdk",
+    "make a reusable package",
+    "publish a module",
+    "library with a public api"
+  ],
+  "steps": [
+    {
+      "id": "api-design",
+      "name": "Public API design",
+      "description": "lock exports, signatures, types, error contract",
+      "prompt": "Design the public API surface before implementation — it is a long-lived promise to callers. Step 1: List exactly what the library exports (functions, classes, constants) and what stays internal. Step 2: For each export, write its full signature: parameter names, types, defaults, and return type. Step 3: Define the error contract — what each function throws or returns on bad input/failure, and any shared error type. Step 4: Decide naming, module layout, and the minimal surface (resist over-exporting). Step 5: Write a numbered acceptance-criteria checklist of 5-9 items (e.g. 'every documented export exists with the documented signature', 'invalid input is rejected per the error contract', 'no internal helper leaks into the public surface'). `write_task_note` the API spec + checklist and write the same to the produces path. No implementation yet.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/api-design.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/api-design.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/api-design.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "api-design",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the library",
+      "description": "implement the public API + internals",
+      "prompt": "Implement the library in a source module exporting exactly the designed surface. Step 1: Implement every public export with the locked signature and behavior; keep helpers unexported. Step 2: Validate inputs and honor the error contract precisely. Step 3: Add inline doc comments (JSDoc/TSDoc) on each public export describing params, return, and throws. Step 4: Include a few assertions or a small example to self-verify the happy paths. On a loop-back, fix only the named gaps without changing the public signatures unless the design changed. `write_task_note` the file path and which criteria now pass.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/index.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/index.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/index.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/index.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/index.js"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "docs"
+    },
+    {
+      "id": "docs",
+      "name": "Write the docs",
+      "description": "README with install, quickstart, per-function examples",
+      "prompt": "Write the user-facing documentation as a README. Step 1: Open with a one-paragraph what-and-why and an install line. Step 2: Add a quickstart: the smallest runnable example that produces a result. Step 3: Document EVERY public export with its signature, a one-line description, and a short worked code example. Step 4: Add an errors/edge-cases section matching the error contract, and a versioning note. Examples must match the real signatures exactly — copy them from the API spec, do not invent parameters. `write_task_note` the README path.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "README.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/index.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/index.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/index.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/index.js"
+          }
+        ],
+        "onReject": "docs",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Check the library against the API spec and the docs against the library. For EACH acceptance criterion: confirm every documented export exists with the exact signature, confirm inputs are validated per the error contract, confirm no internal helper leaked, and confirm every README example matches a real signature and would run. Write PASS/FAIL per criterion. If the docs reference a function/parameter the code does not have, that is a FAIL.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

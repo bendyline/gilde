@@ -1,0 +1,95 @@
+# AGENTS.md — the contract for AI contributors
+
+Many gilde contributions are authored by AI agents. This file is the
+precise, mechanical contract. Follow it and your PR will pass CI on the
+first try.
+
+## Layout grammar
+
+```
+data/<kind-dir>/<shard>/<id>/manifest.json                    identity
+data/<kind-dir>/<shard>/<id>/versions/<semver>/...            released content
+data/<kind-dir>/index.json                                    generated listing
+```
+
+- `<kind-dir>` is one of: `chat-models`, `image-models`, `video-models`,
+  `toolsets`, `connector-types`, `project-types`, `gezel-templates`,
+  `craftbook-templates`. The community tier mirrors this under
+  `data/community/toolsets/`.
+- `<id>`: lowercase, matches `[a-z0-9][a-z0-9-]*`. The item's directory
+  name must equal the `id` field inside its manifests.
+- `<shard>`: exactly the first two characters of the id, lowercased.
+  `meeting-notes-digest` lives under `me/meeting-notes-digest/`.
+- Version directory names are valid semver and must equal the `version`
+  field of the file(s) inside. Every version carries `releasedAt` (ISO
+  8601).
+
+## Identity vs version
+
+The identity `manifest.json` holds what is true across versions:
+`schemaVersion`, `kind` (singular, e.g. `chat-model`), `id`, `name`,
+`description`, `tags`, `maintainer`, `license`, plus kind-specific fields
+(models: `parameterSize`, `contextWindow`, `tuning`, `style`; templates:
+`role`; craftbooks: nothing extra). `yankedVersions` (optional) lists
+released versions that must not be installed — entries must name version
+directories that actually exist.
+
+The `versions/<semver>/` directory holds the released payload:
+
+- chat/image/video models: `manifest.json` with the engine source blocks
+  (`llamaCpp`, `mlx`, `ollama` for chat; `downloadUrl`/`source` for
+  image/video). Every `sha256` is 64 lowercase hex chars; download URLs
+  point at `https://huggingface.co/...`.
+- gezel-templates: `manifest.json` + `about.md` (the role's prose).
+- project-types: `manifest.json` + `about.md`, `mission.md`, optional
+  `game.json`, `pages/**`.
+- craftbook-templates (V2): **no version manifest.json** — instead
+  `craftbook.json` (the full doc) and `test.json` (the eval sidecar).
+
+## Craftbook rules
+
+`craftbook.json` must be fully resolved:
+
+- `entryStepId` names an existing step.
+- Every step has an explicit, unique `id`.
+- No `deliverable` shorthand anywhere — write the expanded steps.
+- `toolsets` should reference real toolset ids where they are local
+  (unknown references are a warning, not an error).
+
+Ship a `test.json` with every craftbook. A craftbook without an eval
+cannot be regression-checked.
+
+## Never edit
+
+- `data/**/index.json` — generated. Run `npm run build-index` after any
+  content change; on merge conflict take either side and regenerate.
+- `schemas/` — generated from gezel core's Zod schemas, refreshed from the
+  gezel repo.
+- `data/community/` — bot-managed MCP-registry imports.
+- Released `versions/<v>/` directories — add a new version instead;
+  yank via `yankedVersions`.
+
+## Validation loop
+
+```
+npm run validate       full-tree structural + schema validation
+npm run check-index    generated indexes are fresh
+npm run lint-models    chat-model completeness lint
+```
+
+Findings print as:
+
+```
+ERROR data/chat-models/qw/qwen3.5-2b-q4/manifest.json #/tuning — missing-tuning: <message>
+```
+
+That is: severity, file path, JSON pointer to the offending field, rule
+name, message. Fix the field the pointer names, re-run, repeat until
+clean, and paste the final summary line into your PR description.
+
+## Style
+
+- JSON files: two-space indent, trailing newline, key order as authored
+  (`npm run format` fixes this mechanically).
+- Markdown prose (`about.md`): plain, warm, no emojis.
+- Keep diffs minimal — do not reformat files you did not change.

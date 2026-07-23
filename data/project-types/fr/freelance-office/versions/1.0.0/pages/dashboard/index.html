@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Freelance office</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2; --card: #fff; --ink: #2b2620; --muted: #7a7166;
+        --accent: #b5651d; --track: #ece5da; --good: #4a7c59; --warn: #a4552e;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+          --accent: #e0894a; --track: #3a352f; --good: #7fae8d; --warn: #d98a63;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--ink); padding: 1.5rem 1.25rem; }
+      main { max-width: 820px; margin: 0 auto; }
+      h1 { font-family: Georgia, 'PT Serif', 'Times New Roman', serif; font-size: 1.35rem; font-weight: 600; margin: 0 0 0.15rem; }
+      .sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 1rem; }
+      .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; margin-bottom: 1rem; }
+      .tile { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.7rem 0.85rem; }
+      .tile .n { font-size: 1.35rem; font-weight: 700; color: var(--accent); line-height: 1.2; }
+      .tile .n.warn { color: var(--warn); }
+      .tile .n.good { color: var(--good); }
+      .tile .l { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+      .board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; }
+      .col h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 0.4rem; font-weight: 600; display: flex; justify-content: space-between; }
+      .col h2 .count { color: var(--ink); }
+      .card { background: var(--card); border: 1px solid var(--track); border-radius: 6px; padding: 0.5rem 0.6rem; margin-bottom: 0.45rem; font-size: 0.85rem; }
+      .card .co { font-weight: 600; overflow-wrap: anywhere; }
+      .card .amt { color: var(--muted); font-variant-numeric: tabular-nums; }
+      .chip { display: inline-block; border: 1px solid var(--warn); color: var(--warn); border-radius: 4px; padding: 0 0.3rem; font-size: 0.7rem; line-height: 1.4; margin-left: 0.3rem; }
+      .empty { color: var(--muted); font-style: italic; background: var(--card); border: 1px dashed var(--track); border-radius: 10px; padding: 0.85rem 1.25rem; text-align: center; margin-bottom: 0.75rem; }
+      @media (max-width: 640px) { .board, .tiles { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Freelance office</h1>
+      <p class="sub" id="sub">Loading the invoice book…</p>
+      <div class="tiles">
+        <div class="tile"><div class="n" id="t-out">—</div><div class="l">Outstanding</div></div>
+        <div class="tile"><div class="n warn" id="t-over">—</div><div class="l">Overdue</div></div>
+        <div class="tile"><div class="n good" id="t-paid">—</div><div class="l">Paid this month</div></div>
+      </div>
+      <div class="empty" id="empty" hidden>No invoices yet — tell your Kantoormeester when you bill something.</div>
+      <div class="board" id="board"></div>
+    </main>
+    <script>
+      (function () {
+        'use strict';
+        var parts = location.pathname.split('/').filter(Boolean);
+        var typeIdx = parts.indexOf('type');
+        var capability = typeIdx > 0 ? parts[typeIdx - 1] : null;
+        var projectId = typeIdx >= 0 ? parts[typeIdx + 1] : null;
+        var failedPolls = 0;
+        var STAGES = ['draft', 'sent', 'paid'];
+
+        function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+        function fmt(cents) { var abs = Math.abs(cents); return (cents < 0 ? '-' : '') + Math.floor(abs / 100) + '.' + String(abs % 100).padStart(2, '0'); }
+        function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+        function render(book) {
+          var records = Array.isArray(book.records) ? book.records : [];
+          var now = Date.now();
+          var month = new Date().toISOString().slice(0, 7);
+          var outstanding = 0, overdue = 0, paidMonth = 0;
+          records.forEach(function (r) {
+            var cents = (r.fields && r.fields.amountCents) || 0;
+            if (r.status === 'sent') {
+              outstanding += cents;
+              var due = r.fields && r.fields.dueAt ? Date.parse(r.fields.dueAt) : NaN;
+              if (isFinite(due) && due < now) overdue += 1;
+            }
+            if (r.status === 'paid' && r.updatedAt.slice(0, 7) === month) paidMonth += cents;
+          });
+          document.getElementById('sub').textContent = records.length + ' invoice(s) in the book';
+          document.getElementById('t-out').textContent = fmt(outstanding);
+          document.getElementById('t-over').textContent = overdue;
+          document.getElementById('t-paid').textContent = fmt(paidMonth);
+          document.getElementById('empty').hidden = records.length > 0;
+
+          document.getElementById('board').innerHTML = STAGES.map(function (stage) {
+            var here = records.filter(function (r) { return r.status === stage; });
+            var cards = here.map(function (r) {
+              var due = r.fields && r.fields.dueAt ? Date.parse(r.fields.dueAt) : NaN;
+              var isOver = stage === 'sent' && isFinite(due) && due < now;
+              return '<div class="card"><div class="co">' + esc((r.fields && r.fields.client) || r.id) +
+                (isOver ? '<span class="chip">overdue</span>' : '') + '</div><div class="amt">' +
+                fmt((r.fields && r.fields.amountCents) || 0) +
+                (r.fields && r.fields.dueAt ? ' · due ' + esc(String(r.fields.dueAt).slice(0, 10)) : '') +
+                '</div></div>';
+            }).join('');
+            return '<div class="col"><h2><span>' + cap(stage) + '</span><span class="count">' + here.length + '</span></h2>' + cards + '</div>';
+          }).join('');
+        }
+
+        function poll() {
+          if (!capability || !projectId) return Promise.resolve();
+          return fetch('/preview/' + encodeURIComponent(capability) + '/workspace/' + encodeURIComponent(projectId) + '/invoices.json', { cache: 'no-store' })
+            .then(function (r) { if (!r.ok) throw new Error('poll ' + r.status); return r.json(); })
+            .then(function (next) { failedPolls = 0; render(next); })
+            .catch(function () {
+              failedPolls += 1;
+              if (failedPolls === 3 && window.parent !== window) window.parent.postMessage({ __gezelPageRefresh: true }, '*');
+            });
+        }
+        poll().then(function () { setInterval(function () { void poll(); }, 5000); });
+      })();
+    </script>
+  </body>
+</html>

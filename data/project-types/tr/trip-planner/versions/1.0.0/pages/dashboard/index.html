@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Trip planner</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2; --card: #fff; --ink: #2b2620; --muted: #7a7166;
+        --accent: #b5651d; --track: #ece5da; --good: #4a7c59; --warn: #a4552e;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+          --accent: #e0894a; --track: #3a352f; --good: #7fae8d; --warn: #d98a63;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--ink); padding: 1.5rem 1.25rem; }
+      main { max-width: 680px; margin: 0 auto; }
+      h1 { font-family: Georgia, 'PT Serif', 'Times New Roman', serif; font-size: 1.35rem; font-weight: 600; margin: 0 0 0.15rem; }
+      .sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.9rem; }
+      .banner { border: 1px solid var(--accent); border-radius: 6px; padding: 0.45rem 0.7rem; font-size: 0.85rem; margin-bottom: 0.75rem; display: none; }
+      .banner.show { display: block; }
+      .cols { display: grid; grid-template-columns: 1.2fr 1fr; gap: 0.6rem; }
+      .panel { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.85rem 1rem; font-size: 0.9rem; }
+      .panel h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 0.5rem; }
+      .day { display: grid; grid-template-columns: 6rem 1fr; gap: 0.6rem; padding: 0.3rem 0; }
+      .day .date { color: var(--muted); }
+      .pack { list-style: none; margin: 0; padding: 0; }
+      .pack li { display: flex; gap: 0.5rem; align-items: baseline; margin: 0.25rem 0; cursor: pointer; }
+      .pack li.packed { color: var(--muted); text-decoration: line-through; cursor: default; }
+      .pack .box { display: inline-block; width: 0.85rem; height: 0.85rem; border: 1px solid var(--track); border-radius: 4px; flex: none; position: relative; top: 0.1rem; }
+      .pack li.packed .box { background: var(--good); border-color: var(--good); }
+      .journal li { color: var(--muted); margin: 0.25rem 0; }
+      .journal li strong { color: var(--ink); font-weight: 600; }
+      .empty { color: var(--muted); font-style: italic; }
+      @media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="banner" id="banner"></div>
+      <h1 id="title">Trip planner</h1>
+      <p class="sub" id="sub">Loading the trip…</p>
+      <div class="cols">
+        <div class="panel">
+          <h2>Itinerary</h2>
+          <div id="days"><p class="empty">No days planned yet — sketch the spine with your Reisleider.</p></div>
+          <h2 style="margin-top: 0.9rem">Journal</h2>
+          <ul class="journal" id="journal" style="margin:0;padding-left:1.05rem"><li class="empty">A line a day, once you're on the road.</li></ul>
+        </div>
+        <div class="panel">
+          <h2>Packing <span id="packcount"></span></h2>
+          <ul class="pack" id="pack"><li class="empty">Nothing listed yet.</li></ul>
+        </div>
+      </div>
+    </main>
+    <script>
+      (function () {
+        'use strict';
+        var gezelPage = (function () {
+          var seq = 0; var pending = {};
+          window.addEventListener('message', function (event) {
+            var d = event.data;
+            if (!d || d.__gezelPageResult !== true || typeof d.id !== 'string') return;
+            var entry = pending[d.id]; if (!entry) return;
+            delete pending[d.id]; clearTimeout(entry.timer);
+            if (d.ok) entry.resolve(d); else entry.reject(new Error(d.error || 'invoke failed'));
+          });
+          return {
+            embedded: function () { return window.parent !== window; },
+            invoke: function (tool, input) {
+              return new Promise(function (resolve, reject) {
+                if (window.parent === window) { reject(new Error('not embedded in Gezel')); return; }
+                seq += 1; var id = 'pi-' + Date.now() + '-' + seq;
+                pending[id] = { resolve: resolve, reject: reject, timer: setTimeout(function () { delete pending[id]; reject(new Error('invoke timed out')); }, 45000) };
+                window.parent.postMessage({ __gezelPageInvoke: true, id: id, tool: tool, input: input || {} }, '*');
+              });
+            },
+            refresh: function () { if (window.parent !== window) window.parent.postMessage({ __gezelPageRefresh: true }, '*'); },
+          };
+        })();
+
+        var parts = location.pathname.split('/').filter(Boolean);
+        var typeIdx = parts.indexOf('type');
+        var capability = typeIdx > 0 ? parts[typeIdx - 1] : null;
+        var projectId = typeIdx >= 0 ? parts[typeIdx + 1] : null;
+        var failedPolls = 0;
+        var busy = false;
+
+        function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+        function setBanner(text) { var el = document.getElementById('banner'); el.textContent = text || ''; el.className = text ? 'banner show' : 'banner'; }
+        function fetchJson(file) {
+          return fetch('/preview/' + encodeURIComponent(capability) + '/workspace/' + encodeURIComponent(projectId) + '/' + file, { cache: 'no-store' })
+            .then(function (r) { if (!r.ok) throw new Error('poll ' + r.status); return r.json(); });
+        }
+
+        function render(trip, packing, journal) {
+          if (trip.destination) document.getElementById('title').textContent = 'Trip: ' + trip.destination;
+          var days = trip.days || {};
+          var dates = Object.keys(days).sort();
+          var lead = '';
+          if (trip.startDate) {
+            var d = Math.ceil((Date.parse(trip.startDate) - Date.now()) / 86400000);
+            if (isFinite(d)) lead = d > 0 ? d + ' day(s) until departure · ' : d === 0 ? 'Departure day! · ' : 'On the road · ';
+          }
+          document.getElementById('sub').textContent = lead + dates.length + ' day(s) planned';
+
+          if (dates.length) {
+            document.getElementById('days').innerHTML = dates.map(function (d) {
+              return '<div class="day"><span class="date">' + esc(d.slice(5)) + '</span><span>' + esc(days[d]) + '</span></div>';
+            }).join('');
+          }
+
+          var items = (packing && packing.records) || [];
+          var unpacked = items.filter(function (r) { return r.status === 'unpacked'; }).length;
+          document.getElementById('packcount').textContent = items.length ? '· ' + unpacked + ' to go' : '';
+          if (items.length) {
+            document.getElementById('pack').innerHTML = items.map(function (r) {
+              return '<li class="' + r.status + '" data-id="' + esc(r.id) + '"><span class="box"></span><span>' + esc((r.fields && r.fields.name) || r.id) + '</span></li>';
+            }).join('');
+            Array.prototype.forEach.call(document.querySelectorAll('.pack li.unpacked'), function (li) {
+              li.addEventListener('click', function () {
+                if (busy) return;
+                busy = true;
+                gezelPage.invoke('mark_packed', { id: li.getAttribute('data-id') })
+                  .then(function () { setBanner(''); return poll(); })
+                  .catch(function (err) { setBanner(String(err && err.message ? err.message : err)); })
+                  .then(function () { busy = false; });
+              });
+            });
+          }
+
+          var entries = ((journal && journal.events) || []).slice(-4).reverse();
+          if (entries.length) {
+            document.getElementById('journal').innerHTML = entries.map(function (e) {
+              return '<li><strong>' + esc(String(e.at).slice(5, 10)) + '</strong> — ' + esc(e.note || '') + '</li>';
+            }).join('');
+          }
+        }
+
+        function poll() {
+          if (!capability || !projectId) return Promise.resolve();
+          return Promise.all([
+            fetchJson('trip.json').catch(function () { return { days: {} }; }),
+            fetchJson('packing.json').catch(function () { return { records: [] }; }),
+            fetchJson('journal.json').catch(function () { return { events: [] }; }),
+          ])
+            .then(function (results) { failedPolls = 0; render(results[0], results[1], results[2]); })
+            .catch(function () { failedPolls += 1; if (failedPolls === 3) gezelPage.refresh(); });
+        }
+        if (!gezelPage.embedded()) setBanner('Read-only view — ticking items off needs the Gezel app.');
+        poll().then(function () { setInterval(function () { void poll(); }, 6000); });
+      })();
+    </script>
+  </body>
+</html>

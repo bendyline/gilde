@@ -1,0 +1,99 @@
+{
+  "id": "changelog-cut",
+  "name": "Changelog Cut",
+  "description": "Cut a new versioned section into a Keep a Changelog / CHANGELOG.md style file for a release — moving entries out of the Unreleased section into a dated, semver-stamped version block under the standard Added / Changed / Deprecated / Removed / Fixed / Security headings, with a fresh empty Unreleased section left behind. A developer gathers the unreleased entries and reconciles them against actual merged changes before a copywriter normalizes them into terse, consistent changelog lines and stamps the version block. Use this whenever you 'cut a release', 'update the changelog', or roll the Unreleased section into a tagged version while keeping the file append-only and machine-comparable.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Gather unreleased entries (developer) — reconcile the Unreleased section against actual merged changes → gated on `notes/gather.md` (markdown-notes)\n2. Cut the version block (copywriter) — normalize entries and stamp the dated version section → gated on `CHANGELOG.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "gather",
+  "triggers": [
+    "cut a changelog",
+    "update CHANGELOG.md",
+    "roll unreleased into a version",
+    "stamp the changelog for v1.4",
+    "keep a changelog release"
+  ],
+  "steps": [
+    {
+      "id": "gather",
+      "name": "Gather unreleased entries",
+      "description": "reconcile the Unreleased section against actual merged changes",
+      "prompt": "1. Locate the changelog file (CHANGELOG.md or similar) and read its existing format — Keep a Changelog headings (Added, Changed, Deprecated, Removed, Fixed, Security) are the default; match whatever the file already uses. 2. Read the current Unreleased section and reconcile it against the real merged changes since the last version block (git log / merged PRs) — add anything user-facing that is missing, and remove or merge duplicates. 3. Determine the new version number per semver: bump MAJOR for breaking changes, MINOR for new backward-compatible features, PATCH for fixes only; note the reasoning. 4. Map each entry to the correct heading (Removed and Security are not Changed). 5. Good looks like: a reconciled, categorized list of every unreleased user-facing change, the chosen version number with a one-line semver justification, and the release date. Write an acceptance-criteria checklist ('version follows semver given the change set', 'every entry sits under the correct standard heading', 'Unreleased reconciles with merged changes', 'existing version blocks untouched') plus the inventory to the notes file via write_task_note AND to notes/gather.md.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "notes/gather.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/gather.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/gather.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "gather",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Cut the version block",
+      "description": "normalize entries and stamp the dated version section",
+      "prompt": "1. Open notes/gather.md and rewrite the changelog so the reconciled entries form a new version block headed '## [VERSION] - YYYY-MM-DD' inserted directly above the previous version block. 2. Under that block, emit only the non-empty standard headings, each with terse, parallel one-line bullets in the imperative ('Add…', 'Fix…') — one change per bullet, no implementation chatter. 3. Leave a fresh, empty '## [Unreleased]' section at the top with the standard heading placeholders. 4. Do NOT alter any pre-existing version block, the file header, or the comparison-link footer except to add the new version's link if the file uses them. 5. Preserve issue/PR references if the file's convention includes them. 6. Good looks like: a clean, append-only CHANGELOG.md where the new dated version block is correct semver, Unreleased is empty, and the file still parses as Keep a Changelog. Write the updated changelog to CHANGELOG.md.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "CHANGELOG.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "CHANGELOG.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "CHANGELOG.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open CHANGELOG.md and check it against the acceptance criteria in notes/gather.md, PASS/FAIL each. Confirm: (a) a new '## [VERSION] - DATE' block exists with a valid date and a semver-correct version for the change set; (b) every gathered entry appears once under the correct standard heading and empty headings are omitted; (c) a fresh empty Unreleased section sits at the top; (d) all previous version blocks and the file header/footer are unchanged; (e) bullets are terse and parallel with one change each; (f) the file still reads as a valid Keep a Changelog document. Any FAIL routes back to the write phase.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

@@ -1,0 +1,95 @@
+{
+  "id": "thumbnail-generator",
+  "name": "Thumbnail Generator",
+  "description": "Derive a consistent set of thumbnails or responsive size-variants from a folder of source images — square crops for grids, srcset widths for the web, smart-cropped to keep the subject centered — and emit them with predictable names. Scope the target sizes, crop strategy, and naming convention FIRST so the output plugs straight into a gallery or srcset, then build every variant and confirm the matrix is complete. Covers thumbnails, responsive images, srcset, image variants, gallery tiles, and preview generation.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the variants (planner) — lock sizes, crop strategy, format, and naming → gated on `notes/scope.md` (markdown-notes)\n2. Build the variants (developer) — generate every variant per source with the naming convention → gated on `out` (image-set)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "generate thumbnails",
+    "make responsive image variants",
+    "create srcset images",
+    "thumbnail a folder",
+    "gallery thumbnails"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the variants",
+      "description": "lock sizes, crop strategy, format, and naming",
+      "prompt": "1) List the source images and their dimensions. 2) Decide the variant matrix: the target sizes (e.g. 1x square 200px for grid tiles, plus srcset widths 320/640/1024), the aspect ratio per variant (square thumb vs preserved ratio), and the crop strategy (center vs subject-aware smart crop). 3) Choose output format(s) (e.g. WebP + JPEG fallback) and quality. 4) Lock a naming convention that encodes size, e.g. <name>-200.jpg, <name>-640w.webp, so it drops into srcset. 5) Write an acceptance-criteria checklist: 'every source yields every named variant', 'square thumbs are exactly NxN and keep the subject', 'srcset widths match the spec', 'filenames follow the convention', 'no upscaling beyond source dimensions'. 6) Record matrix + checklist via write_task_note AND to notes/scope.md.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the variants",
+      "description": "generate every variant per source with the naming convention",
+      "prompt": "1) Read scope.md. 2) Prefer a small rerunnable script (ImageMagick/sharp/Pillow) over manual edits. 3) For each source image, generate every variant in the matrix: square thumbs cropped to keep the subject centered (smart-crop if available, else center-crop), srcset widths scaled preserving ratio, in the chosen format(s) and quality. 4) Never upscale past the source's native size — skip-and-log a variant the source is too small for. 5) Write outputs to out/ using the exact naming convention. 6) Build a tiny index.html (optional but encouraged) or at least a manifest line proving the srcset wiring. 7) write_task_note the out/ folder and the produced-vs-expected variant counts. Good looks like: a complete, predictably-named matrix ready for a gallery or srcset.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "out",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "fileCount",
+            "ext": [
+              "png",
+              "jpg",
+              "jpeg",
+              "svg",
+              "webp"
+            ],
+            "min": 3,
+            "dir": "out"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "1) Open out/ and verify the variant matrix is complete: each source has each named variant (PASS/FAIL on count). 2) Probe a sample: square thumbs are exactly the target NxN and the subject is still in frame; srcset widths match spec (PASS/FAIL). 3) Confirm filenames follow the naming convention so they'd work in srcset. 4) Confirm no variant was upscaled beyond its source. 5) Write PASS/FAIL per criterion with measured numbers. Any gap → loop back to build to fill missing/incorrect variants.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

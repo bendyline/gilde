@@ -1,0 +1,135 @@
+{
+  "id": "release-notes",
+  "name": "Release Notes",
+  "description": "Turn a raw set of merged commits, pull requests, and ticket IDs into polished, human-readable release notes for a versioned release — grouped by theme (Features, Improvements, Bug Fixes, Breaking Changes), written for users rather than engineers, with upgrade/migration callouts surfaced first. The ordering is deliberate: a developer gathers and de-noises the change inventory before any prose is written, a copywriter turns that inventory into benefit-led notes in a consistent voice, and a reviewer verifies every shipped change is represented and nothing internal-only or unreleased leaked in. Use this for GitHub Releases, product announcement posts, or the user-facing notes that ship alongside a tagged version.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Gather the change inventory (developer) — collect and de-noise every shipped change since the last tag → gated on `notes/gather.md` (markdown-notes)\n2. Write the notes (copywriter) — turn the inventory into benefit-led, user-facing notes → gated on `release-notes.md` (markdown-doc)\n3. Review for completeness and tone (reviewer) — verify coverage, accuracy, and that nothing internal leaked → gated on `notes/review.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "gather",
+  "triggers": [
+    "write release notes",
+    "release notes for v2",
+    "what changed this release",
+    "draft release announcement",
+    "notes for the new version"
+  ],
+  "steps": [
+    {
+      "id": "gather",
+      "name": "Gather the change inventory",
+      "description": "collect and de-noise every shipped change since the last tag",
+      "prompt": "1. Determine the version range: the last released tag (or last release date) up to HEAD/the release candidate. 2. Collect the raw inventory — merged PRs, commit subjects, and linked issue IDs (use git log, gh pr list --state merged, or the changelog source available to you). 3. Filter OUT noise that should never reach users: merge commits, dependency-bump-only commits, CI/build-config tweaks, lint/format-only commits, and anything not yet actually released. 4. Classify each remaining change into exactly one bucket: Features, Improvements, Bug Fixes, Breaking Changes. 5. Flag every Breaking Change and anything requiring a user action (config change, migration, new env var) — these get top billing later. 6. Good looks like: a deduplicated, categorized list where each item has a PR/issue reference and a one-line plain description, and every category is either populated or explicitly marked 'none'. Write an acceptance-criteria checklist (e.g. 'every shipped user-facing change appears exactly once', 'breaking changes are flagged with the required user action', 'no merge/dependency/CI-only noise', 'each item cites a PR or issue') plus the version range and the classified inventory to the notes file via write_task_note AND to notes/gather.md.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "notes/gather.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/gather.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/gather.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "gather",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the notes",
+      "description": "turn the inventory into benefit-led, user-facing notes",
+      "prompt": "1. Open notes/gather.md and write the release notes for HUMANS, not for the commit log — lead each item with the user-visible benefit, not the implementation. 2. Order the document: a one-paragraph highlights summary, then Breaking Changes / Upgrade Notes (with the exact action the user must take), then Features, Improvements, Bug Fixes. 3. Keep each line tight and parallel in voice; use the imperative or present tense consistently ('Adds…', 'Fixes…'). 4. Preserve the PR/issue references as links or trailing (#123) so readers can dig in. 5. Open with the version number and release date as an H1/H2. 6. Good looks like: a reader who has never seen the codebase understands what changed and what they must do, breaking changes are impossible to miss, and every inventory item from gather.md is represented. Write the notes to release-notes.md.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "release-notes.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "release-notes.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "release-notes.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 3
+      },
+      "next": "review"
+    },
+    {
+      "id": "review",
+      "name": "Review for completeness and tone",
+      "description": "verify coverage, accuracy, and that nothing internal leaked",
+      "prompt": "1. Cross-check release-notes.md against notes/gather.md: every classified item must appear, and nothing must appear that was filtered as noise or is unreleased. 2. Verify Breaking Changes are at the top with a concrete user action, not buried. 3. Check the voice is consistent and benefit-led, version + date are present, and references resolve. 4. Confirm no internal-only details (private ticket chatter, internal service names, secrets, profanity) leaked into a public document. 5. Write a PASS/FAIL against each acceptance criterion from gather.md, listing any specific gap. 6. If anything fails, the fix happens back in the write phase. Write your findings to notes/review.md.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/review.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "release-notes.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "release-notes.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "review",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open release-notes.md and verify it against the acceptance criteria locked in notes/gather.md, checking EACH one and writing PASS/FAIL with the evidence. Confirm: (a) every user-facing change from the gathered inventory is represented exactly once; (b) breaking changes and required user actions appear at the top, each with a concrete action; (c) no merge/dependency/CI-only noise and nothing unreleased leaked in; (d) every item cites a PR or issue; (e) the version number and release date appear as a heading; (f) the voice is consistent and written for users, not the commit log. Any FAIL routes back to the write phase to fix exactly that gap.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

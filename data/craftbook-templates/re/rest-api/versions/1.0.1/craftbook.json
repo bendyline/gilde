@@ -1,0 +1,126 @@
+{
+  "id": "rest-api",
+  "name": "REST API Service",
+  "description": "Build a RESTful HTTP API service with resource endpoints, JSON request/response bodies, status codes, validation, and error handling. Locks the contract FIRST — resources, routes, verbs, request/response shapes, status-code map, auth, and pagination — so the implementation has a fixed target, then builds the server, then writes endpoint tests that exercise every route and error case. Covers CRUD endpoints, RESTful routing, OpenAPI-style contract, HTTP status codes, input validation, JSON serialization, and integration tests against the running handler.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Contract design (planner) — lock resources, routes, request/response shapes, status codes → gated on `notes/contract-design.md` (markdown-notes)\n2. Build the service (developer) — implement the server to the locked contract → gated on `src/server.js` (code-module)\n3. Write endpoint tests (developer) — test every route, status code, and error path → gated on `src/server.test.js` (code-with-tests)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "contract-design",
+  "triggers": [
+    "build a rest api",
+    "create an http api",
+    "crud endpoints",
+    "make a backend api",
+    "json api service"
+  ],
+  "steps": [
+    {
+      "id": "contract-design",
+      "name": "Contract design",
+      "description": "lock resources, routes, request/response shapes, status codes",
+      "prompt": "Design the API contract before any server code. Step 1: List the resources (nouns) the API exposes and the operations on each. Step 2: For every endpoint write the exact method + path (e.g. `GET /users/:id`, `POST /users`), with no base path/version prefix unless the source brief explicitly requires one, plus the request body/query shape, the success response shape and status code, and the error responses with their status codes (400 validation, 404 missing, 409 conflict, 401/403 auth). Step 3: Decide cross-cutting rules: content-type (`application/json`), pagination scheme for list endpoints, auth mechanism (or none), and the canonical error envelope (e.g. `{ error: { code, message } }`). Step 4: Write a numbered acceptance-criteria checklist of 5-9 concrete, testable items (e.g. 'POST /users with valid body returns 201 + the created resource with an id', 'GET on a missing id returns 404 with the error envelope', 'a malformed body returns 400, never 500'). Step 5: `write_task_note` the full contract table + the checklist, and write the same to the produces path. No implementation yet.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/contract-design.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/contract-design.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/contract-design.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "contract-design",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the service",
+      "description": "implement the server to the locked contract",
+      "prompt": "Implement the API server in a single runnable source file that satisfies the contract exactly. Step 1: Wire a minimal HTTP server/router (standard library or the project's framework) with one handler per endpoint from the contract. If using Node built-ins, use a normal top-level import such as `import http from \"node:http\"` or `import { createServer } from \"node:http\"`; do not hide standard-library imports behind dynamic `await import()` inside a synchronous factory. Step 2: Parse and VALIDATE every request body/param before acting; on invalid input return the 400 error envelope, never let it reach a 500. Step 3: Return the exact status codes and response shapes the contract specifies, with `Content-Type: application/json`; after writing any auth, validation, not-found, or success response, immediately `return` so the handler cannot write headers twice. Step 4: Implement the error envelope and a catch-all so unexpected errors return a clean 500 with the envelope, not a stack trace. Use an in-memory store if no DB was specified. On a loop-back, fix only the gaps the reviewer named — do not regress passing routes. `write_task_note` the file path and which criteria now pass.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/server.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/server.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/server.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/server.js"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "test"
+    },
+    {
+      "id": "test",
+      "name": "Write endpoint tests",
+      "description": "test every route, status code, and error path",
+      "prompt": "Write integration tests that exercise the running handler against every acceptance criterion. Step 1: For each endpoint, assert the happy path: correct status code AND response shape. Step 2: Assert each error path the contract names — 400 on bad input, 404 on missing, 401/403 on auth, 409 on conflict. Step 3: Assert the error envelope shape is consistent across all error responses. Step 4: Include at least one round-trip test (create then read back) to prove state is wired. For self-contained Node HTTP tests, start the server on `listen(0)`, read the assigned port from `server.address().port`, use built-in `fetch`, and close the server in `finally`. Make the tests runnable and self-contained. `write_task_note` the test file path and the pass/fail count.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/server.test.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/server.test.js",
+            "bytes": 200
+          },
+          {
+            "kind": "nodeRuns",
+            "file": "src/server.test.js"
+          }
+        ],
+        "onReject": "test",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Run the test suite and exercise the API. For EACH acceptance criterion: confirm the endpoint returns the documented status code and response shape, confirm every error path returns the correct code with the error envelope (and never a raw 500/stack trace on bad input), and confirm at least one create→read round-trip works. Write PASS/FAIL per criterion with the offending route on any FAIL.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-07-16T00:00:00Z"
+}

@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Job hunt pipeline</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2;
+        --card: #fff;
+        --ink: #2b2620;
+        --muted: #7a7166;
+        --accent: #b5651d;
+        --track: #ece5da;
+        --good: #4a7c59;
+        --warn: #a4552e;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1c1a17;
+          --card: #262320;
+          --ink: #efe9e0;
+          --muted: #a59a8c;
+          --accent: #e0894a;
+          --track: #3a352f;
+          --good: #7fae8d;
+          --warn: #d98a63;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+        padding: 1.5rem 1.25rem 2rem;
+      }
+      main { max-width: 960px; margin: 0 auto; }
+      h1 {
+        font-family: Georgia, 'PT Serif', 'Times New Roman', serif;
+        font-size: 1.4rem;
+        font-weight: 600;
+        margin: 0 0 0.15rem;
+      }
+      .sub { color: var(--muted); margin: 0 0 1.25rem; font-size: 0.9rem; }
+      .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.6rem; margin-bottom: 1.25rem; }
+      .tile {
+        background: var(--card);
+        border: 1px solid var(--track);
+        border-radius: 10px;
+        padding: 0.7rem 0.85rem;
+      }
+      .tile .n { font-size: 1.5rem; font-weight: 700; color: var(--accent); line-height: 1.2; }
+      .tile .l { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+      .board { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.6rem; margin-bottom: 1.25rem; }
+      .col { min-width: 0; }
+      .col h2 {
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--muted);
+        margin: 0 0 0.4rem;
+        font-weight: 600;
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+      }
+      .col h2 .count { color: var(--ink); }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--track);
+        border-radius: 6px;
+        padding: 0.5rem 0.6rem;
+        margin-bottom: 0.45rem;
+        font-size: 0.85rem;
+      }
+      .card .co { font-weight: 600; overflow-wrap: anywhere; }
+      .card .ro { color: var(--muted); font-size: 0.8rem; overflow-wrap: anywhere; }
+      .card .ft { margin-top: 0.3rem; display: flex; gap: 0.35rem; flex-wrap: wrap; align-items: center; color: var(--muted); font-size: 0.72rem; }
+      .chip {
+        display: inline-block;
+        border: 1px solid var(--track);
+        border-radius: 4px;
+        padding: 0 0.3rem;
+        font-size: 0.7rem;
+        line-height: 1.4;
+      }
+      .chip.stale { color: var(--warn); border-color: var(--warn); }
+      .chip.signed { color: var(--good); border-color: var(--good); }
+      .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+      .panel {
+        background: var(--card);
+        border: 1px solid var(--track);
+        border-radius: 10px;
+        padding: 0.85rem 1rem;
+      }
+      .panel h2 { font-size: 0.9rem; margin: 0 0 0.5rem; }
+      .panel ul { margin: 0; padding-left: 1.05rem; font-size: 0.85rem; }
+      .panel li { margin: 0.25rem 0; }
+      .panel .when { color: var(--muted); font-size: 0.78rem; }
+      .overdue { color: var(--warn); font-weight: 600; }
+      .empty { color: var(--muted); font-style: italic; }
+      .board-empty {
+        background: var(--card);
+        border: 1px dashed var(--track);
+        border-radius: 10px;
+        padding: 0.85rem 1.25rem;
+        text-align: center;
+        color: var(--muted);
+        margin-bottom: 0.75rem;
+      }
+      @media (max-width: 720px) {
+        .tiles { grid-template-columns: repeat(2, 1fr); }
+        .board { grid-template-columns: 1fr; }
+        .panels { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1 id="title">Job hunt</h1>
+      <p class="sub" id="sub">Loading the pipeline…</p>
+      <div class="tiles">
+        <div class="tile"><div class="n" id="t-play">—</div><div class="l">In play</div></div>
+        <div class="tile"><div class="n" id="t-interview">—</div><div class="l">Interviewing</div></div>
+        <div class="tile"><div class="n" id="t-offer">—</div><div class="l">Offers</div></div>
+        <div class="tile"><div class="n" id="t-follow">—</div><div class="l">Follow-ups this week</div></div>
+      </div>
+      <div class="board-empty" id="board-empty" hidden>
+        No applications yet — tell your Loopbaancoach about the first one.
+      </div>
+      <div class="board" id="board"></div>
+      <div class="panels">
+        <div class="panel">
+          <h2>This week</h2>
+          <ul id="week"><li class="empty">Nothing due — nice and current.</li></ul>
+        </div>
+        <div class="panel">
+          <h2>Recent activity</h2>
+          <ul id="activity"><li class="empty">No activity yet.</li></ul>
+        </div>
+      </div>
+    </main>
+    <script>
+      // Served at /preview/<capability>/type/<projectId>/dashboard/index.html.
+      // Pull capability + projectId from our own path, then read the pipeline
+      // and activity records from the workspace preview (same origin; both
+      // paths are declared in the manifest's pages.reads).
+      (function () {
+        var parts = location.pathname.split('/').filter(Boolean);
+        var i = parts.indexOf('type');
+        var capability = i > 0 ? parts[i - 1] : null;
+        var projectId = i >= 0 ? parts[i + 1] : null;
+        var WEEK = 7 * 24 * 60 * 60 * 1000;
+        var DAY = 24 * 60 * 60 * 1000;
+        var FALLBACK_STAGES = ['applied', 'screening', 'interview', 'offer', 'closed'];
+
+        function esc(s) {
+          return String(s).replace(/[&<>"]/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+          });
+        }
+        function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+        function daysAgo(iso) { return Math.floor((Date.now() - Date.parse(iso)) / DAY); }
+
+        function fetchJson(file) {
+          return fetch(
+            '/preview/' + encodeURIComponent(capability) + '/workspace/' + encodeURIComponent(projectId) + '/' + file,
+            { cache: 'no-store' },
+          ).then(function (r) {
+            if (!r.ok) throw new Error(file + ' unavailable');
+            return r.json();
+          });
+        }
+
+        function render(pipeline, act) {
+          var stages = Array.isArray(pipeline.stages) && pipeline.stages.length ? pipeline.stages : FALLBACK_STAGES;
+          var records = Array.isArray(pipeline.records) ? pipeline.records : [];
+          var events = Array.isArray(act.events) ? act.events : [];
+          var now = Date.now();
+
+          if (pipeline.role) document.getElementById('title').textContent = 'Job hunt: ' + pipeline.role;
+
+          var inPlay = records.filter(function (r) { return r.status !== 'closed'; });
+          var followUps = events.filter(function (e) {
+            var due = e.data && typeof e.data.dueAt === 'string' ? Date.parse(e.data.dueAt) : null;
+            return e.kind === 'follow-up' && due !== null && due <= now + WEEK;
+          });
+          document.getElementById('t-play').textContent = inPlay.length;
+          document.getElementById('t-interview').textContent = records.filter(function (r) { return r.status === 'interview'; }).length;
+          document.getElementById('t-offer').textContent = records.filter(function (r) { return r.status === 'offer'; }).length;
+          document.getElementById('t-follow').textContent = followUps.length;
+          document.getElementById('sub').textContent =
+            inPlay.length + ' in play · ' + followUps.length + ' follow-up' + (followUps.length === 1 ? '' : 's') + ' this week';
+
+          // The stage columns always render — even empty, the board teaches
+          // the shape of the campaign. The empty-state line sits above it.
+          document.getElementById('board-empty').hidden = records.length > 0;
+          var board = document.getElementById('board');
+          board.innerHTML = stages
+            .map(function (stage) {
+                var here = records.filter(function (r) { return r.status === stage; });
+                var cards = here
+                  .map(function (r) {
+                    var f = r.fields || {};
+                    var chips = '';
+                    var last = (r.history && r.history[r.history.length - 1]) || null;
+                    var inStage = last ? daysAgo(last.at) : null;
+                    if (stage !== 'closed' && daysAgo(r.updatedAt) > 7) {
+                      chips += '<span class="chip stale">stale</span>';
+                    }
+                    if (stage === 'closed' && f.outcome) {
+                      chips += '<span class="chip ' + (f.outcome === 'signed' ? 'signed' : '') + '">' + esc(f.outcome) + '</span>';
+                    }
+                    return (
+                      '<div class="card"><div class="co">' + esc(f.company || r.id) + '</div>' +
+                      (f.role ? '<div class="ro">' + esc(f.role) + '</div>' : '') +
+                      '<div class="ft">' + (inStage !== null ? '<span>' + inStage + 'd in stage</span>' : '') + chips + '</div></div>'
+                    );
+                  })
+                  .join('');
+                return (
+                  '<div class="col"><h2><span>' + esc(cap(stage)) + '</span><span class="count">' + here.length + '</span></h2>' + cards + '</div>'
+                );
+              })
+            .join('');
+
+          var week = document.getElementById('week');
+          var weekItems = [];
+          followUps
+            .slice()
+            .sort(function (a, b) { return Date.parse(a.data.dueAt) - Date.parse(b.data.dueAt); })
+            .forEach(function (e) {
+              var overdue = Date.parse(e.data.dueAt) < now;
+              weekItems.push(
+                '<li>' + (overdue ? '<span class="overdue">Overdue:</span> ' : '') + esc(e.note || 'Follow up') +
+                  ' <span class="when">(' + esc(String(e.data.dueAt).slice(0, 10)) + ')</span></li>',
+              );
+            });
+          inPlay.forEach(function (r) {
+            var quiet = daysAgo(r.updatedAt);
+            if (quiet > 7) {
+              weekItems.push(
+                '<li>' + esc((r.fields && r.fields.company) || r.id) + ' <span class="when">— no touch in ' + quiet + ' days</span></li>',
+              );
+            }
+          });
+          if (weekItems.length) week.innerHTML = weekItems.join('');
+
+          var activityList = document.getElementById('activity');
+          var recent = events.slice(-6).reverse();
+          if (recent.length) {
+            activityList.innerHTML = recent
+              .map(function (e) {
+                return '<li>' + esc(e.note || e.kind) + ' <span class="when">(' + esc(String(e.at).slice(0, 10)) + ')</span></li>';
+              })
+              .join('');
+          }
+        }
+
+        if (!capability || !projectId) {
+          document.getElementById('sub').textContent = 'Could not resolve this project.';
+          return;
+        }
+        Promise.all([
+          fetchJson('pipeline.json'),
+          fetchJson('activity.json').catch(function () { return { events: [] }; }),
+        ])
+          .then(function (results) { render(results[0], results[1]); })
+          .catch(function () {
+            document.getElementById('sub').textContent =
+              'No pipeline yet — tell your Loopbaancoach about your first application.';
+          });
+      })();
+    </script>
+  </body>
+</html>

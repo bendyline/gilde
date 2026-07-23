@@ -1,0 +1,155 @@
+{
+  "id": "item-intake",
+  "name": "Catalog an Item",
+  "description": "Take new arrivals from shoebox to catalog: identify each item from its photo notes, record it with condition and an honest value basis, and flag what needs a better photo or an expert eye — uncertain identification stays uncertain in the record instead of becoming confident fiction. Locks the record fields and the honesty rule FIRST, then catalogs each item, then reports confidence and follow-ups. Use for cataloging new items, collection intake, 'catalog these arrivals', and adding finds to the collection.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the intake (curator) — photo notes read, record fields and honesty rule locked → gated on `notes/scope.md` (markdown-notes)\n2. Catalog the arrivals (curator) — identify each item from its photos, record it honestly → gated on `notes/catalog.md` (markdown-notes)\n3. Write the intake report (copywriter) — items added, identification confidence, follow-up worklist → gated on `report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "catalog new items",
+    "catalog these arrivals",
+    "add items to the collection",
+    "collection intake",
+    "record the new finds"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the intake",
+      "description": "photo notes read, record fields and honesty rule locked",
+      "prompt": "Define the intake before recording anything. Step 1: read the photo intake notes waiting in inbox/ and the catalog store (collection.json) — the record fields in use and how existing items are shaped. Step 2: lock the record rules — every new item gets an id, name, category, condition, and its photo reference; a value estimate is welcome but only with its basis named; identification that is uncertain stays uncertain in the record ('pressing unverified'), never silently confident. Step 3: decide the follow-up buckets — needs a better photo, needs an expert eye, needs a document (receipt, certificate). Step 4: write an acceptance-criteria checklist ('every inbox item recorded exactly once', 'every record complete on the required fields', 'no identification stated above what the photos support', 'follow-ups named per item where earned'). Call write_task_note with the item count + rules + checklist and write notes/scope.md.",
+      "suggestedRole": "curator",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "catalog"
+    },
+    {
+      "id": "catalog",
+      "name": "Catalog the arrivals",
+      "description": "identify each item from its photos, record it honestly",
+      "prompt": "Catalog each arrival against the locked rules. Step 1: for every photo note in inbox/, identify the item as far as the evidence carries — name, category, and condition from what the photos actually show. Step 2: record each item through the project's collection capabilities with id, name, category, condition, and photo reference; add a value estimate only where you can name its basis. Step 3: where a detail is unreadable or the identification is uncertain, record the uncertainty on the item itself and put it in the right follow-up bucket. Step 4: keep a per-item log in notes/catalog.md — what you identified, how confident, and why. Call write_task_note with the recorded count and the follow-up count.",
+      "suggestedRole": "curator",
+      "advanceWhen": {
+        "file": "notes/catalog.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/catalog.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/catalog.md",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "recordSchema",
+            "file": "collection.json",
+            "fields": [
+              {
+                "name": "id",
+                "type": "nonempty"
+              },
+              {
+                "name": "name",
+                "type": "nonempty"
+              },
+              {
+                "name": "category",
+                "type": "nonempty"
+              },
+              {
+                "name": "condition",
+                "type": "nonempty"
+              },
+              {
+                "name": "photo",
+                "type": "nonempty"
+              }
+            ]
+          }
+        ],
+        "onReject": "catalog",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the intake report",
+      "description": "items added, identification confidence, follow-up worklist",
+      "prompt": "Write the intake report from the catalog log. Step 1: open with the headline — items added this intake, out of how many that came in. Step 2: give a line per item — what it is, its condition, and your identification confidence in plain words. Step 3: list the follow-ups by bucket — better photo, expert eye, missing document — so the next session has a worklist. Step 4: flag anything whose value or identification deserves a second opinion before it is trusted. Keep it precise and unhurried — gallery-grade records are built one honest intake at a time. Write report.md and call write_task_note with the added count and the follow-up count.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "report.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.md",
+            "bytes": 1000
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "report.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open report.md, notes/catalog.md, and the collection store and verify every criterion from notes/scope.md: every inbox item was recorded exactly once with the required fields complete, every identification stays within what the photo notes support (spot-check each against its inbox note), uncertainty is recorded on the item rather than smoothed over, and every earned follow-up is on the worklist. Write PASS/FAIL per criterion; on any failure, name the gap and loop back to catalog.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"catalog\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "catalog"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

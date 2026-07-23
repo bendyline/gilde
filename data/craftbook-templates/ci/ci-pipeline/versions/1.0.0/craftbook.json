@@ -1,0 +1,123 @@
+{
+  "id": "ci-pipeline",
+  "name": "CI Pipeline from Scratch",
+  "description": "Build a continuous-integration pipeline that installs, lints, tests, and builds on every push/PR — fast, cached, and gating merges on green. Scopes the pipeline contract FIRST — triggers, the job/stage graph, the matrix, caching strategy, and the gates — then writes the CI workflow YAML, then a reviewer validates the syntax, stage ordering, caching, and that it actually fails on a broken build. Covers CI triggers, job/stage dependencies, dependency caching, build matrices, status checks, fail-fast gating, and a valid workflow file.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the pipeline (planner) — lock triggers, stages, matrix, caching, gates → gated on `notes/scope.md` (markdown-notes)\n2. Write the workflow (developer) — implement the CI workflow YAML → gated on `.github/workflows/ci.yml` (yaml-spec)\n3. Verify the workflow (reviewer) — confirm syntax, ordering, caching, gating → gated on `notes/verify.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "set up ci",
+    "create a ci pipeline",
+    "github actions workflow",
+    "build a ci/cd pipeline",
+    "add automated testing on push"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the pipeline",
+      "description": "lock triggers, stages, matrix, caching, gates",
+      "prompt": "Scope the CI pipeline before writing YAML. Step 1: Decide the triggers (push to which branches, pull requests, manual). Step 2: Lay out the job/stage graph: install → lint → test → build, including which stages can run in parallel and which depend on others. Step 3: Decide the matrix (e.g. OS/runtime versions) and the caching strategy (cache the dependency store keyed on the lockfile) to keep runs fast. Step 4: Define the gates: which stages must pass to mark the check green and block a merge, and fail-fast behavior. Step 5: Write a numbered acceptance-criteria checklist of 5-9 items (e.g. 'the workflow triggers on push and PR', 'dependencies are cached', 'a failing test fails the pipeline and blocks merge', 'lint/test/build run in a sensible order'). `write_task_note` the scope + checklist and write the same to the produces path.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Write the workflow",
+      "description": "implement the CI workflow YAML",
+      "prompt": "Author the CI workflow file to the scope. Step 1: Set the triggers and the matrix exactly as scoped. Step 2: Define the jobs/stages with their dependency edges (test depends on install, etc.) and a checkout + runtime-setup step. Step 3: Add dependency caching keyed on the lockfile so repeat runs are fast. Step 4: Run lint, test, and build as gating steps so any non-zero exit fails the job. Step 5: Ensure the file is valid YAML for the target CI system and that the failing-test case would actually fail the run. Write the workflow to the produces path. On a loop-back, fix only the named gaps. `write_task_note` the file path and which criteria now pass.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": ".github/workflows/ci.yml",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": ".github/workflows/ci.yml",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": ".github/workflows/ci.yml",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify the workflow",
+      "description": "confirm syntax, ordering, caching, gating",
+      "prompt": "Verify the CI workflow. Step 1: Confirm the file parses as valid YAML and conforms to the target CI system's schema (lint it if a linter is available). Step 2: Confirm the triggers, matrix, and stage-dependency ordering match the scope. Step 3: Confirm caching is wired to the lockfile and the cache key is sensible. Step 4: Trace the gating logic and confirm a failing lint/test/build step would fail the run and block a merge (no `continue-on-error` masking failures). Write a verification note with the YAML-validity result and the gating trace to the produces path.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": ".github/workflows/ci.yml",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": ".github/workflows/ci.yml",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Validate the workflow file. For EACH acceptance criterion: confirm it is valid YAML for the target CI system, confirm triggers/matrix/stage-ordering match the scope, confirm dependency caching is wired correctly, and confirm a failing test would fail the pipeline and block merge (nothing masks failures). Write PASS/FAIL per criterion.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

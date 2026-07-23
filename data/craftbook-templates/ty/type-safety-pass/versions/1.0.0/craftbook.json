@@ -1,0 +1,139 @@
+{
+  "id": "type-safety-pass",
+  "name": "Type-Safety Pass",
+  "description": "Tighten the types of a module — eliminate `any`/implicit-any, add precise annotations, narrow unions, and make illegal states unrepresentable — without changing runtime behavior. Audits FIRST to inventory every loose type, unsafe cast, and missing annotation, then replaces them with precise types, then a reviewer confirms the type-checker is clean under strict settings and behavior is unchanged. Covers killing `any`, strict null checks, discriminated unions, generics, type narrowing, removing unsafe casts, and compile-clean-under-strict verification.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Audit the types (developer) — inventory every any, cast, and missing annotation → gated on `notes/audit.md` (markdown-notes)\n2. Fix the types (developer) — replace loose types with precise ones → gated on `src/typed.ts` (code-module)\n3. Verify type safety (reviewer) — confirm strict-clean and behavior unchanged → gated on `notes/verify.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "audit",
+  "triggers": [
+    "tighten the types",
+    "kill any types",
+    "add type annotations",
+    "make this type-safe",
+    "fix type errors"
+  ],
+  "steps": [
+    {
+      "id": "audit",
+      "name": "Audit the types",
+      "description": "inventory every any, cast, and missing annotation",
+      "prompt": "Inventory the type weaknesses before fixing them. Step 1: Search the module for every `any` (explicit and implicit), every unsafe cast (`as`, `!` non-null assertions), and every untyped parameter/return. Step 2: For each, note what the CORRECT type should be (look at the values that actually flow through). Step 3: Identify spots where a union should be narrowed or a discriminated union / generic would make illegal states unrepresentable. Step 4: Note the strict compiler settings to enable (e.g. strict, noImplicitAny, strictNullChecks). Step 5: Write a numbered acceptance-criteria checklist of 5-9 items (e.g. 'no explicit or implicit any remains', 'no unsafe casts without justification', 'the type-checker passes under strict', 'runtime behavior is unchanged'). `write_task_note` the inventory + checklist and write the same to the produces path.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "notes/audit.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/audit.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/audit.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "audit",
+        "maxAttempts": 3
+      },
+      "next": "fix"
+    },
+    {
+      "id": "fix",
+      "name": "Fix the types",
+      "description": "replace loose types with precise ones",
+      "prompt": "Apply precise types from the audit. Step 1: Annotate every parameter and return; replace each `any` with the real type the values demand. Step 2: Remove unsafe casts and non-null assertions by narrowing properly (type guards, discriminated unions) instead of asserting. Step 3: Where it helps, introduce generics or union types so illegal states cannot be constructed. Step 4: Enable the strict compiler settings and resolve every resulting error — do NOT silence them with `any` or `@ts-ignore`. Step 5: Confirm runtime behavior is unchanged (this is a types-only pass). Write the typed source to the produces path. On a loop-back, address only the remaining flagged spots. `write_task_note` the count of `any`s removed and which criteria now pass.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/typed.ts",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/typed.ts",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/typed.ts",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/typed.ts"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/typed.ts"
+          }
+        ],
+        "onReject": "fix",
+        "maxAttempts": 3
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify type safety",
+      "description": "confirm strict-clean and behavior unchanged",
+      "prompt": "Verify the types are genuinely tighter and nothing was swept under the rug. Step 1: Run the type-checker under the strict settings and confirm zero errors. Step 2: Search for any remaining `any`, `as`, `!`, or `@ts-ignore`/`@ts-expect-error` and confirm each remaining one is justified (or gone). Step 3: Confirm the runtime behavior is unchanged (tests still green, no logic edits disguised as type edits). Step 4: Spot-check that the new types are precise, not just `unknown`-everywhere busywork. Write a verification note with the type-check result and the residual-escape-hatch count to the produces path.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/typed.ts",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/typed.ts",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/typed.ts"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/typed.ts"
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Run the type-checker under strict settings and the test suite. For EACH acceptance criterion: confirm no explicit/implicit `any` remains, confirm unsafe casts and ignore-comments are gone or justified, confirm the type-checker is clean under strict, and confirm runtime behavior is unchanged. Write PASS/FAIL per criterion; replacing one `any` with another or using `@ts-ignore` to pass is a FAIL.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"fix\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "fix"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

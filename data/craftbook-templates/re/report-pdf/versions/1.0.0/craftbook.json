@@ -1,0 +1,128 @@
+{
+  "id": "report-pdf",
+  "name": "Formatted Report",
+  "description": "Produce a polished, print-ready formatted report — quarterly business review, research findings, status report, or analysis writeup — rendered as a clean paginated HTML document that prints cleanly to PDF. Locks the section outline and acceptance criteria FIRST, then a print-aware visual template (cover, headers/footers, page breaks, figure/table styling), then builds the full report so structure, numbered headings, figures, and an executive summary all land in the right order. Use when someone needs a shareable report or PDF rather than loose notes.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Outline the report (planner) — section structure, audience, and acceptance criteria → gated on `notes/outline.md` (markdown-notes)\n2. Design the template (designer) — print-aware visual template: cover, headers, page breaks, figures → gated on `notes/design.md` (markdown-notes)\n3. Build the report (developer) — implement report.html with print CSS, sections, figures, and summary → gated on `report.html` (html-page)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "outline",
+  "triggers": [
+    "formatted report",
+    "make a pdf report",
+    "write up a report",
+    "quarterly report",
+    "printable document",
+    "report with cover page"
+  ],
+  "steps": [
+    {
+      "id": "outline",
+      "name": "Outline the report",
+      "description": "section structure, audience, and acceptance criteria",
+      "prompt": "Plan the report before writing or styling. Step 1: name the audience and the single decision/takeaway the report must support. Step 2: lay out the section structure in order — cover (title, author, date), executive summary, then the body sections, then conclusion/recommendations, then any appendix. Step 3: for each body section write a one-line purpose and the 2-4 points it must cover; mark which sections need a figure or table. Step 4: decide on numbered headings (1, 1.1, 2 ...) and whether a table of contents is needed. Step 5: write an acceptance-criteria checklist ('has a cover with title/author/date', 'executive summary is <= half a page and stands alone', 'sections are numbered and in the outlined order', 'every figure/table has a caption and is referenced in prose', 'closes with explicit recommendations', 'prints with clean page breaks, no orphaned headings'). Write the outline + checklist via write_task_note AND to notes/outline.md. No styling or body prose yet.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/outline.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/outline.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/outline.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "outline",
+        "maxAttempts": 3
+      },
+      "next": "design"
+    },
+    {
+      "id": "design",
+      "name": "Design the template",
+      "description": "print-aware visual template: cover, headers, page breaks, figures",
+      "prompt": "Design ONE print-aware template the report will apply throughout. Step 1: define page geometry for print — A4/Letter via an @page CSS rule, margins, and running header/footer (document title + page number). Step 2: specify the cover layout (large title, subtitle, author, date, optional rule). Step 3: define the type scale (H1/H2/H3, body, caption) and a restrained palette with exact hex; body must be high-contrast and readable in print. Step 4: define figure and table styling (bordered/striped tables, captioned figures, consistent width) and a page-break policy (page-break-before on H1 sections, break-inside:avoid on figures/tables so they are never split). Step 5: write a visual-criteria checklist ('cover occupies its own page', 'each top-level section starts on a new page', 'tables/figures never break across pages', 'header/footer with page number on every body page'). Write the template spec + checklist via write_task_note AND to notes/design.md. No body content yet.",
+      "suggestedRole": "designer",
+      "advanceWhen": {
+        "file": "notes/design.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/design.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/design.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "design",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the report",
+      "description": "implement report.html with print CSS, sections, figures, and summary",
+      "prompt": "Build the report as a single self-contained report.html (inline CSS including the @page and print rules, no external assets). Step 1: implement the cover page exactly per the template (title, author, date) on its own page. Step 2: write the executive summary so it stands alone in half a page or less. Step 3: write each body section in the outlined order with numbered headings, page-break-before on each top-level section, real prose (not bullet stubs) covering the points from the outline. Step 4: include the marked figures/tables using the template's figure/table styling, each with a caption and an in-prose reference, with break-inside:avoid so they never split. Step 5: add running header/footer with page numbers and, if the outline called for it, a table of contents. Step 6: end with explicit recommendations/conclusion. On a loop-back, fix ONLY the named gaps without regressing passing sections. Write the report path + section count via write_task_note.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "report.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.html",
+            "bytes": 800
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "report.html"
+            }
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "QA the report against the locked criteria. Step 1: open/render report.html (or trace source) and, if a print-preview is available, check the paginated layout. Step 2: confirm the cover is on its own page with title/author/date and each top-level section begins on a new page. Step 3: check EACH acceptance criterion: executive summary stands alone and is <= half a page, headings are numbered and in outlined order, every figure/table has a caption and is referenced in prose and does not split across pages, header/footer with page number present, report closes with explicit recommendations. Step 4: confirm the body is real prose covering the outlined points, not placeholder stubs. Write PASS/FAIL for every criterion with the offending section noted on any FAIL.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

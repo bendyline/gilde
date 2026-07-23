@@ -1,0 +1,45 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: tools/package-lock.json
+      - name: Install validation tooling
+        run: npm --prefix tools ci
+      - name: Structural + semantic validation
+        run: node tools/validate.mjs --github
+      - name: Index freshness
+        run: node tools/build-index.mjs --check
+      - name: Chat-model manifest lint
+        run: node tools/lint-models.mjs
+      # Advisory only for now: ~5k hand-authored manifests carry Biome
+      # formatting (line-width-driven inline arrays) that the zero-dep
+      # canonical form doesn't match. Becomes blocking after a deliberate
+      # one-time `node tools/format.mjs --write` normalization pass.
+      - name: JSON formatting (advisory)
+        run: node tools/format.mjs || true
+      # Future: deep gezel-semantic validation once the gezel CLI is
+      # published. The ajv layer above stays as the dependency-light
+      # floor so this repo's CI never hard-depends on gezel releases.
+      # - name: Gezel CLI validation
+      #   run: npx --yes @bendyline/gezel-cli@<pinned> catalog validate data

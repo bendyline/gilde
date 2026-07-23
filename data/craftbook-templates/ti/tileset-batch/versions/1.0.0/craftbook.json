@@ -1,0 +1,147 @@
+{
+  "id": "tileset-batch",
+  "name": "Tileset Batch",
+  "description": "Produce a style-locked batch of tiles and account for every one: named to the convention, sized to spec, generated against the library's style anchor, and appended to the manifest with tags — an asset library a game engine can trust, not a folder of maybes. Locks the tile list and the naming convention FIRST, then generates the batch in the house style, then writes the manifest records and the batch summary. Use for tile batches, 'we need forest tiles', growing a game's asset library, style-consistent tilesets, and keeping the asset manifest honest.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Lock the batch (assetsmid) — tile list, naming convention, size spec, style anchor → gated on `notes/scope.md` (markdown-notes)\n2. Generate the tiles (image-generator) — the batch, named to the convention, in the house style → gated on `assets/tiles` (image-set)\n3. Write the manifest records (data-analyst) — one record per new tile, appended, ids unique\n4. Write the batch summary (copywriter) — what was made, how it is named, what the library now holds → gated on `report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "make a batch of tiles",
+    "we need more tiles for the game",
+    "tileset for the platformer",
+    "generate the tile batch",
+    "grow the asset library"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Lock the batch",
+      "description": "tile list, naming convention, size spec, style anchor",
+      "prompt": "Lock the batch before generating a tile. Step 1: read assets/manifest.json from the workspace — the library's existing records — and the style notes in assets/ (the palette, tile size, outline and shading rules that make the library one family). Step 2: write the tile list from the ask — every tile the batch needs, including the unglamorous edges and corners that make a set usable, at least eight. Step 3: lock the conventions — file names as assets/tiles/tile-<terrain>-<variant>.png, the size spec from the style notes, and the tags each tile will carry. Step 4: write an acceptance-criteria checklist ('every listed tile generated at spec size in the house style', 'every file named to the convention', 'every new tile appended to the manifest with id, file, size, and tags', 'the manifest stays valid JSON and lists only files that exist'). Call write_task_note with the tile list + checklist and write notes/scope.md.",
+      "suggestedRole": "assetsmid",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "generate"
+    },
+    {
+      "id": "generate",
+      "name": "Generate the tiles",
+      "description": "the batch, named to the convention, in the house style",
+      "prompt": "Generate the batch into assets/tiles/. Step 1: work the locked tile list one tile at a time through the project's image capabilities — every prompt built from the style anchor (palette, outline, shading) so the batch reads as one hand's work, saved under the locked naming convention. Step 2: keep the set complete — the edge and corner variants from the list matter more to a level builder than another hero tile. Step 3: after generating, re-list assets/tiles/ against the tile list and fill any gap before completing. Call write_task_note with the count generated and the names.",
+      "suggestedRole": "image-generator",
+      "advanceWhen": {
+        "file": "assets/tiles",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "fileCount",
+            "ext": [
+              "png",
+              "jpg",
+              "jpeg",
+              "svg",
+              "webp"
+            ],
+            "min": 3,
+            "dir": "assets/tiles"
+          },
+          {
+            "kind": "fileCount",
+            "ext": [
+              "png"
+            ],
+            "min": 8,
+            "dir": "assets/tiles"
+          }
+        ],
+        "onReject": "generate",
+        "maxAttempts": 3
+      },
+      "next": "manifest"
+    },
+    {
+      "id": "manifest",
+      "name": "Write the manifest records",
+      "description": "one record per new tile, appended, ids unique",
+      "prompt": "Account for every tile in assets/manifest.json. Step 1: append one record per new tile to the top-level JSON array, keeping the existing records untouched. Step 2: each record carries exactly these fields: \"id\" (unique, e.g. tile-grass-01), \"file\" (the workspace-relative path, e.g. assets/tiles/tile-grass-01.png), \"size\" (the pixel spec, e.g. 32x32), and \"tags\" (an array like [\"forest\", \"ground\"]) — plus \"seed\" and \"prompt\" where the generation gave you them, so a tile can be re-made in-style later. Step 3: re-read the whole file after writing — it must parse as JSON, ids must stay unique, and every recorded file must exist on disk; a manifest that lists a tile that is not there is worse than no manifest. Call write_task_note with the record count before and after.",
+      "suggestedRole": "data-analyst",
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the batch summary",
+      "description": "what was made, how it is named, what the library now holds",
+      "prompt": "Write the batch summary at report.md. Step 1: the headline — how many tiles this batch added and what terrain they cover, in one plain sentence. Step 2: the batch list — each tile's id, file, and tags, one line each. Step 3: note the conventions used (naming, size, style anchor) so the next batch starts from the same page, and name anything from the ask that was skipped and why. Step 4: close with the library's new total. Keep it under a page. Write report.md and call write_task_note with the report path and the new total.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "report.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.md",
+            "bytes": 600
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "report.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open assets/manifest.json, the assets/tiles/ listing, notes/scope.md, and report.md and verify every criterion: every tile on the locked list exists at the convention name — the missing corner variant is the classic failure; every new tile has a manifest record with id, file, size, and tags, ids unique, and every recorded path resolves to a real file — check both directions; the batch reads as one style family against the anchor notes; and the report's counts match the manifest. Write PASS/FAIL per criterion; on any failure, name the tile or record and loop back to generate.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"generate\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "generate"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

@@ -1,0 +1,129 @@
+{
+  "id": "photo-cull",
+  "name": "Photo Cull & Rank",
+  "description": "Rank and cull a set of photos by objective quality — sharpness/focus, exposure, composition, eyes-open/expression for people, and duplicate-of-a-better-shot — to surface the keepers and justify the rejects. Lock the scoring CRITERIA and weights FIRST (what 'good' means for this set: a portrait shoot weights expression, a landscape weights sharpness and horizon) because an unstated rubric makes the cull arbitrary; then score every photo and produce a ranked report with keep/reject and reasons. Covers photo culling, image quality ranking, best-shot selection, photo curation, and burst/best-of selection.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scoring criteria (planner) — lock the quality rubric, weights, and keep threshold → gated on `notes/criteria.md` (markdown-notes)\n2. Score the photos (developer) — evaluate every photo against the rubric → gated on `notes/score.md` (markdown-notes)\n3. Write the cull report (developer) — produce the ranked keep/reject report → gated on `report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "criteria",
+  "triggers": [
+    "cull my photos",
+    "rank photos by quality",
+    "pick the best shots",
+    "curate a photo set",
+    "find the keepers"
+  ],
+  "steps": [
+    {
+      "id": "criteria",
+      "name": "Scoring criteria",
+      "description": "lock the quality rubric, weights, and keep threshold",
+      "prompt": "1) Understand the set (portraits, landscapes, product, event) and list the photos. 2) Lock the scoring RUBRIC: the dimensions (sharpness/focus, exposure, composition/framing, subject expression & eyes-open for people, noise) and a WEIGHT per dimension appropriate to the set. 3) Define the score scale (e.g. 1-5 per dimension) and the KEEP threshold (and how many keepers are wanted, if capped). 4) Decide near-duplicate handling: among similar shots, keep only the best-scoring one. 5) Write an acceptance-criteria checklist: 'every photo gets a score on every dimension', 'weights are stated and applied', 'keep/reject follows the threshold consistently', 'each reject has a concrete reason', 'among near-dupes only the best is kept'. 6) Record rubric + weights + checklist via write_task_note AND to notes/criteria.md.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/criteria.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/criteria.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/criteria.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "criteria",
+        "maxAttempts": 3
+      },
+      "next": "score"
+    },
+    {
+      "id": "score",
+      "name": "Score the photos",
+      "description": "evaluate every photo against the rubric",
+      "prompt": "1) Read criteria.md. 2) For each photo, actually LOOK at it via the vision capability (and use a sharpness/blur metric if a tool is available) and assign a 1-5 on each rubric dimension with a one-line justification grounded in what's visible (e.g. 'soft focus on eyes', 'blown highlights sky'). 3) Compute the weighted total per photo. 4) Group near-duplicates and mark the best of each group. 5) Apply the keep threshold (respecting any keeper cap) to set keep/reject. 6) Stage a table of filename → per-dimension scores → total → keep/reject → reason. write_task_note the keep/reject counts. Good looks like: defensible scores a photographer would mostly agree with.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "notes/score.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/score.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/score.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "score",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the cull report",
+      "description": "produce the ranked keep/reject report",
+      "prompt": "1) Read the scored table. 2) Write report.md: a summary (N photos, K keepers, the rubric + weights used), a ranked KEEPERS section (best first, with their scores and a one-line strength), and a REJECTS section grouped by reason (out of focus, underexposed, weaker duplicate, etc.) each with the photo and the concrete reason. 3) Call out near-duplicate groups, showing the kept shot vs the rejected siblings. 4) Make the cull reversible — list filenames so a human can act on it. 5) On a loop-back, fix only the named issues (a misjudged score, an inconsistent threshold). 6) write_task_note the report path. The gated deliverable is report.md.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "report.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.md",
+            "bytes": 1500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "report.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "1) Open report.md and confirm it states the rubric + weights and a keeper/reject summary (PASS/FAIL). 2) Verify every photo is scored on every dimension and keep/reject follows the threshold consistently (PASS/FAIL). 3) Open 3-4 photos and sanity-check their scores against what you see — are obviously soft/blown shots rejected and crisp ones kept (PASS/FAIL)? 4) Confirm each reject has a concrete reason and near-dupe groups keep only the best. 5) Write PASS/FAIL per criterion. Misjudged or inconsistent culls → loop back to report (or score if the scoring is wrong).\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "report"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

@@ -1,0 +1,122 @@
+{
+  "id": "audio-highlight-reel",
+  "name": "Audio Highlight Reel",
+  "description": "Cut a long recording (podcast, interview, talk, stream) down to a short highlight reel of its best moments, delivered as a single stitched audio clip plus a cue sheet of the segments used. Locks selection criteria and target length FIRST, selects the strongest timestamped segments against those criteria, then assembles them into one clean reel with smooth joins. Defining 'what makes a highlight' and the runtime budget before cutting is what keeps the reel tight and on-theme instead of a random montage.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Selection criteria (planner) — what counts as a highlight, target length, ordering → gated on `notes/criteria.md` (markdown-notes)\n2. Select segments (developer) — score candidates, pick segments with in/out timestamps → gated on `notes/segments.json` (json)\n3. Assemble the reel (developer) — cut + stitch segments into one audio file + cue sheet → gated on `reel.mp3` (audio-file)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "criteria",
+  "triggers": [
+    "highlight reel from audio",
+    "cut the best moments",
+    "make a teaser clip",
+    "shorten this recording to highlights",
+    "audio sizzle reel"
+  ],
+  "steps": [
+    {
+      "id": "criteria",
+      "name": "Selection criteria",
+      "description": "what counts as a highlight, target length, ordering",
+      "prompt": "Decide what to keep BEFORE cutting. Step 1: record the source (path, duration, transcript if available). Step 2: define the target reel length (e.g. 90-120s) and segment count/length bounds (e.g. 4-8 clips, each 8-25s). Step 3: write concrete selection criteria — what makes a moment a highlight here (a strong quote, a laugh, a key insight, an emotional beat, a clear answer) — so selection is judgeable, not vibes. Step 4: decide ordering (chronological, or hook-first) and whether to add short fades/gaps between clips. Step 5: decide intro/outro handling. Write an acceptance-criteria checklist (reel within ±15% of target length, N segments within bounds, each chosen segment matches a stated criterion, joins are clean with no mid-word cuts, a cue sheet lists each segment's source in/out) and decisions to `notes/criteria.md` via write_task_note AND the produces path.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/criteria.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/criteria.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/criteria.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "criteria",
+        "maxAttempts": 3
+      },
+      "next": "select"
+    },
+    {
+      "id": "select",
+      "name": "Select segments",
+      "description": "score candidates, pick segments with in/out timestamps",
+      "prompt": "Choose the segments against the criteria. Step 1: scan the transcript/audio and identify candidate moments, each with a precise in/out timestamp and the criterion it satisfies. Step 2: score/rank candidates and pick the set that fits the target length and segment bounds, trimming each in/out to natural pauses so no clip cuts a word in half. Step 3: order them per the scope (hook-first or chronological). Step 4: write the chosen segments to `notes/segments.json` (each: source in, out, criterion, one-line why) via write_task_note AND the produces path. Do not exceed the segment count or length budget. On a loop-back, swap only the flagged segments.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "notes/segments.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/segments.json",
+            "bytes": 2
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "notes/segments.json"
+            }
+          }
+        ],
+        "onReject": "select",
+        "maxAttempts": 3
+      },
+      "next": "assemble"
+    },
+    {
+      "id": "assemble",
+      "name": "Assemble the reel",
+      "description": "cut + stitch segments into one audio file + cue sheet",
+      "prompt": "Build the reel from the selected segments. Step 1: cut each segment from the source at its in/out, apply short fade-in/out at joins (and gaps if scoped) so transitions are smooth. Step 2: concatenate in the chosen order into one audio file `reel.mp3` (or the source format). Step 3: normalize loudness so clips don't jump in volume. Step 4: write a human-readable cue sheet `reel-cues.md` listing each segment: reel timecode, source in/out, and the highlight reason. Step 5: confirm the reel's total duration is within the target window. write_task_note the reel path, the cue sheet path, and the final duration. On a loop-back, re-cut only the flagged joins/segments.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "reel.mp3",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "reel.mp3",
+            "bytes": 1000
+          }
+        ],
+        "onReject": "assemble",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Listen to and measure the reel. Step 1: confirm `reel.mp3` exists, is non-silent, and its duration is within ±15% of the target (PASS/FAIL). Step 2: confirm the cue sheet lists each segment with reel timecode + source in/out + reason, and the count is within bounds. Step 3: sample-listen (if an audio capability exists) for clean joins — no mid-word cuts, no volume jumps. Step 4: confirm each kept segment maps to a stated highlight criterion. Step 5: confirm ordering matches the scope. Write PASS/FAIL per criterion.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"assemble\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "assemble"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

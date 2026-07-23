@@ -1,0 +1,97 @@
+{
+  "id": "config-scaffold",
+  "name": "Project Config Scaffold",
+  "description": "Bootstrap a project's configuration — the tooling, linter, formatter, tsconfig/compiler, scripts, and ignore files — into a coherent, conflict-free baseline that actually works together. Scopes the config surface FIRST — every tool, its config file, the settings, and how they must agree (formatter vs linter, strict compiler) — then writes the config files and scripts, then verifies the toolchain runs clean with no conflicts. Covers linter/formatter config, compiler/tsconfig, package scripts, editorconfig, gitignore, and ensuring tools do not fight each other.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the config (planner) — lock the tools, files, settings, and agreements → gated on `notes/scope.md` (markdown-notes)\n2. Write the config (developer) — create the config files + scripts to the plan → gated on `package.json` (json)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "scaffold project config",
+    "set up linting and formatting",
+    "bootstrap a project",
+    "create config files",
+    "tooling setup"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the config",
+      "description": "lock the tools, files, settings, and agreements",
+      "prompt": "Scope the configuration before writing files. Step 1: List the tools the project needs (formatter, linter, compiler/type-checker, test runner, etc.) and the config file each one reads. Step 2: For each, decide the key settings (e.g. strict compiler, line width, rule set). Step 3: Crucially, decide how the tools must AGREE so they do not fight — e.g. the linter defers formatting to the formatter, the compiler target matches the runtime. Step 4: Decide the package scripts (lint, format, typecheck, test, build) and the ignore files (.gitignore, tool ignores, .editorconfig). Step 5: Write a numbered acceptance-criteria checklist of 5-9 items (e.g. 'every script runs without error', 'formatter and linter do not conflict', 'the type-checker passes on the scaffold', 'ignore files exclude build output and deps'). `write_task_note` the config plan + checklist and write the same to the produces path.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Write the config",
+      "description": "create the config files + scripts to the plan",
+      "prompt": "Create the configuration files to the plan. Step 1: Write each tool's config file with the scoped settings, and the package manifest's scripts (lint/format/typecheck/test/build) wired to real commands. Step 2: Configure the linter and formatter to defer to each other so they do not conflict, and align the compiler target with the runtime. Step 3: Write the ignore files (.gitignore, tool-specific ignores, .editorconfig) excluding deps and build output. Step 4: Run each script (lint, format --check, typecheck) on the scaffold and confirm they pass without errors or conflicting complaints. Write the primary manifest/config to the produces path. On a loop-back, fix only the named conflict/gap. `write_task_note` the file paths and which criteria now pass.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "package.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "package.json",
+            "bytes": 2
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "package.json"
+            }
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Run each configured script on the scaffold. For EACH acceptance criterion: confirm lint, format-check, typecheck, and build/test scripts run without error, confirm the formatter and linter do NOT fight each other (no rule both formats and lints in conflict), confirm the type-checker passes, and confirm ignore files exclude deps/build output. Write PASS/FAIL per criterion; a formatter-vs-linter conflict is a FAIL.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

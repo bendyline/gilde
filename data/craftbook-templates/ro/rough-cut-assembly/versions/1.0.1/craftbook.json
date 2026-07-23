@@ -1,0 +1,152 @@
+{
+  "id": "rough-cut-assembly",
+  "name": "Rough Cut Assembly",
+  "description": "Execute the cut list and prove it ran: every clip verified against the media index before anything renders, the assembly driven through the project's media pipeline with a run log, and the result checked against the expected duration — an assembly you can trust unwatched. Locks the pre-flight checks FIRST (clips exist, in and out points sit inside their durations, failure handling decided), then runs the assembly, then verifies and reports. Use for rough cuts, assembling a cutlist, executing an edit pass, render runs, and 'put the cut together'.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Pre-flight the cut list (werkmeester) — cutlist validated against the media index, run plan locked → gated on `notes/scope.md` (markdown-notes)\n2. Run the assembly (developer) — the cutlist executed through the media pipeline, log on disk → gated on `renders/assembly-log.json` (json)\n3. Verify and report (reviewer) — expected versus actual, segment count, the honest run report → gated on `report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "assemble the rough cut",
+    "run the cutlist",
+    "put the cut together",
+    "render the rough cut",
+    "execute the edit"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Pre-flight the cut list",
+      "description": "cutlist validated against the media index, run plan locked",
+      "prompt": "Verify before you render — an assembly that runs on a bad cut list wastes the whole pass. Step 1: read cutlist.json and media/index.json from the workspace and check every record: the clip id exists in the index, the in point is before the out point, and both sit inside that clip's duration. List every violation precisely; if any exist, stop and report them instead of assembling around them. Step 2: compute the expected output — how many segments, and the total duration the kept material should add up to — so the verify phase has a number to check against. Step 3: lock the run plan — the assembly runs through the project's pipeline script via the run_script tool, it writes its run log to renders/assembly-log.json with a status field, and on any failure the run stops and the error is reported rather than papered over. Step 4: write an acceptance-criteria checklist ('every cutlist record validated before the run', 'the render exists at renders/rough-cut.mp4', 'the run log reports status ok', 'actual duration matches the expected duration', 'the report states what ran and what to spot-check'). Call write_task_note with the segment count + expected duration + checklist and write notes/scope.md.",
+      "suggestedRole": "werkmeester",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "assemble"
+    },
+    {
+      "id": "assemble",
+      "name": "Run the assembly",
+      "description": "the cutlist executed through the media pipeline, log on disk",
+      "prompt": "Execute the validated cut list. Step 1: the assembly pipeline is a project script — call list_scripts to find it, then run it with run_script({ name: \"<script name>\" }); never run it with run_nodejs_script and never reimplement it. It reads cutlist.json and media/index.json, refuses unknown clips and out-of-range timecodes, and writes the render to renders/rough-cut.mp4 plus its run log to renders/assembly-log.json. Step 2: if run_script reports an error, read the error text, fix exactly what it names (a cutlist record, a path), and run it again — never write renders/assembly-log.json yourself; the log is evidence the pipeline ran, not decoration. Step 3: once the run succeeds, read renders/assembly-log.json and confirm it reports status ok with the clips it assembled and the duration it computed. Call write_task_note with the run outcome, the segment count, and the computed duration.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "renders/assembly-log.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "renders/assembly-log.json",
+            "bytes": 2
+          },
+          {
+            "kind": "minBytes",
+            "file": "renders/rough-cut.mp4",
+            "bytes": 200
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "renders/assembly-log.json",
+            "path": "status",
+            "value": "ok",
+            "label": "the assembly log reports status ok"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "renders/assembly-log.json"
+            }
+          }
+        ],
+        "onReject": "assemble",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Verify and report",
+      "description": "expected versus actual, segment count, the honest run report",
+      "prompt": "Check the run against the numbers locked in scope, then write the run report. Step 1: compare the log's computed duration against the expected duration from notes/scope.md and the log's clip list against the cut list — every segment accounted for, nothing extra, nothing dropped. Step 2: write report.md — what was assembled (segments, total duration, source clip count), the expected-versus-actual duration comparison with the delta stated plainly, any warnings the log carried, and the two or three moments a human should spot-check first when they watch the cut. Step 3: if the numbers do not match, say so plainly and name the likely cause — a report that hides a mismatch defeats the whole ritual. Call write_task_note with the report path and the expected-versus-actual result.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "report.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.md",
+            "bytes": 800
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "duration",
+            "flags": "i",
+            "label": "the report compares expected versus actual duration"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "report.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open report.md, renders/assembly-log.json, and cutlist.json and verify every criterion from notes/scope.md: the render exists at renders/rough-cut.mp4, the log reports status ok, every clip in the log's list appears in the cut list (and nothing extra), the expected-versus-actual duration comparison is stated with real numbers from the log, and the report names what to spot-check. Write PASS/FAIL per criterion; on any failure, name the gap and loop back to report — or to assemble if the run itself is the problem.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "report"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-07-22T00:00:00Z"
+}

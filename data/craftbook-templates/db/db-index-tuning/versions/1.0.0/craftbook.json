@@ -1,0 +1,139 @@
+{
+  "id": "db-index-tuning",
+  "name": "Diagnose + Add Database Indexes",
+  "description": "Diagnose slow database queries and add the right indexes — driven by the query plan, not by hunches — then prove the speedup without harming writes. Analyzes FIRST with EXPLAIN/query plans to find the actual full scans and missing indexes, then adds the targeted indexes (right columns, right order, covering where it helps), then a reviewer confirms the plans now use the index and queries are faster. Covers EXPLAIN/query plans, full-table-scan detection, composite index column order, covering indexes, selectivity, and the write-amplification tradeoff.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Analyze the queries (data-analyst) — use query plans to find scans and missing indexes → gated on `notes/analyze.md` (markdown-notes)\n2. Add the indexes (developer) — write the index migration to the analysis → gated on `migrations/add_indexes.sql` (code-module)\n3. Verify the plans (reviewer) — confirm plans use the index and queries are faster → gated on `notes/verify.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "analyze",
+  "triggers": [
+    "add database indexes",
+    "speed up slow queries",
+    "tune database performance",
+    "fix a slow query",
+    "explain plan and index"
+  ],
+  "steps": [
+    {
+      "id": "analyze",
+      "name": "Analyze the queries",
+      "description": "use query plans to find scans and missing indexes",
+      "prompt": "Diagnose with data, not hunches — index by the query plan. Step 1: Identify the slow queries and run EXPLAIN/EXPLAIN ANALYZE on each to capture the actual plan, noting full table scans, expensive sorts, and the rows examined vs returned. Step 2: For each problem query, determine the columns in WHERE/JOIN/ORDER BY that drive the scan and would benefit from an index, and the right COLUMN ORDER for a composite (most selective / equality before range). Step 3: Consider covering indexes where a query reads only a few columns. Step 4: Note the WRITE cost tradeoff so you do not over-index. Step 5: Write a numbered acceptance-criteria checklist of 5-9 items (e.g. 'each target query's plan no longer does a full table scan', 'the added index columns/order match the query predicates', 'no redundant/duplicate index is added', 'write-heavy tables are not over-indexed'). `write_task_note` the plans + proposed indexes + checklist and write the same to the produces path.",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "notes/analyze.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/analyze.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/analyze.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "analyze",
+        "maxAttempts": 3
+      },
+      "next": "change"
+    },
+    {
+      "id": "change",
+      "name": "Add the indexes",
+      "description": "write the index migration to the analysis",
+      "prompt": "Write the index changes to the analysis. Step 1: Author the CREATE INDEX statements (as a migration) with the columns and ORDER the analysis specified — composite order matters. Step 2: Add covering/included columns only where the analysis justified them; avoid duplicating an existing index's prefix. Step 3: Use concurrent/online index creation if the database supports it to avoid locking, and include the down/rollback (DROP INDEX). Step 4: Keep the change minimal — only the indexes the plans demanded, not a scattershot of indexes that bloat writes. Write the migration to the produces path. On a loop-back, adjust only the index the reviewer flagged. `write_task_note` the migration path and which criteria now pass.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "migrations/add_indexes.sql",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "migrations/add_indexes.sql",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "migrations/add_indexes.sql",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "migrations/add_indexes.sql"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "migrations/add_indexes.sql"
+          }
+        ],
+        "onReject": "change",
+        "maxAttempts": 3
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify the plans",
+      "description": "confirm plans use the index and queries are faster",
+      "prompt": "Verify the indexes actually help. Step 1: Re-run EXPLAIN on each target query and confirm the plan now USES the new index (index scan/seek) instead of a full table scan. Step 2: Confirm the query timing improved against the baseline. Step 3: Confirm the index column order matches the predicates and no redundant/duplicate index was created. Step 4: Sanity-check that write-heavy tables were not over-indexed (the tradeoff is acknowledged). Write a verification note with before/after plans and timings to the produces path.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "migrations/add_indexes.sql",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "migrations/add_indexes.sql",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "migrations/add_indexes.sql"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "migrations/add_indexes.sql"
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Re-run EXPLAIN on the target queries. For EACH acceptance criterion: confirm each query's plan now uses the index (no full scan), confirm timings improved over baseline, confirm the index columns/order match the predicates, and confirm no redundant index and no over-indexing of write-heavy tables. Write PASS/FAIL per criterion; an index the plan does not use is a FAIL.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"change\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "change"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

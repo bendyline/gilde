@@ -1,0 +1,186 @@
+{
+  "id": "holiday-card-run",
+  "name": "Holiday Card Run",
+  "description": "Make the December run a pleasure instead of a panic: sweep the address list while there is still time to fix it, settle the card message, and produce the print-ready card and the address sheet in one sitting. Locks the roster sweep and the message criteria FIRST, then builds the card, then the address sheet, then reports the gaps that still need a human. Use for holiday cards, the annual card run, 'time for the holiday cards', address list cleanup before card season, and the December mailing.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Sweep the roster (letter-writer) — who's in, stale or missing addresses, message criteria → gated on `notes/scope.md` (markdown-notes)\n2. Build the card (designer) — print-ready card front and inside message → gated on `cards/card.html` (html-page)\n3. Build the address sheet (archivist) — print-ready address sheet, roster fixes recorded → gated on `cards/addresses.html` (html-page)\n4. Write the run summary (letter-writer) — what went to print, gaps that need a human → gated on `report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "run the holiday cards",
+    "time for the holiday cards",
+    "holiday card run",
+    "make the card and the address sheet",
+    "december card season"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Sweep the roster",
+      "description": "who's in, stale or missing addresses, message criteria",
+      "prompt": "Sweep the list before designing anything. Step 1: read correspondents.json from the workspace — who gets a card this run, and check every address: present, missing, or suspect (a move noted, an old date, a gap). Step 2: confirm the list with the owner — who is in, who is out this year, and anyone new. Step 3: settle the message criteria — the greeting's warmth and register, anything it must say or avoid, and that one message has to work for every household on the list. Step 4: write an acceptance-criteria checklist ('every household is in or out on purpose', 'stale and missing addresses are flagged by name', 'the card message is settled and fits everyone it goes to', 'card and address sheet are print-ready — proper page setup, nothing screen-only'). Call write_task_note with the list count + flagged addresses + checklist and write notes/scope.md.",
+      "suggestedRole": "letter-writer",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "card"
+    },
+    {
+      "id": "card",
+      "name": "Build the card",
+      "description": "print-ready card front and inside message",
+      "prompt": "Build the card as one print-ready HTML file at cards/card.html. Step 1: the front — the settled greeting, designed to print well on a home printer: strong type, honest margins, colors that survive paper. Step 2: the inside — the message, with room left for a handwritten line. Step 3: style it for paper — an @page rule with the card's size and margins, print styles that drop any screen-only chrome, and page breaks exactly where the fold logic wants them. Step 4: proof the text letter by letter — a typo prints twenty times. Call write_task_note with the card file path and the settled message in one line.",
+      "suggestedRole": "designer",
+      "advanceWhen": {
+        "file": "cards/card.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "cards/card.html",
+            "bytes": 800
+          },
+          {
+            "kind": "cssMinBytes",
+            "bytes": 650,
+            "file": "cards/card.html"
+          },
+          {
+            "kind": "contains",
+            "file": "cards/card.html",
+            "pattern": "@page|@media\\s+print",
+            "flags": "i",
+            "label": "print CSS"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "cards/card.html"
+            }
+          }
+        ],
+        "onReject": "card",
+        "maxAttempts": 3
+      },
+      "next": "addresses"
+    },
+    {
+      "id": "addresses",
+      "name": "Build the address sheet",
+      "description": "print-ready address sheet, roster fixes recorded",
+      "prompt": "Produce the address side of the run. Step 1: build cards/addresses.html — a print-ready address or label sheet with one block per household from the locked list, using each household's own label from the roster. Step 2: state the run count plainly on the sheet — how many households it covers. Step 3: where the owner has confirmed a correction for a flagged address, fix it on the sheet and record the update through the project's correspondence capabilities. Step 4: leave clearly-marked gaps for addresses still missing so the sheet never quietly drops a household. Call write_task_note with the covered count and the still-missing count.",
+      "suggestedRole": "archivist",
+      "advanceWhen": {
+        "file": "cards/addresses.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "cards/addresses.html",
+            "bytes": 800
+          },
+          {
+            "kind": "contains",
+            "file": "cards/addresses.html",
+            "pattern": "\\d+\\s*(?:households?|addresses|recipients?|cards)",
+            "flags": "i",
+            "label": "run count claim"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "cards/addresses.html"
+            }
+          }
+        ],
+        "onReject": "addresses",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the run summary",
+      "description": "what went to print, gaps that need a human",
+      "prompt": "Write the run summary. Step 1: state what is ready — the card, the address sheet, and how many households the run covers. Step 2: list the stale and missing addresses by name with the concrete next step for each (who to ask, where to look). Step 3: note anything the owner still does by hand — signing, stamps, the mail date that makes the season. Step 4: keep it under a page. Write report.md and call write_task_note with the covered and outstanding counts.",
+      "suggestedRole": "letter-writer",
+      "advanceWhen": {
+        "file": "report.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.md",
+            "bytes": 600
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "report.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open cards/card.html, cards/addresses.html, and report.md and verify every criterion from notes/scope.md: the card is complete, print-styled, and carries the settled message; the address sheet covers every in-list household or marks the gap plainly — cross-check the names against correspondents.json, a household the sheet quietly dropped is the classic failure; the run count claim matches the sheet; and the report names every stale or missing address with a next step. Write PASS/FAIL per criterion; on any failure, name the gap and loop back to card.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"card\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "card"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

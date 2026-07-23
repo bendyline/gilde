@@ -1,0 +1,135 @@
+{
+  "id": "board-game-web",
+  "name": "Digital Board Game",
+  "description": "Build a single-file web version of a turn-based board game such as tic-tac-toe, checkers, connect-four, reversi, or a simple chess variant, with two-player hotseat or a basic AI opponent. Locks the rules, turn order, legal-move set, and win/draw detection first, then the board visual language, then implements an authoritative turn state machine. Board games demand correct turn alternation and exhaustive win/draw detection, so the rules phase enumerates every terminal condition before rendering — the ordering that stops a small model from shipping a board where turns desync or a win goes unnoticed.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Rules design (game-designer) — turn order, legal moves, win/draw detection → gated on `notes/rules-design.md` (markdown-notes)\n2. Visual design (visual-designer) — board look, pieces, turn indicator → gated on `notes/visual-design.md` (markdown-notes)\n3. Build (developer) — implement the turn state machine in index.html → gated on `index.html` (html-game)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "rules-design",
+  "triggers": [
+    "board game",
+    "tic tac toe",
+    "connect four",
+    "checkers",
+    "make chess",
+    "two player game"
+  ],
+  "steps": [
+    {
+      "id": "rules-design",
+      "name": "Rules design",
+      "description": "turn order, legal moves, win/draw detection",
+      "prompt": "Pin the RULES of the board game. (1) State the board size and pieces. (2) Define turn order and how the active player alternates. (3) Enumerate legal moves per piece and what makes a move illegal. (4) List EVERY terminal condition: each win pattern, draw/stalemate, and how each is detected from board state. (5) Decide the opponent: hotseat two-player, or a simple AI (random or one-ply) — state which. (6) Write an acceptance-criteria checklist of 5-8 items, e.g. 'players strictly alternate', 'illegal moves are rejected', 'every win line is detected and announced', 'a full board with no winner declares a draw', 'a new-game button resets cleanly', 'no console errors'. Write to notes/rules-design.md and via write_task_note. No code yet.",
+      "suggestedRole": "game-designer",
+      "advanceWhen": {
+        "file": "notes/rules-design.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/rules-design.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/rules-design.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "rules-design",
+        "maxAttempts": 3
+      },
+      "next": "visual-design"
+    },
+    {
+      "id": "visual-design",
+      "name": "Visual design",
+      "description": "board look, pieces, turn indicator",
+      "prompt": "Design the board look from the locked rules. (1) Choose a palette (hex) and the board grid styling. (2) Specify how each piece/player renders (X vs O, red vs black discs, glyphs). (3) Show the active-player turn indicator and how a winning line is highlighted. (4) Lay out status text (whose turn, win/draw banner) and a new-game button. (5) Keep it self-contained CSS grid or canvas, no external assets. Write the visual spec to notes/visual-design.md and via write_task_note. No game logic yet.",
+      "suggestedRole": "visual-designer",
+      "advanceWhen": {
+        "file": "notes/visual-design.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/visual-design.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/visual-design.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "visual-design",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build",
+      "description": "implement the turn state machine in index.html",
+      "prompt": "Implement the board game in a single index.html (inline CSS + JS) to the visual spec, satisfying every criterion. (1) Model board state and a currentPlayer variable. (2) On a cell/piece interaction, validate the move, apply it, then check all terminal conditions before switching the active player. (3) Announce win (highlighting the line) or draw and lock further input until new-game. (4) If an AI was specified, have it move after the human. (5) Wire a new-game button that fully resets. Vanilla JS, no CDN. On a loop-back, fix only the named gaps without regressing passing criteria. write_task_note the path and passing criteria.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 1500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlGame",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          },
+          {
+            "name": "checkJsParses",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Play several full games. Open index.html if possible, else trace the turn and win logic. Check EACH criterion from notes/rules-design.md and write PASS/FAIL with a reason: do players strictly alternate, are illegal moves rejected, is every win line detected, does a full no-winner board declare a draw, does new-game reset, zero console errors? Force at least one win and one draw to confirm both fire. Any missed terminal condition is a FAIL — loop back.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

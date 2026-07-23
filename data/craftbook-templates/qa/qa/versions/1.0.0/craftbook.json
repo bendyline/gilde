@@ -1,0 +1,105 @@
+{
+  "id": "qa",
+  "name": "QA",
+  "description": "Live UI QA pass using a real browser. Ported from gstack's `/qa` skill,\nwhich leans heavily on Playwright. Gezel runs Playwright via the\n`run_playwright_script` MCP tool, so the model writes the actual\ninteraction script — but the craftbook provides the structure.\n\nSix steps:\n\n1. **Smoke** — navigate, confirm the page loaded\n2. **Exercise the flow** — golden path: click CTA, fill form, submit, verify\n3. **Edges** — small set of edge cases (empty, oversized, double-submit, back)\n4. **Triage** — branched: stamp the finding when something broke\n5. **Summary** — branched: clean pass\n6. **Halt** — branched: smoke failed before testing started\n\nThe script `qa-trace.ts` is a thin wrapper around `run_playwright_script`\nthat returns a YAML accessibility snapshot — gives the model a structured\nview of what's on the page without having to parse a 200KB HTML blob.\n\nImportant: this craftbook **does not fix bugs**. When QA surfaces a\nfinding, the recipe halts. Fixing is a separate concern — the user\nroutes the finding to `/investigate` (root cause) and then to a regular\nedit task. Mixing QA + fix in one craftbook is how gstack's earlier\nversions ended up with 161KB SKILL.md files.\n",
+  "entryStepId": "smoke",
+  "triggers": [
+    "qa this",
+    "test the ui",
+    "check the site",
+    "qa the app"
+  ],
+  "steps": [
+    {
+      "id": "smoke",
+      "name": "Smoke",
+      "description": "Navigate to the target URL and verify the page loads + the golden-path element is visible.",
+      "prompt": "First task: smoke the target.\n\n1. Resolve the URL from the user's chat message (or `ask_user_question` if missing).\n2. Run the `qa-trace` script with mode='smoke' and the URL. It returns a YAML accessibility snapshot of the page after navigation.\n3. Look at the snapshot. Does the page look loaded? Is the primary CTA visible? Is there an obvious error banner?\n\nIf the smoke fails (404, 500, blank page), branch to halt. Otherwise advance.",
+      "suggestedRole": "reviewer",
+      "onExit": {
+        "name": "qa-trace",
+        "autoAdvanceWhen": {
+          "op": "equals",
+          "field": "loaded",
+          "value": true
+        }
+      },
+      "next": "exercise",
+      "branches": [
+        {
+          "when": {
+            "op": "equals",
+            "field": "loaded",
+            "value": false
+          },
+          "goto": "halt"
+        }
+      ]
+    },
+    {
+      "id": "exercise",
+      "name": "Exercise the flow",
+      "description": "Walk the golden path. Click the primary CTA, fill the form, submit, watch the result.",
+      "prompt": "Run the golden path. Use `run_playwright_script` to:\n\n1. Click the primary CTA (use the ref from the previous snapshot).\n2. Fill any visible form fields with plausible test data.\n3. Submit.\n4. Capture a follow-up snapshot.\n5. Verify the success state is visible (URL change, success message, expected next-screen element).\n\nDocument what you saw in task notes. If the flow completes cleanly, advance to edge-cases. If anything breaks, branch to triage.",
+      "suggestedRole": "reviewer",
+      "next": "edges",
+      "branches": [
+        {
+          "when": {
+            "op": "equals",
+            "field": "broken",
+            "value": true
+          },
+          "goto": "triage"
+        }
+      ]
+    },
+    {
+      "id": "edges",
+      "name": "Edges",
+      "description": "Try a small set of edge cases: empty input, oversized input, invalid input, double-click, browser back.",
+      "prompt": "Run 3-5 edge cases against the same flow. Pick the ones most likely to actually catch a real bug:\n\n- Submit with empty required field — does the form give a useful error?\n- Submit with an absurd value (10K-char string, negative number, malformed email) — does it crash or sanitize?\n- Click submit twice rapidly — does it double-submit?\n- Browser back after submit — does the app go to a sane state?\n\nDocument findings. If any case breaks badly, branch to triage. Otherwise advance to summary.",
+      "suggestedRole": "reviewer",
+      "next": "summary",
+      "branches": [
+        {
+          "when": {
+            "op": "equals",
+            "field": "broken",
+            "value": true
+          },
+          "goto": "triage"
+        }
+      ]
+    },
+    {
+      "id": "triage",
+      "name": "Triage",
+      "description": "Surface what broke. Stamp a clear finding and STOP — fix happens in a separate task.",
+      "prompt": "QA found something. Write a finding to task notes:\n\n- **What broke** (one sentence, observable)\n- **Where** (URL + element + step that triggered it)\n- **Severity** (blocker / major / minor)\n- **Suggested next action** (file an issue / hotfix / acceptable risk)\n\nThis craftbook does NOT fix bugs — that's `/investigate` + edit. Report DONE_WITH_CONCERNS and let the user route the fix.",
+      "suggestedRole": "reviewer",
+      "terminal": true
+    },
+    {
+      "id": "summary",
+      "name": "Summary",
+      "description": "Clean pass. Stamp a brief 'QA passed' note and DONE.",
+      "prompt": "Write a one-paragraph DONE summary: URL, flow exercised, edge cases tried, all green. Note any 'consider for follow-up' items (UX papercuts, missing instrumentation) — non-blocking.",
+      "suggestedRole": "reviewer",
+      "terminal": true
+    },
+    {
+      "id": "halt",
+      "name": "Halted",
+      "description": "Smoke failed before any real testing happened. Surface it.",
+      "prompt": "The target page didn't load or had an obvious blocker (404, 500, blank). Surface the specific failure in task notes and report DONE_WITH_CONCERNS. Don't try to test on top of a broken smoke.",
+      "suggestedRole": "reviewer",
+      "terminal": true
+    }
+  ],
+  "scripts": {
+    "qa-trace": "import { defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'qa-trace',\n  description:\n    'Navigate to a URL via run_playwright_script and capture an accessibility snapshot. Returns {loaded: boolean, snapshot: string, title: string}.',\n  inputs: {\n    url: { type: 'string', description: 'Target URL.', required: true },\n    mode: {\n      type: 'choice',\n      description: 'What to do.',\n      options: [{ value: 'smoke' }, { value: 'snapshot' }],\n      default: 'smoke',\n    },\n  },\n  outputs: {\n    loaded: { type: 'boolean', description: 'True if the page loaded without a hard error.' },\n    title: { type: 'string', description: 'Page title.', nullable: true },\n    snapshot: { type: 'string', description: 'Truncated accessibility snapshot.' },\n  },\n  requires: ['network'],\n});\n\nasync function main(): Promise<void> {\n  const input = gezel.input as { url: string; mode?: string };\n  const script = `\n    import { chromium } from 'playwright';\n    const browser = await chromium.launch();\n    const ctx = await browser.newContext();\n    const page = await ctx.newPage();\n    let loaded = true;\n    let title = '';\n    try {\n      const resp = await page.goto(${JSON.stringify(input.url)}, { waitUntil: 'domcontentloaded', timeout: 30_000 });\n      if (resp && resp.status() >= 500) loaded = false;\n      title = await page.title();\n    } catch (err) {\n      loaded = false;\n    }\n    const snap = await page.accessibility.snapshot({ interestingOnly: true }).catch(() => null);\n    await browser.close();\n    console.log(JSON.stringify({ loaded, title, snapshot: snap ? JSON.stringify(snap).slice(0, 16_000) : '' }));\n  `;\n  const raw = await gezel.mcp.call('run_playwright_script', { script });\n  const text = typeof raw === 'string' ? raw : '';\n  const jsonMatch = /\\{[\\s\\S]*\\}/.exec(text);\n  if (!jsonMatch) {\n    throw new Error(`run_playwright_script returned unparseable output: ${text.slice(0, 200)}`);\n  }\n  const parsed = JSON.parse(jsonMatch[0]!) as {\n    loaded: boolean;\n    title: string;\n    snapshot: string;\n  };\n  gezel.log(`qa-trace ${input.url}: loaded=${parsed.loaded}, title=\"${parsed.title.slice(0, 80)}\"`);\n  gezel.output(parsed);\n}\n\nawait main();\n"
+  },
+  "version": "1.0.0",
+  "releasedAt": "2026-05-16T00:00:00Z"
+}

@@ -1,0 +1,99 @@
+{
+  "id": "escalation-playbook",
+  "name": "On-Call Escalation Playbook",
+  "description": "Author an on-call escalation playbook: the severity ladder, who-to-page-when escalation tiers with timeouts, communication cadence to stakeholders, and the step-by-step actions for each severity. Scopes the severity definitions and escalation policy FIRST (SEV levels with concrete examples, tier timeouts, roles, comms channels and cadence), then a copywriter writes the playbook in clear, do-this-now imperative steps, then a reviewer validates it for completeness and that no severity dead-ends without an escalation path. Scoping the SEV ladder and timeouts before writing prose is what makes the playbook unambiguous at 3am. Use for on-call runbooks, incident escalation policy, paging tiers, severity ladders, and SRE escalation procedures.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the policy (planner) — lock SEV levels, escalation tiers, timeouts, and comms → gated on `notes/scope.md` (markdown-notes)\n2. Write the playbook (copywriter) — write do-this-now steps for each severity → gated on `playbook.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "escalation playbook",
+    "on-call escalation",
+    "paging tiers",
+    "severity ladder",
+    "incident escalation policy"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the policy",
+      "description": "lock SEV levels, escalation tiers, timeouts, and comms",
+      "prompt": "Define the escalation policy before writing prose. (1) Lock a severity ladder (e.g. SEV1 critical/total outage, SEV2 major degradation, SEV3 minor) with a concrete example and an impact definition for each. (2) For each SEV, define the escalation tiers: who is paged first, the timeout before escalating to the next tier (e.g. 'no ack in 10 min → page secondary; 20 min → page EM'), and the final backstop. (3) Define the incident roles (Incident Commander, Comms lead, Scribe) and when each is invoked. (4) Lock the stakeholder communication cadence per SEV (channel + update frequency, e.g. SEV1 = status page + every 30 min). Write an acceptance-criteria checklist ('every SEV has impact definition + example', 'every SEV has a full escalation tier chain with timeouts ending in a backstop', 'roles defined and triggered per SEV', 'comms cadence specified per SEV', 'no SEV dead-ends without escalation') plus the ladder/tier tables to notes/scope.md via write_task_note AND the produces path. No prose playbook yet.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the playbook",
+      "description": "write do-this-now steps for each severity",
+      "prompt": "Write playbook.md from the locked policy as a 3am-readable runbook. (1) Open with the severity ladder table (SEV, impact, example) and a one-paragraph 'how to use this'. (2) For EACH severity, write a numbered, imperative step list — Detect & declare → Assign roles → Mitigate → Escalate (with the exact tier timeouts) → Communicate (channel + cadence) → Stand down. Use second-person commands ('Page the primary on-call. If no ack in 10 minutes, page the secondary.'). (3) Include the escalation tier chain inline for each SEV with the timeouts spelled out, ending in a backstop with no dead-end (a tier that escalates to nobody). (4) Add a Communications section with templated stakeholder update snippets per SEV. (5) End with a post-incident handoff/postmortem trigger. No ambiguity, no prose digressions — every line is an action or a fact. On a loop-back fix only the flagged sections. Write the path to notes via write_task_note.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "playbook.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "playbook.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "playbook.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Validate playbook.md against every locked criterion. (1) Confirm every SEV from the scope has impact definition, example, and its own complete imperative step list (declare → roles → mitigate → escalate → communicate → stand down). (2) Trace each SEV's escalation chain end-to-end: are the tier timeouts present and does the chain end in a backstop with no dead-end (a tier that escalates to nobody)? FAIL if any SEV dead-ends. (3) Confirm roles are defined and their trigger points stated per SEV, and the per-SEV comms cadence + channels + templated update snippets exist. (4) Read 2 step lists for ambiguity — a tired on-call must be able to follow them literally. Write PASS/FAIL per criterion with the specific gaps.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

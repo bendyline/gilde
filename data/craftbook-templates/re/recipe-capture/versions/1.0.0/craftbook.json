@@ -1,0 +1,137 @@
+{
+  "id": "recipe-capture",
+  "name": "Capture a Recipe Card",
+  "description": "Rescue a handwritten recipe card without sanding off its soul: transcribe the original faithfully — spelling quirks, margin notes, and all — standardize quantities in a separate block alongside (never instead of) the original wording, and pin the provenance note: whose card, whose kitchen, what they always changed. Locks the capture rules FIRST, then captures each card into the book, then logs what needs a test-cook and what to ask the family. Use for capturing recipe cards, 'get oma's cards into the book', preserving family recipes, and recipe transcription.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the capture (kitchen-master) — card intake notes read, capture rules locked → gated on `notes/scope.md` (markdown-notes)\n2. Capture the cards (archivist) — one faithful recipe file per card, recorded in the book → gated on `notes/capture.md` (markdown-notes)\n3. Write the capture log (copywriter) — what went in, what needs a test-cook, questions for the family → gated on `report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "capture a recipe card",
+    "get this recipe into the book",
+    "transcribe oma's card",
+    "add a family recipe",
+    "preserve this recipe"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the capture",
+      "description": "card intake notes read, capture rules locked",
+      "prompt": "Define the capture before transcribing a word. Step 1: read the card intake notes waiting in inbox/ and the recipe book's store (recipes.json) — what is already in the book and how entries are shaped. Step 2: lock the capture rules — the original wording is preserved exactly, spelling quirks, margin notes and all; every recipe carries its provenance (whose card, whose kitchen, what they always changed); the standardized ingredients-and-steps block sits alongside the original text, clearly separated, never replacing it; anything unreadable becomes a question, not a guess. Step 3: write an acceptance-criteria checklist ('every card captured as its own recipe file under recipes/', 'original text verbatim with margin notes kept and marked', 'provenance line on every recipe', 'standardized block separate from the original', 'each captured recipe recorded in the book's store'). Call write_task_note with the card count + rules + checklist and write notes/scope.md.",
+      "suggestedRole": "kitchen-master",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "capture"
+    },
+    {
+      "id": "capture",
+      "name": "Capture the cards",
+      "description": "one faithful recipe file per card, recorded in the book",
+      "prompt": "Capture each card against the locked rules. Step 1: for every card note in inbox/, write a recipe file under recipes/ — a title, the provenance line, the original text transcribed faithfully (margin notes included and marked as margin notes), and then a clearly separated standardized block with an Ingredients list and numbered steps. Step 2: record each captured recipe in the book's store through the project's recipe capabilities — title, provenance, and the file it lives in. Step 3: where the card is ambiguous or unreadable, keep the original as written and add the question inline rather than smoothing it over. Step 4: write a per-card capture log to notes/capture.md — what was captured, what was preserved as-is, what needs asking. Call write_task_note with the captured count.",
+      "suggestedRole": "archivist",
+      "advanceWhen": {
+        "file": "notes/capture.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/capture.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/capture.md",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "fileCount",
+            "ext": [
+              "md"
+            ],
+            "min": 1,
+            "dir": "recipes"
+          }
+        ],
+        "onReject": "capture",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the capture log",
+      "description": "what went in, what needs a test-cook, questions for the family",
+      "prompt": "Write the capture log for the family from your notes. Step 1: list what went into the book this session — each recipe with whose card it was. Step 2: name what needs a test-cook before it counts as verified, and why (an ambiguous quantity, a step that assumes the cook's hands already knew). Step 3: list the questions for the family — margin notes worth explaining, names and dates worth pinning down — so the next phone call captures them. Step 4: keep it warm; this is family history in food form. Write report.md and call write_task_note with the captured count and the top question.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "report.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.md",
+            "bytes": 800
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "report.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open report.md, notes/capture.md, and the recipe files under recipes/ and verify every criterion from notes/scope.md: every inbox card became its own recipe file, the original wording is verbatim (spot-check phrases against the card notes — no silent corrections), margin notes survived and are marked as such, every recipe carries a provenance line, the standardized block is present and separate from the original, and each captured recipe is recorded in the book's store. Write PASS/FAIL per criterion; on any failure, name the gap and loop back to capture.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"capture\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "capture"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

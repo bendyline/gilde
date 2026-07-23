@@ -1,0 +1,128 @@
+{
+  "id": "onboarding-flow",
+  "name": "Product Onboarding Tour",
+  "description": "Build a single-file product onboarding tour or coachmark walkthrough that guides a new user through key features with sequential tooltips, a highlighted target, next/back/skip controls, and a finish state. Designs the step sequence, what each step points at, and the copy strategy first, writes the step copy, then implements the spotlight overlay and step navigation. Tours break when a step points at the wrong element or skip/finish does not dismiss, so the flow-design phase locks the step-to-target map before any code.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Flow design (designer) — step sequence, targets, spotlight, controls → gated on `notes/flow-design.md` (markdown-notes)\n2. Copywriting (copywriter) — per-step tooltip copy + button labels → gated on `notes/copy.md` (markdown-notes)\n3. Build (developer) — implement index.html with spotlight + step nav → gated on `index.html` (html-page)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "flow-design",
+  "triggers": [
+    "onboarding tour",
+    "product tour",
+    "walkthrough",
+    "feature tour",
+    "coachmarks",
+    "guided tour"
+  ],
+  "steps": [
+    {
+      "id": "flow-design",
+      "name": "Flow design",
+      "description": "step sequence, targets, spotlight, controls",
+      "prompt": "Design the tour flow. (1) Build a small demo UI (a few buttons/panels) the tour will run on, OR assume target elements by id; list each step and the element it points at. (2) Define the spotlight/overlay treatment (dim the page, highlight the target) and the tooltip position relative to each target. (3) Specify controls: Next, Back, Skip, and Finish on the last step, plus a step counter. (4) Define the finished state (tour dismisses, optionally remembers via localStorage). (5) Write an acceptance-criteria checklist of 5-8 items, e.g. 'the tour starts on load showing step 1', 'each step highlights its target', 'Next/Back move between steps', 'Skip and Finish dismiss the tour', 'a step counter shows position', 'the overlay dims the rest of the page', 'no console errors'. Write to notes/flow-design.md and via write_task_note. No code yet.",
+      "suggestedRole": "designer",
+      "advanceWhen": {
+        "file": "notes/flow-design.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/flow-design.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/flow-design.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "flow-design",
+        "maxAttempts": 3
+      },
+      "next": "copy"
+    },
+    {
+      "id": "copy",
+      "name": "Copywriting",
+      "description": "per-step tooltip copy + button labels",
+      "prompt": "Write the tour copy. (1) For each step, a short title and one or two sentences explaining the feature and the value — friendly, concise, action-oriented. (2) The button labels (Next, Back, Skip, Got it/Finish). (3) Keep each tooltip skimmable in a few seconds. Write the per-step copy keyed by step to notes/copy.md and via write_task_note.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "notes/copy.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/copy.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/copy.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "copy",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build",
+      "description": "implement index.html with spotlight + step nav",
+      "prompt": "Implement index.html with inline CSS/JS to the flow and copy. (1) Render the demo UI and a full-page overlay that dims everything. (2) Track the current step; for each, highlight its target (cut-out spotlight or a ring around the element) and position a tooltip with the step's copy near it. (3) Wire Next/Back to move steps and update the counter; Skip and Finish remove the overlay and end the tour (optionally set a localStorage flag). (4) Ensure the tour starts on load at step 1. Style it cleanly and responsively. Vanilla JS, no CDN. On a loop-back, fix only the named gaps without regressing passing criteria. write_task_note the path and passing criteria.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 800
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Run the tour. Open index.html if possible: confirm it starts at step 1, step through with Next/Back, try Skip and Finish. Check EACH criterion from notes/flow-design.md and write PASS/FAIL with a reason: does it start on load, does each step highlight the correct target, do Next/Back work, do Skip and Finish dismiss the overlay, does the counter update, does the overlay dim the page, zero console errors? A step pointing at the wrong element, or a tour that will not dismiss, is a FAIL — loop back to build.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

@@ -1,0 +1,105 @@
+{
+  "id": "micro-game-jam",
+  "name": "Micro Game Jam",
+  "description": "Build a tiny, complete, themed micro-game from a one-word or one-line prompt — a 60-second arcade or one-mechanic toy that fully fits in a single HTML file with a clear goal and a win/lose. Interprets the theme into one tight mechanic and a scope you can actually finish first, then builds the whole game in one pass. The jam discipline is ruthless scope: pick ONE mechanic that expresses the theme, lock a tiny acceptance bar, and ship it playable rather than sprawling — the ordering that gets a small model to a finished game instead of an unfinished engine.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Theme design (game-designer) — interpret the theme into ONE finishable mechanic → gated on `notes/theme-design.md` (markdown-notes)\n2. Build (developer) — implement the whole micro-game in one index.html → gated on `index.html` (html-game)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "theme-design",
+  "triggers": [
+    "game jam",
+    "tiny game",
+    "themed game",
+    "make a quick game",
+    "one mechanic game",
+    "micro game"
+  ],
+  "steps": [
+    {
+      "id": "theme-design",
+      "name": "Theme design",
+      "description": "interpret the theme into ONE finishable mechanic",
+      "prompt": "Turn the theme into a finishable micro-game. (1) Restate the theme/prompt in one line and brainstorm the single mechanic that best expresses it — pick exactly ONE (resist scope creep). (2) Define controls, the goal, and a clear win AND lose in one screen. (3) Time-box the scope: what is in (one mechanic, one screen, score or timer) and explicitly what is OUT. (4) Pick a tiny visual style (a few shapes, a 3-color palette with hex). (5) Write a SHORT acceptance-criteria checklist of 4-6 binary items, e.g. 'the theme is recognizable in the mechanic', 'controls work', 'a win condition can be reached', 'a lose condition can be reached', 'a restart exists', 'runs with no console error'. Write to notes/theme-design.md and via write_task_note. No code yet.",
+      "suggestedRole": "game-designer",
+      "advanceWhen": {
+        "file": "notes/theme-design.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/theme-design.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/theme-design.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "theme-design",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build",
+      "description": "implement the whole micro-game in one index.html",
+      "prompt": "Build the entire micro-game in a single index.html (inline CSS + JS) satisfying the small checklist. (1) <canvas> + 2d context, the one mechanic, real input handling, and a game loop. (2) Implement the goal and BOTH win and lose states on the single screen, plus a restart (press a key / click). (3) Apply the tiny visual style and show score or timer. (4) Keep it small and complete — finishing beats features. Vanilla JS, no CDN, no external assets. On a loop-back, fix only the named gaps without regressing passing criteria. write_task_note the path and passing criteria.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 1500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlGame",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          },
+          {
+            "name": "checkJsParses",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Play the micro-game. Open index.html if possible, else trace the loop. Check EACH criterion from notes/theme-design.md and write PASS/FAIL with a reason: is the theme recognizable in the mechanic, do controls work, can you reach BOTH a win and a lose, does restart work, zero console errors? It must be a complete tiny game, not an unfinished engine — if win or lose is unreachable, FAIL and loop back to build.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

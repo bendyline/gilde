@@ -1,0 +1,131 @@
+{
+  "id": "refactor-module",
+  "name": "Behavior-Preserving Refactor",
+  "description": "Refactor a module to improve its structure, readability, or design WITHOUT changing observable behavior — the defining constraint is that the tests stay green throughout. Plans the refactor FIRST — the target structure, the seams to introduce, the safe step sequence, and the green-tests guardrail — then refactors in small reversible steps, then a reviewer confirms behavior is unchanged and the code is genuinely cleaner. Covers extract-function/module, dependency seams, removing duplication, naming, and test-green-as-invariant refactoring.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Plan the refactor (planner) — lock target structure, steps, green-tests guardrail → gated on `notes/plan.md` (markdown-notes)\n2. Refactor (developer) — apply small reversible steps, tests green throughout → gated on `src/refactored.js` (code-module)\n3. Verify behavior preserved (reviewer) — confirm tests green and code is genuinely cleaner → gated on `notes/verify.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "plan",
+  "triggers": [
+    "refactor this module",
+    "clean up the code",
+    "improve code structure",
+    "behavior-preserving refactor",
+    "reduce duplication"
+  ],
+  "steps": [
+    {
+      "id": "plan",
+      "name": "Plan the refactor",
+      "description": "lock target structure, steps, green-tests guardrail",
+      "prompt": "Plan the refactor before touching code — the prime directive is preserving behavior. Step 1: Identify the specific smells (duplication, long function, tangled responsibilities, poor names) and the target structure you want. Step 2: Confirm there is a test safety net; if coverage is thin, note the characterization tests to add FIRST so behavior is pinned before changing structure. Step 3: Break the work into small, individually-reversible steps (extract this function, introduce this seam, rename that), each of which keeps tests green. Step 4: Write a numbered acceptance-criteria checklist of 5-9 items (e.g. 'all existing tests pass before and after', 'public API/behavior is unchanged', 'the targeted duplication is gone', 'no function exceeds N lines / responsibilities are separated'). `write_task_note` the plan + checklist and write the same to the produces path.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/plan.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/plan.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/plan.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "plan",
+        "maxAttempts": 3
+      },
+      "next": "refactor"
+    },
+    {
+      "id": "refactor",
+      "name": "Refactor",
+      "description": "apply small reversible steps, tests green throughout",
+      "prompt": "Execute the refactor in small steps, keeping the tests green the entire time. Step 1: If the plan called for characterization tests, add them first and confirm they pass against current behavior. Step 2: Apply one planned step at a time — extract, rename, dedupe, introduce a seam — and run the tests after EACH step; if a step breaks them, revert it and try smaller. Step 3: Do not change public signatures or observable behavior unless the plan explicitly says so. Step 4: Stop when the target structure is reached and the smells are gone. Write the refactor summary (what changed structurally, tests still green) to the produces path. On a loop-back, address only the reviewer's points. `write_task_note` the summary and which criteria now pass.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/refactored.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/refactored.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/refactored.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/refactored.js"
+          }
+        ],
+        "onReject": "refactor",
+        "maxAttempts": 3
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify behavior preserved",
+      "description": "confirm tests green and code is genuinely cleaner",
+      "prompt": "Verify the refactor preserved behavior and actually improved the code. Step 1: Run the full test suite and confirm it is green (this is the hard gate). Step 2: Confirm the public API/observable behavior is identical to before. Step 3: Confirm the targeted smell is actually fixed — the duplication is gone, the function is decomposed, names are clearer — not just moved around. Step 4: Confirm no behavior was sneaked in under cover of the refactor. Write a verification note with the test result and a before/after readability assessment to the produces path.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/refactored.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/refactored.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/refactored.js"
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Run the test suite. For EACH acceptance criterion: confirm ALL existing tests pass (green is mandatory), confirm public behavior is unchanged, confirm the targeted smell is genuinely fixed, and confirm no new behavior crept in. Write PASS/FAIL per criterion; a single failing test is an automatic FAIL of the whole refactor.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"refactor\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "refactor"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-07-16T00:00:00Z"
+}

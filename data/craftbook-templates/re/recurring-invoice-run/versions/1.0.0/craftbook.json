@@ -1,0 +1,139 @@
+{
+  "id": "recurring-invoice-run",
+  "name": "Generate and Send Recurring Invoices",
+  "description": "Run a recurring billing batch: for each active client/subscription due this period, generate a correctly-numbered, line-itemed invoice with taxes and totals, render it, and send it — once, idempotently, with a sent-log. Locks the invoice template, the numbering scheme, the tax/total math, and the due/idempotency rules FIRST, then builds the generate-render-send batch keyed to a billing-run log, then verifies every due client was invoiced exactly once, totals are arithmetically correct, and numbers are sequential with no gaps or dupes. Locking numbering and math up front is what keeps recurring billing audit-clean instead of producing duplicate or mis-totaled invoices.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the invoice run (planner) — template, numbering, tax/total math, due + idempotency → gated on `notes/scope.md` (markdown-notes)\n2. Build the invoice run (developer) — select due, number, compute, render, send, log → gated on `invoice_run.py` (code-module)\n3. Verify the run (reviewer) — once-per-client, correct math, gap-free numbering → gated on `notes/verify.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "generate recurring invoices",
+    "send monthly invoices",
+    "automate billing",
+    "invoice run",
+    "recurring invoice batch"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the invoice run",
+      "description": "template, numbering, tax/total math, due + idempotency",
+      "prompt": "Define the billing contract before generating anything. Step 1: identify the client/subscription source (who is active, their rate/plan, billing cycle, tax region) and the rule for who is DUE this period. Step 2: define the invoice template fields (issuer, client, line items, quantities, unit price, subtotal, tax, total, due date) and the numbering scheme (prefix + zero-padded sequence) with the rule that numbers are sequential, unique, and gap-free. Step 3: define the math exactly — line total = qty × unit price, subtotal = sum of lines, tax = subtotal × rate (per region), total = subtotal + tax, with rounding to currency precision. Step 4: define the idempotency rule — a billing-run log keyed by client+period prevents double-invoicing and double-sending on a re-run. Step 5: write an acceptance-criteria checklist ('every due client invoiced exactly once', 'invoice numbers sequential/unique/gap-free', 'all totals arithmetically correct to currency precision', 'each invoice rendered and sent once', 'a re-run sends nothing already sent', 'a sent-log records client, number, amount, timestamp'). Call write_task_note with template + numbering + math + rules + checklist and write notes/scope.md. No generation yet.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the invoice run",
+      "description": "select due, number, compute, render, send, log",
+      "prompt": "Implement the billing batch to the locked contract. Step 1: load the billing-run log and select clients DUE this period who are not already invoiced for it. Step 2: assign the next sequential invoice number (atomic against the log so no two invoices share a number and there are no gaps). Step 3: compute line totals, subtotal, region tax, and total with correct currency rounding; never eyeball the math. Step 4: render each invoice to the deliverable format and send it via the available channel, recording success before marking sent. Step 5: append a sent-log row per invoice (client, number, period, amount, timestamp, status) and write the batch as a runnable module; on a per-client failure, log it and continue. Call write_task_note with the module path, the sent-log path, and counts (invoiced/sent/failed).",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "invoice_run.py",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "invoice_run.py",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "invoice_run.py",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "invoice_run.py"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "invoice_run.py"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify the run",
+      "description": "once-per-client, correct math, gap-free numbering",
+      "prompt": "Verify the billing run against scope. Step 1: confirm the module runs and produces a sent-log. Step 2: confirm every DUE client was invoiced exactly once and no not-due client was billed. Step 3: confirm invoice numbers are sequential, unique, and gap-free across the run and continuous with prior runs. Step 4: re-derive the math on 3 invoices by hand (line totals, subtotal, tax, total, rounding) and confirm it matches. Step 5: confirm idempotency — a re-run sends nothing already in the sent-log — and that per-client send failures were logged without aborting the batch. Write PASS/FAIL per criterion to notes/verify.md and task notes; on failure, name the invoices and loop back to build.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "invoice_run.py",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "invoice_run.py",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "invoice_run.py"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "invoice_run.py"
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Run invoice_run.py (or trace it) and verify every criterion from notes/scope.md: every due client invoiced exactly once (no not-due client billed), invoice numbers sequential/unique/gap-free and continuous with prior runs, totals arithmetically correct (re-derive 3 invoices by hand including tax and rounding), each invoice sent once with a re-run sending nothing already in the sent-log, and per-client failures logged without aborting. Write PASS/FAIL per criterion; on any failure, name the invoices and loop back to build.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

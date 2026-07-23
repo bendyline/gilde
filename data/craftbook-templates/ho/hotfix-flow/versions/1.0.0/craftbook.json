@@ -1,0 +1,161 @@
+{
+  "id": "hotfix-flow",
+  "name": "Hotfix Flow",
+  "description": "Drive an expedited production hotfix from red to green: reproduce the live defect with a failing test, apply the smallest safe fix that makes it pass without scope-creeping into a refactor, and verify the fix plus a clean regression check before it ships out-of-band. The ordering is the whole discipline — reproduce FIRST (a failing test that captures the bug is the contract the fix must satisfy), then fix minimally, then verify the new test passes and nothing else broke. Use this for urgent production bugs, expedited patch releases, and out-of-band fixes where speed matters but a regression would be worse than the original bug.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Reproduce with a failing test (developer) — capture the live defect as a failing, deterministic test → gated on `notes/reproduce.md` (markdown-notes)\n2. Apply the minimal fix (developer) — smallest safe change that turns the failing test green → gated on `hotfix.ts` (code-with-tests)\n3. Verify and regression-check (reviewer) — confirm green plus no regressions before shipping → gated on `notes/verify.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "reproduce",
+  "triggers": [
+    "hotfix this bug",
+    "urgent production fix",
+    "expedited patch",
+    "fix the live defect",
+    "out-of-band fix"
+  ],
+  "steps": [
+    {
+      "id": "reproduce",
+      "name": "Reproduce with a failing test",
+      "description": "capture the live defect as a failing, deterministic test",
+      "prompt": "1. Read the bug report / incident and state the exact observed behavior vs the expected behavior in one line each. 2. Identify the smallest input or scenario that triggers the defect. 3. Write a NEW automated test that exercises that scenario and asserts the EXPECTED (correct) behavior — so it fails RED against current code for the right reason (it reproduces THIS bug, not some unrelated assertion). 4. Run the test and confirm it fails, capturing the failure output as proof of reproduction. 5. Do NOT fix anything yet and do NOT alter unrelated code. 6. Good looks like: one focused, deterministic failing test that pins the defect, plus the captured red output. Write an acceptance-criteria checklist ('a new test reproduces the bug and fails red', 'the test asserts correct behavior not the buggy behavior', 'the test is deterministic and minimal', 'the fix will be the smallest change that turns it green', 'full suite must stay green after the fix') plus the observed/expected behavior and the test location to the notes file via write_task_note AND to notes/reproduce.md.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "notes/reproduce.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/reproduce.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/reproduce.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "reproduce",
+        "maxAttempts": 3
+      },
+      "next": "fix"
+    },
+    {
+      "id": "fix",
+      "name": "Apply the minimal fix",
+      "description": "smallest safe change that turns the failing test green",
+      "prompt": "1. Open notes/reproduce.md and make the SMALLEST change that turns the reproducing test green — fix the root cause, not the symptom, but resist refactoring, renaming, or unrelated cleanup (this is a hotfix, not a rewrite). 2. Keep the diff tight and reviewable; touch only what the fix requires. 3. Run the reproducing test and confirm it now passes GREEN; capture the output. 4. If the fix needs a follow-up (a deeper refactor, tech-debt), note it as a separate item rather than doing it now. 5. Implement the fix and the reproducing test together in the deliverable file so the change is self-verifying. 6. Good looks like: a minimal diff that makes the new test pass for the right reason, with no scope creep. Write the fix plus the reproducing test (the source/test module that now passes) to hotfix.ts.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "hotfix.ts",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "hotfix.ts",
+            "bytes": 300
+          },
+          {
+            "kind": "sniff",
+            "file": "hotfix.ts",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "hotfix.ts"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "hotfix.ts"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "hotfix.ts",
+              "pattern": "\\b(test|describe|it|assert|expect)\\b",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "fix",
+        "maxAttempts": 3
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify and regression-check",
+      "description": "confirm green plus no regressions before shipping",
+      "prompt": "1. Run the reproducing test and confirm it now passes GREEN. 2. Run the FULL relevant test suite and confirm nothing else broke — a hotfix that fixes one bug and regresses another is a failure. 3. Review the diff for scope creep: confirm the change is minimal and addresses the root cause described in notes/reproduce.md, not a symptom patch. 4. Sanity-check edge cases adjacent to the fix that a single test might miss. 5. Write a PASS/FAIL per acceptance criterion from reproduce.md, with the test output as evidence and any regression or over-reach called out. 6. Any failure routes back to the fix phase. Write findings to notes/verify.md.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "hotfix.ts",
+            "bytes": 300
+          },
+          {
+            "kind": "sniff",
+            "file": "hotfix.ts",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "hotfix.ts"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "hotfix.ts"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "hotfix.ts",
+              "pattern": "\\b(test|describe|it|assert|expect)\\b",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open hotfix.ts and verify it against the criteria in notes/reproduce.md, PASS/FAIL each. Confirm: (a) it contains a test that reproduces the reported bug by asserting the correct behavior; (b) that test passes GREEN against the fix; (c) the fix is minimal and targets the root cause with no unrelated refactor/scope-creep; (d) the change does not regress adjacent behavior (the broader suite stays green); (e) the test is deterministic. Run/trace the test to gather evidence. Any FAIL routes back to the fix phase.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"fix\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "fix"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

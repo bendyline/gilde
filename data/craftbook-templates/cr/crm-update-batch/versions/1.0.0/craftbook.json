@@ -1,0 +1,93 @@
+{
+  "id": "crm-update-batch",
+  "name": "Bulk CRM Update from Notes",
+  "description": "Turn unstructured notes (call logs, meeting recaps, email threads) into a batch of structured CRM updates: per-contact field changes, activity logs, and next-step tasks as a validated import file. Scopes the CRM field schema and extraction rules FIRST (which objects/fields, allowed picklist values, the match-or-create key, required fields), then a developer extracts and maps every note into rows against that schema, then a reviewer validates the batch for schema-conformance and that no update mutates a field without evidence in the source. Scoping the schema before extraction is what makes the import load cleanly and prevents fabricated field values. Use for CRM data entry, bulk contact updates, importing notes into Salesforce/HubSpot, activity logging, and turning call notes into pipeline updates.\n\nSource discipline:\n- Extract only contacts, accounts, emails, statuses, tasks, activities, and source quotes present in the provided notes or locked schema.\n- Preserve the locked import header exactly. Do not split schema fields into extra columns such as first_name, last_name, title, old_value, or new_value; put the attribute name in `field_name` and its value in `field_value`.\n- Treat object names, field names, and picklist values as case-sensitive when the target CRM/import schema gives exact values.\n- For CSV imports, keep empty placeholders as adjacent commas so every row has the same number of cells as the header.\n- When the schema has many optional cells, draft row shapes against the header before extraction and verify the cell count on each output row.\n- When a contact lacks the match key, flag it as UNMATCHED instead of creating a placeholder email, guessed ID, or new account.\n- If the locked schema explicitly needs separate Contact, Account, Activity, or Task rows, split each seeded note into supported rows. Do not add optional object rows just to pad the batch.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the schema (planner) — lock the CRM fields, picklists, match key, and rules → gated on `notes/scope.md` (markdown-notes)\n2. Build the batch (developer) — extract and map notes into schema-conformant rows → gated on `updates.csv` (data-file)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "update crm from notes",
+    "bulk crm update",
+    "import notes into salesforce",
+    "log activities to hubspot",
+    "turn call notes into crm records"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the schema",
+      "description": "lock the CRM fields, picklists, match key, and rules",
+      "prompt": "Define the import contract before extracting. (1) Identify the CRM objects to touch (Contact, Account, Opportunity, Activity) and the EXACT fields per object you will update, with their types. (2) Lock allowed values for any picklist/enum field (stage, status, lead source) — extractions must map to these, never free text. (3) Define the match-or-create key (e.g. match Contact by email; if absent, flag for review rather than create blindly). (4) List required fields per row and the output format (CSV with a header, or the CRM's import schema). (5) Lock the evidence rule: every field change must be justified by a quote from the source note. Write an acceptance-criteria checklist ('every row conforms to the field schema and types', 'picklist fields use only allowed values', 'each changed field cites a source quote', 'unmatched contacts flagged not silently created', 'required fields populated', 'file parses as valid CSV/import format') plus the schema + picklists to notes/scope.md via write_task_note AND the produces path.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the batch",
+      "description": "extract and map notes into schema-conformant rows",
+      "prompt": "Produce updates.csv (or the locked import format) by mapping the notes to the schema. (1) Read each note and identify the contact/account it concerns; resolve via the match key, flagging UNMATCHED in a status column rather than fabricating an ID. (2) Extract field updates ONLY where the note gives evidence; normalize every picklist value to an allowed option from scope (drop, don't invent, if no clean mapping). (3) Emit an Activity/log row per note capturing the interaction (type, date, summary) and a next-step task row if the note implies one. (4) Add a source-quote column on each row pointing at the justifying text. (5) Ensure required fields are present and the file parses cleanly (proper header, consistent column count, quoting/escaping). Touch no field the notes don't support. On a loop-back fix only the flagged rows. Write the path and row counts (updates, activities, tasks, unmatched) to notes via write_task_note.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "updates.csv",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "updates.csv",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "updates.csv",
+            "sniff": "data-table"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Validate updates.csv against every locked criterion. (1) Parse the CSV — malformed structure, a missing header, or ragged rows (inconsistent column count) is an immediate FAIL. (2) Confirm every field value conforms to its type and that picklist columns contain only allowed values from notes/scope.md. (3) Confirm required fields are populated on every row and that unmatched contacts are flagged in the status column, not given fabricated IDs. (4) Trace 4-5 field changes to their source-quote column — any change with no supporting quote is a FAIL for fabrication. (5) Confirm Activity/task rows exist where the notes implied them. Write PASS/FAIL per criterion with the specific offending rows.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

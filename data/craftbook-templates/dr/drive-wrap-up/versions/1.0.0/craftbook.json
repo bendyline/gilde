@@ -1,0 +1,129 @@
+{
+  "id": "drive-wrap-up",
+  "name": "Fundraiser Wrap-Up",
+  "description": "Close a fundraising drive properly: verify the final numbers against the donation ledger, confirm every donor was thanked (or finish the thank-yous now), and write the wrap-up story — the total, what the money does, and the people who made it happen — ready to share with the community and hand to the next organizer. Locks the wrap-up's claims and the thank-you completeness check FIRST, then verifies against the ledger, then writes the story. Use for ending a fundraiser, drive wrap-up reports, final fundraising totals, and community thank-you posts.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the wrap-up (planner) — final claims to verify, thank-you completeness, audiences → gated on `notes/scope.md` (markdown-notes)\n2. Verify against the ledger (data-analyst) — recompute totals, close the thank-you debt → gated on `notes/verify.md` (markdown-notes)\n3. Write the wrap-up (copywriter) — the community story plus the organizer handoff → gated on `report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "wrap up the fundraiser",
+    "close the drive",
+    "final fundraising report",
+    "fundraiser wrap up",
+    "end the campaign"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the wrap-up",
+      "description": "final claims to verify, thank-you completeness, audiences",
+      "prompt": "Define the wrap-up before writing a word of it. Step 1: read donations.json from the workspace — the goal, the entry count, and the thanked/unthanked split. Step 2: fix the claims the wrap-up will make and that must be verified — the final total, the percent of goal, the gift count, the largest gift (if the owner wants it named), and the impact statement (what the money concretely does). Step 3: set the thank-you rule — the drive does not close with unthanked donors; either the thank-yous go out during this wrap-up or each remaining one is assigned to a named person. Step 4: identify the audiences — the community post, and the handoff note for whoever runs the next drive. Step 5: write an acceptance-criteria checklist ('every number in the wrap-up recomputed from the ledger', 'zero unthanked donors or each assigned by name', 'impact stated concretely, not vaguely', 'donors thanked collectively in the story, individually in the record', 'handoff note tells the next organizer what worked'). Call write_task_note with the totals + checklist and write notes/scope.md.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify against the ledger",
+      "description": "recompute totals, close the thank-you debt",
+      "prompt": "Verify every claim against the ledger. Step 1: recompute the total raised, the gift count, and the percent of goal directly from the donation entries — the wrap-up uses these numbers, not remembered ones. Step 2: list every unthanked donor; draft each missing thank-you for the owner to send now, and record each as thanked through the project's drive capabilities once it goes out (or assign it by name if it truly cannot go now). Step 3: pull the drive's story beats from the record — the first gift, the day the thermometer moved most, the moment the goal broke. Step 4: confirm the impact statement math (what the total actually buys) with the owner. Step 5: write the verified numbers and beats to notes/verify.md and call write_task_note with the final total and the remaining thank-you count (target: zero).",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "notes/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/verify.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/verify.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the wrap-up",
+      "description": "the community story plus the organizer handoff",
+      "prompt": "Write the wrap-up from the verified record. Step 1: the community story — open with the total and what it does, in one warm sentence; tell the drive's arc through the verified beats; thank the givers and the helpers collectively and specifically enough to feel real; end with what happens next with the money. Celebration, not accounting. Step 2: the organizer handoff — the final numbers, what worked and what didn't, the timing and asks that pulled best, and the one thing to do differently — honest and short. Step 3: keep the story shareable as-is (no internal notes in it) and put the handoff under its own heading after it. Write report.md and call write_task_note with the report path and the headline total.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "report.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.md",
+            "bytes": 1500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "report.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open report.md and notes/verify.md and verify every criterion from notes/scope.md: every number in the wrap-up matches the ledger recomputation (re-add the total yourself), the thank-you debt is zero or each remaining one is assigned by name, the impact statement is concrete, the community story stands alone without internal notes, and the handoff names what worked and the one change for next time. Write PASS/FAIL per criterion; on any failure, name the gap and loop back to report.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "report"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

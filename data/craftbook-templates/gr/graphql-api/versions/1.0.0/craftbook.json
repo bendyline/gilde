@@ -1,0 +1,138 @@
+{
+  "id": "graphql-api",
+  "name": "GraphQL API",
+  "description": "Build a GraphQL API with a typed schema (SDL), resolvers, queries, mutations, and input validation. Designs the schema FIRST — types, fields, nullability, query/mutation operations, and the resolver-to-data mapping — because in GraphQL the schema IS the contract, then implements resolvers, then writes operation tests covering each query, mutation, and error. Covers GraphQL schema definition language, resolvers, nullable vs non-null fields, mutations, query arguments, N+1 awareness, and error handling.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Schema design (planner) — lock the SDL types, queries, mutations, nullability → gated on `notes/schema-design.md` (markdown-notes)\n2. Build resolvers (developer) — implement the schema + resolvers → gated on `src/schema.js` (code-module)\n3. Write operation tests (developer) — test each query, mutation, and error → gated on `src/schema.test.js` (code-with-tests)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "schema-design",
+  "triggers": [
+    "build a graphql api",
+    "graphql schema and resolvers",
+    "create a graphql server",
+    "graphql endpoint"
+  ],
+  "steps": [
+    {
+      "id": "schema-design",
+      "name": "Schema design",
+      "description": "lock the SDL types, queries, mutations, nullability",
+      "prompt": "Design the GraphQL schema before any resolver code — in GraphQL the schema is the contract. Step 1: Define the object types and their fields in SDL, deciding nullability (`String` vs `String!`) deliberately for each field. Step 2: Define the root `Query` operations (what can be read) and `Mutation` operations (what can be changed), with their argument types and input types. Step 3: For each operation, note which data source/store backs it and what a resolver must return. Step 4: Decide error handling: which conditions return null vs throw a typed GraphQL error, and the shape of user-facing errors. Step 5: Write a numbered acceptance-criteria checklist of 5-9 items (e.g. 'querying user(id) returns the user or null', 'createUser mutation validates input and returns the created node', 'a non-null field never resolves to null', 'invalid input yields a GraphQL error, not a crash'). `write_task_note` the SDL + checklist and write the same to the produces path. No resolvers yet.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/schema-design.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/schema-design.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/schema-design.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "schema-design",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build resolvers",
+      "description": "implement the schema + resolvers",
+      "prompt": "Implement the GraphQL server in a single runnable source file. Step 1: Declare the schema exactly as designed (SDL string or schema-builder calls) — same types, fields, nullability, operations. Step 2: Write a resolver for every Query and Mutation field; resolvers must honor the declared return types and nullability. Step 3: Validate mutation inputs before mutating; on invalid input throw a typed GraphQL error with a clear message. Step 4: Use an in-memory store if no DB was specified, and make sure non-null fields are always populated. On a loop-back, fix only the named gaps without regressing working resolvers. `write_task_note` the file path and which criteria now pass.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/schema.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/schema.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/schema.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/schema.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/schema.js"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "test"
+    },
+    {
+      "id": "test",
+      "name": "Write operation tests",
+      "description": "test each query, mutation, and error",
+      "prompt": "Write tests that execute real GraphQL operations against the schema. Step 1: For each Query, assert the returned shape matches the SDL (including nulls where allowed). Step 2: For each Mutation, assert the happy path returns the created/updated node, then assert invalid input produces a GraphQL error rather than a crash. Step 3: Add a test proving a non-null field never resolves to null. Step 4: Add a create-then-query round-trip to prove state wiring. Make tests runnable and self-contained. `write_task_note` the test file path and pass/fail count.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/schema.test.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/schema.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/schema.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/schema.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/schema.js"
+          }
+        ],
+        "onReject": "test",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Run the tests and execute sample operations. For EACH acceptance criterion: confirm queries return the SDL-correct shape and nullability, confirm mutations validate input and return the right node, confirm invalid input yields a typed GraphQL error (not a crash), and confirm non-null fields are never null. Write PASS/FAIL per criterion.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

@@ -1,0 +1,133 @@
+{
+  "id": "podcast-chaptering",
+  "name": "Podcast Chapters & Show Notes",
+  "description": "Turn a podcast episode into navigable chapter markers plus publish-ready show notes — timestamped chapter titles, an episode summary, key takeaways, and linked mentions. Scopes the chapter format and show-notes structure FIRST, analyzes the transcript to find real topic boundaries with timestamps, then writes the listener-facing notes in the show's voice. Separating boundary-detection (analysis) from the write-up (copy) is what yields chapters that land on actual topic shifts and notes that read like a human wrote them.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope chapters & notes (planner) — chapter format, count, show-notes sections, voice → gated on `notes/scope.md` (markdown-notes)\n2. Find chapter boundaries (developer) — detect topic shifts, assign timestamps + titles → gated on `notes/chapters.json` (json)\n3. Write show notes (copywriter) — summary, takeaways, chapter list, links in the show voice → gated on `show-notes.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "podcast chapters",
+    "chapter markers for my episode",
+    "write show notes",
+    "timestamp my podcast",
+    "episode summary and chapters"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope chapters & notes",
+      "description": "chapter format, count, show-notes sections, voice",
+      "prompt": "Define the deliverable BEFORE analyzing. Step 1: record the source (episode title, transcript path or audio, duration). Step 2: pick the chapter marker format — the widely-supported `HH:MM:SS Title` lines (Apple/YouTube style), where the FIRST chapter must be `00:00:00`. Step 3: set chapter density (e.g. 5-12 chapters, min ~60s apart, titles ≤ ~40 chars). Step 4: define the show-notes structure: one-paragraph episode summary, 3-6 key takeaways, the timestamped chapter list, and a 'mentioned in this episode' links list. Step 5: capture the show's voice. Write an acceptance-criteria checklist (first chapter is 00:00:00, timestamps monotonic and within duration, titles concise and descriptive, notes have all four sections, every claim traces to the transcript) and decisions to `notes/scope.md` via write_task_note AND to the produces path.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "analyze"
+    },
+    {
+      "id": "analyze",
+      "name": "Find chapter boundaries",
+      "description": "detect topic shifts, assign timestamps + titles",
+      "prompt": "Find where topics actually change. Step 1: read the transcript with its timestamps. Step 2: detect topic boundaries — points where the subject clearly shifts (new question, new segment, ad break, guest change) — not arbitrary fixed intervals. Step 3: for each boundary record the start timestamp (rounded to the second) and a short descriptive title; force the first to `00:00:00`. Step 4: enforce the scoped density/spacing/title-length rules, merging boundaries that are too close. Step 5: write the structured chapter list to `notes/chapters.json` (each: start `HH:MM:SS`, title, a one-line topic note) via write_task_note AND the produces path so the writer has structured input. On a loop-back, adjust only the flagged boundaries.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "notes/chapters.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/chapters.json",
+            "bytes": 2
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "notes/chapters.json"
+            }
+          }
+        ],
+        "onReject": "analyze",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write show notes",
+      "description": "summary, takeaways, chapter list, links in the show voice",
+      "prompt": "Write the publish-ready notes from the analysis. Step 1: open with a one-paragraph episode summary in the show's voice. Step 2: list 3-6 key takeaways as tight bullets. Step 3: render the chapter list as plain `HH:MM:SS Title` lines (paste-ready into a podcast host / YouTube description) directly from `notes/chapters.json`, first line `00:00:00`. Step 4: add a 'Mentioned in this episode' section with the people/links/resources referenced. Step 5: assemble all of it into `show-notes.md` with clear section headers. Do not invent facts not in the transcript. write_task_note the path and chapter count. On a loop-back, fix only the flagged sections.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "show-notes.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "show-notes.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "show-notes.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Check the chapters and notes. Step 1: confirm the chapter list's FIRST line is `00:00:00` and all timestamps are monotonic, spaced per scope, and within the episode duration (PASS/FAIL). Step 2: spot-check 3 chapter timestamps against the transcript — does each land on a real topic shift? Step 3: confirm show-notes.md has all four sections (summary, takeaways, chapters, mentions). Step 4: confirm claims trace to the transcript (nothing invented) and the voice matches the show. Step 5: confirm titles are concise and descriptive. Write PASS/FAIL per criterion.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

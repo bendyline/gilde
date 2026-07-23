@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Meal planner</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2; --card: #fff; --ink: #2b2620; --muted: #7a7166;
+        --accent: #b5651d; --track: #ece5da; --good: #4a7c59; --warn: #a4552e;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+          --accent: #e0894a; --track: #3a352f; --good: #7fae8d; --warn: #d98a63;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--ink); padding: 1.5rem 1.25rem; }
+      main { max-width: 680px; margin: 0 auto; }
+      h1 { font-family: Georgia, 'PT Serif', 'Times New Roman', serif; font-size: 1.35rem; font-weight: 600; margin: 0 0 0.15rem; }
+      .sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.9rem; }
+      .week { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.4rem 0; margin-bottom: 0.75rem; }
+      .day { display: grid; grid-template-columns: 6.5rem 1fr; gap: 0.6rem; padding: 0.4rem 1rem; font-size: 0.9rem; }
+      .day + .day { border-top: 1px solid var(--track); }
+      .day .name { color: var(--muted); text-transform: capitalize; }
+      .day.today { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+      .day.today .name { color: var(--accent); font-weight: 600; }
+      .day .meal.unplanned { color: var(--muted); font-style: italic; }
+      .panel { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.85rem 1rem; font-size: 0.9rem; }
+      .panel h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 0.5rem; }
+      .panel ul { margin: 0; padding-left: 1.05rem; }
+      .panel li { margin: 0.2rem 0; }
+      .panel .lvl { color: var(--warn); font-size: 0.78rem; }
+      .empty { color: var(--muted); font-style: italic; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Meal planner</h1>
+      <p class="sub" id="sub">Loading the week…</p>
+      <div class="week" id="week"></div>
+      <div class="panel">
+        <h2>Grocery list</h2>
+        <ul id="groceries"><li class="empty">Nothing needed — the pantry is holding.</li></ul>
+      </div>
+    </main>
+    <script>
+      (function () {
+        'use strict';
+        var parts = location.pathname.split('/').filter(Boolean);
+        var typeIdx = parts.indexOf('type');
+        var capability = typeIdx > 0 ? parts[typeIdx - 1] : null;
+        var projectId = typeIdx >= 0 ? parts[typeIdx + 1] : null;
+        var failedPolls = 0;
+        var DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
+        function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+        function today() { return DAYS[(new Date().getUTCDay() + 6) % 7]; }
+
+        function fetchJson(file) {
+          return fetch('/preview/' + encodeURIComponent(capability) + '/workspace/' + encodeURIComponent(projectId) + '/' + file, { cache: 'no-store' })
+            .then(function (r) { if (!r.ok) throw new Error('poll ' + r.status); return r.json(); });
+        }
+
+        function render(menu, pantry) {
+          var days = (menu && menu.days) || {};
+          var planned = DAYS.filter(function (d) { return days[d]; }).length;
+          var tonight = days[today()];
+          document.getElementById('sub').textContent =
+            (tonight ? 'Tonight: ' + tonight + ' · ' : 'Nothing planned tonight · ') + planned + ' of 7 planned';
+
+          document.getElementById('week').innerHTML = DAYS.map(function (d) {
+            return '<div class="day' + (d === today() ? ' today' : '') + '"><span class="name">' + d + '</span>' +
+              (days[d] ? '<span class="meal">' + esc(days[d]) + '</span>' : '<span class="meal unplanned">not planned</span>') + '</div>';
+          }).join('');
+
+          var gap = ((pantry && pantry.records) || []).filter(function (r) { return r.status === 'low' || r.status === 'out'; });
+          if (gap.length) {
+            document.getElementById('groceries').innerHTML = gap.map(function (r) {
+              return '<li>' + esc((r.fields && r.fields.name) || r.id) + ' <span class="lvl">(' + r.status + ')</span></li>';
+            }).join('');
+          } else {
+            document.getElementById('groceries').innerHTML = '<li class="empty">Nothing needed — the pantry is holding.</li>';
+          }
+        }
+
+        function poll() {
+          if (!capability || !projectId) return Promise.resolve();
+          return Promise.all([
+            fetchJson('menu.json').catch(function () { return { days: {} }; }),
+            fetchJson('pantry.json').catch(function () { return { records: [] }; }),
+          ])
+            .then(function (results) { failedPolls = 0; render(results[0], results[1]); })
+            .catch(function () {
+              failedPolls += 1;
+              if (failedPolls === 3 && window.parent !== window) window.parent.postMessage({ __gezelPageRefresh: true }, '*');
+            });
+        }
+        poll().then(function () { setInterval(function () { void poll(); }, 6000); });
+      })();
+    </script>
+  </body>
+</html>

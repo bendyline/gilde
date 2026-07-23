@@ -1,0 +1,97 @@
+{
+  "id": "seo-meta-pack",
+  "name": "SEO Metadata Pack",
+  "description": "Generate a complete on-page SEO metadata pack for a set of pages: it first scopes each page's primary keyword and search intent and the length/format rules (title tag, meta description, Open Graph, Twitter card, slug), then writes optimized, unique metadata for every page that respects pixel/character limits and front-loads the keyword, producing a structured JSON file ready to drop into a CMS or templating layer. Covers SEO metadata, meta tags, title tags, meta descriptions, Open Graph tags, social cards, and on-page SEO. Scoping the keyword and limits per page before writing is the point: a small model that fixes the rules first produces unique, limit-respecting tags across the whole set, instead of duplicate titles and descriptions that get truncated in the SERP.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Metadata scope (planner) — lock per-page keyword/intent and the metadata field rules → gated on `notes/scope.md` (markdown-notes)\n2. Write the metadata (copywriter) — write unique, limit-respecting metadata for every page → gated on `seo-meta.json` (json)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "write seo meta tags",
+    "generate meta descriptions",
+    "title tags for pages",
+    "open graph tags",
+    "seo metadata pack"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Metadata scope",
+      "description": "lock per-page keyword/intent and the metadata field rules",
+      "prompt": "1) List the pages in scope; for EACH, identify its primary keyword/phrase and search intent in one line. 2) Lock the field schema and limits: title tag (50-60 chars, keyword near front, brand suffix policy), meta description (140-155 chars, includes keyword + a soft CTA), URL slug (lowercase, hyphenated, keyword-based), Open Graph (og:title, og:description, og:type), and Twitter card (card type, title, description). 3) Set the duplicate policy: every title and description must be UNIQUE across pages. Write an acceptance-criteria checklist (e.g. 'every page has all fields'; 'titles 50-60 chars, descriptions 140-155 chars'; 'primary keyword present and front-loaded in title'; 'no duplicate titles or descriptions across pages'; 'slugs are valid kebab-case'; 'OG/Twitter fields populated'). Use write_task_note for the per-page keyword map + field rules + checklist, and write the same to the produces path. No metadata yet.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Write the metadata",
+      "description": "write unique, limit-respecting metadata for every page",
+      "prompt": "Write the metadata for EVERY page in scope to the locked schema. 1) For each page: a title tag (50-60 chars, primary keyword front-loaded, brand suffix per policy), a meta description (140-155 chars with the keyword and a soft CTA), a kebab-case slug, and the Open Graph + Twitter card fields. 2) Count characters for title and description and stay within range — do not exceed limits or they truncate in the SERP. 3) Ensure NO title and NO description is duplicated across pages. 4) Make each compelling and accurate to the page, not keyword-stuffed. 5) Output a single valid JSON array, one object per page: {\"page\", \"title\", \"titleChars\", \"metaDescription\", \"descChars\", \"slug\", \"og\": {\"title\",\"description\",\"type\"}, \"twitter\": {\"card\",\"title\",\"description\"}}. Save to the produces path and note the page count.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "seo-meta.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "seo-meta.json",
+            "bytes": 2
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "seo-meta.json"
+            }
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Parse seo-meta.json (must be valid JSON) and grade against the checklist. Check EACH criterion and write PASS/FAIL: (a) every page in scope has an object with all fields populated; (b) titles are 50-60 chars and descriptions 140-155 chars (verify the char counts); (c) the primary keyword is present and front-loaded in each title; (d) no duplicate titles or descriptions across pages; (e) slugs are valid lowercase kebab-case; (f) OG and Twitter fields are populated. A pack with truncated, duplicate, or missing metadata FAILS — loop back to build and name the offending pages.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

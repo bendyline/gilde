@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Checkers</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2;
+        --card: #fff;
+        --ink: #2b2620;
+        --muted: #7a7166;
+        --accent: #b5651d;
+        --track: #ece5da;
+        --sq-light: #f3ead9;
+        --sq-dark: #b08968;
+        --sq-hint: #7a9e7e;
+        --red-a: #c9502c;
+        --red-b: #8f3018;
+        --black-a: #4a423a;
+        --black-b: #211c17;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1c1a17;
+          --card: #262320;
+          --ink: #efe9e0;
+          --muted: #a59a8c;
+          --accent: #e0894a;
+          --track: #3a352f;
+          --sq-light: #3c362e;
+          --sq-dark: #6b4f37;
+          --sq-hint: #5d7f62;
+          --red-a: #d96a42;
+          --red-b: #9c3b1e;
+          --black-a: #8c8378;
+          --black-b: #3a342d;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+        padding: 1.25rem;
+      }
+      main { max-width: 720px; margin: 0 auto; }
+      header { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+      h1 {
+        font-family: Georgia, 'PT Serif', 'Times New Roman', serif;
+        font-size: 1.35rem;
+        font-weight: 600;
+        margin: 0;
+      }
+      .status { color: var(--muted); font-size: 0.9rem; margin: 0.15rem 0 0.9rem; }
+      .status .thinking { color: var(--accent); }
+      button.newgame {
+        border: 1px solid var(--track);
+        background: var(--card);
+        color: var(--ink);
+        border-radius: 6px;
+        padding: 0.3rem 0.7rem;
+        font: inherit;
+        font-size: 0.85rem;
+        cursor: pointer;
+      }
+      button.newgame:hover { border-color: var(--accent); }
+      .table { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 0.9rem; }
+      .boardwrap {
+        background: var(--card);
+        border: 1px solid var(--track);
+        border-radius: 10px;
+        padding: 0.75rem;
+      }
+      .board {
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        aspect-ratio: 1;
+        border-radius: 6px;
+        overflow: hidden;
+        user-select: none;
+      }
+      .cell { position: relative; display: grid; place-items: center; }
+      .cell.light { background: var(--sq-light); }
+      .cell.dark { background: var(--sq-dark); cursor: default; }
+      .cell.dark.selectable { cursor: pointer; }
+      .cell.dark.selected { outline: 3px solid var(--accent); outline-offset: -3px; }
+      .cell.dark.hint { box-shadow: inset 0 0 0 999px rgba(0, 0, 0, 0.08); cursor: pointer; }
+      .cell.dark.hint::after {
+        content: '';
+        width: 26%;
+        height: 26%;
+        border-radius: 50%;
+        background: var(--sq-hint);
+        opacity: 0.9;
+      }
+      .piece {
+        width: 76%;
+        height: 76%;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+        font-size: 0.8rem;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+      }
+      .piece.red { background: radial-gradient(circle at 32% 30%, var(--red-a), var(--red-b)); color: #f8e8de; }
+      .piece.black { background: radial-gradient(circle at 32% 30%, var(--black-a), var(--black-b)); color: #d9d2c7; }
+      .aside { display: flex; flex-direction: column; gap: 0.6rem; min-width: 0; }
+      .panel {
+        background: var(--card);
+        border: 1px solid var(--track);
+        border-radius: 10px;
+        padding: 0.7rem 0.85rem;
+        font-size: 0.85rem;
+      }
+      .panel h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 0.35rem; }
+      .quip { font-style: italic; }
+      .quip .who { color: var(--muted); font-style: normal; font-size: 0.78rem; display: block; margin-bottom: 0.15rem; }
+      .log { margin: 0; padding-left: 1.05rem; max-height: 200px; overflow-y: auto; }
+      .log li { margin: 0.15rem 0; color: var(--muted); }
+      .log li.latest { color: var(--ink); }
+      .banner {
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        padding: 0.45rem 0.7rem;
+        font-size: 0.85rem;
+        margin-bottom: 0.75rem;
+        display: none;
+      }
+      .banner.show { display: block; }
+      @media (max-width: 640px) { .table { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="banner" id="banner"></div>
+      <header>
+        <h1>Checkers</h1>
+        <button type="button" class="newgame" id="newgame">New game</button>
+      </header>
+      <p class="status" id="status">Setting up the board…</p>
+      <div class="table">
+        <div class="boardwrap"><div class="board" id="board"></div></div>
+        <div class="aside">
+          <div class="panel quip" id="quip-panel" hidden>
+            <span class="who">Damspeler says</span>
+            <span id="quip"></span>
+          </div>
+          <div class="panel">
+            <h2>Moves</h2>
+            <ol class="log" id="log"><li>No moves yet — red opens.</li></ol>
+          </div>
+        </div>
+      </div>
+    </main>
+    <script>
+      (function () {
+        'use strict';
+
+        // ── gezelPage helper: postMessage bridge to the first-party parent.
+        // The sandboxed page's only write path — the parent validates the
+        // tool against the type manifest and relays to the page-invoke
+        // route. Not embedded (opened in a browser tab) → invoke rejects
+        // and the board goes read-only.
+        var gezelPage = (function () {
+          var seq = 0;
+          var pending = {};
+          window.addEventListener('message', function (event) {
+            var d = event.data;
+            if (!d || d.__gezelPageResult !== true || typeof d.id !== 'string') return;
+            var entry = pending[d.id];
+            if (!entry) return;
+            delete pending[d.id];
+            clearTimeout(entry.timer);
+            if (d.ok) entry.resolve(d);
+            else entry.reject(new Error(d.error || 'invoke failed'));
+          });
+          return {
+            embedded: function () {
+              return window.parent !== window;
+            },
+            invoke: function (tool, input) {
+              return new Promise(function (resolve, reject) {
+                if (window.parent === window) {
+                  reject(new Error('not embedded in Gezel'));
+                  return;
+                }
+                seq += 1;
+                var id = 'pi-' + Date.now() + '-' + seq;
+                pending[id] = {
+                  resolve: resolve,
+                  reject: reject,
+                  timer: setTimeout(function () {
+                    delete pending[id];
+                    reject(new Error('invoke timed out'));
+                  }, 45000),
+                };
+                window.parent.postMessage(
+                  { __gezelPageInvoke: true, id: id, tool: tool, input: input || {} },
+                  '*',
+                );
+              });
+            },
+            refresh: function () {
+              if (window.parent !== window) window.parent.postMessage({ __gezelPageRefresh: true }, '*');
+            },
+          };
+        })();
+
+        // ── data plumbing: capability + projectId from our own path; state
+        // via capability-scoped polling of game.json (declared in
+        // pages.reads).
+        var parts = location.pathname.split('/').filter(Boolean);
+        var typeIdx = parts.indexOf('type');
+        var capability = typeIdx > 0 ? parts[typeIdx - 1] : null;
+        var projectId = typeIdx >= 0 ? parts[typeIdx + 1] : null;
+        var FILES = 'abcdefgh';
+
+        var state = null;
+        var selected = null;
+        var busy = false;
+        var pollTimer = null;
+        var failedPolls = 0;
+
+        function sqName(x, y) { return FILES[x] + String(8 - y); }
+        function esc(s) {
+          return String(s).replace(/[&<>"]/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+          });
+        }
+
+        function setBanner(text) {
+          var el = document.getElementById('banner');
+          el.textContent = text || '';
+          el.className = text ? 'banner show' : 'banner';
+        }
+
+        function statusLine() {
+          if (!state) return 'Setting up the board…';
+          if (state.status === 'user_won') return 'You won! A gracious rematch awaits.';
+          if (state.status === 'ai_won') return 'The Damspeler takes this one — rematch?';
+          if (busy) return 'Sending your move…';
+          if (state.turn === 'ai') return 'Damspeler is thinking…';
+          var caps = state.legalMoves.some(function (m) { return m.captures.length > 0; });
+          return caps ? 'Your move — a capture is available (captures are forced).' : 'Your move.';
+        }
+
+        function render() {
+          document.getElementById('status').innerHTML =
+            state && state.turn === 'ai' && state.status === 'playing'
+              ? '<span class="thinking">' + esc(statusLine()) + '</span>'
+              : esc(statusLine());
+
+          var quipPanel = document.getElementById('quip-panel');
+          if (state && state.lastQuip) {
+            quipPanel.hidden = false;
+            document.getElementById('quip').textContent = state.lastQuip;
+          } else {
+            quipPanel.hidden = true;
+          }
+
+          var log = document.getElementById('log');
+          if (state && state.moveLog.length) {
+            log.innerHTML = state.moveLog
+              .slice(-8)
+              .map(function (m, i, arr) {
+                var text = (m.by === 'user' ? 'Red ' : 'Black ') + m.from +
+                  (m.captures.length ? 'x' : '-') + m.to;
+                return '<li' + (i === arr.length - 1 ? ' class="latest"' : '') + '>' + esc(text) + '</li>';
+              })
+              .join('');
+          }
+
+          var board = document.getElementById('board');
+          board.innerHTML = '';
+          if (!state) return;
+          var myTurn = state.turn === 'user' && state.status === 'playing' && !busy;
+          var origins = {};
+          var hints = {};
+          if (myTurn) {
+            state.legalMoves.forEach(function (m) { origins[m.from] = true; });
+            if (selected) {
+              state.legalMoves.forEach(function (m) {
+                if (m.from === selected) hints[m.to] = m;
+              });
+            }
+          }
+          for (var y = 0; y < 8; y += 1) {
+            for (var x = 0; x < 8; x += 1) {
+              (function (x, y) {
+                var name = sqName(x, y);
+                var ch = state.squares[y * 8 + x];
+                var dark = (x + y) % 2 === 1;
+                var cell = document.createElement('div');
+                cell.dataset.square = name;
+                var cls = 'cell ' + (dark ? 'dark' : 'light');
+                if (name === selected) cls += ' selected';
+                if (hints[name]) cls += ' hint';
+                if (myTurn && origins[name]) cls += ' selectable';
+                cell.className = cls;
+                if (ch !== '.') {
+                  var piece = document.createElement('div');
+                  var red = ch === 'r' || ch === 'R';
+                  piece.className = 'piece ' + (red ? 'red' : 'black');
+                  if (ch === 'R' || ch === 'B') piece.textContent = 'K';
+                  cell.appendChild(piece);
+                }
+                cell.addEventListener('click', function () {
+                  if (!myTurn) return;
+                  if (hints[name]) {
+                    playMove(hints[name]);
+                  } else if (origins[name]) {
+                    selected = selected === name ? null : name;
+                    render();
+                  } else if (selected) {
+                    selected = null;
+                    render();
+                  }
+                });
+                board.appendChild(cell);
+              })(x, y);
+            }
+          }
+        }
+
+        function playMove(move) {
+          busy = true;
+          selected = null;
+          render();
+          gezelPage
+            .invoke('user_move', { from: move.from, to: move.to })
+            .then(function (res) {
+              busy = false;
+              if (res.reaction && res.reaction.delivered === false && res.reaction.reason === 'engagement-off') {
+                setBanner('Move played — but the AI is off in Settings, so the Damspeler cannot reply.');
+              }
+              return poll();
+            })
+            .catch(function (err) {
+              busy = false;
+              setBanner(String(err && err.message ? err.message : err));
+              render();
+            });
+        }
+
+        function newGame() {
+          if (!gezelPage.embedded()) return;
+          busy = true;
+          render();
+          gezelPage
+            .invoke('new_game', {})
+            .then(function () {
+              busy = false;
+              setBanner('');
+              return poll();
+            })
+            .catch(function (err) {
+              busy = false;
+              setBanner(String(err && err.message ? err.message : err));
+              render();
+            });
+        }
+
+        function poll() {
+          if (!capability || !projectId) return Promise.resolve();
+          return fetch(
+            '/preview/' + encodeURIComponent(capability) + '/workspace/' + encodeURIComponent(projectId) + '/game.json',
+            { cache: 'no-store' },
+          )
+            .then(function (r) {
+              if (!r.ok) throw new Error('poll ' + r.status);
+              return r.json();
+            })
+            .then(function (next) {
+              failedPolls = 0;
+              state = next;
+              render();
+            })
+            .catch(function () {
+              failedPolls += 1;
+              // The 2 h absolute capability expiry surfaces as failing
+              // polls — ask the parent to re-mint and reload the frame.
+              if (failedPolls === 3) gezelPage.refresh();
+            });
+        }
+
+        function schedule() {
+          if (pollTimer) clearTimeout(pollTimer);
+          var wait = state && state.turn === 'ai' && state.status === 'playing' ? 1500 : 5000;
+          pollTimer = setTimeout(function () {
+            poll().then(schedule, schedule);
+          }, wait);
+        }
+
+        document.getElementById('newgame').addEventListener('click', newGame);
+        if (!gezelPage.embedded()) {
+          setBanner('Read-only view — moves need the Gezel app (open this project and use the Output tab).');
+        }
+        poll().then(schedule, schedule);
+      })();
+    </script>
+  </body>
+</html>

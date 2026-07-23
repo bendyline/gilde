@@ -1,0 +1,139 @@
+{
+  "id": "dockerize-app",
+  "name": "Containerize a Service",
+  "description": "Containerize an application with a production-grade Dockerfile — small, secure, reproducible, and buildable — plus the supporting files to run it. Scopes the container contract FIRST — base image, build vs runtime stages, dependencies, exposed port, entrypoint, env config, and the size/security bar — then writes the Dockerfile + .dockerignore + compose, then a reviewer confirms it builds, runs, and meets the bar. Covers multi-stage builds, slim base images, layer caching, non-root user, .dockerignore, healthchecks, EXPOSE/ENTRYPOINT, and reproducible image builds.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the container (planner) — lock base image, stages, port, entrypoint, bar → gated on `notes/scope.md` (markdown-notes)\n2. Write the Dockerfile (developer) — implement the multi-stage Dockerfile + support files → gated on `Dockerfile` (code-module)\n3. Verify the image (reviewer) — confirm it builds, runs, and meets the bar → gated on `notes/verify.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "dockerize this app",
+    "write a dockerfile",
+    "containerize a service",
+    "create a docker image",
+    "docker compose setup"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the container",
+      "description": "lock base image, stages, port, entrypoint, bar",
+      "prompt": "Scope the container before writing the Dockerfile. Step 1: Identify the runtime (language/version) and pick a slim, pinned base image. Step 2: Decide the build strategy: a multi-stage build (build deps in one stage, copy only artifacts to a slim runtime stage) and what gets copied forward. Step 3: List the dependencies to install, the port to EXPOSE, the ENTRYPOINT/CMD, and the env vars the app needs at runtime. Step 4: Set the bar: run as a non-root user, a .dockerignore that excludes junk, a healthcheck, and a rough image-size target. Step 5: Write a numbered acceptance-criteria checklist of 5-9 items (e.g. 'docker build succeeds from a clean context', 'the container starts and serves on the exposed port', 'runs as non-root', 'final image uses a multi-stage slim base'). `write_task_note` the scope + checklist and write the same to the produces path.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Write the Dockerfile",
+      "description": "implement the multi-stage Dockerfile + support files",
+      "prompt": "Author the containerization files to the scope. Step 1: Write a multi-stage `Dockerfile` — a build stage that installs deps and builds, then a slim runtime stage that copies only the needed artifacts. Step 2: Order layers for cache efficiency (copy manifest + install deps BEFORE copying source), pin the base image, set a non-root USER, EXPOSE the port, and define ENTRYPOINT/CMD and a HEALTHCHECK. Step 3: Write a `.dockerignore` that excludes node_modules, .git, build output, and secrets. Step 4: If a service needs orchestration, add a minimal compose/run file. Step 5: Build the image and confirm it succeeds and the container starts. Write the Dockerfile to the produces path. On a loop-back, fix only the named gaps. `write_task_note` the file paths and which criteria now pass.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "Dockerfile",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "Dockerfile",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "Dockerfile",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "Dockerfile"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "Dockerfile"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify the image",
+      "description": "confirm it builds, runs, and meets the bar",
+      "prompt": "Verify the container build. Step 1: Build the image from a clean context and confirm the build succeeds. Step 2: Run the container and confirm it starts and serves on the exposed port (hit the healthcheck/endpoint). Step 3: Confirm the bar: multi-stage slim base, non-root user, a real .dockerignore, pinned base image, and a sane final size. Step 4: Confirm no secrets or junk were baked into the image layers. Write a verification note with the build result, run check, and size to the produces path.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "Dockerfile",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "Dockerfile",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "Dockerfile"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "Dockerfile"
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Build and run the image. For EACH acceptance criterion: confirm `docker build` succeeds from a clean context, confirm the container starts and serves on the exposed port, confirm it runs as non-root with a multi-stage slim base and a .dockerignore, and confirm no secrets/junk were baked in. Write PASS/FAIL per criterion.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

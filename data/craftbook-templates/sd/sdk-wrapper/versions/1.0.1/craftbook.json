@@ -1,0 +1,126 @@
+{
+  "id": "sdk-wrapper",
+  "name": "Typed SDK Wrapper for an External API",
+  "description": "Wrap a third-party HTTP API as a clean, typed client library — studying the real API surface first so the wrapper matches reality, not guesses. Studies the API FIRST — endpoints, auth, request/response shapes, rate limits, error formats, and pagination from the actual docs — then builds a typed client with sensible methods and error handling, then tests each method against a mocked API including auth and error paths. Covers reading API docs, typed request/response models, auth handling, retry/rate-limit awareness, pagination helpers, error mapping, and a mockable client.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Study the API (researcher) — extract endpoints, auth, shapes, limits from the docs → gated on `notes/api-study.md` (markdown-notes)\n2. Build the client (developer) — implement the typed client to the study → gated on `src/client.ts` (code-module)\n3. Test against a mock (developer) — test each method, auth, errors, pagination → gated on `src/client.test.ts` (code-with-tests)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "api-study",
+  "triggers": [
+    "wrap an api",
+    "build an sdk client",
+    "typed api client",
+    "create a wrapper for an external api",
+    "api client library"
+  ],
+  "steps": [
+    {
+      "id": "api-study",
+      "name": "Study the API",
+      "description": "extract endpoints, auth, shapes, limits from the docs",
+      "prompt": "Study the real external API before writing a client — the wrapper must match reality, not a guess. Step 1: From the API's documentation, list the endpoints you will wrap with their methods, paths, and required params. Step 2: Capture the AUTH scheme (API key header, OAuth bearer, etc.) and how it is attached to requests. Step 3: Record the request and response JSON shapes for each endpoint, the error response format and status codes, the pagination scheme, and any rate limits. Step 4: Note quirks (snake_case fields, nullable fields, enum values). Step 5: Write a numbered acceptance-criteria checklist of 5-9 items (e.g. 'each wrapped endpoint has a typed method matching the real shape', 'auth is attached correctly', 'API errors map to a typed client error', 'pagination is handled'). `write_task_note` the API study (endpoints + shapes + auth + errors) + checklist and write the same to the produces path.",
+      "suggestedRole": "researcher",
+      "advanceWhen": {
+        "file": "notes/api-study.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/api-study.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/api-study.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "api-study",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the client",
+      "description": "implement the typed client to the study",
+      "prompt": "Implement the typed client to the API study. Step 1: Define request/response types matching the real shapes (including the API's casing and nullability), and a typed error type. Step 2: Write a client class/factory that takes config (base URL, credentials) and attaches auth to every request as studied. Step 3: Implement one method per wrapped endpoint with typed params and a typed return; parse responses into the typed models. Step 4: Map non-2xx responses to the typed client error (do not leak raw HTTP), and add a pagination helper and basic retry/backoff for rate limits if the API needs it. Step 5: Make the transport injectable so it can be mocked in tests. Write the client to the produces path. On a loop-back, fix only the named gaps. `write_task_note` the file path and which criteria now pass.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/client.ts",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/client.ts",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/client.ts",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/client.ts"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "test"
+    },
+    {
+      "id": "test",
+      "name": "Test against a mock",
+      "description": "test each method, auth, errors, pagination",
+      "prompt": "Write tests against a mocked transport (no live network). Step 1: For each method, mock the API's documented success response and assert the client returns the correctly-typed parsed result. Step 2: Assert auth headers/credentials are attached to outgoing requests. Step 3: Mock error responses (4xx/5xx) and assert they surface as the typed client error, not a raw HTTP throw. Step 4: Assert the pagination helper walks multiple pages, and retry/backoff fires on a rate-limit response if implemented. `write_task_note` the test file path and pass/fail count.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/client.test.ts",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/client.test.ts",
+            "bytes": 200
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/client.test.ts"
+          }
+        ],
+        "onReject": "test",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Run the tests against the mocked API. For EACH acceptance criterion: confirm each method returns the correctly-typed result for the documented response, confirm auth is attached, confirm API errors map to a typed client error (no raw HTTP leak), and confirm pagination/retry behave. Write PASS/FAIL per criterion; a method whose types do not match the real API shape is a FAIL.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-07-16T00:00:00Z"
+}

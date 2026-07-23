@@ -1,0 +1,387 @@
+{
+  "schemaVersion": 1,
+  "title": "REST API contract and implementation",
+  "objective": "Measure the REST API craftbook shape with a deterministic bookstore API brief requiring OpenAPI, a dependency-free Node server, contract tests, pagination, auth, and error handling.",
+  "tags": [
+    "code"
+  ],
+  "prompt": "In the `REST API Eval` project, read `source/api-brief.md` and write `openapi.yaml`, `server.mjs`, `contract-test.mjs`, and `README.md`. Keep the implementation offline and dependency-free using Node ESM and `node:http` in the server only; do not use `require`, `node-fetch`, Express, Fastify, `/api/v1` prefixes, or package installs. Implement the exact paths GET /books, GET /books/{id}, and POST /books. `openapi.yaml` must use OpenAPI `3.1.0`, define `components.securitySchemes.bearerAuth`, apply that bearer auth to POST /books, define an `ErrorEnvelope` schema, and mention error codes `VALIDATION_ERROR` and `BOOK_NOT_FOUND`. `server.mjs` must export `createBookstoreServer()` without starting the listener itself, must enforce exact `Authorization: Bearer eval-token` on POST /books with 401 for missing/wrong tokens, must not import from `./server` or `./server.mjs`, and must not replace the native `server.close` method. In `server.mjs`, import the HTTP module normally at top level with `import http from 'node:http'` or `import { createServer } from 'node:http'`; do not use `await import('node:http')`. The ban on `node:http` imports applies only to `contract-test.mjs`. In every `server.mjs` route branch, send exactly one response per request: after any `sendResponse`, `sendJson`, `res.writeHead`, or `res.end` for auth, validation, not-found, or success, immediately `return` so the code never falls through into another response. `contract-test.mjs` must be a complete runnable file with no placeholder elisions like `... rest of file`. It must import `createBookstoreServer` from exactly `./server.mjs`, import assertions from `node:assert/strict`, must not import `node:http`, must call `createBookstoreServer()` and run the tests at top level when invoked with `node contract-test.mjs`, call `server.listen(0)` itself, resolve the assigned port inside the `listen(0)` callback using `server.address().port`, build every request URL from that resolved `baseUrl` including the assigned port, and never use `new URL(path, 'http://localhost')` because it drops the port. Use Node's built-in global `fetch()` directly or through a helper that calls `globalThis.fetch(url, options)`, declare any helper that awaits `fetch()` as `async`, pass POST `method`, `headers`, and `body` options through to `fetch`, and make the helper return status plus parsed JSON for all HTTP statuses instead of throwing on expected 400/401/404 responses. Run and log pagination/not-found/auth failure/validation failure/create success checks, include an explicit pagination request using `/books?limit=2` or equivalent URLSearchParams limit=2, run non-mutating checks before the create-success mutation or otherwise isolate state, and close the server cleanly. Do not wait for a `listening` event after `listen()` has already fired. Do not define or export tests that are never called. If you catch a test failure, log `error.stack ?? error` before rethrowing or setting a non-zero exit code; do not print only a generic failure banner. `README.md` must include a Usage section with these exact command lines: `node server.mjs` and `node contract-test.mjs`. It must also list GET /books, GET /books/{id}, POST /books, and show `Authorization: Bearer eval-token` for POST.",
+  "setup": {
+    "projectName": "REST API Eval",
+    "about": "Self-contained eval project for REST API craftbook behavior. The API brief is in workspace/source/api-brief.md and no live service or package install is needed.",
+    "missionObjectives": "Build a dependency-free API contract, server stub, tests, and run notes from the seeded brief. Do not use external services or credentials.",
+    "files": [
+      {
+        "path": "source/api-brief.md",
+        "content": "# Bookstore API brief\n\nResource: books for a small local bookstore.\nOpenAPI version: 3.1.0.\nSeed books: bk-1 The Left Hand of Darkness by au-1; bk-2 Parable of the Sower by au-2; bk-3 A Wizard of Earthsea by au-1.\nEndpoints:\n- GET /books?limit=&offset= returns `{ items, pagination: { limit, offset, total, hasMore } }`.\n- GET /books/{id} returns one book or 404 `{ error: { code: \"BOOK_NOT_FOUND\", message } }`.\n- POST /books creates a book and requires `Authorization: Bearer eval-token`.\n- POST body requires title and authorId. Missing fields return 400 `{ error: { code: \"VALIDATION_ERROR\", message } }`.\nOpenAPI auth requirement: define `components.securitySchemes.bearerAuth` with HTTP bearer auth and add `security: [{ bearerAuth: [] }]` to POST /books.\nOpenAPI must define an `ErrorEnvelope` schema shaped like `{ error: { code, message } }` and must mention `VALIDATION_ERROR` and `BOOK_NOT_FOUND` as concrete error codes.\nImplementation constraints: Node ESM, built-in modules only, no Express/Fastify/package install, server exports a `createBookstoreServer()` helper for tests and does not call listen() inside that helper. `server.mjs` must import the HTTP module normally at top level, such as `import http from \"node:http\"` or `import { createServer } from \"node:http\"`; do not use `await import(\"node:http\")`. `server.mjs` must enforce exact `Authorization: Bearer eval-token` on POST /books and return 401 for missing or wrong tokens. Every route branch in `server.mjs` must send exactly one response per request; after an auth, validation, not-found, or success response, immediately `return` so later code cannot write headers again. `server.mjs` must not import itself or import from `./server` or `./server.mjs`, and must not assign or replace `server.close`.\nTests must be complete runnable files with no placeholder elisions. They must import from exactly ./server.mjs, use node:assert/strict, call createBookstoreServer(), and run the tests at top level when `node contract-test.mjs` executes. Use the built-in global fetch() directly or through a helper that calls globalThis.fetch(url, options), call server.listen(0), resolve the assigned port inside the listen callback with server.address().port, and build request URLs from that resolved baseUrl before making requests. Do not use `new URL(path, \"http://localhost\")` in contract-test.mjs because it drops the assigned port. Do not wait for a `listening` event after `listen()` has already fired. Do not import node:http, node-fetch, or replace the global fetch function. If a helper uses `await fetch(...)`, declare that helper with `async function` or as an async arrow function, and pass POST method/headers/body options through to fetch. The helper must not throw on expected 400/401/404 HTTP responses; return status plus parsed JSON so negative tests can assert error codes. Do not catch assertion failures unless you log `error.stack ?? error` and then rethrow them or set a non-zero exit code. Run and log pagination, not-found, auth failure, validation failure, and create-success checks; the pagination check must explicitly request limit=2. Do not define or export tests that are never called. Run non-mutating checks before create success, or isolate/reset server state so pagination totals do not assume the seeded count after a create. Close the server cleanly.\nREADME must include a Usage section that shows these exact command lines: `node server.mjs` and `node contract-test.mjs`. It must also list GET /books, GET /books/{id}, POST /books, and the POST header `Authorization: Bearer eval-token`."
+      }
+    ],
+    "worker": {
+      "name": "Ravi",
+      "role": "Developer"
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "The run writes a contract, dependency-free server, contract tests, and run notes covering pagination, auth, validation, and error semantics.",
+    "deliverables": [
+      {
+        "path": "openapi.yaml",
+        "kind": "yaml-spec",
+        "minBytes": 1600,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "openapi.yaml",
+            "pattern": "openapi:\\s*3\\.1"
+          },
+          {
+            "kind": "contains",
+            "file": "openapi.yaml",
+            "pattern": "/books:"
+          },
+          {
+            "kind": "contains",
+            "file": "openapi.yaml",
+            "pattern": "/books/\\{id\\}:"
+          },
+          {
+            "kind": "contains",
+            "file": "openapi.yaml",
+            "pattern": "post:|POST",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "openapi.yaml",
+            "pattern": "bearerAuth|Authorization",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "openapi.yaml",
+            "pattern": "hasMore|pagination"
+          },
+          {
+            "kind": "contains",
+            "file": "openapi.yaml",
+            "pattern": "ErrorEnvelope"
+          },
+          {
+            "kind": "contains",
+            "file": "openapi.yaml",
+            "pattern": "VALIDATION_ERROR",
+            "label": "document VALIDATION_ERROR as a concrete error code"
+          },
+          {
+            "kind": "contains",
+            "file": "openapi.yaml",
+            "pattern": "BOOK_NOT_FOUND",
+            "label": "document BOOK_NOT_FOUND as a concrete error code"
+          },
+          {
+            "kind": "notContains",
+            "file": "openapi.yaml",
+            "pattern": "/api/v1",
+            "label": "use the exact bare paths /books and /books/{id}; do not add /api/v1"
+          }
+        ]
+      },
+      {
+        "path": "server.mjs",
+        "kind": "code-module",
+        "minBytes": 2200,
+        "checks": [
+          {
+            "kind": "esmImports",
+            "file": "server.mjs"
+          },
+          {
+            "kind": "contains",
+            "file": "server.mjs",
+            "pattern": "node:http|createServer"
+          },
+          {
+            "kind": "contains",
+            "file": "server.mjs",
+            "pattern": "GET.*\\/books|\\/books",
+            "flags": "is"
+          },
+          {
+            "kind": "contains",
+            "file": "server.mjs",
+            "pattern": "POST.*\\/books|method.*POST",
+            "flags": "is"
+          },
+          {
+            "kind": "contains",
+            "file": "server.mjs",
+            "pattern": "(?:authorization|authHeader)[\\s\\S]{0,1200}(?:Bearer\\s+eval-token|AUTH_TOKEN|BEARER_TOKEN|eval-token)|(?:Bearer\\s+eval-token|AUTH_TOKEN|BEARER_TOKEN|eval-token)[\\s\\S]{0,1200}(?:authorization|authHeader)",
+            "flags": "i",
+            "label": "enforce POST auth by comparing the authorization header to `Bearer eval-token`; if using a token constant, declare it once"
+          },
+          {
+            "kind": "contains",
+            "file": "server.mjs",
+            "pattern": "401|UNAUTHORIZED"
+          },
+          {
+            "kind": "contains",
+            "file": "server.mjs",
+            "pattern": "limit|offset|hasMore"
+          },
+          {
+            "kind": "contains",
+            "file": "server.mjs",
+            "pattern": "BOOK_NOT_FOUND|VALIDATION_ERROR"
+          },
+          {
+            "kind": "notContains",
+            "file": "server.mjs",
+            "pattern": "from ['\"](express|fastify)['\"]|require\\(['\"](express|fastify)['\"]",
+            "flags": "i"
+          },
+          {
+            "kind": "notContains",
+            "file": "server.mjs",
+            "pattern": "from ['\"]\\./server(?:\\.mjs)?['\"]",
+            "label": "server.mjs must not import itself; remove imports from ./server or ./server.mjs and export createBookstoreServer exactly once"
+          },
+          {
+            "kind": "notContains",
+            "file": "server.mjs",
+            "pattern": "await\\s+import\\(['\"]node:http['\"]\\)",
+            "label": "server.mjs may import node:http at top level; do not use await import(\"node:http\") inside createBookstoreServer"
+          },
+          {
+            "kind": "notContains",
+            "file": "server.mjs",
+            "pattern": "server\\.close\\s*=",
+            "label": "do not replace the native HTTP server close method; close the server from contract-test.mjs"
+          },
+          {
+            "kind": "notContains",
+            "file": "server.mjs",
+            "pattern": "/api/v1",
+            "label": "route exact bare paths /books and /books/{id}; do not add /api/v1"
+          }
+        ]
+      },
+      {
+        "path": "contract-test.mjs",
+        "kind": "code-with-tests",
+        "minBytes": 1500,
+        "checks": [
+          {
+            "kind": "esmImports",
+            "file": "contract-test.mjs"
+          },
+          {
+            "kind": "contains",
+            "file": "contract-test.mjs",
+            "pattern": "import\\s+(?:assert|\\*\\s+as\\s+assert)\\s+from\\s*['\"]node:assert/strict['\"]|import\\s*\\{\\s*strict\\s+as\\s+assert\\s*\\}\\s*from\\s*['\"]node:assert(?:/strict)?['\"]",
+            "label": "import assertions from node:assert/strict before using assert"
+          },
+          {
+            "kind": "contains",
+            "file": "contract-test.mjs",
+            "pattern": "import\\s*\\{[^}]*\\bcreateBookstoreServer\\b[^}]*\\}\\s*from\\s*['\"]\\./server\\.mjs['\"]",
+            "label": "import createBookstoreServer with `import { createBookstoreServer } from \"./server.mjs\"`"
+          },
+          {
+            "kind": "notContains",
+            "file": "contract-test.mjs",
+            "pattern": "from ['\"]\\./server['\"]|require\\("
+          },
+          {
+            "kind": "notContains",
+            "file": "contract-test.mjs",
+            "pattern": "\\.\\.\\.\\s*\\(rest of the file content\\)|rest of the file content",
+            "flags": "i",
+            "label": "contract-test.mjs must be a complete runnable file; do not include placeholder elisions"
+          },
+          {
+            "kind": "contains",
+            "file": "contract-test.mjs",
+            "pattern": "createBookstoreServer\\s*\\(",
+            "label": "execute the imported server factory from contract-test.mjs; do not only export test helpers"
+          },
+          {
+            "kind": "notContains",
+            "file": "contract-test.mjs",
+            "pattern": "export\\s+\\{\\s*runTests\\s*\\}|export\\s+(?:async\\s+)?function\\s+runTests\\b",
+            "label": "contract-test.mjs must run tests when invoked with node, not only export runTests"
+          },
+          {
+            "kind": "contains",
+            "file": "contract-test.mjs",
+            "pattern": "limit=2|limit\\s*=\\s*2|limit\\s*:\\s*['\"]?2|limit['\"],\\s*['\"]2['\"]|limit[\"],\\s*[\"]2[\"]",
+            "label": "exercise GET /books pagination with an explicit limit=2 request"
+          },
+          {
+            "kind": "contains",
+            "file": "contract-test.mjs",
+            "pattern": "Bearer eval-token|Authorization"
+          },
+          {
+            "kind": "contains",
+            "file": "contract-test.mjs",
+            "pattern": "listen\\(0"
+          },
+          {
+            "kind": "contains",
+            "file": "contract-test.mjs",
+            "pattern": "globalThis\\.fetch|fetch\\(",
+            "label": "use Node built-in global fetch in contract requests"
+          },
+          {
+            "kind": "contains",
+            "file": "contract-test.mjs",
+            "pattern": "(?:globalThis\\.)?fetch\\s*\\([^\\n,]+,\\s*(?:\\{|[A-Za-z_$])",
+            "label": "pass fetch options for POST requests so method, headers, and body reach the server"
+          },
+          {
+            "kind": "notContains",
+            "file": "contract-test.mjs",
+            "pattern": "from\\s+['\"](?:node:)?http['\"]|import\\s+[^;]*['\"](?:node:)?http['\"]|require\\(['\"](?:node:)?http['\"]\\)|from\\s+['\"]node-fetch['\"]|import\\s*\\(['\"]node-fetch['\"]\\)|require\\(['\"]node-fetch['\"]\\)",
+            "label": "contract tests must not import node:http or node-fetch; remove those imports and use globalThis.fetch"
+          },
+          {
+            "kind": "notContains",
+            "file": "contract-test.mjs",
+            "pattern": "new\\s+URL\\([^,\\n]+,\\s*['\"]http://localhost['\"]\\s*\\)",
+            "label": "contract request helpers must include the assigned listen(0) port; build URLs from the resolved baseUrl, not plain http://localhost"
+          },
+          {
+            "kind": "notContains",
+            "file": "contract-test.mjs",
+            "pattern": "http\\.request|http\\.get",
+            "label": "contract tests must not use node:http request helpers; use globalThis.fetch"
+          },
+          {
+            "kind": "notContains",
+            "file": "contract-test.mjs",
+            "pattern": "\\bfunction\\s+fetch\\s*\\(|\\b(?:const|let|var)\\s+fetch\\s*=",
+            "label": "contract tests must not replace the global fetch function; use globalThis.fetch or a differently named helper"
+          },
+          {
+            "kind": "notContains",
+            "file": "contract-test.mjs",
+            "pattern": "/api/v1",
+            "label": "call the generated server with exact bare paths /books and /books/{id}; remove any /api/v1 prefix"
+          },
+          {
+            "kind": "contains",
+            "file": "contract-test.mjs",
+            "pattern": "401|403|400|404"
+          },
+          {
+            "kind": "contains",
+            "file": "contract-test.mjs",
+            "pattern": "close\\(|server\\.close"
+          },
+          {
+            "kind": "nodeScriptPasses",
+            "script": "contract-test.mjs",
+            "timeoutMs": 20000,
+            "requiredOutput": [
+              {
+                "pattern": "Pagination|GET /books|List Books",
+                "flags": "i",
+                "label": "pagination test ran"
+              },
+              {
+                "pattern": "Auth|Authentication|401|403",
+                "flags": "i",
+                "label": "auth failure test ran"
+              },
+              {
+                "pattern": "Validation|VALIDATION_ERROR|400",
+                "flags": "i",
+                "label": "validation test ran"
+              },
+              {
+                "pattern": "GET\\s+/books/\\{id\\}|Not Found|BOOK_NOT_FOUND|404",
+                "flags": "i",
+                "label": "not-found test ran"
+              },
+              {
+                "pattern": "Create|201|POST",
+                "flags": "i",
+                "label": "create-success test ran"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "path": "README.md",
+        "kind": "markdown-doc",
+        "minBytes": 500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "README.md",
+            "pattern": "node server\\.mjs",
+            "label": "include the exact server command `node server.mjs`"
+          },
+          {
+            "kind": "contains",
+            "file": "README.md",
+            "pattern": "node contract-test\\.mjs",
+            "label": "include the exact contract-test command `node contract-test.mjs`"
+          },
+          {
+            "kind": "contains",
+            "file": "README.md",
+            "pattern": "GET /books"
+          },
+          {
+            "kind": "contains",
+            "file": "README.md",
+            "pattern": "GET /books/\\{id\\}|GET /books/:id|GET /books/<id>"
+          },
+          {
+            "kind": "contains",
+            "file": "README.md",
+            "pattern": "POST /books"
+          },
+          {
+            "kind": "contains",
+            "file": "README.md",
+            "pattern": "eval-token|Authorization"
+          }
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "openapi.yaml",
+      "kind": "yaml"
+    },
+    "axes": [
+      {
+        "name": "correctness",
+        "description": "The module does what the requirements ask, with sensible edge handling."
+      },
+      {
+        "name": "verification",
+        "description": "Self-tests exercise real behavior, not trivial truths."
+      },
+      {
+        "name": "clarity",
+        "description": "Exports, naming, and structure make the module usable without reading every line."
+      },
+      {
+        "name": "robustness",
+        "description": "Invalid input and boundary cases fail loudly rather than silently."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "contract-first API design",
+    "server implementation",
+    "integration tests"
+  ]
+}

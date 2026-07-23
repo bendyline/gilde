@@ -1,0 +1,128 @@
+{
+  "id": "powerpoint-deck",
+  "name": "PowerPoint from Content",
+  "description": "Turn a body of source content into a real PowerPoint file (.pptx) the user can open and edit in PowerPoint — not an HTML deck. Three phases with per-phase gates and a review loop:\n\n1. Outline (planner) — lock audience, purpose, key message, and a slide-by-slide outline -> gated on notes/outline.md\n2. Write the deck (copywriter) — one markdown h2 section per slide, tight bullets -> gated on deck.md\n3. Produce the .pptx (developer) — DocBlocks: pick a theme, convert_document to PPTX with slideBreak h2 + autoTemplates, preview_document for visual QA, save_artifact into the project's artifacts drawer -> gated on the saved deck.pptx artifact\n\nA reviewer then previews the saved deck and loops back on narrative or visual misses. The outline-first ordering matters: a model that converts before locking the story ships a wall-of-text deck; locking one message per slide first makes the conversion mechanical. Use for 'make a PowerPoint', 'turn this doc/report/notes into slides', pitch and briefing decks that must be a real .pptx.",
+  "entryStepId": "outline",
+  "triggers": [
+    "make a powerpoint",
+    "create a pptx",
+    "powerpoint from this content",
+    "turn this into a presentation",
+    "build a slide deck file"
+  ],
+  "toolsets": [
+    {
+      "toolsetId": "docblocks",
+      "sourceId": "bundled",
+      "autoAllow": true,
+      "reason": "convert the markdown deck to PPTX, preview slides, and save the finished file without a prompt per call"
+    }
+  ],
+  "steps": [
+    {
+      "id": "outline",
+      "name": "Outline the deck",
+      "description": "Lock audience, purpose, key message, and a slide-by-slide outline before any slide is written.",
+      "prompt": "1. Identify the source content (the user's message, workspace files, or artifacts they named) and read it. 2. State the audience, the occasion, and the ONE takeaway the deck must land. 3. Draft a slide-by-slide outline: for each slide a working title and a one-line message (the single idea that slide argues). Aim for 8-15 slides unless the user asked otherwise: title slide, agenda (optional), one idea per body slide, a closing/ask slide. 4. Note where a table, comparison, or image genuinely helps (sparingly). 5. Write an acceptance-criteria checklist a grader could apply mechanically, e.g.: 'every outline slide appears in the deck in order', 'one idea per slide, no slide over ~6 bullets', 'bullets are phrases, not paragraphs', 'the deck opens with the takeaway and closes with the ask/next steps', 'the saved file is a real .pptx in artifacts'. 6. Write the outline + checklist to notes/outline.md and call write_task_note with the slide count and key decisions. Do not write any slide content yet.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/outline.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/outline.md",
+            "bytes": 150
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/outline.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "outline",
+        "maxAttempts": 3
+      },
+      "next": "write-deck"
+    },
+    {
+      "id": "write-deck",
+      "name": "Write the deck",
+      "description": "Write deck.md — one h2 section per slide, matching the locked outline.",
+      "prompt": "Write deck.md in the workspace following the locked outline EXACTLY — this markdown becomes the PowerPoint, one slide per `##` heading. Rules: 1. Start with a single `#` heading — that is the title slide (add a one-line subtitle under it if useful). 2. One `##` heading per outline slide, in outline order; the heading text is the slide title. 3. Under each `##`, make the slide's one idea land: 3-6 short bullet phrases (not sentences, never paragraphs), or a small markdown table where the outline called for data or comparison. 4. Bold the load-bearing figure or claim on each slide. 5. No headings deeper than `##` (they will not create slides), no filler slides, nothing that is not in the outline. 6. On a loop-back, fix only the gaps the reviewer named; do not reshuffle slides that already passed. Then call write_task_note with the slide count in deck.md.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "deck.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "deck.md",
+            "bytes": 800
+          },
+          {
+            "kind": "contains",
+            "file": "deck.md",
+            "pattern": "(?:^|\\n)##\\s+\\S",
+            "label": "at least one h2 slide heading"
+          }
+        ],
+        "onReject": "write-deck",
+        "maxAttempts": 4
+      },
+      "next": "produce"
+    },
+    {
+      "id": "produce",
+      "name": "Produce the PowerPoint",
+      "description": "Convert deck.md to a themed .pptx with DocBlocks, visually preview it, and save deck.pptx into the project artifacts.",
+      "prompt": "Turn deck.md into a saved PowerPoint using the DocBlocks tools (they are pre-authorized for this task):\n\n1. `readFile` deck.md so you have the exact markdown.\n2. `list_themes` and pick the theme that fits the audience from the outline (e.g. a documentary/bold/cinematic style); note your choice.\n3. `convert_document` ONCE with: source `{ \"kind\": \"markdown\", \"markdown\": <deck.md content>, \"name\": \"deck.md\" }`, targets `[{ \"format\": \"pptx\", \"slideBreak\": \"h2\", \"title\": <deck title> }]`, your `themeId`, and `autoTemplates: true`. The result is an immutable session artifact with a URI.\n4. `preview_document` on that artifact URI (maxItems up to 20) and LOOK at the returned slide images: title slide present, one slide per h2, no slide overflowing with text, theme applied. If a slide is broken, fix deck.md or the conversion options and convert again.\n5. `list_roots` to find the writable artifacts root, then `save_artifact` with the artifact URI to path `deck.pptx` with `ifExists: \"error\"`. If it errors because deck.pptx already exists (a previous pass saved one), re-save with `ifExists: \"replace\"` and the `expectedSha256` of the previously saved file (it is in the earlier save/convert result).\n6. Call write_task_note with the theme used, the slide count, and the saved path.\n\nDo NOT hand-build XML or an HTML deck — the deliverable is the real .pptx produced by convert_document.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "deck.pptx",
+        "minBytes": 1,
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "deck.pptx",
+            "bytes": 5000,
+            "artifact": true
+          }
+        ],
+        "onReject": "produce",
+        "maxAttempts": 3
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Preview the saved deck and grade it against every acceptance criterion. All pass -> finish; any fail -> loop back to the owning step.",
+      "prompt": "Open notes/outline.md and grade the saved deck against EACH acceptance criterion, writing PASS/FAIL per criterion. Use `preview_document` on the saved deck.pptx (source `{ \"kind\": \"file\", \"rootId\": <artifacts root from list_roots>, \"path\": \"deck.pptx\", \"format\": null }`) and inspect the slide images: (1) every outline slide appears, in order; (2) one idea per slide — no wall-of-text slide, no slide over ~6 bullets; (3) the title slide and closing/ask slide exist; (4) the theme is applied consistently and nothing renders broken or clipped; (5) the takeaway is stated up front. A deck that converts cleanly but buries the message FAILS.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES ->** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Slide CONTENT fails (order, density, message) ->** write the specific gaps to notes, then `advance_task_step({ ref, stepId: \"evaluate\", next: \"write-deck\" })`.\n- **Only the CONVERSION fails (theme, rendering, missing save) ->** `advance_task_step({ ref, stepId: \"evaluate\", next: \"produce\" })`.\n\nNever route to `finish` while any criterion is unmet. After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "write-deck"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: the deck title, slide count, theme, and that the deliverable is deck.pptx in the project artifacts (openable in PowerPoint). Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-07-14T00:00:00Z"
+}

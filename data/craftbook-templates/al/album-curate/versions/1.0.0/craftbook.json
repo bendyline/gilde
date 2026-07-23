@@ -1,0 +1,107 @@
+{
+  "id": "album-curate",
+  "name": "Curate an Album",
+  "description": "Turn a thousand camera-roll photos into the forty that tell the story: cull the near-duplicates, keep the keepers for honest reasons, caption what matters, and leave an album manifest the family will actually revisit. Locks the occasion and the selection criteria FIRST, then curates the manifest one moment at a time, then writes the album's short story. Use for curating an album, photo culling, 'make an album from the weekend', picking the keepers, and turning imports into albums.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the album (archivist) — occasion, size, and the selection criteria locked → gated on `notes/scope.md` (markdown-notes)\n2. Curate the manifest (curator) — cluster the bursts, pick the best frames, write the manifest\n3. Write the album's story (copywriter) — the arc, the cuts worth mentioning, what to do next → gated on `report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "curate an album",
+    "make an album from these photos",
+    "pick the keepers",
+    "cull the photos",
+    "album from the weekend"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the album",
+      "description": "occasion, size, and the selection criteria locked",
+      "prompt": "Define the album before picking a photo. Step 1: read photos/index.json from the workspace — the imported photos with their timestamps — and read any caption notes alongside them (photos/*.txt) describing what the camera saw. Step 2: confirm the occasion and size with the owner — what the album is about, roughly how many photos it should hold, and anything that must be in or out. Step 3: lock the selection criteria — near-duplicates and bursts resolve to the single best frame; every pick carries a caption and an honest reason it made the cut; the picks in order tell the occasion's story, start to end. Step 4: write an acceptance-criteria checklist ('album within the agreed size', 'every pick exists in the photo index — nothing invented', 'each duplicate cluster contributes at most one frame', 'every pick has a caption and a reason', 'the sequence reads as the story of the occasion'). Call write_task_note with the photo count + target size + checklist and write notes/scope.md.",
+      "suggestedRole": "archivist",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "select"
+    },
+    {
+      "id": "select",
+      "name": "Curate the manifest",
+      "description": "cluster the bursts, pick the best frames, write the manifest",
+      "prompt": "Curate the album manifest. Step 1: walk the index in time order and group the near-duplicates — bursts and retakes shot seconds apart are one moment, not five photos. Step 2: from each moment worth keeping, choose the single best frame, using the caption notes where they exist to judge what the frame actually shows. Step 3: order the picks so the album tells the occasion start to end. Step 4: write the album manifest into albums/ named for the occasion — a JSON array, one record per pick with file, caption, and reason, the file spelled exactly as the index spells it. Call write_task_note with the pick count and the moments you cut.",
+      "suggestedRole": "curator",
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the album's story",
+      "description": "the arc, the cuts worth mentioning, what to do next",
+      "prompt": "Write the album's short story for whoever opens it. Step 1: the arc — what the occasion was and how the picks carry it, in a paragraph. Step 2: the cuts worth mentioning — the burst that became one frame, the beloved-but-blurry shot that did not make it — so the family knows the culling was care, not loss. Step 3: anything the owner should re-shoot, print, or ask about. Keep it warm and short. Write report.md and call write_task_note with the album path and the pick count.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "report.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.md",
+            "bytes": 800
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "report.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open the album manifest in albums/, report.md, and photos/index.json and verify every criterion from notes/scope.md: the album is within the agreed size, every pick's file appears in the photo index exactly (spot-check several — no invented or misspelled files), no duplicate cluster contributes more than one frame (check the picks' timestamps), every record carries a nonempty caption and reason, and the order tells the story. Write PASS/FAIL per criterion; on any failure, name the gap and loop back to select.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"select\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "select"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

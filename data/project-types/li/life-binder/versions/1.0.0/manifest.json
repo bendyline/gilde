@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "releasedAt": "2026-07-18T00:00:00Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "household": {
+        "type": "string",
+        "title": "Who is this binder for?",
+        "description": "e.g. 'our family', 'Mom', 'me'.",
+        "default": "our family"
+      }
+    },
+    "required": [
+      "household"
+    ]
+  },
+  "nameTemplate": "Life Binder",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "archivaris",
+      "voorman": true
+    }
+  ],
+  "tools": [
+    {
+      "name": "record_document",
+      "description": "Record that a document exists and where the original lives.",
+      "script": "binder-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "bind": {
+        "action": "record_document"
+      }
+    },
+    {
+      "name": "mark_missing",
+      "description": "Mark a checklist item as a known gap.",
+      "script": "binder-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "mark_missing"
+      }
+    },
+    {
+      "name": "mark_reviewed",
+      "description": "Confirm a document was just reviewed and is current.",
+      "script": "binder-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "mark_reviewed"
+      }
+    },
+    {
+      "name": "binder_status",
+      "description": "The completeness picture: what's in place, missing, or due a review.",
+      "script": "binder-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "status"
+      }
+    },
+    {
+      "name": "checklist",
+      "description": "Read the whole checklist with locations.",
+      "script": "binder-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "checklist"
+      }
+    }
+  ],
+  "craftbooks": [
+    "annual-document-review"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "dashboard/index.html",
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "documents.json"
+      }
+    ]
+  },
+  "workspaceSeed": [
+    "documents.json"
+  ],
+  "scripts": {
+    "binder-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'binder-store',\n  description:\n    \"Read and update the life binder (documents.json). Call action:'status' for the completeness picture; 'record_document' when a document exists (name + where the original lives); 'mark_missing' / 'mark_reviewed' as reality changes; 'checklist' to read everything.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description:\n        \"One of 'status', 'record_document', 'mark_missing', 'mark_reviewed', or 'checklist'.\",\n      required: true,\n    },\n    name: { type: 'string', description: \"Document name, e.g. 'Will', 'Home insurance policy'.\" },\n    location: { type: 'string', description: 'Where the original lives (drawer, safe, provider).' },\n    note: { type: 'string', description: 'Anything a trusted person should know about it.' },\n    id: { type: 'string', description: \"Document id, e.g. 'doc-2'.\" },\n  },\n  outputs: {\n    total: { type: 'number', description: 'Documents on the checklist.' },\n    present: { type: 'number', description: 'Recorded as existing.' },\n    missing: { type: 'number', description: 'Known gaps.' },\n    stale: { type: 'number', description: 'Present but unreviewed for over a year.' },\n    summary: { type: 'string', description: 'The completeness picture.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── binder-rules-start ──\n// Pure derivations over rosterStore-shaped document records: statuses are\n// missing -> present; staleness is derived (present + unreviewed > 365d).\n\nvar YEAR_MS = 365 * 24 * 60 * 60 * 1000;\n\nfunction isStale(record, nowMs) {\n  if (record.status !== 'present') return false;\n  var reviewed = record.fields && typeof record.fields.reviewedAt === 'string'\n    ? Date.parse(record.fields.reviewedAt)\n    : Date.parse(record.updatedAt);\n  return isFinite(reviewed) && nowMs - reviewed > YEAR_MS;\n}\n\nfunction binderShape(records, nowMs) {\n  var present = 0;\n  var missing = [];\n  var stale = [];\n  records.forEach(function (r) {\n    if (r.status === 'present') {\n      present += 1;\n      if (isStale(r, nowMs)) stale.push(r);\n    } else {\n      missing.push(r);\n    }\n  });\n  return { present: present, missing: missing, stale: stale };\n}\n\nfunction binderLine(records, nowMs) {\n  var shape = binderShape(records, nowMs);\n  var gaps = shape.missing\n    .map(function (r) {\n      return r.fields && r.fields.name ? r.fields.name : r.id;\n    })\n    .join(', ');\n  var staleNames = shape.stale\n    .map(function (r) {\n      return r.fields && r.fields.name ? r.fields.name : r.id;\n    })\n    .join(', ');\n  return (\n    shape.present +\n    ' of ' +\n    records.length +\n    ' in place' +\n    (gaps ? '. Missing: ' + gaps : '. Nothing missing') +\n    (staleNames ? '. Due a review: ' + staleNames + '.' : '.')\n  );\n}\n// ── binder-rules-end ──\n\nconst binder = rosterStore(gezel.fs, 'documents.json', {\n  stages: ['missing', 'present'],\n  idPrefix: 'doc',\n});\n\nasync function resolveDoc(): Promise<string> {\n  if (input.id) return input.id;\n  if (input.name) {\n    const wanted = input.name.toLowerCase();\n    const matches = (await binder.list()).filter(\n      (r) => String(r.fields.name ?? '').toLowerCase() === wanted,\n    );\n    if (matches.length === 1) return matches[0]!.id;\n  }\n  throw new Error(\"Pass 'id' (e.g. 'doc-2') or an exact document 'name'.\");\n}\n\nif (input.action === 'record_document') {\n  if (!input.name) throw new Error(\"record_document needs 'name'.\");\n  const existing = (await binder.list()).find(\n    (r) => String(r.fields.name ?? '').toLowerCase() === input.name!.toLowerCase(),\n  );\n  if (existing) {\n    await binder.update(existing.id, {\n      fields: {\n        ...(input.location ? { location: input.location } : {}),\n        ...(input.note ? { note: input.note } : {}),\n        reviewedAt: new Date().toISOString(),\n      },\n    });\n    await binder.transition(existing.id, 'present');\n  } else {\n    await binder.add({\n      status: 'present',\n      fields: {\n        name: input.name,\n        ...(input.location ? { location: input.location } : {}),\n        ...(input.note ? { note: input.note } : {}),\n        reviewedAt: new Date().toISOString(),\n      },\n    });\n  }\n} else if (input.action === 'mark_missing') {\n  await binder.transition(await resolveDoc(), 'missing');\n} else if (input.action === 'mark_reviewed') {\n  const id = await resolveDoc();\n  await binder.update(id, { fields: { reviewedAt: new Date().toISOString() } });\n  await binder.transition(id, 'present');\n} else if (input.action !== 'status' && input.action !== 'checklist') {\n  throw new Error(\n    `Unknown action '${input.action}'. Use status, record_document, mark_missing, mark_reviewed, or checklist.`,\n  );\n}\n\nconst records = await binder.list();\nconst shape = binderShape(records, Date.now());\nconst listing =\n  input.action === 'checklist'\n    ? records\n        .map(\n          (r) =>\n            `${r.id} [${r.status}${isStale(r, Date.now()) ? ', stale' : ''}] ${String(r.fields.name ?? '?')}${r.fields.location ? ` — ${String(r.fields.location)}` : ''}`,\n        )\n        .join('\\n') || 'The checklist is empty.'\n    : '';\n\ngezel.output({\n  total: records.length,\n  present: shape.present,\n  missing: shape.missing.length,\n  stale: shape.stale.length,\n  summary: listing || binderLine(records, Date.now()),\n});\n"
+  }
+}

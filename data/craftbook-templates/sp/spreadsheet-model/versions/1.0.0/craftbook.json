@@ -1,0 +1,97 @@
+{
+  "id": "spreadsheet-model",
+  "name": "Spreadsheet / Financial Model",
+  "description": "Build a working spreadsheet-style model (budget, forecast, unit economics, pricing, or scenario calculator) with clearly separated inputs, calculations, and outputs. Scopes the model's purpose, drivers, and assumptions FIRST so the formulas have a contract, then builds the model with live formulas and labeled assumption cells, then verifies the math by hand-checking key outputs and a sanity scenario. Use this for a financial model, budget calculator, ROI/forecast spreadsheet, unit-economics model, or any input-driven calculator.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the model (planner) — lock the purpose, drivers, assumptions, and outputs → gated on `notes/scope.md` (markdown-notes)\n2. Build the model (developer) — implement the model with live formulas and labeled cells → gated on `index.html` (html-page)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "build a financial model",
+    "make a budget spreadsheet",
+    "unit economics model",
+    "forecast spreadsheet",
+    "roi calculator"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the model",
+      "description": "lock the purpose, drivers, assumptions, and outputs",
+      "prompt": "Define the model's contract before building. Step 1: state the question the model answers and the single primary output (e.g. 'monthly net profit', '12-month cash runway'). Step 2: list the input drivers (assumptions a user changes) with a default value and unit for each. Step 3: list the calculated rows and the formula logic in words ('revenue = units * price'; 'gross margin = revenue - COGS'). Step 4: define the time axis or scenario columns if any. Step 5: write an acceptance-criteria checklist ('inputs, calcs, and outputs are visually separated', 'every assumption is a labeled editable cell', 'totals reconcile', 'changing an input flows through to the output', 'a documented sanity scenario produces the expected value'). Call write_task_note and write the driver list + formula logic + checklist to notes/scope.md.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the model",
+      "description": "implement the model with live formulas and labeled cells",
+      "prompt": "Build the model as a single interactive index.html that behaves like a spreadsheet. Step 1: lay out three clearly labeled zones — Assumptions (editable inputs), Calculations, and Outputs. Step 2: implement every calculated row with a live formula derived from the inputs (changing an input recomputes downstream values in the page). Step 3: label each cell with its name and unit; format currency/percent appropriately. Step 4: add the time/scenario columns from the scope and ensure totals sum correctly. Step 5: seed the default assumptions and show the primary output prominently. On a loop-back, fix only the named gaps. Call write_task_note with the path and the computed default output.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 800
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open index.html and exercise it as a spreadsheet, verifying the math, not just the layout. Step 1: confirm inputs, calculations, and outputs are visually separated and every assumption is a labeled, editable cell with a unit. Step 2: independently compute the primary output by hand from the default assumptions and confirm the model agrees. Step 3: change one driver to a round number, re-derive the expected output by hand, and confirm the model recomputes to it live (the flow-through works). Step 4: run the documented sanity scenario and check it hits the expected value. Step 5: confirm totals reconcile (subtotals sum to totals) and no calculated value is hardcoded where it should reference an input. Write PASS/FAIL per criterion; any FAIL loops back to build.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

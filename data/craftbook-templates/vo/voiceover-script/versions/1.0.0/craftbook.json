@@ -1,0 +1,99 @@
+{
+  "id": "voiceover-script",
+  "name": "Voiceover / TTS Script",
+  "description": "Write a voiceover script tuned for spoken delivery — by a human VO artist or a text-to-speech engine — for a video, ad, explainer, or narration, with pacing, pronunciation, and timing baked in. Briefs the audience, runtime, and voice FIRST, then drafts a performance-ready script with scene/segment breaks, [pause] and emphasis cues, phonetic spellings for tricky words, and a per-segment word count that fits the target seconds. The brief-then-draft ordering ensures the script is written for the EAR and the clock, not the page — short sentences, read-aloud rhythm, and a runtime that actually fits.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Voiceover brief (copywriter) — audience, runtime, voice/tone, pronunciation list → gated on `notes/brief.md` (markdown-notes)\n2. Draft the script (copywriter) — performance-ready script with cues, pacing, timing → gated on `voiceover-script.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "brief",
+  "triggers": [
+    "write a voiceover script",
+    "narration script",
+    "tts script",
+    "script for a video",
+    "explainer voiceover"
+  ],
+  "steps": [
+    {
+      "id": "brief",
+      "name": "Voiceover brief",
+      "description": "audience, runtime, voice/tone, pronunciation list",
+      "prompt": "Lock the brief BEFORE drafting. Step 1: capture the purpose, audience, and the single takeaway the listener must leave with. Step 2: set the target runtime in seconds and translate it to a word budget (~150 words/minute for natural narration; record the budget). Step 3: define the voice/tone (warm, authoritative, energetic) and the delivery (single narrator vs dialogue). Step 4: list tricky names/terms/numbers with their intended pronunciation (phonetic respelling) and how numbers/units should be spoken. Step 5: decide the segment structure (hook -> body beats -> CTA). Write an acceptance-criteria checklist (total words within ±10% of the budget, sentences short and read-aloud friendly, every segment has a target second count, pause/emphasis cues present, tricky words have phonetics, ends on the CTA) and decisions to `notes/brief.md` via write_task_note AND the produces path.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "notes/brief.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/brief.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/brief.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "brief",
+        "maxAttempts": 3
+      },
+      "next": "draft"
+    },
+    {
+      "id": "draft",
+      "name": "Draft the script",
+      "description": "performance-ready script with cues, pacing, timing",
+      "prompt": "Write the performance-ready script to the brief. Step 1: structure it into labeled segments (e.g. `[0:00-0:08] HOOK`) each with a target second count and an inline running word count. Step 2: write for the ear — short declarative sentences, active voice, one idea per line, conversational rhythm; read each line aloud in your head and cut anything that trips the tongue. Step 3: add performance cues inline: `[pause]`, `[beat]`, emphasis via *asterisks* or CAPS-for-stress, and tone notes per segment. Step 4: use the brief's phonetic respellings for tricky words and write numbers/units as they should be SPOKEN (e.g. 'twenty twenty-six', 'three hundred dollars'). Step 5: end on the locked CTA. Write the full script to `voiceover-script.md` with the segment headers and a final total word count + estimated runtime. On a loop-back, fix only the flagged segments (over-budget, hard-to-say, missing cues).",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "voiceover-script.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "voiceover-script.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "voiceover-script.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "draft",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Read it aloud and time it. Step 1: confirm total word count is within ±10% of the brief's budget and the stated runtime matches at ~150 wpm (PASS/FAIL). Step 2: confirm each segment is labeled with a target second count and the running counts add up. Step 3: read several lines aloud — are sentences short and natural, with no tongue-twisters? Step 4: confirm pause/emphasis cues are present and tricky words use the phonetic respellings. Step 5: confirm numbers are written spoken-style and it ends on the CTA. Write PASS/FAIL per criterion.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"draft\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "draft"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

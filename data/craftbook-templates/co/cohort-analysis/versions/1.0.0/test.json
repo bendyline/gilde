@@ -1,0 +1,226 @@
+{
+  "schemaVersion": 1,
+  "title": "Retention cohort readout from event table",
+  "objective": "Measure whether the cohort-analysis craftbook defines retention, emits a cohort matrix, and explains trend/incomplete cohorts.",
+  "tags": [
+    "data"
+  ],
+  "prompt": "In the `Cohort Analysis Eval` project, read `data/events.csv`, define weekly signup cohorts and week-retained activity, write `data/cohorts.json`, and write `readout.md` with a retention table, W1/W2 trend, best/worst cohorts, incomplete cohort caveat, and one next action. Use unique users per signup_week as cohort size. Period WN means active exactly N weeks after signup; missing activity in an observed week counts as 0, but future unobserved periods are null. Treat 2026-W23 as the latest observed activity week; therefore 2026-W22 W2 would fall in 2026-W24 and must be marked null/incomplete, not estimated. `data/cohorts.json` must be valid JSON only, with no Markdown, comments, formulas, or ratio strings, using this shape: `{ \"cohorts\": [{ \"signup_week\": \"2026-W20\", \"total_users\": 3, \"retention\": { \"W0\": 1, \"W1\": 0.67, \"W2\": 0.33 } }] }`. Use numeric decimal rates rounded to two decimals, or null for incomplete periods.",
+  "setup": {
+    "projectName": "Cohort Analysis Eval",
+    "about": "Self-contained eval project for cohort-analysis. User activity events are in workspace/data/events.csv.",
+    "missionObjectives": "Compute and explain cohort retention with precise definitions, JSON matrix, trend, caveats, and next action.",
+    "files": [
+      {
+        "path": "data/events.csv",
+        "content": "user_id,signup_week,activity_week,event\nu1,2026-W20,2026-W20,core_use\nu1,2026-W20,2026-W21,core_use\nu1,2026-W20,2026-W22,core_use\nu2,2026-W20,2026-W20,core_use\nu2,2026-W20,2026-W21,core_use\nu3,2026-W20,2026-W20,core_use\nu4,2026-W21,2026-W21,core_use\nu4,2026-W21,2026-W22,core_use\nu5,2026-W21,2026-W21,core_use\nu5,2026-W21,2026-W22,core_use\nu6,2026-W21,2026-W21,core_use\nu7,2026-W22,2026-W22,core_use\nu7,2026-W22,2026-W23,core_use\nu8,2026-W22,2026-W22,core_use\nu9,2026-W22,2026-W22,core_use\nu9,2026-W22,2026-W23,core_use\n"
+      }
+    ],
+    "worker": {
+      "name": "Joris",
+      "role": "Data Analyst"
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "workspace/readout.md and data/cohorts.json define retention, show cohort rows/periods, report trend, flag incomplete cohorts, and recommend an action.",
+    "deliverables": [
+      {
+        "path": "readout.md",
+        "kind": "markdown-report",
+        "minBytes": 1500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "readout.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "readout.md",
+            "pattern": "cohort|retention|W0|W1|W2",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "readout.md",
+            "pattern": "2026-W20|2026-W21|2026-W22",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "readout.md",
+            "pattern": "100%|67%|66%|33%|0%|trend",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "readout.md",
+            "pattern": "incomplete|recent cohort|caveat|next action",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "readout.md",
+            "pattern": "2026-W22[\\s\\S]{0,250}(incomplete|null|not yet observed|2026-W24)",
+            "flags": "i",
+            "label": "mark W22 W2 as incomplete instead of estimating it"
+          },
+          {
+            "kind": "contains",
+            "file": "readout.md",
+            "pattern": "2026-W21[^\\n]*(?:0%|0\\.00)",
+            "flags": "i",
+            "label": "readout must show 2026-W21 W2 as observed zero retention"
+          },
+          {
+            "kind": "notContains",
+            "file": "readout.md",
+            "pattern": "37\\.5%|\\b4\\s+users\\b|total users\\s*\\|\\s*4|2026-W21[^\\n]*(?:N/A|null|incomplete)|W2 for 2026-W21[^\\n]*(?:N/A|null|incomplete)",
+            "flags": "i",
+            "label": "do not invent a fourth 2026-W22 user, estimate W2, or mark observed W21 W2 as incomplete"
+          }
+        ]
+      },
+      {
+        "path": "data/cohorts.json",
+        "kind": "json",
+        "minBytes": 250,
+        "checks": [
+          {
+            "kind": "sniff",
+            "file": "data/cohorts.json",
+            "sniff": "json-valid"
+          },
+          {
+            "kind": "contains",
+            "file": "data/cohorts.json",
+            "pattern": "2026-W20|2026-W21|2026-W22|W0|W1",
+            "flags": "i"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/cohorts.json",
+            "path": "cohorts[0].signup_week",
+            "value": "2026-W20",
+            "label": "first cohort must be 2026-W20"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/cohorts.json",
+            "path": "cohorts[0].total_users",
+            "value": 3,
+            "label": "2026-W20 has exactly 3 unique signup users"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/cohorts.json",
+            "path": "cohorts[0].retention.W2",
+            "value": 0.33,
+            "label": "2026-W20 W2 retention is 1/3 rounded to 0.33"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/cohorts.json",
+            "path": "cohorts[0].retention.W1",
+            "value": 0.67,
+            "label": "2026-W20 W1 retention is 2/3 rounded to 0.67"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/cohorts.json",
+            "path": "cohorts[1].signup_week",
+            "value": "2026-W21",
+            "label": "second cohort must be 2026-W21"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/cohorts.json",
+            "path": "cohorts[1].total_users",
+            "value": 3,
+            "label": "2026-W21 has exactly 3 unique signup users"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/cohorts.json",
+            "path": "cohorts[1].retention.W1",
+            "value": 0.67,
+            "label": "2026-W21 W1 retention is 2/3 because u4 and u5 were active in W22"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/cohorts.json",
+            "path": "cohorts[1].retention.W2",
+            "value": 0,
+            "label": "2026-W21 W2 retention is 0/3 because no W21 users were active in W23"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/cohorts.json",
+            "path": "cohorts[2].signup_week",
+            "value": "2026-W22",
+            "label": "third cohort must be 2026-W22"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/cohorts.json",
+            "path": "cohorts[2].total_users",
+            "value": 3,
+            "label": "2026-W22 has exactly 3 unique signup users"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/cohorts.json",
+            "path": "cohorts[2].retention.W1",
+            "value": 0.67,
+            "label": "2026-W22 W1 retention is 2/3 rounded to 0.67"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/cohorts.json",
+            "path": "cohorts[2].retention.W2",
+            "value": null,
+            "label": "2026-W22 W2 retention is incomplete/null because W24 is outside the observed window"
+          },
+          {
+            "kind": "notContains",
+            "file": "data/cohorts.json",
+            "pattern": "37\\.5|0\\.375|\"total_users\"\\s*:\\s*4",
+            "flags": "i",
+            "label": "do not invent a fourth 2026-W22 user or estimate W2"
+          }
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "readout.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "accuracy",
+        "description": "Computed figures are correct against the seeded records."
+      },
+      {
+        "name": "grounding",
+        "description": "Every claim traces to the seeded data — nothing invented."
+      },
+      {
+        "name": "structure",
+        "description": "Tables and sections make the analysis checkable at a glance."
+      },
+      {
+        "name": "actionability",
+        "description": "Recommendations follow from the findings and are concretely doable."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "definition before math",
+    "JSON retention matrix",
+    "trend readout"
+  ]
+}

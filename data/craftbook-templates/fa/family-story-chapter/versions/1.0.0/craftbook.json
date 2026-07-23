@@ -1,0 +1,71 @@
+{
+  "id": "family-story-chapter",
+  "name": "Family Story Chapter",
+  "description": "Write one chapter of the family story from the record you actually have — interviews and tree facts woven into narrative, speculation clearly dressed as speculation — the ritual that turns an archive into the book every family means to write. Locks the chapter's arc and the sourcing rules FIRST, then drafts from the record only, with a faithfulness pass that loops until every event traces. Use for drafting a family history chapter, writing up the emigration years, turning interviews into narrative, and 'write the family story'.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the chapter (editor) — arc from the interviews and tree, sourcing rules, target file → gated on `notes/scope.md` (markdown-notes)\n2. Draft the chapter (writer) — the chapter under chapters/, sourced material only\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "write the family story chapter",
+    "draft the emigration chapter",
+    "turn the interviews into narrative",
+    "family history chapter",
+    "write up the family story"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the chapter",
+      "description": "arc from the interviews and tree, sourcing rules, target file",
+      "prompt": "Choose the chapter's arc from the record you actually have. Step 1: read tree.json and every file under interviews/ (plus any photo caption notes) — where is the material thick enough to carry a chapter, and what does the owner want told first. Step 2: fix the arc — the years, the people, and the journey it covers, and where it opens and closes. Step 3: lock the writing rules: every concrete event traces to an interview or a tree fact; quotes from the tellers stay verbatim; speculation is allowed only when dressed as speculation ('family legend has it', 'she may have') and never load-bearing; where the record is silent, the silence is acknowledged. Step 4: write the acceptance-criteria checklist from those rules, name the chapter file under chapters/ (the path the owner asks for, or chapters/<slug>.md named for the arc), and call write_task_note with the arc. Write notes/scope.md.",
+      "suggestedRole": "editor",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "draft"
+    },
+    {
+      "id": "draft",
+      "name": "Draft the chapter",
+      "description": "the chapter under chapters/, sourced material only",
+      "prompt": "Write the chapter from the record. Step 1: gather everything in the interviews and the tree that belongs to the locked arc — events, dates, places, and the tellers' own words. Step 2: write the chapter as narrative — real prose with warmth and momentum — but built only from sourced material; let the tellers' verbatim phrases carry the voice. Step 3: dress every speculation as speculation, in the phrasings locked in scope. Step 4: where the record has a hole the story needs, acknowledge it on the page — an honest 'no one now remembers' is part of a family story. Step 5: save the chapter under chapters/ at the path locked in scope, make it substantial (a real chapter, not an outline), and call write_task_note with the word count.",
+      "suggestedRole": "writer",
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open the chapter beside the interviews and tree.json and verify every criterion from notes/scope.md: pick five concrete events or dates in the chapter and trace each to an interview or the tree — anything untraceable is invented and fails the whole pass; quotes are verbatim (check two); every speculative line is explicitly dressed as speculation; holes in the record are acknowledged rather than filled. Write PASS/FAIL per criterion; on any failure, name the invented detail or missed criterion and loop back to draft.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"draft\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. If you advance without a target, the loop sends you back by design. After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "draft"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

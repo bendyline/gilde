@@ -1,0 +1,123 @@
+{
+  "id": "release-pipeline-ci",
+  "name": "Release Pipeline (CI/CD)",
+  "description": "Author a CI/CD release workflow as a YAML pipeline (GitHub Actions style) that takes a tagged commit and turns it into a published release — running tests and build as gates, then on a version tag building the artifact, generating release notes, publishing the package/image, and creating the GitHub Release, with the dangerous publish steps gated behind the green test/build stages and the tag trigger. A planner scopes the trigger, stages, secrets, and the publish target, a developer writes the valid pipeline YAML wiring the stages in the safe order, and a reviewer validates the syntax and that publishing cannot run before tests pass. Use this to set up automated releases, a publish-on-tag workflow, or a deploy pipeline from scratch.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the pipeline (planner) — define trigger, stages, secrets, and publish target → gated on `notes/scope.md` (markdown-notes)\n2. Write the pipeline (developer) — implement the gated release workflow YAML → gated on `release.yml` (yaml-spec)\n3. Validate the pipeline (reviewer) — check syntax and that publish cannot run before tests pass → gated on `notes/verify.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "set up a release pipeline",
+    "ci/cd for releases",
+    "publish on tag workflow",
+    "github actions release",
+    "automate the release"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the pipeline",
+      "description": "define trigger, stages, secrets, and publish target",
+      "prompt": "1. Decide the trigger: typically push of a semver tag (e.g. v*.*.*) for the release path, plus PR/push for the test gate. 2. Define the ordered stages: test → build → (on tag) package/publish → create release — and which stages gate which (publish must depend on test+build passing). 3. Identify the platform (GitHub Actions assumed unless told otherwise), the runner/language toolchain, and the cache strategy. 4. Enumerate the secrets/permissions the publish step needs (registry token, GITHUB_TOKEN scopes) WITHOUT inventing real values — reference them by name. 5. Specify the publish target (npm, container registry, GitHub Release) and the artifact. 6. Good looks like: an unambiguous stage graph with explicit dependencies, the trigger condition, the named secrets, and the publish target. Write this as an acceptance-criteria checklist ('publish only runs on a version tag', 'publish depends on a green test+build', 'secrets referenced by name not value', 'stages run in the safe order', 'creates the release/artifact on the named target') plus the design to the notes file via write_task_note AND to notes/scope.md.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Write the pipeline",
+      "description": "implement the gated release workflow YAML",
+      "prompt": "1. Open notes/scope.md and write the pipeline as a single valid workflow YAML file (GitHub Actions schema unless another platform was specified). 2. Wire the jobs in the safe order: a test job and a build job triggered broadly, and a publish/release job that runs ONLY on the version-tag trigger and DECLARES a needs:/dependency on test (and build) so it cannot start until they pass. 3. Reference secrets via the platform's secrets context by name (e.g. ${{ secrets.NPM_TOKEN }}) — never hardcode credentials. 4. Include checkout, toolchain setup, dependency cache, the test command, the build command, the publish command, and the create-release step against the named target. 5. Use correct YAML indentation and real action references/versions so the file would actually parse and run. 6. Good looks like: a valid, well-indented workflow where publish is gated on green tests and the tag trigger, secrets are name-referenced, and every scoped stage is present. Write the pipeline to release.yml.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "release.yml",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "release.yml",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "release.yml",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Validate the pipeline",
+      "description": "check syntax and that publish cannot run before tests pass",
+      "prompt": "1. Open release.yml and confirm it is syntactically valid YAML with the platform's required top-level keys (name, on/trigger, jobs). 2. Verify the TRIGGER gating: the publish/release job must run only on a version tag, and must declare a dependency (needs:) on the test/build jobs so it cannot execute before they pass — a publish that can run on a red build is a critical FAIL. 3. Confirm secrets are referenced by name with no hardcoded credentials. 4. Check every stage from notes/scope.md is present (test, build, publish, create-release) with real commands and pinned action versions. 5. Write a PASS/FAIL per acceptance criterion, calling out any ungated publish, syntax error, or missing stage. 6. Any failure routes back to the build phase. Write findings to notes/verify.md.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "release.yml",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "release.yml",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open release.yml and verify it against notes/scope.md, PASS/FAIL each criterion. Confirm: (a) it is valid YAML with the platform's required keys; (b) the publish/release job runs only on a version-tag trigger AND declares a needs:/dependency on the test (and build) job so it cannot run on a red build; (c) secrets are referenced by name with no hardcoded credentials; (d) every scoped stage (test, build, publish, create-release) is present with real commands and pinned action versions; (e) the publish target matches the scope. Any ungated publish, syntax error, or missing stage routes back to the build phase.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

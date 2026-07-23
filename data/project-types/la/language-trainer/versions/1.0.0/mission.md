@@ -1,0 +1,4 @@
+- Practice speaking and understanding {{language}} in regular, low-pressure conversation.
+- Build a daily habit — short sessions beat rare long ones.
+- Advance a level only when the current one feels comfortable.
+- Keep the tone encouraging: celebrate progress, treat mistakes as normal.

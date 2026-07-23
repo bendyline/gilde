@@ -1,0 +1,56 @@
+{
+  "id": "image-set-index",
+  "name": "Index & Describe an Image Set",
+  "description": "Given a folder of images, produce a structured index that describes each one (caption, tags, notable content) in a consistent schema, then validates coverage and consistency. For cataloguing, search, or alt-text generation over an image collection.\n\nA gallery craftbook generated from an archetype spec. Like `build-loop`, it\nruns `design → … → evaluate → (loop) → finish` with a reviewer-gated\nevaluate step that loops back to the build phase until the acceptance\ncriteria pass. What it adds over the generic book: a specialist role per\nphase and a domain-correct ordering.\n\nPhases:\n\n1. Scope the index (planner) — fields per image + output schema + criteria\n2. Describe each image (developer) — read each image, write structured descriptions\n3. Assemble the index (developer) — write the index file in the chosen format\n\nThe evaluate step holds the gate — it never advances to `finish` with an\nunmet criterion, and loops back to the build phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "index images",
+    "describe images",
+    "caption a folder",
+    "image catalog"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the index",
+      "description": "fields per image + output schema + criteria",
+      "prompt": "Decide the index schema before describing anything: which fields per image (filename, caption, tags, dominant colors, any flags), the output format (JSON/CSV/markdown table), and where it lands. Write an **acceptance-criteria checklist** (\"every image in the folder has a row\", \"captions are 1-2 sentences\", \"tags are from a consistent vocabulary\"). `write_task_note` the schema + checklist.",
+      "suggestedRole": "planner",
+      "next": "describe"
+    },
+    {
+      "id": "describe",
+      "name": "Describe each image",
+      "description": "read each image, write structured descriptions",
+      "prompt": "List the image folder, then for each image use the image-reading capability (e.g. `read_image_as_base64` + a vision-capable turn, or the available describe tool) to produce the fields from the schema. Keep the vocabulary consistent across images. Stage results as you go so progress is observable. Do not skip images.",
+      "suggestedRole": "developer",
+      "next": "assemble"
+    },
+    {
+      "id": "assemble",
+      "name": "Assemble the index",
+      "description": "write the index file in the chosen format",
+      "prompt": "Write the full index to a single file in the chosen format. Ensure it parses (valid JSON/CSV). On a loop-back, fix only the named gaps (missing rows, inconsistent tags). `write_task_note` the index path and a coverage count (rows vs images).",
+      "suggestedRole": "developer",
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Check coverage and consistency: does every image have a row, do captions/tags follow the schema and a consistent vocabulary, does the file parse? Spot-check a few descriptions against the actual images if you can. Write PASS/FAIL per criterion.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"assemble\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. If you advance without a target, the loop sends you back by design. After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "assemble"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every criterion passed. Write a DONE summary: index path, format, image count, and a one-line note that coverage is complete and the schema is consistent.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

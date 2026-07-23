@@ -1,0 +1,131 @@
+{
+  "id": "expense-categorize",
+  "name": "Categorize Transactions",
+  "description": "Classify a list of bank/card transactions into a fixed chart-of-accounts category set, with confidence and a review queue for the uncertain ones, producing a clean categorized ledger ready for bookkeeping or tax. Locks the category taxonomy and the matching rules (merchant patterns, amount/sign heuristics) FIRST, then categorizes every transaction deterministically-first then by inference, then reviews that the taxonomy is closed, low-confidence rows are queued not force-fit, and totals reconcile to the input. Rules-before-categorize is the wisdom: a defined taxonomy plus rule precedence makes results auditable and repeatable, not a one-off guess.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the rules (planner) — category taxonomy + matching rules + precedence → gated on `notes/rules-scope.md` (markdown-notes)\n2. Categorize transactions (developer) — apply rules, assign category + confidence, queue doubts → gated on `ledger.json` (json)\n3. Review the ledger (reviewer) — closed taxonomy, reconciliation, review queue → gated on `notes/review.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "rules-scope",
+  "triggers": [
+    "categorize my transactions",
+    "sort expenses by category",
+    "clean up bank transactions",
+    "bookkeeping categorization",
+    "tag spending"
+  ],
+  "steps": [
+    {
+      "id": "rules-scope",
+      "name": "Scope the rules",
+      "description": "category taxonomy + matching rules + precedence",
+      "prompt": "Define the taxonomy and rules before categorizing. Step 1: load the transactions (date, description/merchant, amount, sign) and list the columns. Step 2: define the closed category set (the chart of accounts, e.g. Income, Office, Software, Travel, Meals, Utilities, Transfers, Uncategorized) — every transaction must land in exactly one. Step 3: define matching rules with precedence: explicit merchant→category patterns first, then heuristics (sign for income vs expense, amount bands, recurring-amount detection), and an Uncategorized fallback. Step 4: define the confidence rule and the review threshold (below which a row goes to a review queue rather than being force-categorized). Step 5: write an acceptance-criteria checklist ('every transaction categorized into exactly one in-set category', 'rule precedence applied deterministically', 'low-confidence rows queued for review', 'per-category totals reconcile to the input sum', 'no category invented outside the taxonomy'). Call write_task_note with taxonomy + rules + checklist and write notes/rules-scope.md. No categorizing yet.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/rules-scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/rules-scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/rules-scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "rules-scope",
+        "maxAttempts": 3
+      },
+      "next": "categorize"
+    },
+    {
+      "id": "categorize",
+      "name": "Categorize transactions",
+      "description": "apply rules, assign category + confidence, queue doubts",
+      "prompt": "Categorize every transaction to the locked taxonomy. Step 1: for each transaction, apply the rules in precedence order — explicit merchant match first, then heuristics, then Uncategorized. Step 2: assign exactly one in-set category plus a confidence and a short reason (which rule fired). Step 3: route rows below the review threshold to a review queue flag rather than forcing a category. Step 4: produce the categorized ledger (the input columns plus category, confidence, reason, needs_review) in the chosen format. Step 5: compute per-category totals and a grand total and confirm the grand total equals the sum of the input amounts. Call write_task_note with the output path, the per-category totals, and the count of rows queued for review.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "ledger.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "ledger.json",
+            "bytes": 2
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "ledger.json"
+            }
+          }
+        ],
+        "onReject": "categorize",
+        "maxAttempts": 3
+      },
+      "next": "review"
+    },
+    {
+      "id": "review",
+      "name": "Review the ledger",
+      "description": "closed taxonomy, reconciliation, review queue",
+      "prompt": "Review the categorized ledger against the rules scope. Step 1: confirm the file parses and every transaction has exactly one category drawn only from the closed taxonomy — no invented categories. Step 2: confirm rule precedence was applied — spot-check that explicit merchant matches beat heuristics. Step 3: confirm low-confidence rows are flagged needs_review rather than force-fit, and that the queue is non-empty if genuinely ambiguous rows exist. Step 4: confirm reconciliation — per-category totals sum to the grand total and the grand total equals the input sum (flag any penny drift). Step 5: spot-check 5 categorizations for correctness. Write PASS/FAIL per criterion to notes/review.md and task notes; on failure, name the rows and loop back to categorize.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/review.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "ledger.json",
+            "bytes": 2
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "ledger.json"
+            }
+          }
+        ],
+        "onReject": "review",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open ledger.json and verify every criterion from notes/rules-scope.md. Confirm it parses, every transaction has exactly one category from the closed taxonomy (none invented), rule precedence held (explicit merchant matches beat heuristics — spot-check), low-confidence rows are flagged for review rather than force-fit, and totals reconcile (per-category sums equal the grand total which equals the input sum). Write PASS/FAIL per criterion; on any failure, name the rows and loop back to categorize.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"categorize\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "categorize"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

@@ -1,0 +1,133 @@
+{
+  "id": "chrome-extension",
+  "name": "Browser Extension",
+  "description": "Build a Manifest V3 browser extension scaffold — a popup, a content script, and the manifest — that does one concrete thing on the current page (highlight, count, extract, or toggle). Scopes the single capability and the required permissions first, designs the popup UI, then builds a valid manifest.json plus popup and content-script files wired by messaging. Extensions fail at the manifest and the popup↔content messaging boundary, so the scope phase pins the exact MV3 permissions and message contract before any code, keeping a small model from producing a manifest the browser rejects.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope (planner) — the one capability + MV3 permissions + message contract → gated on `notes/scope.md` (markdown-notes)\n2. Popup UI design (designer) — popup layout, button, result display → gated on `notes/ui-design.md` (markdown-notes)\n3. Build (developer) — manifest.json + popup + content script → gated on `index.html` (html-page)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "chrome extension",
+    "browser extension",
+    "build an extension",
+    "manifest v3 extension",
+    "firefox extension",
+    "browser plugin"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope",
+      "description": "the one capability + MV3 permissions + message contract",
+      "prompt": "Scope the extension to ONE capability. (1) State exactly what it does on the current page in one sentence (e.g. 'count and highlight all links'). (2) List the minimum MV3 permissions and host_permissions needed and why — no over-permissioning. (3) Define the components: popup (trigger + display), content script (acts on the page), and the message contract between them (message names and payloads). (4) Decide what the popup shows back to the user. (5) Write an acceptance-criteria checklist of 5-8 items, e.g. 'manifest is valid MV3 (manifest_version 3)', 'the popup has a working button', 'clicking it messages the content script', 'the content script performs the action on the page', 'a result is shown in the popup', 'only the listed permissions are requested'. Write to notes/scope.md and via write_task_note. No code yet.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "ui-design"
+    },
+    {
+      "id": "ui-design",
+      "name": "Popup UI design",
+      "description": "popup layout, button, result display",
+      "prompt": "Design the popup UI. (1) Pick a small fixed popup size and a clean palette (hex). (2) Lay out the action button(s) and the result/status area. (3) Specify states: idle, running, result, and error. (4) Keep styles self-contained in the popup. (5) Note any icon needs. Write the popup spec to notes/ui-design.md and via write_task_note. No code yet.",
+      "suggestedRole": "designer",
+      "advanceWhen": {
+        "file": "notes/ui-design.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/ui-design.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/ui-design.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "ui-design",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build",
+      "description": "manifest.json + popup + content script",
+      "prompt": "Build the extension files to the scope and UI spec. (1) Write a valid manifest.json with manifest_version 3, name, version, description, the exact permissions/host_permissions from scope, an action.default_popup, and a content_scripts entry. (2) Write popup.html + popup.js to the UI spec; the button sends the contract message to the active tab via chrome.tabs.query + chrome.tabs.sendMessage. (3) Write content.js that listens with chrome.runtime.onMessage, performs the page action, and replies with the result. (4) Render the reply in the popup, handling the error state. Bundle everything; the deliverable is index.html acting as the popup plus the supporting files. On a loop-back, fix only the named gaps. write_task_note the file paths and passing criteria.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 600
+          },
+          {
+            "kind": "sniff",
+            "file": "manifest.json",
+            "sniff": "json-valid"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Evaluate the extension scaffold. Read manifest.json, popup (index.html) + its JS, and the content script. Check EACH criterion from notes/scope.md and write PASS/FAIL with a reason: is manifest.json valid JSON with manifest_version 3 and an action popup and content_scripts entry, does the popup have a working button, does it message the content script via chrome.tabs.sendMessage, does the content script onMessage perform the action and reply, does the popup show the result, are only the listed permissions requested? A manifest the browser would reject (missing manifest_version 3 or malformed) is a FAIL — loop back to build.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

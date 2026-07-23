@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "title": "Codebase Refactoring Review hotspot eval",
+  "objective": "Measure whether the review ranks and verifies a low-cohesion hotspot, proposes bounded seams, and protects behavior with tests.",
+  "tags": ["corpus"],
+  "prompt": "Use the Codebase Refactoring Review craftbook for the weekly code-health sweep. Find the least cogent areas in this fixture and write refactoring-review.md. Do not change source.",
+  "setup": {
+    "projectName": "Refactoring Maintenance Eval",
+    "about": "A small order service with one deliberate multi-responsibility hotspot and a thin caller/test surface.",
+    "missionObjectives": "Verify refactoring candidates in source, rank them, and propose behavior-preserving seams rather than a rewrite.",
+    "files": [
+      {
+        "path": "src/order-service.ts",
+        "content": "export async function processOrder(input, db, mailer, audit) {\n  if (!input.customerId) throw new Error('customer required');\n  let total = 0;\n  for (const line of input.lines) {\n    const item = await db.inventory.find(line.sku);\n    if (!item || item.stock < line.qty) throw new Error('out of stock');\n    total += item.price * line.qty;\n    await db.inventory.update(line.sku, { stock: item.stock - line.qty });\n  }\n  if (input.coupon === 'SAVE10') total *= 0.9;\n  const order = await db.orders.insert({ ...input, total, status: 'paid' });\n  try {\n    await mailer.sendReceipt(input.email, order);\n    await audit.write('order.created', order);\n  } catch (_err) {\n    // Order succeeds even when both side effects disappear.\n  }\n  return order;\n}\n"
+      },
+      {
+        "path": "src/order-controller.ts",
+        "content": "import { processOrder } from './order-service';\nexport const postOrder = deps => async (req, res) => {\n  const order = await processOrder(req.body, deps.db, deps.mailer, deps.audit);\n  res.status(201).json(order);\n};\n"
+      },
+      {
+        "path": "test/order-service.test.ts",
+        "content": "test('creates an order', async () => {\n  const result = await processOrder(sample, fakeDb, fakeMailer, fakeAudit);\n  expect(result.status).toBe('paid');\n});\n"
+      }
+    ],
+    "worker": { "name": "Rae", "role": "Reviewer" }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "refactoring-review.md verifies the processOrder hotspot and proposes sequenced, test-protected seams with explicit coverage limitations.",
+    "deliverables": [
+      {
+        "path": "refactoring-review.md",
+        "kind": "markdown-report",
+        "minBytes": 1500,
+        "checks": [
+          { "kind": "contains", "file": "refactoring-review.md", "pattern": "src/order-service\\.ts:[0-9]+|src/order-service\\.ts", "flags": "i", "label": "source evidence" },
+          { "kind": "contains", "file": "refactoring-review.md", "pattern": "processOrder", "flags": "i" },
+          { "kind": "contains", "file": "refactoring-review.md", "pattern": "cohesion|responsibilit|coupling", "flags": "i", "label": "cogency diagnosis" },
+          { "kind": "contains", "file": "refactoring-review.md", "pattern": "extract|seam|split", "flags": "i", "label": "bounded refactor" },
+          { "kind": "contains", "file": "refactoring-review.md", "pattern": "test[\\s\\S]{0,120}(stock|coupon|mailer|audit|failure)", "flags": "i", "label": "behavior protection" },
+          { "kind": "contains", "file": "refactoring-review.md", "pattern": "impact|effort|risk", "flags": "i" },
+          { "kind": "contains", "file": "refactoring-review.md", "pattern": "Index coverage|coverage|not reviewed", "flags": "i" }
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": { "path": "refactoring-review.md", "kind": "markdown" },
+    "axes": [
+      { "name": "ranking", "description": "Candidates are prioritized by evidence, impact, effort, risk, and blast radius." },
+      { "name": "diagnosis", "description": "The report explains the concrete cohesion, coupling, and testability problems." },
+      { "name": "safe plan", "description": "Recommendations name bounded seams, sequencing, and behavior-preserving tests." }
+    ]
+  },
+  "qualityFocus": ["least-cogent areas", "verified hotspots", "safe refactor sequencing"]
+}

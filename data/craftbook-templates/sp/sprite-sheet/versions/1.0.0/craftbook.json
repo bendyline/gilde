@@ -1,0 +1,129 @@
+{
+  "id": "sprite-sheet",
+  "name": "Game Sprite Sheet",
+  "description": "Produce a game-ready sprite sheet — a character or object with its animation frames (idle, walk, jump, attack) on a uniform grid — plus the frame metadata (JSON atlas) a game engine needs to slice it. Lock the style and the frame inventory FIRST (cell size, pivot, palette, which animations and how many frames each) because a sprite sheet is only usable if every cell is the same size and the pivot is consistent; then generate the frames and pack them into a sheet with a matching atlas. Covers sprite sheets, game art, animation frames, texture atlases, pixel-art characters, and 2D game assets.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Style & frame scope (game-designer) — lock cell size, pivot, palette, and frame inventory → gated on `notes/style-scope.md` (markdown-notes)\n2. Generate frames (image-generator) — draw each animation frame on the uniform cell → gated on `assets` (image-set)\n3. Pack the sheet + atlas (developer) — compose the grid sheet and emit the JSON atlas → gated on `atlas.json` (json)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "style-scope",
+  "triggers": [
+    "make a sprite sheet",
+    "game character sprites",
+    "animation frames for a game",
+    "texture atlas",
+    "pixel art sprite sheet"
+  ],
+  "steps": [
+    {
+      "id": "style-scope",
+      "name": "Style & frame scope",
+      "description": "lock cell size, pivot, palette, and frame inventory",
+      "prompt": "1) Lock the sprite style: pixel-art vs vector, the uniform CELL size (e.g. 32x32), the pivot/anchor convention (e.g. bottom-center for ground contact), and a tight palette. 2) Enumerate the animation set and frame counts: e.g. idle (2), walk (4), jump (2), attack (3) — name each and its frame order. 3) Decide sheet layout (one animation per row) and the atlas format (a JSON listing each frame's x/y/w/h and animation grouping). 4) Write an acceptance-criteria checklist: 'all cells are exactly NxN', 'pivot is consistent across frames', 'every named animation has its frame count', 'the JSON atlas indexes every frame', 'frames in an animation read as a smooth loop'. 5) Record style + inventory + checklist via write_task_note AND to notes/style-scope.md. No art yet.",
+      "suggestedRole": "game-designer",
+      "advanceWhen": {
+        "file": "notes/style-scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/style-scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/style-scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "style-scope",
+        "maxAttempts": 3
+      },
+      "next": "generate"
+    },
+    {
+      "id": "generate",
+      "name": "Generate frames",
+      "description": "draw each animation frame on the uniform cell",
+      "prompt": "1) Read style-scope.md. 2) Draw each frame on the locked cell size with the consistent pivot — the character's feet (or chosen anchor) must sit at the same point every frame so it doesn't jitter when animated. 3) Keep the palette and silhouette consistent across frames; within an animation, make consecutive frames flow (a clean loop for walk/idle). 4) Produce frames for every named animation and frame count. 5) Save the individual frames and/or the packed sheet into assets/ (e.g. assets/spritesheet.png plus frames if helpful). 6) Sanity-check by mentally flipping through each animation. Good looks like: cells that, played in order, animate smoothly with no pivot drift.",
+      "suggestedRole": "image-generator",
+      "advanceWhen": {
+        "file": "assets",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "fileCount",
+            "ext": [
+              "png",
+              "jpg",
+              "jpeg",
+              "svg",
+              "webp"
+            ],
+            "min": 3,
+            "dir": "assets"
+          }
+        ],
+        "onReject": "generate",
+        "maxAttempts": 3
+      },
+      "next": "pack"
+    },
+    {
+      "id": "pack",
+      "name": "Pack the sheet + atlas",
+      "description": "compose the grid sheet and emit the JSON atlas",
+      "prompt": "1) Compose all frames into a single sprite sheet image laid out one animation per row on the uniform grid (no padding drift between cells). 2) Emit a JSON atlas at the agreed path: for each frame, its name, x/y/w/h on the sheet, and which animation + order it belongs to; group frames by animation. 3) Build a tiny index.html preview that loads the sheet and plays each animation by stepping its frames (a simple setInterval) so the loop is verifiable. 4) Ensure the atlas JSON parses and every frame's rect actually lands on a real cell. 5) On a loop-back, fix only named gaps (misaligned cell, missing frame, wrong rect). 6) write_task_note the sheet path, atlas path, and frame totals. The gated deliverable is the JSON atlas.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "atlas.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "atlas.json",
+            "bytes": 2
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "atlas.json"
+            }
+          }
+        ],
+        "onReject": "pack",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "1) Confirm assets/ holds the sprite sheet and atlas.json parses as valid JSON (PASS/FAIL). 2) Check the atlas against style-scope.md: every named animation present with its frame count, every frame rect is NxN on a real cell (PASS/FAIL). 3) Open the preview (or trace the sheet) — do frames in each animation align to a consistent pivot and read as a smooth loop (PASS/FAIL)? 4) Confirm cell sizes are uniform with no drift. 5) Write PASS/FAIL per criterion. Misalignment/missing frames → loop back to pack (or generate if art is wrong).\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"pack\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "pack"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

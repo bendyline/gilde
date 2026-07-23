@@ -1,0 +1,145 @@
+{
+  "id": "insurance-inventory",
+  "name": "Insurance Inventory",
+  "description": "Compile the inventory nobody has until the day they desperately need it: every cataloged item with its value, photo reference, and acquisition info in one document, the gaps (no photo, no value) named instead of papered over, and the total stated with its basis. Locks the completeness criteria FIRST, then compiles the full table, then writes the cover note — the quiet payoff of keeping the catalog honest. Use for insurance inventories, 'our agent wants a full inventory', documenting the collection for coverage, and preparing a collection record for a claim.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the inventory (curator) — item and gap counts, completeness criteria locked → gated on `notes/scope.md` (markdown-notes)\n2. Compile the inventory (data-analyst) — full item table, gaps section, stated total → gated on `insurance-inventory.md` (markdown-doc)\n3. Write the cover note (copywriter) — one-page cover note: total, gaps, review date → gated on `report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "insurance inventory",
+    "full inventory with values",
+    "document the collection for insurance",
+    "collection inventory for our agent",
+    "compile the insurance list"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the inventory",
+      "description": "item and gap counts, completeness criteria locked",
+      "prompt": "Define the inventory before compiling it. Step 1: read the catalog store (collection.json) — the item count, which items carry values, which carry photo references and acquisition info. Step 2: lock the completeness criteria — every cataloged item appears in the inventory; every value in the inventory traces to the catalog, never invented on the spot; items without a value or photo are listed with the gap named, not quietly dropped or estimated; the total covers only the values actually on record and says so. Step 3: fix the document's shape — one table with Item, Value, and Photo columns (plus acquisition info where recorded), then a gaps section, then the stated total. Step 4: write an acceptance-criteria checklist ('every item present', 'every value traceable to the catalog', 'every gap named with a next step', 'total stated with its basis', 'readable by an insurance agent cold'). Call write_task_note with the item and gap counts + checklist and write notes/scope.md.",
+      "suggestedRole": "curator",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "compile"
+    },
+    {
+      "id": "compile",
+      "name": "Compile the inventory",
+      "description": "full item table, gaps section, stated total",
+      "prompt": "Compile the inventory document from the catalog. Step 1: build the full item table — one row per cataloged item with Item, Value, and Photo columns and acquisition info where the record has it; values copied exactly from the catalog, and gaps marked plainly in the cell rather than guessed. Step 2: after the table, list the gaps by kind — items with no value on record, items with no photo — each with the concrete step that would close it. Step 3: state the total of the recorded values and what it does not include. Write insurance-inventory.md and call write_task_note with the row count and the total.",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "insurance-inventory.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "insurance-inventory.md",
+            "bytes": 1200
+          },
+          {
+            "kind": "tableShape",
+            "file": "insurance-inventory.md",
+            "requiredColumns": [
+              "Item",
+              "Value",
+              "Photo"
+            ],
+            "minRows": 3
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "insurance-inventory.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "compile",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the cover note",
+      "description": "one-page cover note: total, gaps, review date",
+      "prompt": "Write the cover note for the inventory. Step 1: one paragraph an insurance agent can read cold — what the collection is, how many items, the total of recorded values and what that total excludes. Step 2: the gap list in brief — how many items lack values or photos and the plan to close those gaps. Step 3: a review date a year out, so the inventory stays alive instead of rotting in a drawer. Keep it calm and professional. Write report.md and call write_task_note with the report path and the total.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "report.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.md",
+            "bytes": 800
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "report.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open insurance-inventory.md, report.md, and the catalog store and verify every criterion from notes/scope.md: every cataloged item has a row in the inventory (count them against the store), every value in the table matches the catalog exactly (spot-check five), every item missing a value or photo appears in the gaps section with a next step, the total re-adds correctly from the recorded values, and the cover note stands alone. Write PASS/FAIL per criterion; on any failure, name the gap and loop back to compile.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"compile\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "compile"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

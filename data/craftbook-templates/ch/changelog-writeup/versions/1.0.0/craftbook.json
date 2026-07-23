@@ -1,0 +1,99 @@
+{
+  "id": "changelog-writeup",
+  "name": "Human-Readable Changelog",
+  "description": "Turn raw commit/PR history into a human-readable changelog that users actually understand: a developer first gathers and triages the merged changes since the last release into user-facing buckets (Added, Changed, Fixed, Deprecated, Removed, Security), filtering out noise like internal refactors, then a copywriter rewrites each entry in plain, benefit-oriented language with breaking changes called out. Covers changelog, release notes, what's new, version notes, and Keep a Changelog format. Gathering and triaging before writing is the point: a small model that first separates user-facing changes from internal churn avoids the changelog that lists 'bump deps' next to a breaking API change with equal weight.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Gather & triage changes (developer) — collect merged changes and bucket the user-facing ones → gated on `notes/gather.md` (markdown-notes)\n2. Write the changelog (copywriter) — rewrite entries in plain, user-facing language → gated on `CHANGELOG.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "gather",
+  "triggers": [
+    "write a changelog",
+    "generate release notes",
+    "whats new writeup",
+    "changelog from commits",
+    "version notes"
+  ],
+  "steps": [
+    {
+      "id": "gather",
+      "name": "Gather & triage changes",
+      "description": "collect merged changes and bucket the user-facing ones",
+      "prompt": "1) Determine the version range (since the last tag/release). 2) Collect the merged commits/PRs in that range (use git log or the available VCS tools). 3) Triage each into a Keep-a-Changelog bucket: Added, Changed, Deprecated, Removed, Fixed, Security — or DROP if it is internal-only (refactors, test/CI tweaks, dependency bumps with no user impact). 4) Flag BREAKING changes explicitly and note any required migration step. 5) For each kept change, jot the raw description and the PR/commit reference. Write an acceptance-criteria checklist (e.g. 'every user-facing change is captured'; 'internal noise is excluded'; 'changes are bucketed correctly'; 'breaking changes flagged with migration notes'; 'version and date present'). Use write_task_note for the triaged change list + checklist, and write the same to the produces path. No prose changelog yet.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "notes/gather.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/gather.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/gather.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "gather",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the changelog",
+      "description": "rewrite entries in plain, user-facing language",
+      "prompt": "Write the changelog from the triaged list in Keep a Changelog style. 1) Header: '## [version] - YYYY-MM-DD'. 2) Group entries under the standard H3 buckets (Added/Changed/Deprecated/Removed/Fixed/Security) — include only non-empty buckets. 3) Rewrite each entry as one plain sentence focused on what the USER can now do or what changed for them, not the implementation ('Added dark mode toggle in settings', not 'Implemented theme state reducer'). 4) Put BREAKING CHANGES in a prominent callout at the top with migration instructions. 5) Keep entries terse and parallel in structure; link PRs/issues if available. Output GitHub-flavored markdown. Save to the produces path and note bucket counts.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "CHANGELOG.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "CHANGELOG.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "CHANGELOG.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Read CHANGELOG.md against the triaged list. Check EACH criterion and write PASS/FAIL: (a) every user-facing change from the triage is present; (b) internal noise (refactors, dep bumps, CI) is excluded; (c) entries are in the correct buckets; (d) breaking changes are prominently flagged with migration notes; (e) entries are in plain, user-focused language; (f) version header and date present. A changelog that dumps raw commit messages or buries a breaking change FAILS — loop back to write.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

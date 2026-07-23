@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "releasedAt": "2026-07-13T00:00:00Z",
+  "driver": "script",
+  "source": {
+    "inlineFetch": "import { defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'github-issues-fetch',\n  description: 'Fetches a bounded, incremental window of GitHub repository issues.',\n  inputs: {\n    cursor: { type: 'json', description: 'Last successfully synced GitHub updated_at value.' },\n    config: { type: 'json', description: 'Repository owner, name, and optional API base URL.', required: true },\n  },\n  outputs: {\n    records: { type: 'array', description: 'GitHub issues ready for connector normalization.', itemType: 'object' },\n    cursor: { type: 'string', description: 'Newest updated_at value processed.', nullable: true },\n  },\n  requires: ['network', 'credential:$credential'],\n} as const);\n\ntype Config = { owner?: unknown; repository?: unknown; apiBaseUrl?: unknown };\ntype Issue = Record<string, unknown> & { updated_at?: unknown; pull_request?: unknown };\nconst input = gezel.input as { cursor?: unknown; config?: Config };\nconst config = input.config ?? {};\nconst owner = typeof config.owner === 'string' ? config.owner.trim() : '';\nconst repository = typeof config.repository === 'string' ? config.repository.trim() : '';\nif (!owner || !repository) throw new Error('GitHub owner and repository are required.');\n\nconst apiBaseUrl =\n  typeof config.apiBaseUrl === 'string' && config.apiBaseUrl.trim()\n    ? config.apiBaseUrl.trim().replace(/\\/+$/, '')\n    : 'https://api.github.com';\nlet apiOrigin: string;\ntry {\n  const parsed = new URL(apiBaseUrl);\n  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error('bad protocol');\n  apiOrigin = parsed.origin;\n} catch {\n  throw new Error('GitHub API base URL must be an absolute HTTP or HTTPS URL.');\n}\n\nconst params = new URLSearchParams({\n  state: 'all',\n  sort: 'updated',\n  direction: typeof input.cursor === 'string' ? 'asc' : 'desc',\n  per_page: '100',\n});\nif (typeof input.cursor === 'string' && input.cursor) params.set('since', input.cursor);\nlet nextUrl =\n  apiBaseUrl + '/repos/' + encodeURIComponent(owner) + '/' + encodeURIComponent(repository) + '/issues?' + params;\nlet nextCursor = typeof input.cursor === 'string' ? input.cursor : null;\nconst records: Issue[] = [];\n\nfunction nextPage(link: string | undefined): string | null {\n  if (!link) return null;\n  for (const part of link.split(',')) {\n    const match = part.match(/<([^>]+)>;\\s*rel=\"next\"/);\n    if (match?.[1]) return match[1];\n  }\n  return null;\n}\n\nfor (let page = 0; page < 5 && nextUrl; page++) {\n  const target = new URL(nextUrl);\n  if (target.origin !== apiOrigin) throw new Error('GitHub pagination changed origin; refusing to forward the token.');\n  const headers = {\n    Accept: 'application/vnd.github+json',\n    'X-GitHub-Api-Version': '2022-11-28',\n    'User-Agent': 'Gezel-GitHub-Issues-Connector',\n  };\n  let response;\n  try {\n    response = await gezel.http.authed(target.toString(), {\n      credential: '$credential',\n      headers,\n    });\n  } catch (error) {\n    if ((error as { code?: string }).code !== 'CREDENTIAL_MISSING') throw error;\n    response = await gezel.http.request(target.toString(), { headers });\n  }\n  if (!response.ok) {\n    throw new Error('GitHub issues request failed (' + response.status + '): ' + response.body.slice(0, 240));\n  }\n  const pageItems = JSON.parse(response.body) as unknown;\n  if (!Array.isArray(pageItems)) throw new Error('GitHub returned a non-array issues response.');\n  for (const raw of pageItems) {\n    if (!raw || typeof raw !== 'object') continue;\n    const issue = raw as Issue;\n    const updatedAt = typeof issue.updated_at === 'string' ? issue.updated_at : '';\n    if (updatedAt && (!nextCursor || updatedAt > nextCursor)) nextCursor = updatedAt;\n    if (issue.pull_request) continue;\n    const labels = Array.isArray(issue.labels)\n      ? issue.labels\n          .map((label) =>\n            typeof label === 'string'\n              ? label\n              : label && typeof label === 'object'\n                ? String((label as Record<string, unknown>).name ?? '')\n                : '',\n          )\n          .filter(Boolean)\n      : [];\n    const assignees = Array.isArray(issue.assignees)\n      ? issue.assignees\n          .map((person) =>\n            person && typeof person === 'object'\n              ? String((person as Record<string, unknown>).login ?? '')\n              : '',\n          )\n          .filter(Boolean)\n      : [];\n    records.push({\n      ...issue,\n      gezel_repository: owner + '/' + repository,\n      gezel_labels: labels,\n      gezel_assignees: assignees,\n    });\n  }\n  const candidate = nextPage(response.headers.link);\n  nextUrl = candidate && new URL(candidate).origin === apiOrigin ? candidate : '';\n}\n\ngezel.output({ records, cursor: nextCursor });\n",
+    "idPath": "$.id"
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "owner": {
+        "type": "string",
+        "title": "Repository owner"
+      },
+      "repository": {
+        "type": "string",
+        "title": "Repository name"
+      },
+      "apiBaseUrl": {
+        "type": "string",
+        "title": "API base URL (GitHub Enterprise only)"
+      }
+    },
+    "required": ["owner", "repository"]
+  },
+  "secretShape": {
+    "kind": "apikey",
+    "field": "token",
+    "label": "GitHub personal access token",
+    "required": false
+  },
+  "normalize": {
+    "kind": "mapping",
+    "map": {
+      "id": "$.id",
+      "title": "$.title",
+      "group": "$.gezel_repository",
+      "timestamp": "$.updated_at",
+      "body": "$.body",
+      "frontmatter": {
+        "number": "$.number",
+        "state": "$.state",
+        "stateReason": "$.state_reason",
+        "author": "$.user.login",
+        "assignees": "$.gezel_assignees",
+        "labels": "$.gezel_labels",
+        "milestone": "$.milestone.title",
+        "comments": "$.comments",
+        "url": "$.html_url",
+        "createdAt": "$.created_at",
+        "closedAt": "$.closed_at",
+        "locked": "$.locked"
+      }
+    }
+  },
+  "completeness": "window",
+  "notes": "Uses GitHub's REST list-repository-issues endpoint anonymously for public repositories, or with an optional personal access token for private repositories and higher rate limits. Pull requests are excluded because GitHub's Issues API returns both. The first sync captures up to 500 recently updated issues; later syncs resume from updated_at in oldest-first order so busy repositories catch up over multiple passes. Issue comments are represented by their count but comment bodies are not mirrored in this version."
+}

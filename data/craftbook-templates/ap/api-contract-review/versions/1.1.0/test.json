@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "title": "API Contract Review codebase eval",
+  "objective": "Measure whether the review reconciles an OpenAPI contract with its handler and catches consistency, semantics, auth, and pagination defects.",
+  "tags": ["corpus"],
+  "prompt": "Use the API Contract Review craftbook for a codebase-wide API design pass. Compare openapi.yaml with src/routes.ts and write api-review.md with corrected snippets. Do not edit the contract or handler.",
+  "setup": {
+    "projectName": "API Design Maintenance Eval",
+    "about": "A small REST API whose contract and implementation contain deliberate design and drift defects.",
+    "missionObjectives": "Produce an evidence-backed API design report covering every seeded operation and its implementation.",
+    "files": [
+      {
+        "path": "openapi.yaml",
+        "content": "openapi: 3.0.3\ninfo: { title: Widget API, version: 1.0.0 }\npaths:\n  /getWidgets:\n    get:\n      responses:\n        '200':\n          description: widgets\n          content:\n            application/json:\n              schema: { type: array, items: { $ref: '#/components/schemas/Widget' } }\n  /widgets:\n    post:\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: '#/components/schemas/Widget' }\n      responses:\n        '200': { description: created }\ncomponents:\n  schemas:\n    Widget:\n      type: object\n      properties:\n        id: { type: string }\n        display_name: { type: string }\n"
+      },
+      {
+        "path": "src/routes.ts",
+        "content": "app.get('/widgets', async (_req, res) => res.json(await db.widgets.all()));\napp.post('/widgets', async (req, res) => {\n  const widget = await db.widgets.create(req.body);\n  res.status(200).json(widget);\n});\napp.get('/widgets/:id', async (req, res) => {\n  const item = await db.widgets.get(req.params.id);\n  if (!item) return res.status(404).json({ message: 'missing' });\n  res.json(item);\n});\n"
+      }
+    ],
+    "worker": { "name": "Rae", "role": "Reviewer" }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "api-review.md covers every seeded operation, contract/implementation drift, and corrected contract snippets.",
+    "deliverables": [
+      {
+        "path": "api-review.md",
+        "kind": "markdown-report",
+        "minBytes": 1400,
+        "checks": [
+          { "kind": "contains", "file": "api-review.md", "pattern": "openapi\\.yaml|src/routes\\.ts", "flags": "i", "label": "real evidence" },
+          { "kind": "contains", "file": "api-review.md", "pattern": "/getWidgets|resource naming|noun", "flags": "i", "label": "resource naming" },
+          { "kind": "contains", "file": "api-review.md", "pattern": "201|created", "flags": "i", "label": "create response semantics" },
+          { "kind": "contains", "file": "api-review.md", "pattern": "pagination|cursor|limit", "flags": "i", "label": "collection pagination" },
+          { "kind": "contains", "file": "api-review.md", "pattern": "auth|security", "flags": "i", "label": "auth coverage" },
+          { "kind": "contains", "file": "api-review.md", "pattern": "/widgets/:id|not documented|drift", "flags": "i", "label": "implementation drift" },
+          { "kind": "contains", "file": "api-review.md", "pattern": "```(?:ya?ml|json)?[\\s\\S]{20,}```", "flags": "i", "label": "corrected snippet" }
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": { "path": "api-review.md", "kind": "markdown" },
+    "axes": [
+      { "name": "surface coverage", "description": "The contract and all implemented operations are reconciled." },
+      { "name": "design rigor", "description": "Semantics, consistency, auth, pagination, and schema quality are reviewed." },
+      { "name": "actionability", "description": "Findings include concrete corrected snippets and compatibility impact." }
+    ]
+  },
+  "qualityFocus": ["contract-implementation reconciliation", "API semantics", "corrected snippets"]
+}

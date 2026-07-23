@@ -1,0 +1,53 @@
+{
+  "id": "root-cause-investigation",
+  "name": "Root-Cause Investigation",
+  "description": "Debug systematically: reproduce the failure and find the true root cause before changing any code, then fix and verify. Enforces a no-fix-without-diagnosis discipline.",
+  "basedOn": {
+    "name": "gstack",
+    "url": "https://github.com/garrytan/gstack"
+  },
+  "plan": "## Iron Law\n\n**NO FIXES WITHOUT ROOT CAUSE INVESTIGATION FIRST.**\n\nFixing symptoms creates whack-a-mole debugging. Every fix that doesn't address root cause makes the next bug harder to find. Find the root cause, then fix it.\n\n---\n\n## Important Rules\n\n- **3+ failed fix attempts → STOP and question the architecture.** Wrong architecture, not failed hypothesis.\n- **Never apply a fix you cannot verify.** If you can't reproduce and confirm, don't ship it.\n- **Never say \"this should fix it.\"** Verify and prove it. Run the tests.\n- **If fix touches >5 files → AskUserQuestion** about blast radius before proceeding.\n- **Completion status:**\n  - DONE — root cause found, fix applied, regression test written, all tests pass\n  - DONE_WITH_CONCERNS — fixed but cannot fully verify (e.g., intermittent bug, requires staging)\n  - BLOCKED — root cause unclear after investigation, escalated",
+  "entryStepId": "phase-1",
+  "triggers": [
+    "debug this",
+    "fix this bug",
+    "why is this broken",
+    "root cause analysis",
+    "investigate this error"
+  ],
+  "command": "root-cause-investigation",
+  "steps": [
+    {
+      "id": "phase-1",
+      "name": "Phase 1: Root Cause Investigation",
+      "prompt": "> **Iron Law:**\n> **NO FIXES WITHOUT ROOT CAUSE INVESTIGATION FIRST.**\n> \n> Fixing symptoms creates whack-a-mole debugging. Every fix that doesn't address root cause makes the next bug harder to find. Find the root cause, then fix it.\n> \n> ---\n\nGather context before forming any hypothesis.\n\n1. **Collect symptoms:** Read the error messages, stack traces, and reproduction steps. If the user hasn't provided enough context, ask ONE question at a time via AskUserQuestion.\n\n2. **Read the code:** Trace the code path from the symptom back to potential causes. Use Grep to find all references, Read to understand the logic.\n\n3. **Check recent changes:**\n   ```bash\n   git log --oneline -20 -- <affected-files>\n   ```\n   Was this working before? What changed? A regression means the root cause is in the diff.\n\n4. **Reproduce:** Can you trigger the bug deterministically? If not, gather more evidence before proceeding.\n\n5. **Check investigation history:** Search prior learnings for investigations on the same files. Recurring bugs in the same area are an architectural smell. If prior investigations exist, note patterns and check if the root cause was structural.\n\n### Scope Lock\n\nAfter forming your root cause hypothesis, lock edits to the affected module to prevent scope creep.\n\n**If FREEZE_AVAILABLE:** Identify the narrowest directory containing the affected files. Write it to the freeze state file:\n\nSubstitute `<detected-directory>` with the actual directory path (e.g., `src/auth/`). Tell the user: \"Edits restricted to `<dir>/` for this debug session. This prevents changes to unrelated code. Run `/unfreeze` to remove the restriction.\"\n\nIf the bug spans the entire repo or the scope is genuinely unclear, skip the lock and note why.\n\n**If FREEZE_UNAVAILABLE:** Skip scope lock. Edits are unrestricted.\n\n---",
+      "next": "phase-2"
+    },
+    {
+      "id": "phase-2",
+      "name": "Phase 2: Pattern Analysis",
+      "prompt": "Check if this bug matches a known pattern:\n\n| Pattern | Signature | Where to look |\n|---------|-----------|---------------|\n| Race condition | Intermittent, timing-dependent | Concurrent access to shared state |\n| Nil/null propagation | NoMethodError, TypeError | Missing guards on optional values |\n| State corruption | Inconsistent data, partial updates | Transactions, callbacks, hooks |\n| Integration failure | Timeout, unexpected response | External API calls, service boundaries |\n| Configuration drift | Works locally, fails in staging/prod | Env vars, feature flags, DB state |\n| Stale cache | Shows old data, fixes on cache clear | Redis, CDN, browser cache, Turbo |\n\nAlso check:\n- `TODOS.md` for related known issues\n- `git log` for prior fixes in the same area — **recurring bugs in the same files are an architectural smell**, not a coincidence\n\n**External pattern search:** If the bug doesn't match a known pattern above, WebSearch for:\n- \"{framework} {generic error type}\" — **sanitize first:** strip hostnames, IPs, file paths, SQL, customer data. Search the error category, not the raw message.\n- \"{library} {component} known issues\"\n\nIf WebSearch is unavailable, skip this search and proceed with hypothesis testing. If a documented solution or known dependency bug surfaces, present it as a candidate hypothesis in Phase 3.\n\n---",
+      "next": "phase-3"
+    },
+    {
+      "id": "phase-3",
+      "name": "Phase 3: Hypothesis Testing",
+      "prompt": "Before writing ANY fix, verify your hypothesis.\n\n1. **Confirm the hypothesis:** Add a temporary log statement, assertion, or debug output at the suspected root cause. Run the reproduction. Does the evidence match?\n\n2. **If the hypothesis is wrong:** Before forming the next hypothesis, consider searching for the error. **Sanitize first** — strip hostnames, IPs, file paths, SQL fragments, customer identifiers, and any internal/proprietary data from the error message. Search only the generic error type and framework context: \"{component} {sanitized error type} {framework version}\". If the error message is too specific to sanitize safely, skip the search. If WebSearch is unavailable, skip and proceed. Then return to Phase 1. Gather more evidence. Do not guess.\n\n3. **3-strike rule:** If 3 hypotheses fail, **STOP**. Use AskUserQuestion:\n   ```\n   3 hypotheses tested, none match. This may be an architectural issue\n   rather than a simple bug.\n\n   A) Continue investigating — I have a new hypothesis: [describe]\n   B) Escalate for human review — this needs someone who knows the system\n   C) Add logging and wait — instrument the area and catch it next time\n   ```\n\n**Red flags** — if you see any of these, slow down:\n- \"Quick fix for now\" — there is no \"for now.\" Fix it right or escalate.\n- Proposing a fix before tracing data flow — you're guessing.\n- Each fix reveals a new problem elsewhere — wrong layer, not wrong code.\n\n---",
+      "next": "phase-4"
+    },
+    {
+      "id": "phase-4",
+      "name": "Phase 4: Implementation",
+      "prompt": "Once root cause is confirmed:\n\n1. **Fix the root cause, not the symptom.** The smallest change that eliminates the actual problem.\n\n2. **Minimal diff:** Fewest files touched, fewest lines changed. Resist the urge to refactor adjacent code.\n\n3. **Write a regression test** that:\n   - **Fails** without the fix (proves the test is meaningful)\n   - **Passes** with the fix (proves the fix works)\n\n4. **Run the full test suite.** Paste the output. No regressions allowed.\n\n5. **If the fix touches >5 files:** Use AskUserQuestion to flag the blast radius:\n   ```\n   This fix touches N files. That's a large blast radius for a bug fix.\n   A) Proceed — the root cause genuinely spans these files\n   B) Split — fix the critical path now, defer the rest\n   C) Rethink — maybe there's a more targeted approach\n   ```\n\n---",
+      "next": "phase-5"
+    },
+    {
+      "id": "phase-5",
+      "name": "Phase 5: Verification & Report",
+      "prompt": "**Fresh verification:** Reproduce the original bug scenario and confirm it's fixed. This is not optional.\n\nRun the test suite and paste the output.\n\nOutput a structured debug report:\n```\nDEBUG REPORT\n════════════════════════════════════════\nSymptom:         [what the user observed]\nRoot cause:      [what was actually wrong]\nFix:             [what was changed, with file:line references]\nEvidence:        [test output, reproduction attempt showing fix works]\nRegression test: [file:line of the new test]\nRelated:         [TODOS.md items, prior bugs in same area, architectural notes]\nStatus:          DONE | DONE_WITH_CONCERNS | BLOCKED\n════════════════════════════════════════\n```\n\nLog the investigation as a learning for future sessions. Use `type: \"investigation\"` and include the affected files so future investigations on the same area can find this:\n\n### Important Rules\n\n- **3+ failed fix attempts → STOP and question the architecture.** Wrong architecture, not failed hypothesis.\n- **Never apply a fix you cannot verify.** If you can't reproduce and confirm, don't ship it.\n- **Never say \"this should fix it.\"** Verify and prove it. Run the tests.\n- **If fix touches >5 files → AskUserQuestion** about blast radius before proceeding.\n- **Completion status:**\n  - DONE — root cause found, fix applied, regression test written, all tests pass\n  - DONE_WITH_CONCERNS — fixed but cannot fully verify (e.g., intermittent bug, requires staging)\n  - BLOCKED — root cause unclear after investigation, escalated",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-07-06T00:00:00Z"
+}

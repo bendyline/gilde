@@ -1,0 +1,133 @@
+{
+  "id": "survey-analysis",
+  "name": "Survey Analysis",
+  "description": "Analyze survey responses into a clear summary of what respondents actually said, across both quantitative (rating/multiple-choice) and open-text questions. Scopes the questions, response types, and segments FIRST, then analyzes — tallying closed questions and theming open-text comments as a data-analyst, then writes a findings summary with the headline results, segment differences, and representative quotes. Use this for analyzing survey results, summarizing a questionnaire, NPS/feedback analysis, theming open-ended responses, or a survey readout.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the survey (data-analyst) — lock the questions, response types, and segments to cut by → gated on `notes/scope.md` (markdown-notes)\n2. Analyze the responses (data-analyst) — tally closed questions and theme open-text comments → gated on `data/results.json` (json)\n3. Write the summary (copywriter) — produce a findings summary with headlines, segments, and quotes → gated on `summary.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "analyze survey responses",
+    "summarize a questionnaire",
+    "survey results readout",
+    "theme open ended answers",
+    "nps analysis"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the survey",
+      "description": "lock the questions, response types, and segments to cut by",
+      "prompt": "Map the survey before analyzing it. Step 1: list every question, its type (single-choice, multi-select, Likert/rating, open text, NPS), and the response count / completion rate. Step 2: identify the segmentation dimensions worth cutting by (role, plan, region) and confirm the data supports them. Step 3: for rating questions decide the summary stat (mean, top-2-box %, NPS formula); for open-text plan a thematic coding pass. Step 4: flag data hygiene issues (straightliners, blank responses, low-N segments to suppress). Step 5: write an acceptance-criteria checklist ('every question summarized', 'closed questions show distribution + a headline stat', 'open-text is themed with counts and example quotes', 'segment cuts suppress low-N', 'response/completion counts stated'). Call write_task_note and write the question map + segments + checklist to notes/scope.md.",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "analyze"
+    },
+    {
+      "id": "analyze",
+      "name": "Analyze the responses",
+      "description": "tally closed questions and theme open-text comments",
+      "prompt": "Compute the survey results from the responses. Step 1: for each closed question, compute the full distribution and the chosen headline stat (mean, top-2-box %, or NPS), and the same per segment where N is adequate. Step 2: for each open-text question, read the comments, induce 4-8 recurring themes, code each comment to a theme, and count theme frequencies; pull 1-2 verbatim quotes per major theme. Step 3: identify the most striking segment differences and surprises with the numbers. Step 4: suppress or caveat low-N segments. Step 5: emit data/results.json (per-question distributions, headline stats, theme counts, quotes) and call write_task_note with the headline findings.",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "data/results.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "data/results.json",
+            "bytes": 2
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "data/results.json"
+            }
+          }
+        ],
+        "onReject": "analyze",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the summary",
+      "description": "produce a findings summary with headlines, segments, and quotes",
+      "prompt": "Write the survey readout from the computed results — no invented numbers or quotes. Step 1: open with response counts and the 3 biggest takeaways. Step 2: one short section per key question: the headline stat, the distribution in words, and the notable segment difference. Step 3: a themes section for open-text: each theme with its frequency and a representative verbatim quote (quoted exactly). Step 4: a 'surprises / watch-outs' section. Step 5: caveat sample size and any suppressed segments. Write the summary to summary.md and call write_task_note with the path. On a loop-back, fix only the named gaps.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "summary.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "summary.md",
+            "bytes": 1500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "summary.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Read summary.md and cross-check against notes/scope.md and data/results.json. Verify: every survey question is summarized; closed questions show a distribution plus a headline stat; open-text is themed with frequency counts and exact verbatim quotes; segment cuts suppress low-N; and response/completion counts are stated. Re-check two headline stats (e.g. an NPS or top-2-box) against the results data, and confirm quotes are verbatim, not paraphrased. Write PASS/FAIL per criterion; any FAIL loops back to write.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

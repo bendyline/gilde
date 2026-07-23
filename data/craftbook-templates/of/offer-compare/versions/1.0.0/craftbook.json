@@ -1,0 +1,98 @@
+{
+  "id": "offer-compare",
+  "name": "Offer Comparison",
+  "description": "Turn competing job offers into one honest decision sheet — every offer normalized into the same fact grid (comp, equity with vesting caveats, benefits, level, location, growth, deadlines), unknowns marked UNKNOWN instead of guessed, computed year-1 and 4-year views under stated assumptions, a weighted read against the candidate's OWN priorities, and a recommendation that separates arithmetic from judgment. Use when any second offer (or a strong counter) lands.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Normalize the facts (planner) — one fact grid across every offer, unknowns honest, the user's own weights elicited → gated on `notes/offer-facts.md` (markdown-notes)\n2. Build the comparison (planner) — the decision sheet — table, computed views, weighted read, recommendation → gated on `reports/offer-compare.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "facts",
+  "triggers": [
+    "compare my offers",
+    "which offer should I take",
+    "offer comparison",
+    "help me decide between offers"
+  ],
+  "steps": [
+    {
+      "id": "facts",
+      "name": "Normalize the facts",
+      "description": "one fact grid across every offer, unknowns honest, the user's own weights elicited",
+      "prompt": "Build the fact sheet before any comparison. Step 1: collect every offer's terms from the user or project documents into one grid: base, bonus (target and realism), equity (kind, vesting schedule, valuation caveats), benefits, PTO, level/title, location/remote terms, team and manager, growth story, response deadline. Step 2: mark every unknown as UNKNOWN — never estimate a number the offer letter does not state; list the UNKNOWNs as questions to ask each company. Step 3: elicit the user's OWN decision weights — what actually matters to them (comp, growth, stability, location, mission, team) — do not invent or assume weights. Step 4: state the assumptions any computed view will use (equity valuation basis, bonus attainment). Step 5: write an acceptance-criteria checklist ('every offer covered on every factor', 'unknowns marked UNKNOWN', 'weights are the user's own words', 'assumptions stated'). Write the fact sheet + checklist via write_task_note AND to notes/offer-facts.md.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/offer-facts.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/offer-facts.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/offer-facts.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "facts",
+        "maxAttempts": 3
+      },
+      "next": "compare"
+    },
+    {
+      "id": "compare",
+      "name": "Build the comparison",
+      "description": "the decision sheet — table, computed views, weighted read, recommendation",
+      "prompt": "Write reports/offer-compare.md from the fact sheet. Step 1: a factor-by-offer markdown comparison table — offers as columns, factors as rows, UNKNOWNs still visible. Step 2: computed lines under the STATED assumptions: year-1 cash, and a 4-year total-comp view with the equity caveats repeated next to the number. Step 3: a weighted read against the user's stated priorities — show how each offer scores on what THEY said matters, not on a generic rubric. Step 4: risks and negotiation levers per offer (deadline pressure, level mismatch, unvested cliff, remote-policy risk). Step 5: a recommendation that separates the arithmetic ('offer B leads on 4-year comp under these assumptions') from the judgment ('offer A fits the growth priority you weighted highest') — and says plainly which way the sheet leans and why. On a loop-back, fix ONLY the named issues.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "reports/offer-compare.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "reports/offer-compare.md",
+            "bytes": 1500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "reports/offer-compare.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "compare",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Audit the decision sheet. Step 1: recompute the year-1 and 4-year lines from the fact sheet — FAIL on any arithmetic that does not reproduce, or any computed number whose assumption is not stated beside it. Step 2: check every offer appears in every table row and that fact-sheet UNKNOWNs were not silently replaced with guesses. Step 3: trace the weighted read to the user's stated priorities — FAIL a rubric the user never gave. Step 4: confirm the recommendation separates arithmetic from judgment and takes a clear position. Write PASS/FAIL per criterion.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"compare\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "compare"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

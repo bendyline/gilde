@@ -1,0 +1,48 @@
+{
+  "id": "office-hours",
+  "name": "Office Hours",
+  "description": "An office-hours-style scoping procedure. The user shows up with an idea\nor a problem; the procedure forces them through *listen → challenge →\nreframe → lock scope* before any solutioning happens.\n\nThis is the gstack `/office-hours` skill ported as a craftbook. It's\ndeliberately a pure-prose procedure — no scripts, no hooks. The model\nfollows the step prose, elicits answers via `ask_user_question` (or\nprose, see below), and writes the locked scope to a task note that\ndownstream craftbooks (`/plan-eng-review`, `/review`, `/ship`) read.\n\nThe principle is the YC office-hours pattern: most ideas die not because\nthey're bad but because the problem statement was too loose to bite\ninto. A 20-minute conversation that lands on the *right* problem is\nworth more than a week building the wrong product.\n\nThe recipe never assumes the user is right. If their framing is shaky,\nthe **Challenge** step names that explicitly. The **Reframe** step\nforces a single pick — office hours doesn't end with three startups.\n\n## Tool surface assumptions\n\nEach step prefers `ask_user_question` for structured prompts and\n`write_task_note` for the lock-scope artifact, but each prompt also\nships a **prose / `writeFile` fallback** so the craftbook completes on\nany gezel whose role-tool-filter omits the question/notes tools.\nThat mismatch — Office Hours being assigned to a gezel without the\nquestion tool — was the 2026-06 failure mode: an 8B Gemma running\nunder the developer-style role surface had no `ask_user_question`,\nspun up workarounds (memory searches, repeated `invoke_craftbook`\ncalls, throwaway tasks), and got aborted by the\nsame-arguments-5-times detector before producing anything useful.\nThe explicit *\"if it's in your function schema, otherwise prose\"*\nbranches keep small/medium models on the rails when the surface\nisn't what the prompt assumes.\n\nThe kickoff step also **explicitly overrides** the common gezel\ninstruction to \"search memory before asking the user.\" Pre-loading\ncontext is the right default for follow-up turns and for non-listening\ntasks; for office-hours kickoff it defeats the procedure (the whole\npoint is to hear the user's framing FRESH). The override is named in\nthe prompt so the model doesn't have to resolve the conflict by\nguessing.\n\n## Notes for small / medium models (≤12B)\n\n- Steps are kept under ~200 words and frontload the action (\"**One\n  job this step:** …\") so a small context window doesn't lose focus\n  on long preambles.\n- The \"do NOT\" list is explicit and specific (don't search memory,\n  don't list tasks, don't `invoke_craftbook`) because small models\n  tend to wander to those tools when their headline tool is missing.\n- Examples are concrete (Pac-Man-style: \"A personal chief-of-staff\n  (productivity tool); A solution to nobody-reads-RSS (consumer\n  media); A publishing tool for journalists (B2B SaaS)\") rather than\n  abstract — small models reason better from a worked example than\n  from a rule.\n- Each step is self-contained: re-reading the previous step's notes\n  is allowed but not required to complete this one. The lock-scope\n  step is the only one that depends on prior-step output; the rest\n  read what's directly above in the chat.\n",
+  "entryStepId": "kickoff",
+  "triggers": [
+    "office hours",
+    "scope this",
+    "help me think about",
+    "what should I build"
+  ],
+  "steps": [
+    {
+      "id": "kickoff",
+      "name": "Kickoff",
+      "description": "Hear the user out. Capture the problem they think they're solving in their own words. No solutioning yet.",
+      "prompt": "**One job this step: ask the user three questions. Nothing else this turn.**\n\nBefore anything else: do NOT search memory, do NOT list tasks, do NOT read documents, do NOT call `invoke_craftbook`, do NOT call `create_task`. The whole point of office hours is to hear the user's framing FRESH — pre-loading context defeats the procedure, and a task already exists (this is it). If your gezel about tells you to `search_memory` before asking the user, **ignore that here** — kickoff is the one place we ask cold.\n\n**Ask with `ask_user_question` if it's in your function schema** — one call, three sub-questions:\n\n1. What problem are you trying to solve?\n2. Who experiences this problem?\n3. What have you tried already?\n\n**If `ask_user_question` is NOT in your function schema:** post the three questions as a short prose reply (numbered list, nothing else), then end the turn. The user's next message is the answer.\n\nDo not propose solutions. Do not validate the idea. Do not theorize about answers. Ask, stop.",
+      "suggestedRole": "meester",
+      "next": "challenge"
+    },
+    {
+      "id": "challenge",
+      "name": "Challenge",
+      "description": "Stress-test premises. What assumption is doing the most load-bearing work here?",
+      "prompt": "**This step: pick the 1-2 weakest assumptions in what the user just said and push on them. Then ask. Nothing else this turn.**\n\nRead the kickoff answer. Pick the assumption that, if wrong, makes the whole framing collapse. Examples of pushable shapes:\n\n- 'Users will pay for X' → 'What evidence? Has anyone paid yet?'\n- 'The problem is slow checkout' → 'Is it speed, or trust? Different fix.'\n- 'We need a mobile app' → 'Why mobile vs web? Where do these users actually live?'\n\n**Ask with `ask_user_question` if it's in your function schema** — one call, 2-3 forcing questions.\n\n**Otherwise post the forcing questions as a short prose reply** (numbered list) and end the turn.\n\nIf the user's kickoff answer already carries evidence for the assumption, accept it: write one short prose line ('OK, that holds — moving on') and advance. Don't manufacture doubt where the user already showed their work.",
+      "suggestedRole": "meester",
+      "next": "reframe"
+    },
+    {
+      "id": "reframe",
+      "name": "Reframe",
+      "description": "Generate 2-3 alternative framings of the problem. The user picks one to focus on.",
+      "prompt": "**This step: propose 2-3 alternative framings of the problem, ask the user to pick one.**\n\nRead what the user said in kickoff + challenge. Propose 2-3 framings that interpret the same facts differently. Each framing implies a different product, a different user, a different success criterion. Example:\n\n- User said 'I want a daily-briefing app.' Framings:\n  1. A personal chief-of-staff (productivity tool)\n  2. A solution to 'nobody reads their RSS feeds anymore' (consumer media)\n  3. A publishing tool for journalists (B2B SaaS)\n\n**Ask with `ask_user_question` (multi-choice) if it's in your function schema** — `choices = your 2-3 framings`, plus a final 'none of these — let me reframe again' option as escape.\n\n**Otherwise post the framings as a numbered list in prose**, tell the user 'pick a number', and end the turn.\n\nIf the user wants 'all three', push back in one sentence — office hours ends with ONE.",
+      "suggestedRole": "meester",
+      "next": "lock-scope"
+    },
+    {
+      "id": "lock-scope",
+      "name": "Lock scope",
+      "description": "Write the scope down. One paragraph. Two if forced. Hand off to plan-review next.",
+      "prompt": "**This step: write the locked scope as a single paragraph (max 2). Then report DONE.**\n\nThe user picked a framing in reframe. Write it down. Structure:\n\n- **The problem** (one sentence, in the user's reframed terms)\n- **The user** (one sentence — who specifically experiences this)\n- **The success criterion** (one sentence — what 'this works' looks like)\n- **NOT in scope** (one sentence — what you're deliberately not building, to keep the cut tight)\n\n**Persist it with `write_task_note` if it's in your function schema** so the next craftbook (`/plan-eng-review`, `/review`, `/ship`) reads it from the task scratchpad.\n\n**Otherwise use `writeFile` to ship `scope.md` to the project workspace** — every gezel with workspace-write has `writeFile`, and downstream craftbooks can `readFile` it from the same path. (Don't `write_artifact` it — source-shaped files belong on the workspace tree.)\n\nThen report DONE in one short paragraph.",
+      "suggestedRole": "meester",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-05-16T00:00:00Z"
+}

@@ -1,0 +1,131 @@
+{
+  "id": "version-bump",
+  "name": "Version Bump",
+  "description": "Perform a coordinated, semver-correct version bump across a project — deciding MAJOR/MINOR/PATCH from the actual change set, then updating every place the version is stamped in lockstep (package manifest(s), version constant, lockfile, badges, docs) plus the changelog header, so nothing drifts out of sync. A planner determines the correct semver level and enumerates every file that carries the version, a developer applies the bump everywhere consistently, and a reviewer verifies no location was missed and the new version is internally consistent. Use this when 'bumping the version', preparing a tag, or releasing a new package version where a half-applied bump (manifest says 2.0.0 but the constant says 1.9.0) is a classic ship bug.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the bump (planner) — pick the semver level and enumerate every version-bearing file → gated on `notes/scope.md` (markdown-notes)\n2. Apply the bump (developer) — update every version location in lockstep → gated on `version-bump.json` (json)\n3. Verify consistency (reviewer) — confirm no location drifted and the bump is consistent → gated on `notes/verify.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "bump the version",
+    "release a new version",
+    "set version to 2.0.0",
+    "prepare a version tag",
+    "semver bump"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the bump",
+      "description": "pick the semver level and enumerate every version-bearing file",
+      "prompt": "1. Read the change set since the last release (changelog Unreleased, merged PRs, git log) and decide the semver level: MAJOR for any breaking/incompatible change, MINOR for new backward-compatible functionality, PATCH for backward-compatible fixes only — state the deciding change. 2. Compute the exact new version string from the current one (find the current version first; respect any pre-release/build suffix convention). 3. Enumerate EVERY location that stamps the version: package manifest(s) (and workspace members if a monorepo), any VERSION constant in source, the lockfile, README/docs badges, and the changelog header. 4. Note any inter-package version constraints that must move together. 5. Good looks like: the chosen new version with a one-line semver justification and a complete, file-by-file list of every place that must change with its current and target value. Write this as an acceptance-criteria checklist ('semver level matches the change set', 'every version-bearing file is listed with old→new', 'monorepo/peer constraints accounted for', 'changelog header updated to the new version') plus the analysis to the notes file via write_task_note AND to notes/scope.md.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "bump"
+    },
+    {
+      "id": "bump",
+      "name": "Apply the bump",
+      "description": "update every version location in lockstep",
+      "prompt": "1. Open notes/scope.md and update the version string in EVERY enumerated location to the exact target value — do not eyeball one and miss another. 2. Update package manifest(s) and any workspace members, the source VERSION constant, the lockfile (regenerate if the tooling requires it), docs/badges, and the changelog header. 3. Keep any pre-release/build suffix convention intact. 4. Do not change anything unrelated to the version stamp. 5. After editing, grep the repo for the OLD version string to confirm no stray occurrence remains (except historical changelog entries, which are correct to leave). 6. Produce a manifest of what changed: for each file, the path and the old→new version, plus the result of the stale-version grep. 7. Good looks like: every location from scope.md now reads the new version, the old version survives only in historical changelog entries, and the manifest records each edit. Write the change manifest (JSON with one entry per file) to version-bump.json.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "version-bump.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "version-bump.json",
+            "bytes": 2
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "version-bump.json"
+            }
+          }
+        ],
+        "onReject": "bump",
+        "maxAttempts": 3
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify consistency",
+      "description": "confirm no location drifted and the bump is consistent",
+      "prompt": "1. Open version-bump.json and confirm every file from notes/scope.md was bumped to the SAME target version — no drift between manifest, constant, lockfile, and docs. 2. Independently grep the repo for both the old and the new version strings: the new version should appear in every expected place; the old version should remain only in historical changelog entries. 3. Verify the semver level still matches the change set described in scope.md. 4. Confirm the changelog header was updated and nothing unrelated changed. 5. Write a PASS/FAIL per acceptance criterion with the grep evidence, and list any missed or inconsistent location. 6. Any failure routes back to the bump phase. Write findings to notes/verify.md.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "version-bump.json",
+            "bytes": 2
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "version-bump.json"
+            }
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open version-bump.json and verify it against notes/scope.md, PASS/FAIL each criterion. Confirm: (a) it is valid JSON listing every version-bearing file from scope.md with an old→new entry; (b) every listed location carries the SAME new version (no drift between manifest, source constant, lockfile, docs); (c) the new version is semver-correct for the change set; (d) the changelog header reflects the new version; (e) the old version string survives only in historical changelog entries (verify with a grep). Any missed or inconsistent location routes back to the bump phase.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"bump\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "bump"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

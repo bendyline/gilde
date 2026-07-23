@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "title": "API contract review",
+  "objective": "Measure API contract review behavior with a review-only OpenAPI fixture containing seeded schema, auth, pagination, status-code, and compatibility issues.",
+  "tags": [
+    "code"
+  ],
+  "prompt": "In the `API Contract Review Eval` project, read `source/openapi.yaml` and `source/implementation-notes.md`, then write `contract-review.md`: a prioritized review of contract/implementation mismatches with severity, evidence, compatibility risk, and concrete OpenAPI patch recommendations. Do not rewrite the API or build a server.",
+  "setup": {
+    "projectName": "API Contract Review Eval",
+    "about": "Self-contained eval project for API contract review behavior. Seeded contract and implementation facts are under workspace/source.",
+    "missionObjectives": "Review the seeded API contract against implementation notes and write a prioritized contract-review.md with actionable fixes.",
+    "files": [
+      {
+        "path": "source/openapi.yaml",
+        "content": "openapi: 3.1.0\ninfo: { title: Bookstore API, version: 1.0.0 }\npaths:\n  /books:\n    get:\n      parameters:\n        - { name: limit, in: query, schema: { type: integer } }\n      responses:\n        '200':\n          description: book list\n          content:\n            application/json:\n              schema:\n                type: object\n                properties:\n                  items:\n                    type: array\n                    items: { $ref: \"#/components/schemas/Book\" }\n                  pagination:\n                    type: object\n                    properties: { limit: { type: integer }, offset: { type: integer }, total: { type: integer } }\n    post:\n      responses:\n        '201': { description: created }\n  /books/{id}:\n    get:\n      responses:\n        '200': { description: found }\n        '404': { description: missing book }\ncomponents:\n  schemas:\n    Book:\n      type: object\n      required: [id, title, authorId]\n      properties: { id: { type: integer }, title: { type: string }, authorId: { type: string } }"
+      },
+      {
+        "path": "source/implementation-notes.md",
+        "content": "# Implementation facts\n\n- Server returns string book ids like `bk-1`, not integers.\n- GET /books returns `pagination.hasMore` but the OpenAPI schema omits it.\n- POST /books requires `Authorization: Bearer eval-token`; OpenAPI has no security scheme or operation security.\n- Missing books return `{ error: { code: \"BOOK_NOT_FOUND\", message } }`; the 404 response has no schema.\n- Validation failures return 400 `{ error: { code: \"VALIDATION_ERROR\", message } }`; OpenAPI omits the 400 response.\n- Changing id from integer to string is a breaking contract change for generated clients and should be called out as compatibility risk."
+      }
+    ],
+    "worker": {
+      "name": "Mina",
+      "role": "Reviewer"
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "The review cites each seeded mismatch, ranks severity/compatibility risk, and recommends concrete OpenAPI patches without claiming the contract is clean.",
+    "deliverables": [
+      {
+        "path": "contract-review.md",
+        "kind": "markdown-report",
+        "minBytes": 1700,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "contract-review.md",
+            "pattern": "id.*integer|string.*id|bk-1",
+            "flags": "is"
+          },
+          {
+            "kind": "contains",
+            "file": "contract-review.md",
+            "pattern": "hasMore|pagination"
+          },
+          {
+            "kind": "contains",
+            "file": "contract-review.md",
+            "pattern": "Bearer|Authorization|security"
+          },
+          {
+            "kind": "contains",
+            "file": "contract-review.md",
+            "pattern": "BOOK_NOT_FOUND|404|error envelope"
+          },
+          {
+            "kind": "contains",
+            "file": "contract-review.md",
+            "pattern": "VALIDATION_ERROR|400|validation"
+          },
+          {
+            "kind": "contains",
+            "file": "contract-review.md",
+            "pattern": "breaking|compatibility|generated client"
+          },
+          {
+            "kind": "contains",
+            "file": "contract-review.md",
+            "pattern": "severity|priority|risk"
+          },
+          {
+            "kind": "contains",
+            "file": "contract-review.md",
+            "pattern": "patch|recommend|OpenAPI"
+          },
+          {
+            "kind": "notContains",
+            "file": "contract-review.md",
+            "pattern": "clean pass|no issues|no mismatches",
+            "flags": "i"
+          }
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "contract-review.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "correctness",
+        "description": "The module does what the requirements ask, with sensible edge handling."
+      },
+      {
+        "name": "verification",
+        "description": "Self-tests exercise real behavior, not trivial truths."
+      },
+      {
+        "name": "clarity",
+        "description": "Exports, naming, and structure make the module usable without reading every line."
+      },
+      {
+        "name": "robustness",
+        "description": "Invalid input and boundary cases fail loudly rather than silently."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "OpenAPI review",
+    "status/error semantics",
+    "contract consistency"
+  ]
+}

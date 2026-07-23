@@ -1,0 +1,137 @@
+{
+  "id": "api-contract-review",
+  "name": "API Contract Review",
+  "description": "Review an API contract or specification (OpenAPI/REST/GraphQL) for correctness, consistency, and developer ergonomics, then produce a findings report. First scopes the surface and locks an API design checklist (resource naming and HTTP semantics, status codes, pagination and filtering, error schema consistency, auth, versioning and backward compatibility, idempotency, and schema/type rigor), then reviews each endpoint and type against those rules and REST/GraphQL best practices, then writes a findings report rating each issue and giving the corrected contract snippet. Use this for an API design review, reviewing an OpenAPI/Swagger spec, a REST or GraphQL contract review, endpoint/schema critique, or checking an API for consistency and backward compatibility before it ships — it returns specific, spec-anchored fixes rather than 'make the API cleaner'.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the contract review (reviewer) — map the surface, lock an API design checklist → gated on `notes/scope.md` (markdown-notes)\n2. Review the endpoints (developer) — check each operation + type against the rules → gated on `notes/review.md` (markdown-notes)\n3. Write the contract report (reviewer) — findings with corrected snippets + compat verdict → gated on `api-review.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "api contract review",
+    "review my openapi spec",
+    "review this REST API",
+    "graphql schema review",
+    "is this api backward compatible",
+    "api design review"
+  ],
+  "toolsets": [
+    {
+      "toolsetId": "builtin.code-intel",
+      "autoAllow": true,
+      "reason": "map every implemented API surface and compare contracts with handlers and callers"
+    }
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the contract review",
+      "description": "map the surface, lock an API design checklist",
+      "prompt": "Step 1: For a whole-project or recurring review, call `map_repo`, `list_file_issues`, and targeted `search_code` queries to locate every implemented API surface: HTTP routes/handlers, OpenAPI/Swagger files, GraphQL SDL/resolvers, RPC/SDK exports, event/webhook contracts, validators, error schemas, and public clients. Record indexed coverage and verify that documented operations map to implementations; for a supplied single contract, scope to it. Step 2: Inventory every endpoint/operation/type with method/path, params, request/response schema, auth, implementation, and known callers. Note whether this is a new API or a change. Step 3: Write an API checklist covering resource naming and method semantics; status codes; consistent errors; pagination/filtering/sorting; auth; versioning/backward compatibility; idempotency; schema/type rigor; and implementation/contract drift. Step 4: State pass conditions and write the surface inventory, coverage limitations, and checklist to `write_task_note` AND `notes/scope.md`. No findings yet.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "review"
+    },
+    {
+      "id": "review",
+      "name": "Review the endpoints",
+      "description": "check each operation + type against the rules",
+      "prompt": "Step 1: Walk EACH endpoint/operation against the checklist: verify the method matches the action, the path is a sensible resource, the status codes are correct and complete (including error codes), the request/response schemas are precise, and auth is declared. Step 2: Walk EACH type/schema: required vs optional fields are right, enums and formats constrain values, nullability is intentional, and naming is consistent. Step 3: Cross-cut the whole surface for consistency: do all errors share one schema, is pagination uniform, is casing consistent, are similar resources modeled the same way. Step 4: For a CHANGE, diff against the prior contract and flag every breaking change. Step 5: For each finding capture: the operation/type, the rule violated, the impact on a client developer, severity, and the CORRECTED snippet (the fixed YAML/SDL/schema fragment). Good looks like: a finding with a before/after contract snippet, not 'improve error handling'. Stage findings to `write_task_note`. Do not write the report yet.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "notes/review.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/review.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/review.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "review",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the contract report",
+      "description": "findings with corrected snippets + compat verdict",
+      "prompt": "Step 1: Open `api-review.md` and write a verdict: Approve / Approve-with-changes / Request-changes, and for a change an explicit Backward-compatible: yes/no. Step 2: Add a '## Breaking changes' section first if any (each with the operation and the corrected approach), then '## Blocking' and '## Non-blocking' findings, each as `operation/type — rule — impact — corrected snippet`. Step 3: Add a '## Consistency' section for cross-cutting issues (error schema, pagination, casing). Step 4: Add a '## Strengths' note on what the contract gets right. Every finding must cite the operation/type and include a concrete corrected snippet — no generic advice. On a loop-back, fix only the named gaps. `write_task_note` the report path, the compatibility verdict, and the count of blocking findings.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "api-review.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "api-review.md",
+            "bytes": 1500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "api-review.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open `api-review.md` and grade it against the scope checklist. Check EACH criterion and write PASS/FAIL with a one-line reason: (1) every endpoint/operation and type was reviewed; (2) HTTP-method/status-code semantics were checked; (3) error schema, pagination, and naming consistency were assessed across the surface; (4) for a change, backward compatibility is explicitly stated and any breaking change is flagged; (5) each finding includes a concrete corrected contract snippet; (6) findings are prioritized (breaking/blocking/non-blocking); (7) the verdict matches the findings. If any criterion fails, name the exact gap and loop back.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "report"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.1.0",
+  "releasedAt": "2026-07-19T00:00:00Z"
+}

@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "releasedAt": "2026-07-18T00:00:00Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "household": {
+        "type": "string",
+        "title": "Who eats here?",
+        "description": "e.g. 'two adults, two picky kids', 'just me, vegetarian'.",
+        "default": "the household"
+      }
+    },
+    "required": [
+      "household"
+    ]
+  },
+  "nameTemplate": "Meal Planner",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "maaltijdplanner",
+      "voorman": true
+    }
+  ],
+  "tools": [
+    {
+      "name": "set_menu",
+      "description": "Set a day's dinner (monday..sunday).",
+      "script": "kitchen-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "day": {
+            "type": "string"
+          },
+          "meal": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "day",
+          "meal"
+        ]
+      },
+      "bind": {
+        "action": "set_menu"
+      }
+    },
+    {
+      "name": "pantry_add",
+      "description": "Add a pantry staple (level stocked, low, or out).",
+      "script": "kitchen-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "stocked",
+              "low",
+              "out"
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "bind": {
+        "action": "pantry_add"
+      }
+    },
+    {
+      "name": "pantry_level",
+      "description": "Update a staple's level as the kitchen changes.",
+      "script": "kitchen-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "stocked",
+              "low",
+              "out"
+            ]
+          }
+        },
+        "required": [
+          "level"
+        ]
+      },
+      "bind": {
+        "action": "pantry_level"
+      }
+    },
+    {
+      "name": "kitchen_status",
+      "description": "Tonight's dinner, the week's coverage, and the grocery gap.",
+      "script": "kitchen-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "status"
+      }
+    },
+    {
+      "name": "grocery_list",
+      "description": "The shopping run: everything low or out.",
+      "script": "kitchen-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "grocery_list"
+      }
+    }
+  ],
+  "craftbooks": [
+    "weekly-menu-plan"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "dashboard/index.html",
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "menu.json"
+      },
+      {
+        "source": "workspace",
+        "path": "pantry.json"
+      }
+    ]
+  },
+  "workspaceSeed": [
+    "menu.json",
+    "pantry.json"
+  ],
+  "scripts": {
+    "kitchen-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'kitchen-store',\n  description:\n    \"Read and update the week's menu (menu.json) and the pantry (pantry.json). Call action:'status' for today's dinner + the grocery gap; 'set_menu' day by day; 'pantry_add' / 'pantry_level' as staples change; 'grocery_list' for the run.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description:\n        \"One of 'status', 'set_menu', 'pantry_add', 'pantry_level', or 'grocery_list'.\",\n      required: true,\n    },\n    day: {\n      type: 'string',\n      description: \"Day for set_menu: monday..sunday.\",\n    },\n    meal: { type: 'string', description: 'The dinner for that day.' },\n    name: { type: 'string', description: 'Pantry item name.' },\n    level: { type: 'string', description: \"Pantry level: 'stocked', 'low', or 'out'.\" },\n    id: { type: 'string', description: \"Pantry item id, e.g. 'item-3'.\" },\n  },\n  outputs: {\n    planned: { type: 'number', description: 'Days with a planned dinner.' },\n    groceries: { type: 'number', description: 'Items on the grocery list.' },\n    summary: { type: 'string', description: 'The kitchen picture.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── kitchen-rules-start ──\n// Pure derivations: the weekly menu shape and the grocery gap (pantry\n// items marked low or out).\n\nvar DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];\n\nfunction normalizeDay(day) {\n  if (typeof day !== 'string') return null;\n  var d = day.toLowerCase();\n  return DAYS.indexOf(d) >= 0 ? d : null;\n}\n\nfunction todayName(nowMs) {\n  // getUTCDay: 0=Sunday.\n  var idx = new Date(nowMs).getUTCDay();\n  return DAYS[(idx + 6) % 7];\n}\n\nfunction groceryGap(records) {\n  return records.filter(function (r) {\n    return r.status === 'low' || r.status === 'out';\n  });\n}\n\nfunction kitchenLine(menu, records, nowMs) {\n  var today = todayName(nowMs);\n  var tonight = menu.days && menu.days[today];\n  var gap = groceryGap(records);\n  var planned = DAYS.filter(function (d) {\n    return menu.days && menu.days[d];\n  }).length;\n  return (\n    (tonight ? \"Tonight: \" + tonight + '.' : 'Nothing planned for tonight.') +\n    ' ' +\n    planned +\n    ' of 7 dinners planned. Grocery list: ' +\n    (gap.length\n      ? gap\n          .map(function (r) {\n            return (r.fields && r.fields.name) || r.id;\n          })\n          .join(', ')\n      : 'empty')\n  );\n}\n// ── kitchen-rules-end ──\n\nconst MENU_FILE = 'menu.json';\nconst pantry = rosterStore(gezel.fs, 'pantry.json', {\n  stages: ['stocked', 'low', 'out'],\n  idPrefix: 'item',\n});\n\ninterface Menu {\n  version: number;\n  days: Record<string, string>;\n  updatedAt: string;\n}\n\nasync function loadMenu(): Promise<Menu> {\n  try {\n    const parsed = JSON.parse(await gezel.fs.read(MENU_FILE)) as Partial<Menu>;\n    return {\n      version: 1,\n      days: parsed.days && typeof parsed.days === 'object' ? (parsed.days as Record<string, string>) : {},\n      updatedAt: new Date().toISOString(),\n    };\n  } catch {\n    return { version: 1, days: {}, updatedAt: new Date().toISOString() };\n  }\n}\n\nasync function saveMenu(menu: Menu): Promise<void> {\n  menu.updatedAt = new Date().toISOString();\n  await gezel.fs.write(MENU_FILE, `${JSON.stringify(menu, null, 2)}\\n`);\n}\n\nasync function resolveItem(): Promise<string> {\n  if (input.id) return input.id;\n  if (input.name) {\n    const wanted = input.name.toLowerCase();\n    const matches = (await pantry.list()).filter(\n      (r) => String(r.fields.name ?? '').toLowerCase() === wanted,\n    );\n    if (matches.length === 1) return matches[0]!.id;\n  }\n  throw new Error(\"Pass 'id' (e.g. 'item-3') or an exact pantry item 'name'.\");\n}\n\nconst menu = await loadMenu();\n\nif (input.action === 'set_menu') {\n  const day = normalizeDay(input.day);\n  if (!day || !input.meal) throw new Error(\"set_menu needs 'day' (monday..sunday) and 'meal'.\");\n  menu.days[day] = input.meal;\n  await saveMenu(menu);\n} else if (input.action === 'pantry_add') {\n  if (!input.name) throw new Error(\"pantry_add needs 'name'.\");\n  const level = input.level && ['stocked', 'low', 'out'].includes(input.level) ? input.level : 'stocked';\n  await pantry.add({ status: level, fields: { name: input.name } });\n} else if (input.action === 'pantry_level') {\n  if (!input.level || !['stocked', 'low', 'out'].includes(input.level)) {\n    throw new Error(\"pantry_level needs level 'stocked', 'low', or 'out'.\");\n  }\n  await pantry.transition(await resolveItem(), input.level);\n} else if (input.action !== 'status' && input.action !== 'grocery_list') {\n  throw new Error(\n    `Unknown action '${input.action}'. Use status, set_menu, pantry_add, pantry_level, or grocery_list.`,\n  );\n}\n\nconst records = await pantry.list();\nconst gap = groceryGap(records);\nconst listing =\n  input.action === 'grocery_list'\n    ? gap\n        .map((r) => `${String(r.fields.name ?? r.id)} (${r.status})`)\n        .join('\\n') || 'The grocery list is empty.'\n    : '';\n\ngezel.output({\n  planned: DAYS.filter((d) => menu.days[d]).length,\n  groceries: gap.length,\n  summary: listing || kitchenLine(menu, records, Date.now()),\n});\n"
+  }
+}

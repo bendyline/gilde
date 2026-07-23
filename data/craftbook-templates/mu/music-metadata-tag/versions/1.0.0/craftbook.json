@@ -1,0 +1,93 @@
+{
+  "id": "music-metadata-tag",
+  "name": "Music Library Metadata Tagging",
+  "description": "Tag and organize a folder of audio files with consistent, correct metadata — title, artist, album, track number, year, genre — so the library is clean, sortable, and player-friendly. Locks the tag schema and naming/foldering convention FIRST, applies tags and a consistent file/folder layout across the whole library, then verifies every file is fully and consistently tagged. Defining the schema and the source of truth before touching files is what prevents a half-tagged, inconsistently-named mess.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Tag schema & convention (planner) — required fields, vocab, file/folder naming rules → gated on `notes/schema.md` (markdown-notes)\n2. Apply tags & layout (developer) — write metadata + rename/foldering per the schema → gated on `tag-report.csv` (data-file)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "schema",
+  "triggers": [
+    "tag my music",
+    "fix audio metadata",
+    "organize a music library",
+    "id3 tags",
+    "clean up song files"
+  ],
+  "steps": [
+    {
+      "id": "schema",
+      "name": "Tag schema & convention",
+      "description": "required fields, vocab, file/folder naming rules",
+      "prompt": "Define the schema BEFORE tagging. Step 1: list the audio folder and record every file (path, format, current tags if readable). Step 2: define the required tag fields (title, artist, album, album-artist, track number, disc, year, genre) and which are mandatory. Step 3: define controlled vocabularies/formatting: genre list, title-case rules, how 'feat.' is written, track-number padding (01, 02…). Step 4: define the file/folder convention (e.g. `Artist/Album/01 - Title.ext`). Step 5: name the source of truth for correcting tags (existing tags, filename parsing, or a lookup). Write an acceptance-criteria checklist (every file has all mandatory fields, genres drawn from the vocab, track numbers padded and sequential within an album, files follow the naming convention, a report lists before/after per file) and decisions to `notes/schema.md` via write_task_note AND the produces path.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/schema.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/schema.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/schema.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "schema",
+        "maxAttempts": 3
+      },
+      "next": "tag"
+    },
+    {
+      "id": "tag",
+      "name": "Apply tags & layout",
+      "description": "write metadata + rename/foldering per the schema",
+      "prompt": "Apply the schema across the library. Step 1: for each file, derive correct field values from the source of truth, normalizing to the controlled vocab and formatting rules. Step 2: write the metadata tags to the file. Step 3: rename/move the file to match the naming convention, padding track numbers and grouping into Artist/Album folders. Step 4: process incrementally and append a row to `tag-report.csv` per file: old path, new path, and the final field values — so the run is observable and re-runnable. Step 5: do not skip files; flag any you cannot confidently tag rather than guessing wildly. write_task_note the report path and a coverage count. On a loop-back, re-tag only the flagged files.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "tag-report.csv",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "tag-report.csv",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "tag-report.csv",
+            "sniff": "data-table"
+          }
+        ],
+        "onReject": "tag",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Audit the tagged library. Step 1: confirm `tag-report.csv` covers every source file (count match) — PASS/FAIL coverage. Step 2: confirm every file has all MANDATORY fields populated. Step 3: confirm genres come from the controlled vocab and track numbers are padded and sequential within each album. Step 4: confirm files follow the naming convention (Artist/Album/NN - Title). Step 5: spot-check 3 files by reading back their tags — do they match the report? Write PASS/FAIL per criterion.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"tag\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "tag"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}

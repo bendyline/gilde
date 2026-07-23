@@ -1,0 +1,197 @@
+{
+  "id": "audiobook-master-pack",
+  "name": "Master the Audiobook",
+  "description": "Assemble the finished chapters into a release: completeness swept against the manuscript first, the metadata manifest built and verified chapter by chapter, the master assembled through the project's media pipeline with a run log, and the listener-facing description written — the moment the folder of takes becomes a book. Locks the packaging rules FIRST (order, metadata fields, total duration), then the manifest, then the master, then the release copy. Use for mastering an audiobook, packaging the chapters, audiobook release prep, and 'all the chapters are rendered, now what'.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Sweep for completeness (producer) — chapters on disk checked against the manuscript, rules locked → gated on `notes/scope.md` (markdown-notes)\n2. Build the manifest (data-analyst) — master/manifest.json: chapter, file, duration, order → gated on `master/manifest.json` (json)\n3. Assemble the master (developer) — the chapters concatenated into the master with its log → gated on `master/book.m4b` (generic-file)\n4. Write the release copy (copywriter) — listener description and release notes for the finished book → gated on `master/release-notes.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "master the audiobook",
+    "package the chapters",
+    "assemble the book",
+    "audiobook release prep",
+    "finish the audiobook"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Sweep for completeness",
+      "description": "chapters on disk checked against the manuscript, rules locked",
+      "prompt": "Establish that the book is actually finished before packaging it. Step 1: read the manuscript's table of contents under manuscript/ and list every chapter the book should have. Step 2: sweep the rendered audio under audio/ — each chapter's audio file and its run log — and check the two lists against each other; a missing or failed chapter stops the run here, reported plainly, because a master with a hole in it is not a master. Step 3: lock the packaging rules — the manifest at master/manifest.json records every chapter with its audio file, duration, and play order; order follows the manuscript; durations come from the chapters' run logs, never estimated; and the master is assembled through the project's media pipeline with a status-ok log. Step 4: write an acceptance-criteria checklist ('every manuscript chapter has rendered audio', 'manifest complete with file, duration, and order per chapter', 'no duplicate chapters', 'master assembled with a status-ok log', 'total duration equals the sum of the chapters', 'listener description written'). Call write_task_note with the chapter counts + checklist and write notes/scope.md.",
+      "suggestedRole": "producer",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "manifest"
+    },
+    {
+      "id": "manifest",
+      "name": "Build the manifest",
+      "description": "master/manifest.json: chapter, file, duration, order",
+      "prompt": "Build the metadata manifest the master run and every player will trust. Step 1: write master/manifest.json as a JSON array, one record per chapter — the chapter title as the manuscript names it, the audio file path exactly as it exists under audio/, the duration taken from that chapter's run log, and the play order as a number following the manuscript. Step 2: verify as you go — every file path must point at a file that exists, no chapter appears twice, and the orders run without gaps. Step 3: total the durations and note the book's full running time for the release copy. Call write_task_note with the record count and the total duration.",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "master/manifest.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "master/manifest.json",
+            "bytes": 2
+          },
+          {
+            "kind": "recordSchema",
+            "file": "master/manifest.json",
+            "fields": [
+              {
+                "name": "chapter",
+                "type": "nonempty"
+              },
+              {
+                "name": "file",
+                "type": "nonempty"
+              },
+              {
+                "name": "duration"
+              },
+              {
+                "name": "order"
+              }
+            ],
+            "minRows": 3,
+            "uniqueBy": "chapter"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "master/manifest.json"
+            }
+          }
+        ],
+        "onReject": "manifest",
+        "maxAttempts": 3
+      },
+      "next": "assemble"
+    },
+    {
+      "id": "assemble",
+      "name": "Assemble the master",
+      "description": "the chapters concatenated into the master with its log",
+      "prompt": "Assemble the release master. Step 1: drive the concatenation through the project's media pipeline — it reads master/manifest.json, verifies every referenced audio file exists, joins the chapters in manifest order into master/book.m4b, and writes its run log to master/assembly-log.json with a status field, the chapter count, and the total duration it computed. Step 2: if the run fails, fix what the error names — usually a manifest path or order — and re-run; never hand-write the log. Step 3: once it succeeds, read the log and confirm status ok, the chapter count matching the manifest, and the total duration matching the manifest's sum. Call write_task_note with the run outcome and the master's total duration.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "master/book.m4b",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "master/book.m4b",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "master/book.m4b",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "sniff",
+            "file": "master/assembly-log.json",
+            "sniff": "json-valid"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "master/assembly-log.json",
+            "path": "status",
+            "value": "ok",
+            "label": "the assembly log reports status ok"
+          }
+        ],
+        "onReject": "assemble",
+        "maxAttempts": 3
+      },
+      "next": "package"
+    },
+    {
+      "id": "package",
+      "name": "Write the release copy",
+      "description": "listener description and release notes for the finished book",
+      "prompt": "Write the words that travel with the book. Step 1: write the listener-facing description — what the book is about and who it is for, in the voice a listener browsing a store would actually read, without spoiling it. Step 2: add the release facts — the total running time from the master log, the chapter count, and the chapter list with per-chapter durations from the manifest. Step 3: add the release notes for the owner — what was assembled, anything flagged during the sweep, and the one-line confirmation that the master's numbers match the manifest. Write master/release-notes.md and call write_task_note with the path and the total running time.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "master/release-notes.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "master/release-notes.md",
+            "bytes": 600
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "master/release-notes.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "package",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open master/release-notes.md, master/manifest.json, and master/assembly-log.json and verify every criterion from notes/scope.md: every manuscript chapter appears in the manifest exactly once with file, duration, and order, the referenced audio files exist, the log reports status ok with a chapter count and total duration matching the manifest, the release copy states the total running time, and the listener description reads like store copy rather than an internal note. Write PASS/FAIL per criterion; on any failure, name the gap and loop back to package — or to manifest if the metadata is the problem.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"package\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "package"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-06-05T00:00:00Z"
+}
