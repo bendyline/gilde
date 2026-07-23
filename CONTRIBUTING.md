@@ -1,6 +1,6 @@
 # Contributing to gilde
 
-Thanks for adding to the guild. This page covers the mechanics; the layout
+Thanks for adding to the gilde. This page covers the mechanics; the layout
 grammar lives in [AGENTS.md](AGENTS.md) (written for AI agents, equally
 useful to humans).
 
