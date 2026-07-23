@@ -1,10 +1,9 @@
-# Publish @bendyline/gilde to npm, then notify gilde-pipeline so it deploys
-# gezelgilde.com (site + catalog update manifest).
+# Publish @bendyline/gilde to npm.
 #
 # Publishing lives here — in the repo package.json.repository points at — so
-# npm provenance attestations verify. The site deploy stays in
-# bendyline/gilde-pipeline, triggered by the repository_dispatch this
-# workflow fires after publishing.
+# npm provenance attestations verify. The site deploy for gezelgilde.com
+# stays in bendyline/gilde-pipeline (deploy-site.yml), run manually after a
+# publish or by its weekly cron.
 #
 # Publish auth is npm trusted publishing (OIDC): the npm CLI exchanges this
 # workflow's GitHub OIDC token for short-lived publish credentials. No
@@ -105,27 +104,9 @@ jobs:
       # deliberately no token secret in this step. Provenance is on by
       # default under trusted publishing and verifies because this workflow
       # lives in the repo package.json.repository points at.
+      #
+      # After a publish, run gilde-pipeline's deploy-site workflow manually
+      # (or wait for its weekly cron) to refresh gezelgilde.com.
       - name: Publish to npm
         if: steps.version.outputs.publish == 'yes'
         run: npm publish --access public
-
-  # Fires after the publish (or skip) so gilde-pipeline deploys the site with
-  # the new version already visible on the registry. The weekly cron in
-  # gilde-pipeline is the safety net if this dispatch is ever missed.
-  notify-pipeline:
-    needs: publish-npm
-    runs-on: ubuntu-latest
-    steps:
-      - name: Dispatch gilde-updated to gilde-pipeline
-        env:
-          TOKEN: ${{ secrets.PIPELINE_DISPATCH_TOKEN }}
-        run: |
-          if [ -z "$TOKEN" ]; then
-            echo "PIPELINE_DISPATCH_TOKEN secret is not set; cannot notify gilde-pipeline." >&2
-            exit 1
-          fi
-          curl -sf -X POST \
-            -H "Authorization: Bearer $TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            https://api.github.com/repos/bendyline/gilde-pipeline/dispatches \
-            -d '{"event_type":"gilde-updated","client_payload":{"sha":"${{ github.sha }}"}}'
