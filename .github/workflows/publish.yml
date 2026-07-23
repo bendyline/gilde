@@ -1,0 +1,131 @@
+# Publish @bendyline/gilde to npm, then notify gilde-pipeline so it deploys
+# gezelgilde.com (site + catalog update manifest).
+#
+# Publishing lives here — in the repo package.json.repository points at — so
+# npm provenance attestations verify. The site deploy stays in
+# bendyline/gilde-pipeline, triggered by the repository_dispatch this
+# workflow fires after publishing.
+#
+# Publish auth is npm trusted publishing (OIDC): the npm CLI exchanges this
+# workflow's GitHub OIDC token for short-lived publish credentials. No
+# NPM_TOKEN secret exists. One-time npm-side setup is documented in
+# gilde-pipeline's README ("npm auth: trusted publishing").
+name: publish
+
+# Manual-only by design: publishing is a deliberate act, not a side effect
+# of merging to main.
+on:
+  workflow_dispatch:
+    inputs:
+      force_publish:
+        description: publish even if this commit was already published
+        default: false
+        type: boolean
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # Same checks as validate.yml: never publish a commit that branch
+  # protection might have let through unvalidated.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: tools/package-lock.json
+      - name: Install validation tooling
+        run: npm --prefix tools ci
+      - name: Structural + semantic validation
+        run: node tools/validate.mjs --github
+      - name: Index freshness
+        run: node tools/build-index.mjs --check
+      - name: Chat-model manifest lint
+        run: node tools/lint-models.mjs
+
+  publish-npm:
+    needs: verify
+    runs-on: ubuntu-latest
+    # The `npm` GitHub environment gates publishing (required reviewers /
+    # main-only deployment branch rule) and is named in the npm
+    # trusted-publisher config, so only runs through it can publish.
+    environment: npm
+    permissions:
+      contents: read
+      # npm trusted publishing exchanges the OIDC token minted under this
+      # permission for publish credentials.
+      id-token: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      published: ${{ steps.version.outputs.publish }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # No registry-url here: setup-node would write an .npmrc that expects a
+      # NODE_AUTH_TOKEN env var, which breaks token-less trusted publishing.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+
+      # Trusted publishing needs npm >= 11.5.1; fail loudly with a clear
+      # message instead of letting npm publish die with ENEEDAUTH.
+      - name: Check npm supports trusted publishing
+        run: |
+          ver=$(npm --version)
+          node -e "
+            const [a, b, c] = '$ver'.split('.').map(Number);
+            if (a > 11 || (a === 11 && (b > 5 || (b === 5 && c >= 1)))) process.exit(0);
+            console.error('npm ' + '$ver' + ' is too old for trusted publishing (need >= 11.5.1).');
+            process.exit(1);
+          "
+
+      - name: Compute version
+        id: version
+        run: >
+          node tools/compute-version.mjs
+          --sha=${{ github.sha }}
+          ${{ inputs.force_publish == true && '--force' || '' }}
+
+      - name: Apply version
+        if: steps.version.outputs.publish == 'yes'
+        run: npm version --no-git-tag-version "${{ steps.version.outputs.version }}"
+
+      - name: Check package size
+        if: steps.version.outputs.publish == 'yes'
+        run: node tools/check-package-size.mjs
+
+      # Auth comes from trusted publishing (id-token: write above); there is
+      # deliberately no token secret in this step. Provenance is on by
+      # default under trusted publishing and verifies because this workflow
+      # lives in the repo package.json.repository points at.
+      - name: Publish to npm
+        if: steps.version.outputs.publish == 'yes'
+        run: npm publish --access public
+
+  # Fires after the publish (or skip) so gilde-pipeline deploys the site with
+  # the new version already visible on the registry. The weekly cron in
+  # gilde-pipeline is the safety net if this dispatch is ever missed.
+  notify-pipeline:
+    needs: publish-npm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch gilde-updated to gilde-pipeline
+        env:
+          TOKEN: ${{ secrets.PIPELINE_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "PIPELINE_DISPATCH_TOKEN secret is not set; cannot notify gilde-pipeline." >&2
+            exit 1
+          fi
+          curl -sf -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/bendyline/gilde-pipeline/dispatches \
+            -d '{"event_type":"gilde-updated","client_payload":{"sha":"${{ github.sha }}"}}'
