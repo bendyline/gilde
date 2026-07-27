@@ -35,7 +35,8 @@ import { DIR_KIND, KIND_DIR, listItems, presentKinds } from './lib/walk.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..');
 const ONE_MB = 1024 * 1024;
-const ALLOWED_EXTENSIONS = new Set(['.json', '.md', '.html', '.svg']);
+const BINARY_EXTENSIONS = new Set(['.webp']);
+const ALLOWED_EXTENSIONS = new Set(['.json', '.md', '.html', '.svg', ...BINARY_EXTENSIONS]);
 const HF_URL_PREFIX = 'https://huggingface.co/';
 const URI_TEMPLATE_VARIABLE = /\{[A-Za-z_][A-Za-z0-9_-]*\}/g;
 
@@ -96,19 +97,21 @@ function main() {
     // .gitkeep is a conventional git placeholder for otherwise-empty
     // directories; allowed by name rather than widening the extension list.
     if (name !== '.gitkeep' && !ALLOWED_EXTENSIONS.has(ext)) {
-      c.error(path, '', 'ext-not-allowed', `extension "${ext || name}" is not in json/md/html/svg`);
+      c.error(path, '', 'ext-not-allowed', `extension "${ext || name}" is not in json/md/html/svg/webp`);
       continue;
     }
     const buf = readFileSync(path);
-    if (buf.includes(0)) {
-      c.error(path, '', 'binary-file', 'contains NUL bytes');
-      continue;
-    }
-    try {
-      utf8Strict.decode(buf);
-    } catch {
-      c.error(path, '', 'not-utf8', 'not valid UTF-8');
-      continue;
+    if (!BINARY_EXTENSIONS.has(ext)) {
+      if (buf.includes(0)) {
+        c.error(path, '', 'binary-file', 'contains NUL bytes');
+        continue;
+      }
+      try {
+        utf8Strict.decode(buf);
+      } catch {
+        c.error(path, '', 'not-utf8', 'not valid UTF-8');
+        continue;
+      }
     }
     if (name !== 'index.json' && buf.length > ONE_MB) {
       c.error(path, '', 'file-too-large', `${buf.length} bytes exceeds the 1 MB cap`);
