@@ -491,7 +491,13 @@ export function loadResolvedManifest(itemDir, kind, id) {
   const parsedVersion = zodParse(loadSchema(`${kind}-version`), versionJson);
   if (!parsedVersion.ok) return { skip: 'invalid-version-manifest', errors: parsedVersion.errors };
   const version = parsedVersion.value;
-  if (kind === 'chat-model' && !version.ollama && !version.llamaCpp && !version.mlx) {
+  if (
+    kind === 'chat-model' &&
+    !version.ollama &&
+    !version.llamaCpp &&
+    !version.mlx &&
+    !version.ds4
+  ) {
     return { skip: 'chat-model-no-engine-source' };
   }
   if (
