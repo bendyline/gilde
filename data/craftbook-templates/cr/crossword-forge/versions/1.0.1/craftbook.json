@@ -1,0 +1,147 @@
+{
+  "id": "crossword-forge",
+  "name": "Forge a Crossword",
+  "description": "Construct a personalized crossword and prove it works before anyone's pencil touches it: the grid actually interlocks, every entry sits in the grid exactly where its number says, every clue is tuned to the solver — and the whole thing ships as a printable page with the solution kept decently out of sight. Locks the theme and the word list FIRST, then constructs the mechanically-verified grid, then renders the printable puzzle. Use for making a crossword, a personalized puzzle for the family, 'a crossword with the grandkids' names in it', and printable puzzle gifts.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the puzzle (puzzle-maker) — theme and word list from the personal material, construction rules → gated on `notes/scope.md` (markdown-notes)\n2. Construct the grid (developer) — verified puzzle data — grid, entries, clues → gated on `puzzle.json` (json)\n3. Render the printable page (developer) — printable grid and clues, solution out of sight, shelf copy filed → gated on `puzzle.html` (html-page)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "make a crossword",
+    "crossword for the family",
+    "personalized crossword puzzle",
+    "forge a crossword",
+    "printable crossword"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the puzzle",
+      "description": "theme and word list from the personal material, construction rules",
+      "prompt": "Set the build before placing a letter. Step 1: gather the personal material — the task's params (theme, names, size) and any notes in the workspace about the solvers: names, places, pets, running jokes. Step 2: draft the word list — the personal entries first, filler words only where the grid needs them to interlock, everything spellable in plain uppercase letters. Step 3: lock the construction rules — grid size from the size param (small about 9x9, medium about 13x13, large about 15x15), every entry placed in the grid and crossing at least one other entry, no entry without a clue, clue difficulty tuned to the solvers. Step 4: write an acceptance-criteria checklist ('every entry reads out of the grid at its stated coordinates', 'every crossing agrees letter for letter', 'every entry has a clue at the target difficulty', 'the personal words made it into the grid', 'the rendered page prints cleanly with the solution out of casual sight'). Call write_task_note with the theme + word count + checklist and write notes/scope.md.",
+      "suggestedRole": "puzzle-maker",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "construct"
+    },
+    {
+      "id": "construct",
+      "name": "Construct the grid",
+      "description": "verified puzzle data — grid, entries, clues",
+      "prompt": "Construct the puzzle as data at puzzle.json. Step 1: build the grid — uppercase letters in filled cells, '.' for blocks — placing every word from the locked list so the entries interlock. Step 2: write it as JSON with this exact shape: { \"title\": ..., \"size\": { \"rows\": N, \"cols\": N }, \"grid\": [ one string per row ], \"entries\": [ { \"number\", \"answer\", \"row\", \"col\", \"direction\": \"across\" or \"down\", \"clue\" } ] } — rows and columns zero-indexed from the top-left. Step 3: **verify mechanically, not mentally.** Reading a grid cell-by-cell in your head does not work at this size — every constructive puzzle needs a checker. If the project already has one (look under `checks/`), run it with `run_nodejs_script`. If it does not, write one first: a short dependency-free Node script at `checks/verify-puzzle.mjs` that loads puzzle.json, walks every entry, reads its letters out of the grid at its row/col in its direction, and prints the exact mismatches (entry number, expected answer, what the grid actually spells) — then `PUZZLE OK` when all entries agree. Run it, fix exactly what it names, and run it again until it is clean. Do not complete this step on an unverified grid: the gate re-checks this the same way and will name any entry that lies. Step 4: write the clues into the entries — personal entries clued with the in-jokes, fillers clued honestly at the target difficulty. Call write_task_note with the grid size, the entry count, and the checker's final output.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "puzzle.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "puzzle.json",
+            "bytes": 400
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "puzzle.json"
+            }
+          }
+        ],
+        "onReject": "construct",
+        "maxAttempts": 3
+      },
+      "next": "render"
+    },
+    {
+      "id": "render",
+      "name": "Render the printable page",
+      "description": "printable grid and clues, solution out of sight, shelf copy filed",
+      "prompt": "Render the playable, printable page at puzzle.html. Step 1: draw the empty numbered grid from puzzle.json — blocks and cell numbers exactly as the data has them — beside the across and down clue lists. Step 2: make it print-ready — an @page rule, print styles, the grid sized so a pencil fits in the squares. Step 3: keep the solution out of casual sight — behind a toggle on screen and on its own page in print, never beside the blank grid. Step 4: any script on the page must actually run — check it before completing. Step 5: file a dated copy of puzzle.json and puzzle.html into the puzzles/ shelf named for the theme, so the pack-layout ritual can find them later. Call write_task_note with the page path and the shelf copies.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "puzzle.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "puzzle.html",
+            "bytes": 800
+          },
+          {
+            "kind": "cssMinBytes",
+            "bytes": 650,
+            "file": "puzzle.html"
+          },
+          {
+            "kind": "contains",
+            "file": "puzzle.html",
+            "pattern": "@page|@media\\s+print",
+            "flags": "i",
+            "label": "print CSS"
+          },
+          {
+            "kind": "jsParses",
+            "file": "puzzle.html"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "puzzle.html"
+            }
+          }
+        ],
+        "onReject": "render",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open puzzle.json and puzzle.html and verify every criterion from notes/scope.md: read three entries out of the grid by their coordinates and confirm each matches its answer, check one crossing square agrees in both directions, confirm every entry has a clue and the personal words from the scope made it in, and check the rendered page — the grid matches the data, the clue numbers line up, and the solution stays out of sight on screen and in print. Write PASS/FAIL per criterion; on any failure, name the entry or cell and loop back to construct.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"construct\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "construct"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-07-26T01:30:00.000Z"
+}

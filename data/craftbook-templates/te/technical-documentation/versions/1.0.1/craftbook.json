@@ -1,0 +1,152 @@
+{
+  "id": "technical-documentation",
+  "name": "Technical Documentation",
+  "description": "Generate a coherent documentation set from a codebase, organized by the Diataxis model (tutorials, how-to guides, reference, explanation), with cross-links and a coverage pass.",
+  "basedOn": {
+    "name": "gstack",
+    "url": "https://github.com/garrytan/gstack"
+  },
+  "plan": "## Important Rules\n\n- **Research before writing.** Step 1 is not optional. Read the code, read the tests, read the\n  existing docs. Insufficient research produces surface-level documentation.\n- **Accuracy is non-negotiable.** Every code example must work. Every API description must match\n  the actual code. If you're unsure about a detail, read the source again — do not guess.\n- **Diataxis quadrants serve different readers.** Do not mix tutorial content into reference docs\n  or reference content into how-tos. Each quadrant has a specific reader in a specific mode.\n- **Time to first result in tutorials.** If a reader can't see something working by step 3,\n  restructure the tutorial.\n- **Cross-link everything.** Isolated docs are undiscoverable docs.\n- **Voice: friendly, concrete, user-forward.** Write like you're explaining to a smart person\n  who hasn't seen the code. Never corporate, never academic.\n- **Completeness over minimalism.** AI makes comprehensive documentation cheap. Don't write\n  \"minimal viable docs\" — write complete docs. Boil the ocean.",
+  "entryStepId": "step-0",
+  "triggers": [
+    "write docs for this",
+    "generate documentation",
+    "document this feature",
+    "create a tutorial",
+    "write a how-to",
+    "explain this module",
+    "docs for this project"
+  ],
+  "command": "technical-documentation",
+  "steps": [
+    {
+      "id": "step-0",
+      "name": "Step 0: Scope & Intent",
+      "prompt": "1. Determine what to document:\n   - **If invoked with a specific target** (feature, module, file, skill): scope is that target\n   - **If invoked for an entire project**: scope is the full project\n   - **If called from /document-release with gaps**: scope is the specific entities from the coverage map\n\n2. Use AskUserQuestion to confirm scope and ask about documentation target:\n\n   - A) Write documentation inline in existing files (README, ARCHITECTURE, etc.)\n   - B) Create standalone documentation files (e.g., `docs/` directory)\n   - C) Both — inline summaries in existing files + deep docs in standalone files\n\n   RECOMMENDATION: Choose C because it maximizes both discoverability and depth.\n\n3. Determine the output format:\n   - If the project already has a `docs/` directory, follow its conventions\n   - If the project uses a doc framework (Nextra, Docusaurus, MkDocs, VitePress), follow its format\n   - Otherwise, use plain Markdown files in `docs/`\n\n---\n\nRecord the scope decision in docs/plan.md: what is being documented, for whom, and which Diataxis quadrants each target gets.",
+      "next": "step-1",
+      "suggestedRole": "planner",
+      "gate": {
+        "maxAttempts": 3,
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "docs/plan.md",
+            "bytes": 150
+          }
+        ]
+      }
+    },
+    {
+      "id": "step-1",
+      "name": "Step 1: Codebase Archaeology (Research Phase)",
+      "prompt": "**This is the most important step.** Do not skip or rush it. The quality of your documentation\nis directly proportional to how well you understand the code.\n\n1. **Map the project structure:**\n\n2. **Read the entry points.** Identify and read:\n   - README.md, ARCHITECTURE.md, CONTRIBUTING.md, CLAUDE.md / AGENTS.md\n   - package.json / Cargo.toml / pyproject.toml / go.mod (understand the project type)\n   - Main entry files (index.ts, main.rs, app.py, cmd/main.go)\n   - Configuration files and examples\n\n3. **Read the source code for each target entity.** For each feature/module you're documenting:\n   - Read the implementation files end-to-end (not just signatures)\n   - Read the tests — they reveal intended behavior, edge cases, and usage patterns\n   - Read related modules that the target depends on or is depended upon by\n   - Read any existing inline comments, especially `// NOTE:`, `// DESIGN:`, `// WHY:`\n\n4. **Build a concept map.** Before writing, produce an internal outline:\n\n```\nTarget: [feature/module name]\nPurpose: [one sentence — what problem does it solve?]\nKey concepts: [list the 3-5 concepts a reader must understand]\nPublic surface: [commands, functions, config options, API endpoints]\nDependencies: [what it needs from other modules]\nDependents: [what relies on it]\nEdge cases: [from reading tests and code]\nDesign decisions: [any non-obvious \"why\" choices]\n```\n\n5. Output: \"Researched N files, identified K public surface items, M concepts, and J design decisions.\"\n\n---\n\nCapture the map under an '## Architecture notes' section in docs/plan.md — entry points, core modules, and the flows the docs must explain.",
+      "next": "step-2",
+      "suggestedRole": "developer",
+      "gate": {
+        "maxAttempts": 3,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "docs/plan.md",
+            "pattern": "##\\s*Architecture",
+            "flags": "i"
+          }
+        ]
+      }
+    },
+    {
+      "id": "step-2",
+      "name": "Step 2: Diataxis Partitioning",
+      "prompt": "For each target entity, decide which Diataxis quadrants to produce. Not every entity needs all four.\n\n**Decision matrix:**\n\n| Entity type | Tutorial? | How-to? | Reference? | Explanation? |\n|---|---|---|---|---|\n| New feature a user interacts with | ✅ | ✅ | ✅ | Maybe |\n| CLI command or flag | Maybe | ✅ | ✅ | No |\n| Internal module/architecture | No | No | ✅ | ✅ |\n| Config option | No | ✅ | ✅ | No |\n| Design pattern / philosophy | No | No | No | ✅ |\n| API endpoint | Maybe | ✅ | ✅ | No |\n| Workflow (multi-step process) | ✅ | ✅ | No | Maybe |\n\nOutput the partition plan:\n\n```\nDocumentation plan:\n  [entity]              [tutorial] [how-to] [reference] [explanation]\n  Widget system         ✅ new     ✅ new   ✅ new      ✅ new\n  --verbose flag        ❌        ✅ new   ✅ inline   ❌\n  Bayesian scheduler    ❌        ❌       ✅ new      ✅ new\n```\n\nIf the plan has more than 5 documents to create, use AskUserQuestion to confirm before proceeding.\nFor smaller scopes, proceed directly.\n\n---\n\nAdd the decision matrix as a '## Diataxis plan' table in docs/plan.md.",
+      "next": "step-3",
+      "suggestedRole": "planner",
+      "gate": {
+        "maxAttempts": 3,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "docs/plan.md",
+            "pattern": "##\\s*Diataxis",
+            "flags": "i"
+          }
+        ]
+      }
+    },
+    {
+      "id": "step-3",
+      "name": "Step 3: Write Reference Documentation First",
+      "prompt": "Reference docs are the foundation. They are factual, complete, and derived directly from code.\nWrite these before tutorials or how-tos because they establish the vocabulary.\n\n**Reference doc template:**\n\n```markdown\n# [Entity Name]\n\n[One paragraph: what it is, what it does, when you'd use it.]\n\n## API / Interface\n\n[Complete listing of public surface: functions, commands, config options, parameters.\nInclude types, defaults, and constraints. Pull directly from code — do not paraphrase\nloosely.]\n\n## Options / Configuration\n\n[If applicable: every option with its type, default, and effect.]\n\n## Examples\n\n[2-3 concrete examples showing actual usage. Prefer real command output or code that\nwould actually compile/run.]\n\n## Related\n\n[Links to other reference docs, how-tos, or explanations that provide context.]\n```\n\n**Rules for reference docs:**\n- Accuracy over elegance. Every claim must be traceable to code.\n- Include types, defaults, and constraints. \"Accepts a string\" is insufficient — \"Accepts a\n  string (max 256 chars, must match `^[a-z-]+$`)\" is reference-grade.\n- Show real examples that would actually work if copy-pasted.\n- Do not explain *why* — that belongs in explanation docs.\n\n---\n\nWrite each reference document under docs/reference/.",
+      "next": "step-4",
+      "suggestedRole": "copywriter",
+      "gate": {
+        "maxAttempts": 4,
+        "checks": [
+          {
+            "kind": "fileCount",
+            "ext": [
+              "md"
+            ],
+            "min": 1,
+            "dir": "docs/reference"
+          }
+        ]
+      }
+    },
+    {
+      "id": "step-4",
+      "name": "Step 4: Write Explanation Documentation",
+      "prompt": "Explanation docs answer \"why does this work this way?\" They are the design rationale.\n\n**Explanation doc template:**\n\n```markdown\n# [Concept / Design Decision]\n\n[Opening paragraph: the problem this design solves, stated in terms a smart reader\nwho hasn't seen the code would understand.]\n\n## The problem\n\n[Concrete description of what goes wrong without this design. Real failure modes,\nnot abstract risks.]\n\n## The approach\n\n[How the design solves the problem. Include diagrams (ASCII or Mermaid) for\narchitectural concepts.]\n\n## Trade-offs\n\n[What was given up. Every design decision trades something — name it explicitly.]\n\n## Alternatives considered\n\n[If discoverable from code comments, ADRs, or git history: what was tried or\nrejected and why.]\n```\n\n**Rules for explanation docs:**\n- Lead with the problem, not the solution.\n- Use ASCII diagrams for architecture. They're grep-able, diff-friendly, and render everywhere.\n- Name trade-offs explicitly. \"We chose X over Y because Z\" is the gold standard.\n- Do not repeat reference material — link to it.\n\n---\n\nWrite each explanation document under docs/explanation/.",
+      "next": "step-5",
+      "suggestedRole": "copywriter",
+      "gate": {
+        "maxAttempts": 4,
+        "checks": [
+          {
+            "kind": "fileCount",
+            "ext": [
+              "md"
+            ],
+            "min": 1,
+            "dir": "docs/explanation"
+          }
+        ]
+      }
+    },
+    {
+      "id": "step-5",
+      "name": "Step 5: Write How-To Guides",
+      "prompt": "How-tos are task-oriented. They assume the reader knows the basics and wants to accomplish\nsomething specific.\n\n**How-to doc template:**\n\n```markdown\n# How to [accomplish specific task]\n\n[One sentence: what you'll accomplish and the end result.]\n\n## Prerequisites\n\n[What the reader needs before starting. Be specific — versions, installed tools,\nconfig state.]\n\n## Steps\n\n1. [Action verb] [specific instruction]\n\n   ```bash\n   [exact command]\n   ```\n\n   [Expected output or result, if non-obvious.]\n\n2. [Next step...]\n\n### Verification\n\n[How to confirm it worked. A command, a URL to visit, a test to run.]\n\n### Troubleshooting\n\n[Common failure modes and their fixes. Pull from tests and error handling code.]\n```\n\n**Rules for how-to docs:**\n- Title starts with \"How to\" — no exceptions. This is the reader's entry point.\n- Every step must be actionable. No \"consider whether...\" — instead \"Run X\" or \"Add Y to Z\".\n- Include verification. The reader should never wonder \"did it work?\"\n- Troubleshooting section is mandatory if the task can fail.\n\n---\n\n## Step 6: Write Tutorials\n\nTutorials are learning-oriented. They take a newcomer from zero to a working example.\nThese are the hardest to write well and the most valuable.\n\n**Tutorial doc template:**\n\n```markdown\n# [Tutorial title — describes what you'll build/learn]\n\n[Opening paragraph: what you'll build, why it's useful, and what you'll understand\nby the end. Keep it concrete — \"You'll build a working X that does Y\" not\n\"This tutorial covers X\".]\n\n## What you'll need\n\n[Prerequisites: tools, versions, prior knowledge. Link to installation guides.]\n\n## Step 1: [Set up the foundation]\n\n[Start from a clean state. Show every command. Explain what each does on first\nencounter — but briefly, not a lecture.]\n\n```bash\n[exact command]\n```\n\n[Brief explanation of what just happened.]\n\nWrite each how-to guide under docs/how-to/.",
+      "next": "evaluate",
+      "suggestedRole": "copywriter",
+      "gate": {
+        "maxAttempts": 4,
+        "checks": [
+          {
+            "kind": "fileCount",
+            "ext": [
+              "md"
+            ],
+            "min": 1,
+            "dir": "docs/how-to"
+          }
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "suggestedRole": "reviewer",
+      "next": "step-3",
+      "prompt": "Read docs/plan.md and spot-check each produced document against the code it describes: are the reference pages factual, do the how-tos actually work, is anything in the Diataxis plan still missing? If a quadrant is missing or wrong, loop back to Step 3 and fill it. Otherwise advance to Finish. Routing: ALL criteria pass → advance to finish; ANY criterion fails → loop back to step-3 with a note naming the exact gap."
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "suggestedRole": "developer",
+      "prompt": "Summarize what was documented and where it lives (the docs/ tree), and hand back to the user. Write a one-paragraph DONE summary to task notes via `write_task_note`, then report DONE.",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-07-25T22:45:00.000Z"
+}
