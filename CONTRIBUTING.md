@@ -6,12 +6,10 @@ useful to humans).
 
 ## Before you open a PR
 
-Run the three checks locally from the repo root (Node 24+):
+Run all checks locally from the repo root (Node 24+):
 
 ```
-npm run validate
-npm run check-index
-npm run lint-models
+npm run check
 ```
 
 Paste the summary line of `validate` into the PR description. CI runs the

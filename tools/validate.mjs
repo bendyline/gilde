@@ -6,7 +6,7 @@
  * warnings alone exit 0.
  *
  * Layers:
- *   1. Parse/hygiene - UTF-8, extension allowlist, JSON parses, size caps
+ *   1. Parse/hygiene - text/binary formats, extension allowlist, JSON parses, size caps
  *   2. Schema        - ajv (draft 2020-12) against schemas/*.schema.json
  *   3. Layout        - shard/id/kind/version-folder invariants
  *   4. Cross-checks  - craftbook graph, file references, model sources
@@ -35,7 +35,9 @@ import { DIR_KIND, KIND_DIR, listItems, presentKinds } from './lib/walk.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..');
 const ONE_MB = 1024 * 1024;
-const ALLOWED_EXTENSIONS = new Set(['.json', '.md', '.html', '.svg']);
+const TEXT_EXTENSIONS = new Set(['.json', '.md', '.html', '.svg']);
+const ALLOWED_EXTENSIONS = new Set([...TEXT_EXTENSIONS, '.webp']);
+const ALLOWED_EXTENSIONS_LABEL = [...ALLOWED_EXTENSIONS].map((ext) => ext.slice(1)).join('/');
 const HF_URL_PREFIX = 'https://huggingface.co/';
 const URI_TEMPLATE_VARIABLE = /\{[A-Za-z_][A-Za-z0-9_-]*\}/g;
 
@@ -96,10 +98,21 @@ function main() {
     // .gitkeep is a conventional git placeholder for otherwise-empty
     // directories; allowed by name rather than widening the extension list.
     if (name !== '.gitkeep' && !ALLOWED_EXTENSIONS.has(ext)) {
-      c.error(path, '', 'ext-not-allowed', `extension "${ext || name}" is not in json/md/html/svg`);
+      c.error(path, '', 'ext-not-allowed', `extension "${ext || name}" is not in ${ALLOWED_EXTENSIONS_LABEL}`);
       continue;
     }
     const buf = readFileSync(path);
+    if (name !== 'index.json' && buf.length > ONE_MB) {
+      c.error(path, '', 'file-too-large', `${buf.length} bytes exceeds the 1 MB cap`);
+    }
+    if (ext === '.webp') {
+      const isWebp =
+        buf.length >= 12 &&
+        buf.subarray(0, 4).toString('ascii') === 'RIFF' &&
+        buf.subarray(8, 12).toString('ascii') === 'WEBP';
+      if (!isWebp) c.error(path, '', 'invalid-webp', 'missing RIFF/WEBP header');
+      continue;
+    }
     if (buf.includes(0)) {
       c.error(path, '', 'binary-file', 'contains NUL bytes');
       continue;
@@ -109,9 +122,6 @@ function main() {
     } catch {
       c.error(path, '', 'not-utf8', 'not valid UTF-8');
       continue;
-    }
-    if (name !== 'index.json' && buf.length > ONE_MB) {
-      c.error(path, '', 'file-too-large', `${buf.length} bytes exceeds the 1 MB cap`);
     }
     if (ext === '.json' && !seedExempt.has(path)) {
       const parsed = readJson(path);

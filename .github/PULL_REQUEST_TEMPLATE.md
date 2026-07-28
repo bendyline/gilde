@@ -16,8 +16,8 @@ it accomplish, and what does the eval check? -->
 
 ## Validation
 
-- [ ] I ran `npm run validate && npm run check-index && npm run lint-models`
-      locally and they pass.
+- [ ] I ran `npm run check`
+      locally and it passes.
 
 <!-- Paste the final summary line of `npm run validate` here -->
 
