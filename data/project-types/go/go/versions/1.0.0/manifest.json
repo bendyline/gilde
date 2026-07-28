@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "releasedAt": "2026-07-28T00:00:00Z",
+  "meesterManaged": false,
+  "mode": "solo",
+  "leadLabel": "Opponent",
+  "leanProfile": true,
+  "tabVisibility": {
+    "overview": false,
+    "tasks": false,
+    "approvals": false,
+    "workspace": false,
+    "artifacts": false,
+    "map": false
+  },
+  "params": {
+    "type": "object",
+    "properties": {
+      "personality": {
+        "type": "string",
+        "title": "Table-talk style",
+        "description": "How your opponent talks between moves.",
+        "enum": [
+          "peppy",
+          "cheeky",
+          "zen",
+          "gracious"
+        ],
+        "default": "peppy"
+      },
+      "playStyle": {
+        "type": "string",
+        "title": "How should the Go-speler play?",
+        "description": "An opponent keeps their strategy to themselves; an instructor offers light teaching notes.",
+        "enum": [
+          "Opponent",
+          "Instructor"
+        ],
+        "default": "Opponent"
+      }
+    },
+    "required": [
+      "personality",
+      "playStyle"
+    ]
+  },
+  "nameTemplate": "Go vs the Go-speler",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "go-player",
+      "voorman": true
+    }
+  ],
+  "scripts": {
+    "game-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'game-store',\n  description:\n    \"Read and update the Go game (game.json). Call action:'board' to see the position and every legal move; action:'ai_move' to play a coordinate such as D4 or 'pass' (optional moveThought); action:'state' for a light summary; action:'new_game' to reset with boardSize 9, 13, or 19 and optional komi. The engine enforces captures, suicide, simple ko, passing, and area scoring.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'state', 'board', 'user_move', 'ai_move', or 'new_game'.\",\n      required: true,\n    },\n    move: {\n      type: 'string',\n      description: \"A board coordinate such as 'D4', or 'pass'.\",\n    },\n    boardSize: {\n      type: 'number',\n      description: 'For new_game: 9, 13, or 19. Defaults to 9.',\n    },\n    komi: {\n      type: 'number',\n      description: 'For new_game: points added to white. Defaults to 6.5.',\n    },\n    moveThought: {\n      type: 'string',\n      description: 'A short line of table talk to show on the board (max 140 chars).',\n    },\n  },\n  outputs: {\n    board: { type: 'string', description: 'ASCII board with coordinates.' },\n    turn: { type: 'string', description: \"Whose move: 'user' (black) or 'ai' (white).\" },\n    status: {\n      type: 'string',\n      description: 'playing, user_won, ai_won, or draw.',\n    },\n    lastMove: { type: 'string', description: \"The move just played, e.g. 'D4' or 'pass'.\" },\n    legalMoves: { type: 'string', description: 'Legal placements plus pass.' },\n    score: { type: 'string', description: 'Area score when the game has ended.' },\n    summary: { type: 'string', description: 'Human-readable game summary.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── go-rules-start ──\n// Pure, annotation-free Go engine. Supports 9x9, 13x13, and 19x19.\n// Squares are row-major, y0 at the top. X = black/user; O = white/AI.\n// Coordinates follow Go convention and skip the letter I.\n\nvar GO_FILES = 'ABCDEFGHJKLMNOPQRST';\n\nfunction buildInitial(size) {\n  return '.'.repeat(size * size);\n}\n\nfunction inBounds(x, y, size) {\n  return x >= 0 && x < size && y >= 0 && y < size;\n}\n\nfunction pointName(x, y, size) {\n  return GO_FILES[x] + String(size - y);\n}\n\nfunction parsePoint(name, size) {\n  if (typeof name !== 'string') return null;\n  var text = name.trim().toUpperCase();\n  var match = /^([A-HJ-T])(\\d{1,2})$/.exec(text);\n  if (!match) return null;\n  var x = GO_FILES.indexOf(match[1]);\n  var rank = Number(match[2]);\n  if (x < 0 || x >= size || rank < 1 || rank > size) return null;\n  return { x: x, y: size - rank, index: (size - rank) * size + x };\n}\n\nfunction neighbors(index, size) {\n  var x = index % size;\n  var y = Math.floor(index / size);\n  var out = [];\n  if (x > 0) out.push(index - 1);\n  if (x + 1 < size) out.push(index + 1);\n  if (y > 0) out.push(index - size);\n  if (y + 1 < size) out.push(index + size);\n  return out;\n}\n\nfunction groupAt(squares, index, size) {\n  var color = squares[index];\n  var stones = [];\n  var liberties = {};\n  var seen = {};\n  var queue = [index];\n  seen[index] = true;\n  while (queue.length) {\n    var current = queue.pop();\n    stones.push(current);\n    for (var next of neighbors(current, size)) {\n      if (squares[next] === '.') liberties[next] = true;\n      else if (squares[next] === color && !seen[next]) {\n        seen[next] = true;\n        queue.push(next);\n      }\n    }\n  }\n  return { stones: stones, liberties: Object.keys(liberties).map(Number) };\n}\n\nfunction replaceAt(squares, index, ch) {\n  return squares.slice(0, index) + ch + squares.slice(index + 1);\n}\n\nfunction applyPlacement(squares, size, side, name, previousPosition) {\n  var point = parsePoint(name, size);\n  if (!point) return { error: 'bad-coordinate' };\n  if (squares[point.index] !== '.') return { error: 'occupied' };\n  var stone = side === 'user' ? 'X' : 'O';\n  var enemy = side === 'user' ? 'O' : 'X';\n  var next = replaceAt(squares, point.index, stone);\n  var captures = [];\n  var checked = {};\n  for (var adjacent of neighbors(point.index, size)) {\n    if (next[adjacent] !== enemy || checked[adjacent]) continue;\n    var enemyGroup = groupAt(next, adjacent, size);\n    for (var member of enemyGroup.stones) checked[member] = true;\n    if (enemyGroup.liberties.length === 0) {\n      for (var captured of enemyGroup.stones) {\n        next = replaceAt(next, captured, '.');\n        captures.push(pointName(captured % size, Math.floor(captured / size), size));\n      }\n    }\n  }\n  if (groupAt(next, point.index, size).liberties.length === 0) return { error: 'suicide' };\n  if (previousPosition && next === previousPosition) return { error: 'ko' };\n  return { squares: next, captures: captures };\n}\n\nfunction legalMovesFor(squares, size, side, previousPosition) {\n  var moves = [];\n  for (var y = 0; y < size; y += 1) {\n    for (var x = 0; x < size; x += 1) {\n      if (squares[y * size + x] !== '.') continue;\n      var name = pointName(x, y, size);\n      var result = applyPlacement(squares, size, side, name, previousPosition);\n      if (!result.error) moves.push(name);\n    }\n  }\n  moves.push('pass');\n  return moves;\n}\n\nfunction scoreArea(squares, size, komi) {\n  var blackStones = 0;\n  var whiteStones = 0;\n  var blackTerritory = 0;\n  var whiteTerritory = 0;\n  var seen = {};\n  for (var i = 0; i < squares.length; i += 1) {\n    if (squares[i] === 'X') {\n      blackStones += 1;\n      continue;\n    }\n    if (squares[i] === 'O') {\n      whiteStones += 1;\n      continue;\n    }\n    if (seen[i]) continue;\n    var region = [];\n    var borders = {};\n    var queue = [i];\n    seen[i] = true;\n    while (queue.length) {\n      var current = queue.pop();\n      region.push(current);\n      for (var next of neighbors(current, size)) {\n        if (squares[next] === '.' && !seen[next]) {\n          seen[next] = true;\n          queue.push(next);\n        } else if (squares[next] === 'X' || squares[next] === 'O') {\n          borders[squares[next]] = true;\n        }\n      }\n    }\n    if (borders.X && !borders.O) blackTerritory += region.length;\n    if (borders.O && !borders.X) whiteTerritory += region.length;\n  }\n  var black = blackStones + blackTerritory;\n  var white = whiteStones + whiteTerritory + komi;\n  return {\n    black: black,\n    white: white,\n    blackStones: blackStones,\n    whiteStones: whiteStones,\n    blackTerritory: blackTerritory,\n    whiteTerritory: whiteTerritory,\n    winner: black === white ? 'draw' : black > white ? 'user' : 'ai',\n    margin: Math.abs(black - white),\n  };\n}\n\nfunction statusAfter(squares, size, komi, consecutivePasses) {\n  if (consecutivePasses < 2) return 'playing';\n  var score = scoreArea(squares, size, komi);\n  return score.winner === 'draw' ? 'draw' : score.winner === 'user' ? 'user_won' : 'ai_won';\n}\n\nfunction renderAscii(squares, size) {\n  var labels = [];\n  for (var x = 0; x < size; x += 1) labels.push(GO_FILES[x]);\n  var pad = size >= 10 ? '   ' : '  ';\n  var lines = [pad + labels.join(' ')];\n  for (var y = 0; y < size; y += 1) {\n    var rank = String(size - y).padStart(size >= 10 ? 2 : 1, ' ');\n    var row = [];\n    for (var x = 0; x < size; x += 1) row.push(squares[y * size + x]);\n    lines.push(rank + ' ' + row.join(' ') + ' ' + rank);\n  }\n  lines.push(pad + labels.join(' '));\n  lines.push('X = black (user). O = white (you).');\n  return lines.join('\\n');\n}\n// ── go-rules-end ──\n\nconst STATE_FILE = 'game.json';\nconst SIDE_NAMES = { user: 'black', ai: 'white' };\n\ninterface GameState {\n  version: number;\n  boardSize: number;\n  squares: string;\n  turn: 'user' | 'ai';\n  status: 'playing' | 'user_won' | 'ai_won' | 'draw';\n  komi: number;\n  consecutivePasses: number;\n  previousPosition: string | null;\n  legalMoves: string[];\n  captures: { user: number; ai: number };\n  score: ReturnType<typeof scoreArea> | null;\n  moveLog: Array<{\n    by: 'user' | 'ai';\n    move: string;\n    captures: string[];\n    at: string;\n    moveThought?: string;\n  }>;\n  lastMove: { by: 'user' | 'ai'; move: string; captures: string[] } | null;\n  lastMoveThought: string;\n  updatedAt: string;\n}\n\nfunction validSize(value: unknown): number {\n  const size = Number(value);\n  return size === 13 || size === 19 ? size : 9;\n}\n\nfunction validKomi(value: unknown): number {\n  const komi = Number(value);\n  return Number.isFinite(komi) && komi >= 0 && komi <= 20 ? komi : 6.5;\n}\n\nfunction freshState(boardSize = 9, komi = 6.5): GameState {\n  const size = validSize(boardSize);\n  const nextKomi = validKomi(komi);\n  const squares = buildInitial(size);\n  return {\n    version: 1,\n    boardSize: size,\n    squares,\n    turn: 'user',\n    status: 'playing',\n    komi: nextKomi,\n    consecutivePasses: 0,\n    previousPosition: null,\n    legalMoves: legalMovesFor(squares, size, 'user', null),\n    captures: { user: 0, ai: 0 },\n    score: null,\n    moveLog: [],\n    lastMove: null,\n    lastMoveThought: '',\n    updatedAt: new Date().toISOString(),\n  };\n}\n\nasync function load(): Promise<GameState> {\n  let raw: string;\n  try {\n    raw = await gezel.fs.read(STATE_FILE);\n  } catch {\n    return freshState();\n  }\n  const parsed = JSON.parse(raw) as Partial<GameState>;\n  const size = validSize(parsed.boardSize);\n  if (typeof parsed.squares !== 'string' || parsed.squares.length !== size * size) {\n    throw new Error(`${STATE_FILE} is corrupt; call action:'new_game' to reset.`);\n  }\n  return {\n    ...freshState(size, parsed.komi),\n    ...parsed,\n    boardSize: size,\n    komi: validKomi(parsed.komi),\n  } as GameState;\n}\n\nasync function persist(state: GameState): Promise<GameState> {\n  state.legalMoves =\n    state.status === 'playing'\n      ? legalMovesFor(\n          state.squares,\n          state.boardSize,\n          state.turn,\n          state.previousPosition,\n        )\n      : [];\n  state.updatedAt = new Date().toISOString();\n  await gezel.fs.write(STATE_FILE, `${JSON.stringify(state, null, 2)}\\n`);\n  return state;\n}\n\nfunction renderLegal(state: GameState): string {\n  if (state.status !== 'playing') return '(game over)';\n  return state.legalMoves.join(', ');\n}\n\nfunction renderScore(state: GameState): string {\n  if (!state.score) return '(not scored — play continues)';\n  const result =\n    state.score.winner === 'draw'\n      ? 'draw'\n      : `${SIDE_NAMES[state.score.winner]} wins by ${state.score.margin}`;\n  return `Black ${state.score.black}; white ${state.score.white} (includes ${state.komi} komi): ${result}.`;\n}\n\nfunction summarize(state: GameState): string {\n  if (state.status !== 'playing') return `Game over. ${renderScore(state)}`;\n  return `Move ${state.moveLog.length + 1}: ${SIDE_NAMES[state.turn]} (${state.turn}) to move on ${state.boardSize}x${state.boardSize}. Captures — black ${state.captures.user}, white ${state.captures.ai}.`;\n}\n\nfunction applyTurn(\n  state: GameState,\n  by: 'user' | 'ai',\n  moveThought?: string,\n): GameState {\n  if (state.status !== 'playing') {\n    throw new Error(`The game is over (${state.status}). Call action:'new_game' to start another.`);\n  }\n  if (state.turn !== by) {\n    throw new Error(by === 'ai' ? \"It's not your turn yet.\" : 'The opponent is still to move.');\n  }\n  const move = input.move?.trim() || '';\n  const normalized = move.toLowerCase() === 'pass' ? 'pass' : move.toUpperCase();\n  if (!state.legalMoves.includes(normalized)) {\n    throw new Error(\n      `Illegal move '${move}'. Legal moves for ${SIDE_NAMES[by]}: ${renderLegal(state)}`,\n    );\n  }\n\n  let captured: string[] = [];\n  const before = state.squares;\n  if (normalized === 'pass') {\n    state.consecutivePasses += 1;\n  } else {\n    const applied = applyPlacement(\n      state.squares,\n      state.boardSize,\n      by,\n      normalized,\n      state.previousPosition,\n    );\n    if (applied.error || !applied.squares) {\n      throw new Error(`Illegal move '${move}' (${applied.error || 'unknown'}).`);\n    }\n    state.squares = applied.squares;\n    captured = applied.captures || [];\n    state.captures[by] += captured.length;\n    state.consecutivePasses = 0;\n  }\n  state.previousPosition = before;\n  state.turn = (by === 'user' ? 'ai' : 'user') as 'user' | 'ai';\n  state.status = statusAfter(\n    state.squares,\n    state.boardSize,\n    state.komi,\n    state.consecutivePasses,\n  ) as GameState['status'];\n  if (state.status !== 'playing') {\n    state.score = scoreArea(state.squares, state.boardSize, state.komi);\n  }\n  const entry = {\n    by,\n    move: normalized,\n    captures: captured,\n    at: new Date().toISOString(),\n    ...(moveThought ? { moveThought } : {}),\n  };\n  state.moveLog.push(entry);\n  state.lastMove = { by, move: normalized, captures: captured };\n  if (by === 'ai' && moveThought) state.lastMoveThought = moveThought;\n  return state;\n}\n\nlet state = await load();\nlet lastMoveText = state.lastMove?.move ?? '(none)';\n\nif (input.action === 'new_game') {\n  state = await persist(freshState(input.boardSize, input.komi));\n  lastMoveText = '(none)';\n} else if (input.action === 'user_move' || input.action === 'ai_move') {\n  const by = input.action === 'user_move' ? 'user' : 'ai';\n  const moveThought = input.moveThought?.trim().slice(0, 140);\n  state = await persist(applyTurn(state, by, moveThought));\n  lastMoveText = state.lastMove?.move ?? '(none)';\n} else if (input.action !== 'state' && input.action !== 'board') {\n  throw new Error(`Unknown action '${input.action}'. Use state, board, user_move, ai_move, or new_game.`);\n}\n\ngezel.output({\n  board:\n    `${renderAscii(state.squares, state.boardSize)}\\nTurn: ${SIDE_NAMES[state.turn]} (${state.turn}).\\n` +\n    `Komi: ${state.komi}. Consecutive passes: ${state.consecutivePasses}.\\n` +\n    `Legal moves: ${renderLegal(state)}`,\n  turn: state.turn,\n  status: state.status,\n  lastMove: lastMoveText,\n  legalMoves: renderLegal(state),\n  score: renderScore(state),\n  summary: summarize(state),\n});\n"
+  },
+  "tools": [
+    {
+      "name": "get_board",
+      "description": "See the authoritative Go position, board size, captures, whose turn it is, and every legal move.",
+      "script": "game-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "board"
+      }
+    },
+    {
+      "name": "make_move",
+      "description": "Play your white move. Pass a coordinate such as 'D4', or 'pass', plus optional moveThought.",
+      "script": "game-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "move": {
+            "type": "string",
+            "description": "A legal coordinate such as 'D4', or 'pass'."
+          },
+          "moveThought": {
+            "type": "string",
+            "description": "A short line of table talk (max 140 chars)."
+          }
+        },
+        "required": [
+          "move"
+        ]
+      },
+      "bind": {
+        "action": "ai_move"
+      }
+    },
+    {
+      "name": "user_move",
+      "description": "The user's black move or pass, played from the Go board.",
+      "script": "game-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "move": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "move"
+        ]
+      },
+      "bind": {
+        "action": "user_move"
+      },
+      "reaction": {
+        "gezel": "go-player",
+        "hideSeed": true,
+        "prompt": "Your opponent played {{output.lastMove}}. Status: {{output.status}}. Board now:\n{{output.board}}\nThe board and Legal moves line come directly from the Go engine and are always correct. Do not re-derive captures, liberties, ko, scoring, or legality, and do not invent a coordinate outside the legal list. Spend your thought on choosing among the listed moves.\nStyle: {{playStyle}}. In Opponent style, do not volunteer advice or reveal the user’s available moves, weak groups, threats, or your plan; comment only about your own move or the atmosphere. In Instructor style, offer at most one brief teaching observation without choosing the user’s move. Answer strategy questions when asked.\nAct on this latest position. If the game is over, do not move — give one gracious line about the result and offer a new game. Otherwise choose a strong legal move (or pass when strategically sound) and play it with make_move, including a short {{personality}} moveThought. If make_move rejects it, choose one move verbatim from the legal list in the error and retry. After moving, reply with ONE short line of table talk."
+      }
+    },
+    {
+      "name": "new_game",
+      "description": "Reset the Go board. Choose 9, 13, or 19 lines and optional komi; defaults to 9×9 with 6.5 komi.",
+      "script": "game-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "boardSize": {
+            "type": "number",
+            "enum": [
+              9,
+              13,
+              19
+            ]
+          },
+          "komi": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 20
+          }
+        }
+      },
+      "bind": {
+        "action": "new_game"
+      }
+    }
+  ],
+  "craftbooks": [],
+  "schedules": [],
+  "pages": {
+    "entry": "board/index.html",
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "game.json"
+      }
+    ],
+    "tools": [
+      "user_move",
+      "new_game"
+    ]
+  },
+  "workspaceSeed": [
+    "game.json"
+  ]
+}

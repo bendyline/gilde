@@ -1,0 +1,118 @@
+{
+  "id": "pull-request-review",
+  "name": "Pull Request Review",
+  "description": "Staff-engineer-style code review. Five steps:\n\n1. **Load PR context** — figure out which PR, fetch metadata + diff\n2. **Scan diff** — pattern-based first-pass + judgment-based second-pass\n3. **Raise findings** or **Approve** — branches on whether issues were found\n4. **Summary** — stamp a final verdict to task notes\n\nPorted from gstack's `/review`. The bash-driven preamble (gstack-config,\ngstack-learnings-search, gstack-telemetry-log) is replaced by:\n\n- The `pr-context.ts` script loads PR metadata via `github_pr_view`/`github_pr_diff`\n- `diff-scan.ts` applies the safety/quality patterns from gstack's\n  `review/checklist.md` (SQL, secrets, `any`, console.log, etc.)\n- Memory (via `save_memory` / `search_memory`) replaces gstack's\n  `learnings.jsonl` — search prior reviews for \"have we seen this\n  pattern before?\"\n\nThe branches behavior: `diff-scan` stamps `clean: boolean` into the\nrun output; the **Scan diff** step routes to **Approve** when clean and\nto **Raise findings** otherwise.\n\nThis craftbook needs the github toolset configured (PAT) — without it,\nthe PR-fetch tools error and the craftbook surfaces an actionable\nmessage to the user.\n",
+  "entryStepId": "load-pr",
+  "triggers": [
+    "review this pr",
+    "code review",
+    "check my diff",
+    "review the changes"
+  ],
+  "requirements": [
+    {
+      "kind": "github"
+    },
+    {
+      "kind": "non-main-branch"
+    }
+  ],
+  "toolsets": [
+    {
+      "toolsetId": "github",
+      "optional": true,
+      "autoAllow": true,
+      "reason": "read PR metadata and post review comments without a prompt per call"
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "focus": {
+        "type": "string",
+        "title": "Review focus",
+        "description": "Optional area to emphasize, e.g. security, performance, tests."
+      },
+      "intensity": {
+        "type": "string",
+        "title": "Intensity",
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "default": "medium",
+        "squisq": {
+          "control": "segmented"
+        },
+        "description": "How deep to go on the diff walk."
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "load-pr",
+      "name": "Load PR context",
+      "description": "Resolve which PR to review (current branch's open PR by default) and fetch its metadata + the unified diff. Writes pr.number, pr.title, pr.head into the task notes.",
+      "prompt": "**For this task you are a reviewer, not an author.** Your job here is to read changes and post feedback — NOT to write new code. If your default persona is a developer/builder, set the ship-the-scaffold instinct aside for this task. You won't `write_file` for this craftbook; you'll read PRs and post comments.\n\n**Your first action this turn:** call `github_pr_list` (no args). The result tells you which PR to review.\n\n1. If the user's chat message names a PR number, skip the list and use that.\n2. Otherwise, take the first PR from `github_pr_list`. If multiple match the current branch, call `ask_user_question` to disambiguate.\n3. Once you have the number, call `run_script({ name: \"pr-context\", input: { number } })` — it stamps the PR metadata + diff into the run output.\n4. `write_task_note({ ref, content })` with the PR title + URL so the next step has the anchor.\n\nDo NOT call `read_task_notes` to find the procedure — it's right here in this prompt. The notes only carry user input + prior step output; the **what to do** is in this step.",
+      "suggestedRole": "reviewer",
+      "onExit": {
+        "name": "pr-context",
+        "autoAdvanceWhen": {
+          "op": "ok"
+        }
+      },
+      "next": "scan-diff"
+    },
+    {
+      "id": "scan-diff",
+      "name": "Scan diff",
+      "description": "Walk the diff applying the safety/quality checklist. The diff-scan script returns a structured findings array.",
+      "prompt": "Run the `diff-scan` script. It fetches the PR diff via `github_pr_diff` and applies a pattern-based first-pass — SQL safety, unguarded `any`, console.log left in, secrets-in-source-shaped strings, missing test coverage for new files. Read its output carefully.\n\nThen do your own pass: use `github_pr_files` to walk individual files and apply judgment for things the pattern scan can't catch — naming, abstraction quality, error handling, edge cases. Take notes via `write_task_note`.\n\nAt the end of this step, you should know: did you find issues worth surfacing? Set `findings: <number>` in your output.",
+      "suggestedRole": "reviewer",
+      "gate": {
+        "at": "completion",
+        "scripts": [
+          {
+            "name": "diff-gate",
+            "scope": "craftbook"
+          }
+        ],
+        "onReject": "scan-diff",
+        "maxAttempts": 3
+      },
+      "next": "raise-findings"
+    },
+    {
+      "id": "raise-findings",
+      "name": "Raise findings",
+      "description": "Surface concrete issues with file:line citations. Use `github_pr_comment` to post the structured summary to the PR.",
+      "prompt": "For each finding, write a short paragraph:\n\n- **What** (one sentence describing the issue)\n- **Where** (file:line — the model citation hyperlink form, file_path:line)\n- **Why it matters** (one sentence)\n- **Suggested fix** (one line or a small diff)\n\nGroup findings by severity: must-fix (correctness, security, data-loss risk), should-fix (clarity, edge cases, missing tests), nit (style, naming).\n\nPost the summary via `github_pr_comment` with the PR number from step 1. Then advance to summary.",
+      "suggestedRole": "reviewer",
+      "next": "summary"
+    },
+    {
+      "id": "approve",
+      "name": "Approve",
+      "description": "Clean PR — write a brief approval note. Don't gold-plate.",
+      "prompt": "The diff scan came up clean. Write a one-paragraph approval note: what the PR does, why it looks good, anything worth flagging as 'consider for a follow-up' (but not blocking). Post via `github_pr_comment`. Advance to summary.",
+      "suggestedRole": "reviewer",
+      "next": "summary"
+    },
+    {
+      "id": "summary",
+      "name": "Summary",
+      "description": "Stamp a final summary into the task notes for the user.",
+      "prompt": "Write a one-paragraph summary of the review to the task notes via `write_task_note`. Include:\n\n- The PR (#number — title)\n- The verdict (approved | needs changes)\n- The number of findings broken down by severity\n- A link to the posted PR comment\n\nThen report DONE.",
+      "suggestedRole": "reviewer",
+      "terminal": true
+    }
+  ],
+  "scripts": {
+    "pr-context": "import { defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'pr-context',\n  description:\n    'Resolve which PR to review and fetch its metadata + unified diff. Stamps {number, title, headRef, baseRef, diffChars} so the next step has the anchor.',\n  inputs: {\n    number: {\n      type: 'number',\n      description: 'PR number to review. Omit to pick the open PR matching the current branch.',\n      integer: true,\n    },\n  },\n  outputs: {\n    number: { type: 'number', description: 'Resolved PR number.' },\n    title: { type: 'string', description: 'PR title.' },\n    headRef: { type: 'string', description: 'PR head branch.' },\n    baseRef: { type: 'string', description: 'PR base branch.' },\n    url: { type: 'string', description: 'PR URL.' },\n    diffChars: { type: 'number', description: 'Length of the fetched diff body in chars.' },\n  },\n  requires: ['network'],\n});\n\ninterface PrSummary {\n  number: number;\n  title: string;\n  author: string;\n  headRef: string;\n  baseRef: string;\n  draft: boolean;\n  updatedAt: string;\n  url: string;\n}\n\nasync function resolvePr(input: { number?: number }): Promise<PrSummary> {\n  if (input.number) {\n    const view = await gezel.mcp.call('github_pr_view', { number: input.number });\n    if (typeof view !== 'string') throw new Error('github_pr_view returned an unexpected shape');\n    const headLine = view.split('\\n')[0] ?? '';\n    const titleMatch = /^#(\\d+) — (.+)$/.exec(headLine);\n    if (!titleMatch) throw new Error(`could not parse github_pr_view output: ${headLine}`);\n    return {\n      number: Number(titleMatch[1]),\n      title: titleMatch[2]!,\n      author: '?',\n      headRef: '',\n      baseRef: '',\n      draft: false,\n      updatedAt: '',\n      url: '',\n    };\n  }\n  const listing = await gezel.mcp.call('github_pr_list', {});\n  if (typeof listing !== 'string') throw new Error('github_pr_list returned an unexpected shape');\n  const firstLine = listing.split('\\n\\n')[0] ?? '';\n  const m = /^#(\\d+) — (.+?) \\((.+?), (.+?) → (.+?)(?:, draft)?\\)/.exec(firstLine);\n  if (!m) {\n    throw new Error(\n      `couldn't pick a PR — github_pr_list returned no open PRs or unexpected shape:\\n${listing.slice(0, 200)}`,\n    );\n  }\n  return {\n    number: Number(m[1]),\n    title: m[2]!,\n    author: m[3]!,\n    headRef: m[4]!,\n    baseRef: m[5]!,\n    draft: firstLine.includes('draft'),\n    updatedAt: '',\n    url: '',\n  };\n}\n\nasync function main(): Promise<void> {\n  const input = gezel.input as { number?: number };\n  const pr = await resolvePr(input);\n  gezel.log(`Resolved PR #${pr.number} — \"${pr.title}\"`);\n  const diff = await gezel.mcp.call('github_pr_diff', { number: pr.number });\n  const diffStr = typeof diff === 'string' ? diff : '';\n  gezel.output({\n    number: pr.number,\n    title: pr.title,\n    headRef: pr.headRef,\n    baseRef: pr.baseRef,\n    url: pr.url,\n    diffChars: diffStr.length,\n  });\n}\n\nawait main();\n",
+    "diff-scan": "import { defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'diff-scan',\n  description:\n    'Pattern-scan a PR diff for common safety/quality issues — SQL concat, unguarded any, console.log leftovers, secret-shaped strings, missing tests. Stamps {findings[], clean: boolean}.',\n  inputs: {\n    number: { type: 'number', description: 'PR number.', integer: true, required: true },\n  },\n  outputs: {\n    findings: {\n      type: 'array',\n      description: 'Issues found, each with file, line, severity, kind, snippet.',\n      itemType: 'object',\n    },\n    clean: { type: 'boolean', description: 'True iff no must-fix or should-fix findings.' },\n  },\n  requires: ['network'],\n});\n\ntype Severity = 'must-fix' | 'should-fix' | 'nit';\n\ninterface Finding {\n  file: string;\n  line: number;\n  severity: Severity;\n  kind: string;\n  snippet: string;\n}\n\nconst RULES: Array<{\n  kind: string;\n  severity: Severity;\n  regex: RegExp;\n  description: string;\n}> = [\n  {\n    kind: 'sql-concat',\n    severity: 'must-fix',\n    regex: /(query|sql|execute)\\s*\\(\\s*[\"'`][^\"'`]*\\$\\{|\\b\\+\\s*req\\.(query|body|params)\\./i,\n    description: 'String-concatenated SQL or user input flowing into a query.',\n  },\n  {\n    kind: 'console-leftover',\n    severity: 'nit',\n    regex: /^\\+.*\\bconsole\\.(log|warn|error|debug)\\b/,\n    description: 'console.* call left in production code.',\n  },\n  {\n    kind: 'secret-shape',\n    severity: 'must-fix',\n    regex: /(api[_-]?key|secret|token|password)\\s*[:=]\\s*[\"'][A-Za-z0-9+/=_-]{16,}[\"']/i,\n    description: 'String-literal that looks like a hard-coded credential.',\n  },\n  {\n    kind: 'unguarded-any',\n    severity: 'should-fix',\n    regex: /:\\s*any\\b(?!\\[)|<any>/,\n    description: \"Explicit `any` — confirm it's the minimum-friction choice, not a bypass.\",\n  },\n  {\n    kind: 'todo-marker',\n    severity: 'nit',\n    regex: /^\\+.*\\b(TODO|FIXME|XXX)\\b/,\n    description: 'TODO/FIXME left behind. Either resolve or open an issue.',\n  },\n  {\n    kind: 'force-unwrap',\n    severity: 'should-fix',\n    regex: /^\\+.*![.\\s]/,\n    description: 'Non-null assertion (`!`) — confirm the invariant or add a guard.',\n  },\n];\n\ninterface ParsedHunk {\n  file: string;\n  baseLine: number;\n  text: string;\n}\n\nfunction* iterHunks(diff: string): Generator<ParsedHunk> {\n  let currentFile = '';\n  let inHunk = false;\n  let baseLine = 0;\n  const lines = diff.split('\\n');\n  for (let i = 0; i < lines.length; i++) {\n    const ln = lines[i]!;\n    const fileMatch = /^\\+\\+\\+ b\\/(.+)$/.exec(ln);\n    if (fileMatch) {\n      currentFile = fileMatch[1]!;\n      inHunk = false;\n      continue;\n    }\n    const hunkMatch = /^@@ -\\d+(?:,\\d+)? \\+(\\d+)(?:,\\d+)? @@/.exec(ln);\n    if (hunkMatch) {\n      baseLine = Number(hunkMatch[1]);\n      inHunk = true;\n      continue;\n    }\n    if (!inHunk || !currentFile) continue;\n    if (ln.startsWith('+') && !ln.startsWith('+++')) {\n      yield { file: currentFile, baseLine, text: ln };\n      baseLine++;\n    } else if (!ln.startsWith('-')) {\n      baseLine++;\n    }\n  }\n}\n\nasync function main(): Promise<void> {\n  const input = gezel.input as { number: number };\n  const diff = await gezel.mcp.call('github_pr_diff', { number: input.number });\n  if (typeof diff !== 'string') {\n    throw new Error('github_pr_diff returned an unexpected shape');\n  }\n  const findings: Finding[] = [];\n  for (const hunk of iterHunks(diff)) {\n    for (const rule of RULES) {\n      if (rule.regex.test(hunk.text)) {\n        findings.push({\n          file: hunk.file,\n          line: hunk.baseLine,\n          severity: rule.severity,\n          kind: rule.kind,\n          snippet: hunk.text.slice(1, 140),\n        });\n      }\n    }\n  }\n  const blocking = findings.filter((f) => f.severity !== 'nit');\n  gezel.log(`Scanned diff: ${findings.length} finding(s), ${blocking.length} blocking`);\n  gezel.output({ findings, clean: blocking.length === 0 });\n}\n\nawait main();\n",
+    "diff-gate": "import { defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'diff-gate',\n  description:\n    'Gate for the scan-diff phase: runs diff-scan and routes the review — a clean diff approves straight to the approve step; findings approve to raise-findings with the findings carried in the handoff.',\n  kind: 'gate',\n  outputs: {\n    decision: { type: 'string', description: \"'approve' (the scan itself succeeding is the bar).\" },\n    message: { type: 'string', description: 'One-line scan summary.' },\n  },\n  // Nested script execution inherits diff-scan's needs; the scan itself\n  // declares 'network'.\n  requires: ['network'],\n});\n\ninterface ScanOutput {\n  clean: boolean;\n  findings?: Array<{ severity?: string; note?: string; file?: string }>;\n}\n\n// Gate-as-router: the step \"completing\" means the scan ran — the JUDGMENT\n// here is which branch the review takes next, expressed as approve+goto.\n// A scan failure rejects (fail-closed) so a broken scan never silently\n// approves a PR.\nconst result = await gezel.script.run<ScanOutput>('diff-scan');\nif (result.status !== 'ok' || !result.output) {\n  gezel.output({\n    decision: 'reject',\n    message: `diff-scan failed (${result.error ?? 'no output'}) — fix the scan inputs (is the PR context loaded?) and advance again.`,\n  });\n} else if (result.output.clean) {\n  gezel.output({\n    decision: 'approve',\n    goto: 'approve',\n    message: 'diff-scan found no must-fix or should-fix issues',\n    handoff: { message: 'Automated diff scan came back clean — proceed to approval.' },\n  });\n} else {\n  const findings = result.output.findings ?? [];\n  const top = findings\n    .slice(0, 5)\n    .map((f) => `- [${f.severity ?? 'note'}] ${f.file ?? ''} ${f.note ?? ''}`.trim())\n    .join('\\n');\n  gezel.output({\n    decision: 'approve',\n    goto: 'raise-findings',\n    message: `diff-scan flagged ${findings.length} finding(s)`,\n    handoff: {\n      message: `Automated diff scan flagged ${findings.length} finding(s) to raise on the PR:\\n${top}`,\n      params: { findingCount: findings.length },\n    },\n  });\n}\n"
+  },
+  "version": "1.1.0",
+  "releasedAt": "2026-07-28T00:00:00Z"
+}

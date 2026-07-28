@@ -1,0 +1,158 @@
+{
+  "id": "research-to-document",
+  "name": "Research to Word Document",
+  "description": "Research a question end to end and hand the user a real Word document. Four phases with per-phase gates and a review loop:\n\n1. Scope (planner) — narrow the question, decompose into sub-questions, lock the document structure and source standards -> gated on notes/scope.md\n2. Research (researcher) — gather sources into a citation-keyed source log with extracted facts and cross-checks -> gated on notes/sources.md\n3. Write (copywriter) — the cited markdown report to the locked structure -> gated on report.md\n4. Produce (developer) — DocBlocks: validate report.md against the DOCX target, convert_document to a themed .docx (and .pdf when the user asked for one), preview pages, save_artifact into the project artifacts -> gated on the saved report.docx artifact\n\nA reviewer grades the saved document against the locked acceptance criteria and loops back to the owning phase on a miss. Scoping and source-logging before writing is what keeps a model from fabricating citations; converting only after the report passes keeps the .docx a projection of reviewed prose, never a first draft. Use for 'research X and write it up as a doc', briefing documents, due-diligence summaries, and any deliverable that must arrive as a Word file.",
+  "entryStepId": "scope",
+  "triggers": [
+    "research this and write a doc",
+    "summarize research into a document",
+    "write it up as a word document",
+    "research report as docx",
+    "make a briefing document"
+  ],
+  "toolsets": [
+    {
+      "toolsetId": "docblocks",
+      "sourceId": "bundled",
+      "autoAllow": true,
+      "reason": "convert the finished report to DOCX/PDF, preview pages, and save the file without a prompt per call"
+    }
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the question",
+      "description": "Narrow the question, decompose it into sub-questions, and lock the document structure + source standards.",
+      "prompt": "1. Restate the research question in one precise sentence; if it is vague, narrow it to something answerable (entity, timeframe, geography, metric). 2. Decompose it into 3-6 sub-questions that, answered together, fully answer the main question. 3. Lock the document structure: title, executive summary (<=150 words, bottom line first), one section per sub-question, a limitations section, a numbered references list. 4. Lock source standards: minimum independent sources (aim 5+), what counts as authoritative for this topic, recency window. 5. Note the delivery format: a .docx always; also a .pdf if the user asked for one. 6. Write an acceptance-criteria checklist a grader could apply mechanically (every sub-question has a section; every factual claim carries an inline [n] citation that resolves; minimum source count met; limitations section present; executive summary within limit; the saved artifact is a real .docx). Write it all to notes/scope.md and call write_task_note with the narrowed question + sub-questions.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 150
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "research"
+    },
+    {
+      "id": "research",
+      "name": "Research and log sources",
+      "description": "Gather authoritative sources into notes/sources.md — citation key, locator, extracted facts, cross-checks.",
+      "prompt": "1. For each sub-question in notes/scope.md, find authoritative sources within the recency window (prefer primary sources and official data; use the web/search tools available this turn). 2. For every source, append an entry to notes/sources.md: citation key [n], title, author/publisher, date, URL or locator, and 1-3 bullet facts with the exact figure or quote. 3. Cross-check every load-bearing or surprising fact against a second independent source and note agreement or conflict. 4. Mark anything you could NOT verify as UNVERIFIED so the writer never states it as fact. 5. Exceed the minimum source count if quality allows; never pad with weak sources. The bar: a source log dense enough that the writer never needs to invent a fact. Keep notes/sources.md the single source of truth; no report prose yet.",
+      "suggestedRole": "researcher",
+      "advanceWhen": {
+        "file": "notes/sources.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/sources.md",
+            "bytes": 300
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/sources.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "research",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the report",
+      "description": "Write report.md to the locked structure, every claim cited from the source log.",
+      "prompt": "1. Write report.md following the locked structure from notes/scope.md exactly: title, executive summary <=150 words stating the bottom-line answer, one section per sub-question, a limitations section, a numbered References list. 2. Every factual claim gets an inline citation [n] keyed to References; never state an UNVERIFIED item as fact — hedge it or drop it. 3. Build References directly from notes/sources.md so every [n] resolves and no citation is invented. 4. Lead each section with its answer, then the evidence; keep prose tight, use `##` for sections and `###` sparingly — the heading structure becomes the Word document's outline. 5. Use markdown tables for genuinely tabular evidence. 6. On a loop-back, fix only the gaps the reviewer named. Call write_task_note with the report path and which criteria now pass.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "report.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.md",
+            "bytes": 1500
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "label": "markdown heading structure"
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "produce"
+    },
+    {
+      "id": "produce",
+      "name": "Produce the Word document",
+      "description": "Validate, convert, preview, and save report.docx (and report.pdf when requested) via DocBlocks.",
+      "prompt": "Turn report.md into the saved deliverable using the DocBlocks tools (pre-authorized for this task):\n\n1. `read_file` report.md so you have the exact markdown.\n2. `validate_document` with source `{ \"kind\": \"markdown\", \"markdown\": <report.md content>, \"name\": \"report.md\" }` and target format `docx`; fix any structural findings in report.md first.\n3. `list_themes` and pick a restrained, document-appropriate theme; note your choice.\n4. `convert_document` ONCE with that source, your `themeId`, `title` set to the report title, and targets `[{ \"format\": \"docx\", \"title\": <title> }]` — add `{ \"format\": \"pdf\", \"pageSize\": \"letter\" }` in the SAME call if notes/scope.md says the user asked for a PDF.\n5. `preview_document` on the DOCX artifact URI and inspect the page images: title present, headings structured, tables intact, references list rendered.\n6. `list_roots` to find the writable artifacts root, then `save_artifact` the DOCX to `report.docx` with `ifExists: \"error\"` (and the PDF to `report.pdf`). If it errors because the file exists from a previous pass, re-save with `ifExists: \"replace\"` and the `expectedSha256` from the earlier result.\n7. Call write_task_note with the theme, page count, and saved path(s).\n\nDo NOT hand-assemble any document XML — the deliverable is the .docx produced by convert_document.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "report.docx",
+        "minBytes": 1,
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.docx",
+            "bytes": 5000,
+            "artifact": true
+          }
+        ],
+        "onReject": "produce",
+        "maxAttempts": 3
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the saved document against every acceptance criterion. All pass -> finish; any fail -> loop back to the owning step.",
+      "prompt": "Open notes/scope.md and grade against EACH acceptance criterion, writing PASS/FAIL per criterion: (1) every sub-question has a dedicated section; (2) every factual claim carries an inline [n] that resolves to a References entry — spot-check 3 citations against notes/sources.md to confirm the claim matches the logged fact; (3) the minimum source count and authority/recency bar are met; (4) a limitations section exists; (5) the executive summary is <=150 words and states the bottom line; (6) `preview_document` on the saved report.docx (source `{ \"kind\": \"file\", \"rootId\": <artifacts root from list_roots>, \"path\": \"report.docx\", \"format\": null }`) shows a clean document — title, heading structure, intact tables, rendered references. A report that reads well but invents or mismatches a citation FAILS.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES ->** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Prose or citations fail ->** write the specific gaps to notes, then `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })`.\n- **Only the conversion/save fails ->** `advance_task_step({ ref, stepId: \"evaluate\", next: \"produce\" })`.\n\nNever route to `finish` while any criterion is unmet. After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: the question answered, the bottom-line finding, the source count, and that the deliverable is report.docx (plus report.pdf when produced) in the project artifacts. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.1.0",
+  "releasedAt": "2026-07-28T00:00:00Z"
+}
