@@ -32,6 +32,15 @@ export function shardPrefix(id) {
   return id.slice(0, 2).toLowerCase();
 }
 
+// Filesystem droppings that macOS/Windows scatter through checkouts. They
+// are gitignored, never committed, and must not fail a local validate run.
+const OS_JUNK_NAMES = new Set(['.DS_Store', 'Thumbs.db', 'desktop.ini', '.localized']);
+
+/** True for OS-generated files that are not part of the catalog. */
+export function isOsJunk(name) {
+  return OS_JUNK_NAMES.has(name) || name.startsWith('._');
+}
+
 function safeReaddir(dir, opts) {
   try {
     return readdirSync(dir, opts);

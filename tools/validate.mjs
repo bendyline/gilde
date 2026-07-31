@@ -30,7 +30,7 @@ import { loadSchema, zodParse } from './lib/jsonshape.mjs';
 import { makeCollector, render } from './lib/report.mjs';
 import { collectSeedExemptFiles } from './lib/seeds.mjs';
 import { isSemver, safeCompare } from './lib/semver.mjs';
-import { DIR_KIND, KIND_DIR, listItems, presentKinds } from './lib/walk.mjs';
+import { DIR_KIND, KIND_DIR, isOsJunk, listItems, presentKinds } from './lib/walk.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..');
@@ -60,6 +60,7 @@ function walkFiles(dir, out = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
     a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
   )) {
+    if (isOsJunk(entry.name)) continue;
     const p = join(dir, entry.name);
     if (entry.isDirectory()) walkFiles(p, out);
     else out.push(p);
@@ -233,6 +234,7 @@ function main() {
       // Layout: kind root carries only index.json + 2-char shard dirs;
       // shard dirs carry only item dirs.
       for (const entry of readdirSync(kindRoot, { withFileTypes: true })) {
+        if (isOsJunk(entry.name)) continue;
         if (entry.isDirectory()) {
           // A shard is the first two chars of an item id; the id grammar
           // ([a-z0-9][a-z0-9.\-:]...) allows ".", "-", ":" from the
@@ -241,6 +243,7 @@ function main() {
             c.error(join(kindRoot, entry.name), '', 'bad-shard-dir', 'shard dirs are the first 2 chars of an item id');
           } else {
             for (const inner of readdirSync(join(kindRoot, entry.name), { withFileTypes: true })) {
+              if (isOsJunk(inner.name)) continue;
               if (!inner.isDirectory()) {
                 c.error(join(kindRoot, entry.name, inner.name), '', 'stray-file', 'shard level allows only item directories');
               }
@@ -307,6 +310,7 @@ function main() {
         const onDiskVersions = [];
         if (existsSync(versionsDir)) {
           for (const entry of readdirSync(versionsDir, { withFileTypes: true })) {
+            if (isOsJunk(entry.name)) continue;
             if (!entry.isDirectory()) {
               c.error(join(versionsDir, entry.name), '', 'stray-version-entry', 'versions/ allows only semver-named directories');
               continue;

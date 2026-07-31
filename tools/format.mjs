@@ -28,6 +28,7 @@ import { basename, dirname, join, relative, resolve } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { collectSeedExemptFiles } from './lib/seeds.mjs';
+import { isOsJunk } from './lib/walk.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..');
@@ -51,6 +52,7 @@ function walkJsonFiles(dir, out = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
     a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
   )) {
+    if (isOsJunk(entry.name)) continue;
     const p = join(dir, entry.name);
     if (entry.isDirectory()) walkJsonFiles(p, out);
     else if (entry.name.endsWith('.json') && entry.name !== 'index.json') out.push(p);

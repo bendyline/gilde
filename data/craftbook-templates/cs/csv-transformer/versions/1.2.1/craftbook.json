@@ -1,107 +1,107 @@
 {
- "id": "csv-transformer",
- "name": "CSV / Tabular Transformer",
- "description": "Reshape and convert tabular data from one schema to another: rename and reorder columns, split or merge fields, derive new columns, pivot/unpivot, change format (CSV<->JSON<->TSV), and filter rows. Locks the input and target schema and the field-by-field mapping FIRST (so the transform is a contract, not guesswork), then builds the transform and emits the output, then verifies row counts and a sample mapping. Use this for reshaping a CSV, converting data formats, remapping columns, flattening JSON to a table, or reformatting an export for another tool.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the schema mapping (planner) — lock the input schema, target schema, and field-by-field mapping → gated on `notes/schema-scope.md` (markdown-notes)\n2. Build the transform (developer) — apply the mapping and emit the target file → gated on `data/output.csv` (data-file)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
- "entryStepId": "schema-scope",
- "triggers": [
-  "reshape a csv",
-  "convert csv to json",
-  "remap columns",
-  "transform tabular data",
-  "reformat a data export"
- ],
- "steps": [
-  {
-   "id": "schema-scope",
-   "name": "Scope the schema mapping",
-   "description": "lock the input schema, target schema, and field-by-field mapping",
-   "prompt": "Define the transform contract before writing any code. Step 1: document the INPUT schema (columns, types, format/delimiter) from a sample of the source. Step 2: document the TARGET schema (columns, types, order, output format). Step 3: write the field-by-field mapping table: each target column = which source column(s) and the transform (rename, cast, split on delimiter, concatenate, derive via formula, constant). Step 4: define row-level rules — filters to apply, dedup, how to handle missing source values, and pivot/unpivot if the shape changes. Step 5: write an acceptance-criteria checklist ('output has exactly the target columns in order', 'output parses in the target format', 'row count matches the filter rule', 'a sampled row maps correctly end-to-end', 'no data type errors'). Call write_task_note and write the mapping table + rules + checklist to notes/schema-scope.md.",
-   "suggestedRole": "planner",
-   "advanceWhen": {
-    "file": "notes/schema-scope.md",
-    "minBytes": 1,
-    "sniff": "nonempty"
-   },
-   "gate": {
-    "at": "completion",
-    "checks": [
-     {
-      "kind": "minBytes",
-      "file": "notes/schema-scope.md",
-      "bytes": 120
-     },
-     {
-      "kind": "sniff",
-      "file": "notes/schema-scope.md",
-      "sniff": "nonempty"
-     }
-    ],
-    "onReject": "schema-scope",
-    "maxAttempts": 3
-   },
-   "next": "build"
-  },
-  {
-   "id": "build",
-   "name": "Build the transform",
-   "description": "apply the mapping and emit the target file",
-   "prompt": "Implement the transform exactly to the mapping table. Step 1: read the input with the correct delimiter/encoding. Step 2: apply each target column's rule in order (rename, cast, split/join, derive, constant); reshape (pivot/unpivot) if specified. Step 3: apply row filters and dedup; track rows-in vs rows-out and the reason for any drop. Step 4: write the output to data/output.csv (or the requested format/extension) with the target columns in the exact specified order and a header row. Step 5: ensure the output parses (valid CSV/JSON) and types are clean (no '1.0' where an int is expected). On a loop-back, fix only the named gaps. Call write_task_note with the path and rows-in/rows-out.\n\nProduce the output by EXECUTING your transform (prefer `derive_file({ script, outputPath })`, or write a script file and run it with `run_nodejs_script`); do not hand-type rows into the output file — hand-typed derived data loses records.",
-   "suggestedRole": "developer",
-   "advanceWhen": {
-    "file": "data/output.csv",
-    "minBytes": 1,
-    "sniff": "data-table"
-   },
-   "gate": {
-    "at": "completion",
-    "checks": [
-     {
-      "kind": "minBytes",
-      "file": "data/output.csv",
-      "bytes": 120
-     },
-     {
-      "kind": "sniff",
-      "file": "data/output.csv",
-      "sniff": "data-table"
-     },
-     {
-      "kind": "csvShape",
-      "file": "data/output.csv",
-      "consistentColumns": true,
-      "minRows": 1
-     },
-     {
-      "kind": "valuesSubsetOf",
-      "file": "data/output.csv",
-      "sourceFiles": [
-       "**"
-      ],
-      "pattern": "\\b([A-Za-z]{1,4}-\\d{2,6})\\b"
-     }
-    ],
-    "onReject": "build",
-    "maxAttempts": 4
-   },
-   "next": "evaluate"
-  },
-  {
-   "id": "evaluate",
-   "name": "Evaluate",
-   "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
-   "prompt": "Open data/output.csv and verify it matches the schema-scope contract. Step 1: confirm it parses in the target format and has EXACTLY the target columns in the specified order. Step 2: re-count the rows and reconcile against input — the count must equal input rows after the documented filter/dedup, with the delta explained. Step 3: pick 3 source rows and trace them through the mapping by hand to confirm each target field is correct end-to-end. Step 4: scan for type errors (e.g. '1.0' where an int is expected) and stray nulls the mapping didn't intend. Write PASS/FAIL per criterion; any FAIL loops back to build.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
-   "suggestedRole": "reviewer",
-   "next": "build"
-  },
-  {
-   "id": "finish",
-   "name": "Finish",
-   "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
-   "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
-   "suggestedRole": "developer",
-   "terminal": true
-  }
- ],
- "version": "1.2.1",
- "releasedAt": "2026-07-16T00:00:00Z"
+  "id": "csv-transformer",
+  "name": "CSV / Tabular Transformer",
+  "description": "Reshape and convert tabular data from one schema to another: rename and reorder columns, split or merge fields, derive new columns, pivot/unpivot, change format (CSV<->JSON<->TSV), and filter rows. Locks the input and target schema and the field-by-field mapping FIRST (so the transform is a contract, not guesswork), then builds the transform and emits the output, then verifies row counts and a sample mapping. Use this for reshaping a CSV, converting data formats, remapping columns, flattening JSON to a table, or reformatting an export for another tool.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nPhases:\n\n1. Scope the schema mapping (planner) — lock the input schema, target schema, and field-by-field mapping → gated on `notes/schema-scope.md` (markdown-notes)\n2. Build the transform (developer) — apply the mapping and emit the target file → gated on `data/output.csv` (data-file)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "schema-scope",
+  "triggers": [
+    "reshape a csv",
+    "convert csv to json",
+    "remap columns",
+    "transform tabular data",
+    "reformat a data export"
+  ],
+  "steps": [
+    {
+      "id": "schema-scope",
+      "name": "Scope the schema mapping",
+      "description": "lock the input schema, target schema, and field-by-field mapping",
+      "prompt": "Define the transform contract before writing any code. Step 1: document the INPUT schema (columns, types, format/delimiter) from a sample of the source. Step 2: document the TARGET schema (columns, types, order, output format). Step 3: write the field-by-field mapping table: each target column = which source column(s) and the transform (rename, cast, split on delimiter, concatenate, derive via formula, constant). Step 4: define row-level rules — filters to apply, dedup, how to handle missing source values, and pivot/unpivot if the shape changes. Step 5: write an acceptance-criteria checklist ('output has exactly the target columns in order', 'output parses in the target format', 'row count matches the filter rule', 'a sampled row maps correctly end-to-end', 'no data type errors'). Call write_task_note and write the mapping table + rules + checklist to notes/schema-scope.md.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/schema-scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/schema-scope.md",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/schema-scope.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "schema-scope",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the transform",
+      "description": "apply the mapping and emit the target file",
+      "prompt": "Implement the transform exactly to the mapping table. Step 1: read the input with the correct delimiter/encoding. Step 2: apply each target column's rule in order (rename, cast, split/join, derive, constant); reshape (pivot/unpivot) if specified. Step 3: apply row filters and dedup; track rows-in vs rows-out and the reason for any drop. Step 4: write the output to data/output.csv (or the requested format/extension) with the target columns in the exact specified order and a header row. Step 5: ensure the output parses (valid CSV/JSON) and types are clean (no '1.0' where an int is expected). On a loop-back, fix only the named gaps. Call write_task_note with the path and rows-in/rows-out.\n\nProduce the output by EXECUTING your transform (prefer `derive_file({ script, outputPath })`, or write a script file and run it with `run_nodejs_script`); do not hand-type rows into the output file — hand-typed derived data loses records.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "data/output.csv",
+        "minBytes": 1,
+        "sniff": "data-table"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "data/output.csv",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "data/output.csv",
+            "sniff": "data-table"
+          },
+          {
+            "kind": "csvShape",
+            "file": "data/output.csv",
+            "consistentColumns": true,
+            "minRows": 1
+          },
+          {
+            "kind": "valuesSubsetOf",
+            "file": "data/output.csv",
+            "sourceFiles": [
+              "**"
+            ],
+            "pattern": "\\b([A-Za-z]{1,4}-\\d{2,6})\\b"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open data/output.csv and verify it matches the schema-scope contract. Step 1: confirm it parses in the target format and has EXACTLY the target columns in the specified order. Step 2: re-count the rows and reconcile against input — the count must equal input rows after the documented filter/dedup, with the delta explained. Step 3: pick 3 source rows and trace them through the mapping by hand to confirm each target field is correct end-to-end. Step 4: scan for type errors (e.g. '1.0' where an int is expected) and stray nulls the mapping didn't intend. Write PASS/FAIL per criterion; any FAIL loops back to build.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.2.1",
+  "releasedAt": "2026-07-16T00:00:00Z"
 }
