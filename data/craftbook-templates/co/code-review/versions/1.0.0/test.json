@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "title": "Snapshot-driven code review with a gated artifact report",
+  "objective": "Measure the snapshot-review class: read a staged change-set snapshot from the artifacts drawer, ground findings in the actual diff, and produce a severity-ranked, file-cited report artifact whose verdict follows from the findings.",
+  "tags": [],
+  "prompt": "A change-set snapshot for review rev-eval-1 is staged in this project's artifacts drawer: reviews/rev-eval-1/manifest.json and reviews/rev-eval-1/changes.diff. Run the code-review craftbook against it and write the gated report artifact to reviews/rev-eval-1/report.md with write_artifact. The diff is the change set under review; the matching source files are in the workspace. Do not modify any workspace file.",
+  "setup": {
+    "projectName": "Code Review Eval",
+    "about": "A tiny payments module. The staged change under review swapped parameterized SQL queries for string concatenation and left debug logging behind.",
+    "worker": {
+      "name": "Rex",
+      "role": "Reviewer"
+    },
+    "files": [
+      {
+        "path": "src/payment.js",
+        "content": "const db = require('./db');\n\nasync function chargeCustomer(req) {\n  const amount = req.body.amount;\n  const customerId = req.body.customerId;\n  // TODO: validate amount server-side\n  const rows = await db.query(\"SELECT * FROM customers WHERE id = '\" + customerId + \"'\");\n  const customer = rows[0];\n  console.log('charging', customerId, amount);\n  const receipt = await db.query(\n    \"INSERT INTO charges (customer_id, amount) VALUES ('\" + customerId + \"', \" + amount + \") RETURNING id\",\n  );\n  return { chargeId: receipt[0].id, customer: customer.name };\n}\n\nmodule.exports = { chargeCustomer };\n"
+      },
+      {
+        "path": "src/util.js",
+        "content": "function formatCents(cents) {\n  return `$${(cents / 100).toFixed(2)}`;\n}\n\nmodule.exports = { formatCents };\n"
+      },
+      {
+        "path": "reviews/rev-eval-1/manifest.json",
+        "surface": "artifact",
+        "content": "{\n  \"version\": 1,\n  \"reviewId\": \"rev-eval-1\",\n  \"kind\": \"commit\",\n  \"createdAt\": \"2026-07-29T09:00:00Z\",\n  \"branch\": \"main\",\n  \"headSha\": \"3d0c1a2\",\n  \"baseRef\": \"HEAD\",\n  \"files\": [\n    { \"path\": \"src/payment.js\", \"kind\": \"modified\", \"additions\": 8, \"deletions\": 2 }\n  ],\n  \"totalFiles\": 1,\n  \"filesTruncated\": false,\n  \"diffFile\": \"changes.diff\",\n  \"diffChars\": 900,\n  \"diffTruncated\": false,\n  \"notes\": []\n}\n"
+      },
+      {
+        "path": "reviews/rev-eval-1/changes.diff",
+        "surface": "artifact",
+        "content": "diff --git a/src/payment.js b/src/payment.js\nindex 3d0c1a2..9f4b7e1 100644\n--- a/src/payment.js\n+++ b/src/payment.js\n@@ -1,12 +1,16 @@\n const db = require('./db');\n \n async function chargeCustomer(req) {\n   const amount = req.body.amount;\n   const customerId = req.body.customerId;\n-  const rows = await db.query('SELECT * FROM customers WHERE id = $1', [customerId]);\n+  // TODO: validate amount server-side\n+  const rows = await db.query(\"SELECT * FROM customers WHERE id = '\" + customerId + \"'\");\n   const customer = rows[0];\n-  const receipt = await db.query('INSERT INTO charges (customer_id, amount) VALUES ($1, $2) RETURNING id', [customerId, amount]);\n+  console.log('charging', customerId, amount);\n+  const receipt = await db.query(\n+    \"INSERT INTO charges (customer_id, amount) VALUES ('\" + customerId + \"', \" + amount + \") RETURNING id\",\n+  );\n   return { chargeId: receipt[0].id, customer: customer.name };\n }\n \n module.exports = { chargeCustomer };\n"
+      }
+    ]
+  },
+  "mocks": [],
+  "success": {
+    "summary": "reviews/rev-eval-1/report.md exists in the artifacts drawer with Summary/Findings/Verdict sections, a severity table citing src/payment.js, and a request-changes verdict consistent with the seeded SQL-injection flaw.",
+    "checks": [
+      {
+        "kind": "minBytes",
+        "file": "reviews/rev-eval-1/report.md",
+        "bytes": 400,
+        "artifact": true
+      },
+      {
+        "kind": "contains",
+        "file": "reviews/rev-eval-1/report.md",
+        "pattern": "##\\s+Summary",
+        "label": "Summary section",
+        "artifact": true
+      },
+      {
+        "kind": "contains",
+        "file": "reviews/rev-eval-1/report.md",
+        "pattern": "##\\s+Findings",
+        "label": "Findings section",
+        "artifact": true
+      },
+      {
+        "kind": "contains",
+        "file": "reviews/rev-eval-1/report.md",
+        "pattern": "Verdict:\\s*request-changes",
+        "label": "request-changes verdict (SQL concat is at least major)",
+        "artifact": true
+      },
+      {
+        "kind": "contains",
+        "file": "reviews/rev-eval-1/report.md",
+        "pattern": "src/payment\\.js",
+        "label": "cites the flawed file",
+        "artifact": true
+      },
+      {
+        "kind": "tableShape",
+        "file": "reviews/rev-eval-1/report.md",
+        "requiredColumns": [
+          "Severity",
+          "File",
+          "Finding"
+        ],
+        "minRows": 1,
+        "artifact": true
+      }
+    ],
+    "taskNotes": {
+      "requireCraftbookTask": true,
+      "checks": [
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "Verdict:",
+          "flags": "i"
+        }
+      ]
+    }
+  },
+  "rubric": {
+    "artifact": {
+      "path": "reviews/rev-eval-1/report.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "grounding",
+        "description": "Findings reference code that actually appears in changes.diff; nothing is invented and cited lines exist."
+      },
+      {
+        "name": "severity-judgment",
+        "description": "The SQL string concatenation is rated critical or major; the console.log and TODO are minor or nit — severities proportionate to impact."
+      },
+      {
+        "name": "actionability",
+        "description": "Every finding carries a concrete, minimal recommendation (e.g. return to parameterized queries), not generic advice."
+      },
+      {
+        "name": "verdict-consistency",
+        "description": "The verdict follows mechanically from the findings table: any critical or major finding yields request-changes."
+      }
+    ],
+    "contextNote": "The report is an artifacts-drawer file, not a workspace file — the reviewer must not modify workspace source."
+  },
+  "qualityFocus": [
+    "evidence-grounded review",
+    "file citations",
+    "artifact deliverable discipline"
+  ]
+}

@@ -1,0 +1,161 @@
+{
+  "id": "code-review",
+  "name": "Code Review",
+  "description": "Review one staged change set and deliver a gated report.\n\nThe change set is snapshotted ahead of time into the project artifacts drawer at `reviews/<reviewId>/`: `manifest.json` (kind, base/head, changed files, and — for branch reviews — the commit list) plus `changes.diff` (the unified diff). Three steps:\n\n1. **Scope** — read the snapshot, note the review kind and the themes to check\n2. **Report** — walk the diff and write `reviews/<reviewId>/report.md` (Summary, severity-ranked Findings table with file:line citations, Verdict)\n3. **Done** — stamp the verdict to task notes\n\nThe reviewer never modifies project source — the only deliverable is the report artifact. Reports must ground every finding in the actual diff; the completion gate checks structure, citations, and verdict consistency.",
+  "entryStepId": "scope",
+  "command": "code-review",
+  "triggers": [
+    "review my uncommitted changes",
+    "review the working tree",
+    "review this branch against main",
+    "review the staged change set"
+  ],
+  "requirements": [
+    {
+      "kind": "github"
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "reviewId": {
+        "type": "string",
+        "title": "Review id",
+        "description": "The staged snapshot folder under the project artifacts: reviews/<reviewId>/. Filled automatically when launched from the Review panel."
+      },
+      "focus": {
+        "type": "string",
+        "title": "Review focus",
+        "description": "Optional area to emphasize, e.g. security, performance, tests."
+      },
+      "intensity": {
+        "type": "string",
+        "title": "Intensity",
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "default": "medium",
+        "squisq": {
+          "control": "segmented"
+        },
+        "description": "How deep to go on the diff walk."
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the change set",
+      "description": "Read the staged snapshot (manifest + diff) and write a scope note naming the review kind, the changed files, and the themes to check.",
+      "prompt": "**You are the reviewer for one snapshotted change set.** In this task you read code and write exactly ONE report artifact — never modify project source files.\n\n**Your first tool call this turn:** `read_artifact({ path: \"reviews/{{reviewId}}/manifest.json\" })`. If that path contains a literal `{{...}}` placeholder or is missing, call `list_artifacts({ path: \"reviews\" })` and use the newest review folder instead; if none exists, write a task note saying no review snapshot is staged and stop.\n\nThe manifest tells you the review kind (`commit` = unsaved work vs the last save; `pr` = this branch vs the default branch), the base/head, every changed file, and — for branch reviews — the commit list. Then read `reviews/{{reviewId}}/changes.diff` with `read_artifact` (use `head`/`lines` slices on a large diff; the manifest's `diffChars` tells you how big it is).\n\nWrite ONE scope note with `write_task_note`, starting with the line `## Scope`: the review kind, base and head from the manifest, each changed file with its change kind, and the 3-6 themes you will check — weighted by any focus and intensity named in your task description. Then call `advance_task_step`.",
+      "suggestedRole": "reviewer",
+      "gate": {
+        "at": "completion",
+        "scripts": [
+          {
+            "name": "checkTaskNoteContains",
+            "scope": "standard",
+            "inputs": {
+              "pattern": "##\\s*Scope"
+            }
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Review and write the report",
+      "description": "Walk the diff hunk by hunk and write the complete review report artifact. Writing the report IS the advance — the completion gate checks structure, citations, and verdict consistency.",
+      "prompt": "Walk `reviews/{{reviewId}}/changes.diff` hunk by hunk and review for correctness, security, data-loss risk, error handling, tests, and clarity — weighted by the focus and intensity in your task description. Use `read_file` on workspace files when you need surrounding context. Only discuss files that appear in the change set. Cite every finding as `path:line` using paths exactly as they appear in the diff.\n\nThen write the complete report in ONE `write_artifact` call to `reviews/{{reviewId}}/report.md`, exactly this skeleton:\n\n```\n# Code Review — <one-line title>\nReview-ID: {{reviewId}}\n\n## Summary\n<2-6 sentences: what the change does, overall risk. If there are no findings, say \"No findings.\" here.>\n\n## Findings\n| # | Severity | File | Line | Finding | Recommendation |\n|---|----------|------|------|---------|----------------|\n<one row per finding; severities: critical, major, minor, nit. Keep the header row even when there are no findings.>\n\n## Verdict\nVerdict: approve\n<or> Verdict: request-changes\n<one sentence of rationale. Any critical or major finding means request-changes.>\n```\n\nDo not write any workspace file. If the gate rejects, fix exactly the gap it names and rewrite the whole artifact in one `write_artifact` call. When the report is written, call `advance_task_step` (writing the file may advance this step for you).",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "reviews/{{reviewId}}/report.md",
+        "artifact": true,
+        "minBytes": 400
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "reviews/{{reviewId}}/report.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "reviews/{{reviewId}}/report.md",
+            "pattern": "##\\s+Summary",
+            "label": "Summary section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "reviews/{{reviewId}}/report.md",
+            "pattern": "##\\s+Findings",
+            "label": "Findings section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "reviews/{{reviewId}}/report.md",
+            "pattern": "\\|\\s*Severity\\s*\\|",
+            "label": "findings table header",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "reviews/{{reviewId}}/report.md",
+            "pattern": "Verdict:\\s*(approve|request-changes)",
+            "label": "verdict line",
+            "artifact": true
+          },
+          {
+            "kind": "tableShape",
+            "file": "reviews/{{reviewId}}/report.md",
+            "requiredColumns": [
+              "Severity",
+              "File",
+              "Finding"
+            ],
+            "artifact": true
+          },
+          {
+            "kind": "judge",
+            "file": "reviews/{{reviewId}}/report.md",
+            "rubric": "Findings are grounded in the actual diff hunks (no invented code or files), severities are proportionate to real impact, and the verdict follows from the findings table.",
+            "sourceFiles": [
+              "reviews/{{reviewId}}/changes.diff"
+            ],
+            "advisory": true,
+            "artifact": true
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkReviewReport",
+            "scope": "standard"
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "done"
+    },
+    {
+      "id": "done",
+      "name": "Deliver the verdict",
+      "description": "The report passed its gate. Stamp the verdict to task notes and point the user at the report.",
+      "prompt": "The report is written and passed its gate. Write one final task note with `write_task_note`: `Verdict: <approve|request-changes> — N findings (a critical, b major, c minor, d nit)` plus a one-paragraph summary. Tell the user the full report is in the project artifacts at `reviews/{{reviewId}}/report.md` (the Review panel renders it). Then call `advance_task_step` to complete the task.",
+      "suggestedRole": "reviewer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-07-29T00:00:00Z"
+}

@@ -172,6 +172,7 @@ function craftbookManifestFromDoc(identity, doc, version, availableVersions) {
     ...(doc.paramSchema ? { paramSchema: doc.paramSchema } : {}),
     ...(doc.command ? { command: doc.command } : {}),
     ...(doc.requirements ? { requirements: doc.requirements } : {}),
+    ...(doc.runModes ? { runModes: doc.runModes } : {}),
     ...(doc.toolsets ? { toolsets: doc.toolsets } : {}),
     ...(doc.hooks ? { hooks: doc.hooks } : {}),
     ...(doc.spawn ? { spawn: doc.spawn } : {}),
@@ -232,6 +233,7 @@ function mergeIdentityAndVersion(kind, identity, version, availableVersions) {
       ...(version.paramSchema ? { paramSchema: version.paramSchema } : {}),
       ...(version.command ? { command: version.command } : {}),
       ...(version.requirements ? { requirements: version.requirements } : {}),
+      ...(version.runModes ? { runModes: version.runModes } : {}),
       ...(version.toolsets ? { toolsets: version.toolsets } : {}),
       availableVersions,
     };
@@ -321,6 +323,9 @@ function mergeIdentityAndVersion(kind, identity, version, availableVersions) {
       ...(version.notes !== undefined ? { notes: version.notes } : {}),
       ...(version.frontmatter ? { frontmatter: version.frontmatter } : {}),
       ...(version.nameSuggestions ? { nameSuggestions: version.nameSuggestions } : {}),
+      ...(version.suggestedCraftbooks
+        ? { suggestedCraftbooks: version.suggestedCraftbooks }
+        : {}),
       availableVersions,
     };
   }

@@ -1,0 +1,978 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Checkers</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2;
+        --card: #fff;
+        --ink: #2b2620;
+        --muted: #7a7166;
+        --accent: #b5651d;
+        --track: #ece5da;
+        --sq-light: #f3ead9;
+        --sq-dark: #b08968;
+        --sq-hint: #7a9e7e;
+        --red-a: #c9502c;
+        --red-b: #8f3018;
+        --black-a: #4a423a;
+        --black-b: #211c17;
+        --coord-on-light: rgba(43, 38, 32, 0.38);
+        --coord-on-dark: rgba(255, 250, 242, 0.5);
+        --frame-a: #9a7557;
+        --frame-b: #513725;
+        --frame-edge: #352217;
+        --last-move: rgba(239, 180, 92, 0.36);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1c1a17;
+          --card: #262320;
+          --ink: #efe9e0;
+          --muted: #a59a8c;
+          --accent: #e0894a;
+          --track: #3a352f;
+          --sq-light: #3c362e;
+          --sq-dark: #6b4f37;
+          --sq-hint: #5d7f62;
+          --red-a: #d96a42;
+          --red-b: #9c3b1e;
+          --black-a: #8c8378;
+          --black-b: #3a342d;
+          --coord-on-light: rgba(239, 233, 224, 0.38);
+          --coord-on-dark: rgba(255, 248, 238, 0.48);
+          --frame-a: #74543d;
+          --frame-b: #34241a;
+          --frame-edge: #1b120d;
+          --last-move: rgba(236, 159, 85, 0.32);
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+        padding: 1.25rem;
+      }
+      main { max-width: 720px; margin: 0 auto; }
+      header { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+      h1 {
+        font-family: Georgia, 'PT Serif', 'Times New Roman', serif;
+        font-size: 1.35rem;
+        font-weight: 600;
+        margin: 0;
+      }
+      .status { color: var(--muted); font-size: 0.9rem; margin: 0.15rem 0 0.9rem; }
+      .status .thinking { color: var(--accent); }
+      button.newgame {
+        border: 1px solid var(--track);
+        background: var(--card);
+        color: var(--ink);
+        border-radius: 6px;
+        padding: 0.3rem 0.7rem;
+        font: inherit;
+        font-size: 0.85rem;
+        cursor: pointer;
+      }
+      button.newgame:hover { border-color: var(--accent); }
+      dialog {
+        width: min(430px, calc(100vw - 2rem));
+        border: 1px solid var(--track);
+        border-radius: 10px;
+        padding: 0;
+        background: var(--card);
+        color: var(--ink);
+        box-shadow: 0 18px 55px rgba(0, 0, 0, 0.35);
+      }
+      dialog::backdrop { background: rgba(20, 17, 14, 0.62); }
+      .new-game-form { padding: 1rem; }
+      .new-game-form h2 {
+        font-family: Georgia, 'PT Serif', 'Times New Roman', serif;
+        font-size: 1.1rem;
+        margin: 0;
+      }
+      .dialog-intro { color: var(--muted); margin: 0.2rem 0 0.9rem; font-size: 0.85rem; }
+      .rule-fieldset { border: 0; margin: 0; padding: 0; }
+      .rule-fieldset legend {
+        color: var(--muted);
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.35rem;
+        text-transform: uppercase;
+      }
+      .rule-tray {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.35rem;
+        padding: 0.35rem;
+        border: 1px solid var(--track);
+        border-radius: 10px;
+        background: var(--track);
+      }
+      .rule-key {
+        min-width: 0;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        padding: 0.55rem 0.6rem;
+        background: var(--card);
+        color: var(--ink);
+        cursor: pointer;
+        font: inherit;
+        text-align: left;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+      }
+      .rule-key:hover { border-color: var(--accent); }
+      .rule-key[aria-checked='true'] {
+        border-color: var(--accent);
+        box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+        transform: translateY(1px);
+      }
+      .rule-key strong { display: block; font-size: 0.88rem; }
+      .rule-key span { display: block; color: var(--muted); font-size: 0.75rem; line-height: 1.3; margin-top: 0.1rem; }
+      .dialog-actions { display: flex; justify-content: flex-end; gap: 0.45rem; margin-top: 1rem; }
+      .dialog-button {
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        padding: 0.4rem 0.75rem;
+        background: var(--accent);
+        color: var(--bg);
+        cursor: pointer;
+        font: inherit;
+        font-size: 0.85rem;
+      }
+      .dialog-button.secondary { border-color: var(--track); background: var(--card); color: var(--ink); }
+      .table { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 0.9rem; }
+      .boardwrap {
+        background: linear-gradient(145deg, var(--frame-a), var(--frame-b));
+        border: 1px solid var(--frame-edge);
+        border-radius: 14px;
+        padding: 0.85rem;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.24),
+          inset 0 -4px 8px rgba(0, 0, 0, 0.24),
+          0 10px 24px rgba(31, 21, 15, 0.22);
+      }
+      .board {
+        position: relative;
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        grid-template-rows: repeat(8, minmax(0, 1fr));
+        aspect-ratio: 1;
+        border: 1px solid var(--frame-edge);
+        border-radius: 8px;
+        overflow: hidden;
+        user-select: none;
+        box-shadow:
+          inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+          0 5px 12px rgba(0, 0, 0, 0.3);
+      }
+      .cell { position: relative; display: grid; min-width: 0; min-height: 0; place-items: center; }
+      .cell.light { background: var(--sq-light); }
+      .cell.dark { background: var(--sq-dark); cursor: default; }
+      .cell::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(145deg, rgba(255, 255, 255, 0.13), transparent 46%, rgba(0, 0, 0, 0.09));
+        pointer-events: none;
+      }
+      .cell.dark.selectable { cursor: pointer; }
+      .cell.last-move { box-shadow: inset 0 0 0 999px var(--last-move); }
+      .cell.last-move-from { box-shadow: inset 0 0 0 2px var(--last-move); }
+      .cell.dark.selected {
+        outline: 3px solid var(--accent);
+        outline-offset: -3px;
+        box-shadow: inset 0 0 14px rgba(255, 255, 255, 0.16);
+      }
+      .cell.dark.hint { box-shadow: inset 0 0 0 999px rgba(0, 0, 0, 0.08); cursor: pointer; }
+      .coord {
+        position: absolute;
+        top: 6%;
+        left: 7%;
+        z-index: 2;
+        font-size: clamp(0.45rem, 1.25vw, 0.65rem);
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        line-height: 1;
+        pointer-events: none;
+        user-select: none;
+      }
+      .cell.light .coord { color: var(--coord-on-light); }
+      .cell.dark .coord { color: var(--coord-on-dark); }
+      .cell.dark.hint::after {
+        content: '';
+        width: 26%;
+        height: 26%;
+        z-index: 3;
+        border-radius: 50%;
+        background: var(--sq-hint);
+        box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.16), 0 2px 6px rgba(0, 0, 0, 0.24);
+        opacity: 0.92;
+        animation: hint-breathe 1.6s ease-in-out infinite;
+      }
+      .piece {
+        position: relative;
+        z-index: 1;
+        width: 76%;
+        height: 76%;
+        border: 1px solid rgba(30, 20, 14, 0.45);
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+        font-size: clamp(0.62rem, 1.7vw, 0.9rem);
+        text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+        box-shadow:
+          inset 0 4px 5px rgba(255, 255, 255, 0.23),
+          inset 0 -6px 8px rgba(0, 0, 0, 0.32),
+          0 5px 7px rgba(0, 0, 0, 0.34);
+        transition: transform 150ms ease-out, box-shadow 150ms ease-out, opacity 120ms ease-out;
+      }
+      .piece::before {
+        content: '';
+        position: absolute;
+        inset: 12%;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 50%;
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.17);
+        pointer-events: none;
+      }
+      .piece.red { background: radial-gradient(circle at 32% 25%, var(--red-a), var(--red-b) 72%); color: #f8e8de; }
+      .piece.black { background: radial-gradient(circle at 32% 25%, var(--black-a), var(--black-b) 72%); color: #d9d2c7; }
+      .piece.king::before { inset: 16%; border: 2px double currentColor; opacity: 0.72; }
+      .cell.selectable .piece:hover,
+      .cell.selected .piece { transform: translateY(-2px) scale(1.025); }
+      .piece.draggable { cursor: grab; touch-action: none; }
+      .piece.dragging {
+        z-index: 9;
+        cursor: grabbing;
+        opacity: 0.94;
+        transition: none;
+        filter: drop-shadow(0 10px 7px rgba(0, 0, 0, 0.34));
+      }
+      .piece.moving-piece {
+        position: absolute;
+        z-index: 10;
+        margin: 0;
+        pointer-events: none;
+        transition: none;
+      }
+      .piece.move-source { opacity: 0; }
+      @keyframes hint-breathe {
+        0%, 100% { transform: scale(0.9); opacity: 0.7; }
+        50% { transform: scale(1.06); opacity: 1; }
+      }
+      .aside { display: flex; flex-direction: column; gap: 0.6rem; min-width: 0; }
+      .panel {
+        background: var(--card);
+        border: 1px solid var(--track);
+        border-radius: 10px;
+        padding: 0.7rem 0.85rem;
+        font-size: 0.85rem;
+      }
+      .panel h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 0.35rem; }
+      .moveThought { font-style: italic; }
+      .moveThought .who { color: var(--muted); font-style: normal; font-size: 0.78rem; display: block; margin-bottom: 0.15rem; }
+      .log { margin: 0; padding-left: 1.05rem; max-height: 200px; overflow-y: auto; }
+      .log li { margin: 0.15rem 0; color: var(--muted); }
+      .log li.latest { color: var(--ink); }
+      .banner {
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        padding: 0.45rem 0.7rem;
+        font-size: 0.85rem;
+        margin-bottom: 0.75rem;
+        display: none;
+      }
+      .banner.show { display: block; }
+      @media (prefers-reduced-motion: reduce) {
+        .cell.dark.hint::after { animation: none; }
+        .piece { transition: none; }
+      }
+      @media (max-width: 640px) { .table { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="banner" id="banner"></div>
+      <header>
+        <h1>Checkers</h1>
+        <button type="button" class="newgame" id="newgame">New game</button>
+      </header>
+      <p class="status" id="status">Setting up the board…</p>
+      <div class="table">
+        <div class="boardwrap"><div class="board" id="board"></div></div>
+        <div class="aside">
+          <div class="panel moveThought" id="moveThought-panel" hidden>
+            <span class="who">Damspeler says</span>
+            <span id="moveThought"></span>
+          </div>
+          <div class="panel">
+            <h2>Moves</h2>
+            <ol class="log" id="log"><li>No moves yet — red opens.</li></ol>
+          </div>
+        </div>
+      </div>
+      <dialog id="new-game-dialog" aria-labelledby="new-game-title">
+        <form class="new-game-form" id="new-game-form">
+          <h2 id="new-game-title">New game</h2>
+          <p class="dialog-intro">Choose the capture rule for this game.</p>
+          <fieldset class="rule-fieldset">
+            <legend>Captures</legend>
+            <div class="rule-tray" role="radiogroup" aria-label="Capture rule">
+              <button type="button" class="rule-key" role="radio" aria-checked="true" data-force-captures="true">
+                <strong>Required</strong>
+                <span>Standard rules. Take a capture when one is available.</span>
+              </button>
+              <button type="button" class="rule-key" role="radio" aria-checked="false" data-force-captures="false">
+                <strong>Optional</strong>
+                <span>Ordinary moves stay available when you can capture.</span>
+              </button>
+            </div>
+          </fieldset>
+          <div class="dialog-actions">
+            <button type="button" class="dialog-button secondary" id="cancel-new-game">Cancel</button>
+            <button type="button" class="dialog-button" id="start-new-game">Start game</button>
+          </div>
+        </form>
+      </dialog>
+    </main>
+    <script>
+      (function () {
+        'use strict';
+
+        // ── gezelPage helper: postMessage bridge to the first-party parent.
+        // The sandboxed page's only write path — the parent validates the
+        // tool against the type manifest and relays to the page-invoke
+        // route. Not embedded (opened in a browser tab) → invoke rejects
+        // and the board goes read-only.
+        var gezelPage = (function () {
+          var seq = 0;
+          var pending = {};
+          window.addEventListener('message', function (event) {
+            var d = event.data;
+            if (!d || d.__gezelPageResult !== true || typeof d.id !== 'string') return;
+            var entry = pending[d.id];
+            if (!entry) return;
+            delete pending[d.id];
+            clearTimeout(entry.timer);
+            if (d.ok) entry.resolve(d);
+            else entry.reject(new Error(d.error || 'invoke failed'));
+          });
+          return {
+            embedded: function () {
+              return window.parent !== window;
+            },
+            invoke: function (tool, input) {
+              return new Promise(function (resolve, reject) {
+                if (window.parent === window) {
+                  reject(new Error('not embedded in Gezel'));
+                  return;
+                }
+                seq += 1;
+                var id = 'pi-' + Date.now() + '-' + seq;
+                pending[id] = {
+                  resolve: resolve,
+                  reject: reject,
+                  timer: setTimeout(function () {
+                    delete pending[id];
+                    reject(new Error('invoke timed out'));
+                  }, 45000),
+                };
+                window.parent.postMessage(
+                  { __gezelPageInvoke: true, id: id, tool: tool, input: input || {} },
+                  '*',
+                );
+              });
+            },
+            refresh: function () {
+              if (window.parent !== window) window.parent.postMessage({ __gezelPageRefresh: true }, '*');
+            },
+          };
+        })();
+
+        // ── data plumbing: capability + projectId from our own path; state
+        // via capability-scoped polling of game.json (declared in
+        // pages.reads).
+        var parts = location.pathname.split('/').filter(Boolean);
+        var typeIdx = parts.indexOf('type');
+        var capability = typeIdx > 0 ? parts[typeIdx - 1] : null;
+        var projectId = typeIdx >= 0 ? parts[typeIdx + 1] : null;
+        var FILES = 'abcdefgh';
+
+        var state = null;
+        var selected = null;
+        var moveOrigin = null;
+        var movePath = [];
+        var previewSquares = null;
+        var animationSquares = null;
+        var busy = false;
+        var animating = false;
+        var suppressClickUntil = 0;
+        var newGameForceCaptures = true;
+        var pollTimer = null;
+        var failedPolls = 0;
+
+        function sqName(x, y) { return FILES[x] + String(8 - y); }
+        function parseSquare(name) {
+          return { x: FILES.indexOf(name[0].toLowerCase()), y: 8 - Number(name[1]) };
+        }
+        function withPiece(squares, x, y, ch) {
+          var index = y * 8 + x;
+          return squares.slice(0, index) + ch + squares.slice(index + 1);
+        }
+        function applyPreviewHop(squares, from, to) {
+          var start = parseSquare(from);
+          var end = parseSquare(to);
+          var ch = squares[start.y * 8 + start.x];
+          var next = withPiece(squares, start.x, start.y, '.');
+          if (Math.abs(start.x - end.x) === 2) {
+            next = withPiece(next, (start.x + end.x) / 2, (start.y + end.y) / 2, '.');
+          }
+          if (ch === 'r' && end.y === 0) ch = 'R';
+          if (ch === 'b' && end.y === 7) ch = 'B';
+          return withPiece(next, end.x, end.y, ch);
+        }
+        function squaresForRender() {
+          return previewSquares || animationSquares || (state && state.squares) || '.'.repeat(64);
+        }
+        function resetMovePreview() {
+          selected = null;
+          moveOrigin = null;
+          movePath = [];
+          previewSquares = null;
+        }
+        function beginMove(name) {
+          selected = name;
+          moveOrigin = name;
+          movePath = [name];
+          previewSquares = null;
+        }
+        function matchingMoves() {
+          if (!state || !moveOrigin || movePath.length === 0) return [];
+          return state.legalMoves.filter(function (move) {
+            if (move.from !== moveOrigin || move.path.length < movePath.length) return false;
+            for (var i = 0; i < movePath.length; i += 1) {
+              if (move.path[i] !== movePath[i]) return false;
+            }
+            return true;
+          });
+        }
+        function currentHints() {
+          var hints = {};
+          matchingMoves().forEach(function (move) {
+            var landing = move.path[movePath.length];
+            if (!landing) return;
+            if (!hints[landing]) hints[landing] = [];
+            hints[landing].push(move);
+          });
+          return hints;
+        }
+        function originMap() {
+          var origins = {};
+          if (!state) return origins;
+          if (movePath.length > 1 && selected) {
+            origins[selected] = true;
+            return origins;
+          }
+          state.legalMoves.forEach(function (move) { origins[move.from] = true; });
+          return origins;
+        }
+        function esc(s) {
+          return String(s).replace(/[&<>"]/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+          });
+        }
+
+        function setBanner(text) {
+          var el = document.getElementById('banner');
+          el.textContent = text || '';
+          el.className = text ? 'banner show' : 'banner';
+        }
+
+        function statusLine() {
+          if (!state) return 'Setting up the board…';
+          if (state.status === 'user_won') return 'You won! A gracious rematch awaits.';
+          if (state.status === 'ai_won') return 'The Damspeler takes this one — rematch?';
+          if (animating) return 'Piece in motion…';
+          if (busy) return 'Sending your move…';
+          if (movePath.length > 1) return 'Keep jumping — choose the next landing square.';
+          if (state.turn === 'ai') return 'Damspeler is thinking…';
+          var caps = state.legalMoves.some(function (m) { return m.captures.length > 0; });
+          if (caps && state.forceCaptures !== false) {
+            return 'Your move — a capture is available (captures are forced).';
+          }
+          if (caps) return 'Your move — a capture is available, but optional.';
+          return state.forceCaptures === false ? 'Your move — captures are optional.' : 'Your move.';
+        }
+
+        function render() {
+          document.getElementById('status').innerHTML =
+            state && state.turn === 'ai' && state.status === 'playing'
+              ? '<span class="thinking">' + esc(statusLine()) + '</span>'
+              : esc(statusLine());
+
+          var moveThoughtPanel = document.getElementById('moveThought-panel');
+          if (state && state.lastMoveThought) {
+            moveThoughtPanel.hidden = false;
+            document.getElementById('moveThought').textContent = state.lastMoveThought;
+          } else {
+            moveThoughtPanel.hidden = true;
+          }
+
+          var log = document.getElementById('log');
+          if (state && state.moveLog.length) {
+            log.innerHTML = state.moveLog
+              .slice(-8)
+              .map(function (m, i, arr) {
+                var text = (m.by === 'user' ? 'Red ' : 'Black ') + m.from +
+                  (m.captures.length ? 'x' : '-') + m.to;
+                return '<li' + (i === arr.length - 1 ? ' class="latest"' : '') + '>' + esc(text) + '</li>';
+              })
+              .join('');
+          }
+
+          var board = document.getElementById('board');
+          board.innerHTML = '';
+          if (!state) return;
+          var myTurn = state.turn === 'user' && state.status === 'playing' && !busy && !animating;
+          var origins = myTurn ? originMap() : {};
+          var hints = myTurn && selected ? currentHints() : {};
+          var shownSquares = squaresForRender();
+          for (var y = 0; y < 8; y += 1) {
+            for (var x = 0; x < 8; x += 1) {
+              (function (x, y) {
+                var name = sqName(x, y);
+                var ch = shownSquares[y * 8 + x];
+                var dark = (x + y) % 2 === 1;
+                var cell = document.createElement('div');
+                cell.dataset.square = name;
+                var cls = 'cell ' + (dark ? 'dark' : 'light');
+                if (name === selected) cls += ' selected';
+                if (hints[name]) cls += ' hint';
+                if (myTurn && origins[name]) cls += ' selectable';
+                if (!previewSquares && !animationSquares && state.lastMove) {
+                  if (name === state.lastMove.to) cls += ' last-move';
+                  if (name === state.lastMove.from) cls += ' last-move-from';
+                }
+                cell.className = cls;
+                var coord = document.createElement('span');
+                coord.className = 'coord';
+                coord.textContent = name.toUpperCase();
+                coord.setAttribute('aria-hidden', 'true');
+                cell.appendChild(coord);
+                if (ch !== '.') {
+                  var piece = document.createElement('div');
+                  var red = ch === 'r' || ch === 'R';
+                  piece.className = 'piece ' + (red ? 'red' : 'black');
+                  if (ch === 'R' || ch === 'B') {
+                    piece.className += ' king';
+                    piece.textContent = 'K';
+                  }
+                  if (myTurn && origins[name]) {
+                    piece.className += ' draggable';
+                    enablePieceDrag(piece, name);
+                  }
+                  cell.appendChild(piece);
+                }
+                cell.addEventListener('click', function () {
+                  if (!myTurn || Date.now() < suppressClickUntil) return;
+                  if (hints[name]) {
+                    playLanding(name);
+                  } else if (origins[name]) {
+                    if (selected === name && movePath.length <= 1) resetMovePreview();
+                    else beginMove(name);
+                    render();
+                  } else if (selected && movePath.length <= 1) {
+                    resetMovePreview();
+                    render();
+                  }
+                });
+                board.appendChild(cell);
+              })(x, y);
+            }
+          }
+        }
+
+        function prefersReducedMotion() {
+          return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        }
+
+        function capturedSquare(from, to) {
+          var start = parseSquare(from);
+          var end = parseSquare(to);
+          if (Math.abs(start.x - end.x) !== 2) return null;
+          return sqName((start.x + end.x) / 2, (start.y + end.y) / 2);
+        }
+
+        function animateHop(from, to) {
+          if (prefersReducedMotion()) return Promise.resolve();
+          var board = document.getElementById('board');
+          var sourceCell = board.querySelector('[data-square="' + from + '"]');
+          var targetCell = board.querySelector('[data-square="' + to + '"]');
+          var sourcePiece = sourceCell && sourceCell.querySelector('.piece');
+          if (!sourcePiece || !targetCell) return Promise.resolve();
+
+          var boardRect = board.getBoundingClientRect();
+          var sourceRect = sourcePiece.getBoundingClientRect();
+          var targetRect = targetCell.getBoundingClientRect();
+          var clone = sourcePiece.cloneNode(true);
+          clone.classList.remove('draggable', 'dragging', 'move-source');
+          clone.classList.add('moving-piece');
+          clone.style.left = sourceRect.left - boardRect.left + 'px';
+          clone.style.top = sourceRect.top - boardRect.top + 'px';
+          clone.style.width = sourceRect.width + 'px';
+          clone.style.height = sourceRect.height + 'px';
+          board.appendChild(clone);
+          sourcePiece.classList.add('move-source');
+
+          var dx = targetRect.left + targetRect.width / 2 - (sourceRect.left + sourceRect.width / 2);
+          var dy = targetRect.top + targetRect.height / 2 - (sourceRect.top + sourceRect.height / 2);
+          var turn = dx >= 0 ? 5 : -5;
+          var motion = clone.animate(
+            [
+              { transform: 'translate(0, 0) rotate(0deg) scale(1)' },
+              { transform: 'translate(' + dx * 0.55 + 'px, ' + dy * 0.55 + 'px) rotate(' + turn + 'deg) scale(1.1)', offset: 0.55 },
+              { transform: 'translate(' + dx + 'px, ' + dy + 'px) rotate(0deg) scale(1)' },
+            ],
+            { duration: 320, easing: 'cubic-bezier(.2,.76,.25,1)' },
+          );
+
+          var capture = capturedSquare(from, to);
+          var capturedPiece = capture && board.querySelector('[data-square="' + capture + '"] .piece');
+          var captureFinished = Promise.resolve();
+          if (capturedPiece) {
+            var captureMotion = capturedPiece.animate(
+              [
+                { transform: 'scale(1)', opacity: 1 },
+                { transform: 'scale(0.72) rotate(7deg)', opacity: 0 },
+              ],
+              { duration: 190, delay: 100, easing: 'ease-in' },
+            );
+            captureFinished = captureMotion.finished.catch(function () {});
+          }
+
+          return Promise.all([motion.finished.catch(function () {}), captureFinished]).then(function () {
+            clone.remove();
+            sourcePiece.classList.remove('move-source');
+          });
+        }
+
+        function paintCurrentMove() {
+          var board = document.getElementById('board');
+          Array.prototype.forEach.call(board.querySelectorAll('.cell.selected, .cell.hint'), function (cell) {
+            cell.classList.remove('selected', 'hint');
+          });
+          if (selected) {
+            var selectedCell = board.querySelector('[data-square="' + selected + '"]');
+            if (selectedCell) selectedCell.classList.add('selected');
+          }
+          var hints = currentHints();
+          Object.keys(hints).forEach(function (name) {
+            var cell = board.querySelector('[data-square="' + name + '"]');
+            if (cell) cell.classList.add('hint');
+          });
+        }
+
+        function landingAtPoint(piece, x, y) {
+          var oldPointerEvents = piece.style.pointerEvents;
+          piece.style.pointerEvents = 'none';
+          var hit = document.elementFromPoint(x, y);
+          piece.style.pointerEvents = oldPointerEvents;
+          var cell = hit && hit.closest ? hit.closest('.cell') : null;
+          var name = cell && cell.dataset.square;
+          return name && currentHints()[name] ? name : null;
+        }
+
+        function nearestThrownLanding(x, y, vx, vy) {
+          var speed = Math.sqrt(vx * vx + vy * vy);
+          if (speed < 0.18) return null;
+          var travel = Math.min(100, speed * 105);
+          var px = x + (vx / speed) * travel;
+          var py = y + (vy / speed) * travel;
+          var best = null;
+          var bestDistance = Infinity;
+          Object.keys(currentHints()).forEach(function (name) {
+            var cell = document.querySelector('[data-square="' + name + '"]');
+            if (!cell) return;
+            var rect = cell.getBoundingClientRect();
+            var cx = rect.left + rect.width / 2;
+            var cy = rect.top + rect.height / 2;
+            var distance = Math.sqrt((cx - px) * (cx - px) + (cy - py) * (cy - py));
+            if (distance < bestDistance && distance < rect.width * 0.9) {
+              best = name;
+              bestDistance = distance;
+            }
+          });
+          return best;
+        }
+
+        function enablePieceDrag(piece, name) {
+          piece.addEventListener('pointerdown', function (event) {
+            if (event.button !== 0 || busy || animating) return;
+            var start = { x: event.clientX, y: event.clientY, at: event.timeStamp };
+            var previous = start;
+            var last = start;
+            var moved = false;
+            piece.setPointerCapture(event.pointerId);
+
+            function onMove(moveEvent) {
+              var dx = moveEvent.clientX - start.x;
+              var dy = moveEvent.clientY - start.y;
+              if (!moved && Math.sqrt(dx * dx + dy * dy) < 4) return;
+              if (!moved) {
+                moved = true;
+                if (movePath.length <= 1 && moveOrigin !== name) beginMove(name);
+                paintCurrentMove();
+                piece.classList.add('dragging');
+              }
+              previous = last;
+              last = { x: moveEvent.clientX, y: moveEvent.clientY, at: moveEvent.timeStamp };
+              piece.style.transform =
+                'translate(' + dx + 'px, ' + dy + 'px) rotate(' + dx * 0.035 + 'deg) scale(1.06)';
+            }
+
+            function onEnd(endEvent) {
+              piece.removeEventListener('pointermove', onMove);
+              piece.removeEventListener('pointerup', onEnd);
+              piece.removeEventListener('pointercancel', onEnd);
+              try { piece.releasePointerCapture(event.pointerId); } catch (_) {}
+              if (!moved) return;
+
+              // Swallow only the synthetic click emitted with this drag;
+              // the next deliberate hop should be available immediately.
+              suppressClickUntil = Date.now() + 80;
+              var elapsed = Math.max(1, last.at - previous.at);
+              var vx = (last.x - previous.x) / elapsed;
+              var vy = (last.y - previous.y) / elapsed;
+              var landing = landingAtPoint(piece, endEvent.clientX, endEvent.clientY) ||
+                nearestThrownLanding(endEvent.clientX, endEvent.clientY, vx, vy);
+              var currentTransform = piece.style.transform;
+              piece.classList.remove('dragging');
+              piece.style.transform = '';
+              if (landing) {
+                playLanding(landing);
+                return;
+              }
+
+              var rebound = piece.animate(
+                [
+                  { transform: currentTransform },
+                  { transform: 'translate(0, 0) rotate(0deg) scale(1)' },
+                ],
+                { duration: 180, easing: 'cubic-bezier(.2,.8,.3,1)' },
+              );
+              rebound.finished.catch(function () {}).then(render);
+            }
+
+            piece.addEventListener('pointermove', onMove);
+            piece.addEventListener('pointerup', onEnd);
+            piece.addEventListener('pointercancel', onEnd);
+          });
+        }
+
+        function playLanding(landing) {
+          var candidates = currentHints()[landing];
+          if (!candidates || !selected || busy || animating) return;
+          var from = selected;
+          var before = squaresForRender();
+          animating = true;
+          document.getElementById('status').textContent = statusLine();
+          animateHop(from, landing).then(function () {
+            previewSquares = applyPreviewHop(before, from, landing);
+            movePath.push(landing);
+            selected = landing;
+            animating = false;
+            var remaining = matchingMoves();
+            var hasNext = remaining.some(function (move) { return move.path.length > movePath.length; });
+            if (hasNext) {
+              render();
+              return;
+            }
+            var complete = remaining.find(function (move) { return move.path.length === movePath.length; });
+            if (!complete) {
+              resetMovePreview();
+              setBanner('That jump sequence is no longer available. Please choose again.');
+              render();
+              return;
+            }
+            submitMove(complete);
+          });
+        }
+
+        function submitMove(move) {
+          busy = true;
+          render();
+          gezelPage
+            .invoke('user_move', { from: move.from, to: move.to })
+            .then(function (res) {
+              busy = false;
+              if (res.reaction && res.reaction.delivered === false && res.reaction.reason === 'engagement-off') {
+                setBanner('Move played — but the AI is off in Settings, so the Damspeler cannot reply.');
+              }
+              return poll();
+            })
+            .catch(function (err) {
+              busy = false;
+              resetMovePreview();
+              setBanner(String(err && err.message ? err.message : err));
+              render();
+            });
+        }
+
+        function animateServerMove(sequence, next) {
+          animating = true;
+          resetMovePreview();
+          animationSquares = state.squares;
+          render();
+          var index = 1;
+
+          function nextHop() {
+            if (index >= sequence.path.length) return Promise.resolve();
+            var from = sequence.path[index - 1];
+            var to = sequence.path[index];
+            return animateHop(from, to).then(function () {
+              animationSquares = applyPreviewHop(animationSquares, from, to);
+              index += 1;
+              render();
+              return nextHop();
+            });
+          }
+
+          return nextHop().then(function () {
+            animationSquares = null;
+            state = next;
+            animating = false;
+            render();
+          });
+        }
+
+        function syncCaptureChoice() {
+          Array.prototype.forEach.call(document.querySelectorAll('.rule-key'), function (button) {
+            button.setAttribute(
+              'aria-checked',
+              String((button.dataset.forceCaptures === 'true') === newGameForceCaptures),
+            );
+          });
+        }
+
+        function openNewGameDialog() {
+          if (!gezelPage.embedded() || busy || animating) return;
+          newGameForceCaptures = !state || state.forceCaptures !== false;
+          syncCaptureChoice();
+          document.getElementById('new-game-dialog').showModal();
+        }
+
+        function newGame(forceCaptures) {
+          if (!gezelPage.embedded()) return;
+          resetMovePreview();
+          animationSquares = null;
+          busy = true;
+          render();
+          gezelPage
+            .invoke('new_game', { forceCaptures: forceCaptures })
+            .then(function () {
+              busy = false;
+              setBanner('');
+              return poll();
+            })
+            .catch(function (err) {
+              busy = false;
+              setBanner(String(err && err.message ? err.message : err));
+              render();
+            });
+        }
+
+        function transitionState(next) {
+          if (!state) {
+            state = next;
+            resetMovePreview();
+            render();
+            return Promise.resolve();
+          }
+
+          var addedMove = next.moveLog.length > state.moveLog.length;
+          if (!addedMove) {
+            state = next;
+            render();
+            return Promise.resolve();
+          }
+
+          if (previewSquares) {
+            state = next;
+            resetMovePreview();
+            render();
+            return Promise.resolve();
+          }
+
+          var last = next.lastMove;
+          if (last && last.by === 'ai') {
+            var sequence = state.legalMoves.find(function (move) {
+              return move.from === last.from && move.to === last.to;
+            });
+            if (sequence) return animateServerMove(sequence, next);
+          }
+
+          state = next;
+          resetMovePreview();
+          render();
+          return Promise.resolve();
+        }
+
+        function poll() {
+          if (!capability || !projectId) return Promise.resolve();
+          return fetch(
+            '/preview/' + encodeURIComponent(capability) + '/workspace/' + encodeURIComponent(projectId) + '/game.json',
+            { cache: 'no-store' },
+          )
+            .then(function (r) {
+              if (!r.ok) throw new Error('poll ' + r.status);
+              return r.json();
+            })
+            .then(function (next) {
+              failedPolls = 0;
+              return transitionState(next);
+            })
+            .catch(function () {
+              failedPolls += 1;
+              // The 2 h absolute capability expiry surfaces as failing
+              // polls — ask the parent to re-mint and reload the frame.
+              if (failedPolls === 3) gezelPage.refresh();
+            });
+        }
+
+        function schedule() {
+          if (pollTimer) clearTimeout(pollTimer);
+          var wait = state && state.turn === 'ai' && state.status === 'playing' ? 1500 : 5000;
+          pollTimer = setTimeout(function () {
+            poll().then(schedule, schedule);
+          }, wait);
+        }
+
+        Array.prototype.forEach.call(document.querySelectorAll('.rule-key'), function (button) {
+          button.addEventListener('click', function () {
+            newGameForceCaptures = button.dataset.forceCaptures === 'true';
+            syncCaptureChoice();
+          });
+        });
+        document.getElementById('newgame').addEventListener('click', openNewGameDialog);
+        document.getElementById('cancel-new-game').addEventListener('click', function () {
+          document.getElementById('new-game-dialog').close();
+        });
+        document.getElementById('start-new-game').addEventListener('click', function () {
+          document.getElementById('new-game-dialog').close();
+          newGame(newGameForceCaptures);
+        });
+        if (!gezelPage.embedded()) {
+          setBanner('Read-only view — moves need the Gezel app (open this project and use the Output tab).');
+        }
+        poll().then(schedule, schedule);
+      })();
+    </script>
+  </body>
+</html>

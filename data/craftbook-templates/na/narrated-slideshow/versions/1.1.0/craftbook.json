@@ -1,0 +1,136 @@
+{
+  "id": "narrated-slideshow",
+  "name": "Animated Content Slideshow",
+  "description": "Turn source content into a real MP4 slideshow video and animated GIF without recruiting a Developer to build an HTML player. A planner locks the story and one message per scene. A copywriter writes slideshow.md as ordinary Markdown with one H1 per scene. A video specialist uses the pre-authorized DocBlocks toolset to perform one atomic MP4+GIF conversion, preview representative frames, repair the Markdown when needed, and save slideshow.mp4 and slideshow.gif in the artifacts drawer.\n\nThe source of truth is Markdown. DocBlocks selects compatible templates automatically; get_authoring_context is optional when exact animation, theme, or target guidance is useful. The rendered targets require the DocBlocks media runtime (Chromium and FFmpeg); if unavailable, report that blocker instead of substituting HTML.",
+  "entryStepId": "outline",
+  "triggers": [
+    "animated slideshow",
+    "turn this content into a video",
+    "make an animated gif from this content",
+    "content to mp4",
+    "markdown to video",
+    "explainer slideshow",
+    "make a video from slides"
+  ],
+  "toolsets": [
+    {
+      "toolsetId": "docblocks",
+      "sourceId": "bundled",
+      "autoAllow": true,
+      "reason": "convert slideshow.md to MP4 and animated GIF, preview frames, and save both rendered files without a prompt per call"
+    }
+  ],
+  "steps": [
+    {
+      "id": "outline",
+      "name": "Outline the scenes",
+      "description": "Lock the audience, story arc, one message per scene, and media acceptance criteria.",
+      "prompt": "Plan the animated slideshow before authoring it. 1. Identify the audience, viewing context, aspect/orientation, and one takeaway. 2. Draft 6-12 scenes unless the user requests another length: each scene needs a title, one message, 2-4 short on-screen points, and an optional caption line. 3. Mark where an existing image or small table genuinely helps; do not invent or download unapproved assets. 4. Choose landscape or portrait and a restrained motion style. 5. Write acceptance criteria: every outlined scene appears once and in order, text stays readable at video size, source facts remain grounded, frames show a consistent theme, the MP4 plays, the GIF loops, and both real files are saved in artifacts. Write notes/outline.md and call write_task_note with scene count, orientation, and takeaway. Do not build HTML or media bytes.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/outline.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/outline.md",
+            "bytes": 180
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/outline.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "outline",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the Markdown slideshow",
+      "description": "Write slideshow.md with one H1 heading per scene.",
+      "prompt": "Write slideshow.md to notes/outline.md. 1. Use exactly one `#` level-one heading per scene; each H1 is a deliberate scene boundary. Do not add `---` separators unless a visible horizontal rule is intended. 2. Under each H1, use 2-4 short bullet phrases, a compact table, or a brief caption—not paragraphs. 3. Bold the load-bearing fact or phrase. 4. Use only source-grounded facts and existing workspace assets with meaningful alt text. 5. Keep the first scene a title/setup and the final scene the takeaway or next action. 6. On loop-back, repair only the frames the reviewer names. Call write_task_note with the path and H1 scene count. Do not create HTML, JavaScript, MP4, GIF, or base64.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "slideshow.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "slideshow.md",
+            "bytes": 650
+          },
+          {
+            "kind": "contains",
+            "file": "slideshow.md",
+            "pattern": "(?:^|\\n)#\\s+\\S",
+            "label": "at least one H1 scene heading"
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "publish"
+    },
+    {
+      "id": "publish",
+      "name": "Publish the video and GIF",
+      "description": "Convert slideshow.md once to MP4 and animated GIF, preview frames, and save both files.",
+      "prompt": "Publish slideshow.md with the pre-authorized DocBlocks tools. 1. Call list_roots first and identify the read-enabled workspace root and write-enabled artifacts root. If there is no write root, report the blocker instead of substituting HTML. 2. Call get_authoring_context with targetFormat \"mp4\", goal \"visual-polish\", and the slideshow.md file source only when exact animation or theme guidance would help; ordinary Markdown needs no preflight. 3. Call convert_document ONCE with source `{ \"kind\": \"file\", \"rootId\": <workspace root id>, \"path\": \"slideshow.md\" }`, targets for MP4 and GIF in the orientation from notes/outline.md, `animationsEnabled: true`, moderate fps, a readable captionStyle, GIF `loop: 0`, an audience-appropriate theme, and `autoTemplates: true`. One call keeps both outputs on the same normalized source and rolls back the batch on failure. 4. Call preview_document on both artifact URIs and inspect representative frames: expected scene count/order, readable text, consistent theme, no clipping, final action present. Repair slideshow.md and reconvert on failure. 5. Call save_artifact for the GIF first with destination path slideshow.gif, then call save_artifact for the MP4 with destination path slideshow.mp4 in the artifacts root and `ifExists: \"error\"`; saving MP4 last lets the step advance only after both files exist. On loop-back, replace only with each file's current expectedSha256. 6. Call write_task_note with both paths, dimensions, fps, theme, and preview result. If Chromium or FFmpeg is unavailable, report that exact media-runtime blocker; do not build an HTML player.",
+      "suggestedRole": "video-generator",
+      "advanceWhen": {
+        "file": "slideshow.mp4",
+        "minBytes": 1,
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "slideshow.mp4",
+            "bytes": 1000,
+            "artifact": true
+          },
+          {
+            "kind": "minBytes",
+            "file": "slideshow.gif",
+            "bytes": 1000,
+            "artifact": true
+          }
+        ],
+        "onReject": "publish",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Review the saved MP4 and GIF against the story and visual criteria.",
+      "prompt": "Review artifacts/slideshow.mp4 and artifacts/slideshow.gif against every criterion in notes/outline.md. Use list_roots to identify the artifacts root and preview_document on each file source. Confirm both files open, the MP4 contains every scene in order, the GIF loops, text is readable, source facts are preserved, the theme and motion are consistent, nothing clips, and the final takeaway is present. Write PASS/FAIL for every criterion and name the frame/scene for any failure.\n\nThen route:\n\n- Every criterion PASSES → call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- Any criterion FAILS → write the exact gaps to task notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })`.\n\nNever route to finish while any criterion is unmet. After about three unproductive loops, stop with DONE_WITH_CONCERNS.",
+      "suggestedRole": "reviewer",
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All story, frame, and media-file checks passed.",
+      "prompt": "Every acceptance criterion passed. Call write_task_note with a short DONE summary naming slideshow.md as the source and artifacts/slideshow.mp4 plus artifacts/slideshow.gif as the finished deliverables, with dimensions, scene count, and confirmation that both previews passed. Then report DONE.",
+      "suggestedRole": "video-generator",
+      "terminal": true
+    }
+  ],
+  "version": "1.1.0",
+  "releasedAt": "2026-07-30T00:00:00Z"
+}
