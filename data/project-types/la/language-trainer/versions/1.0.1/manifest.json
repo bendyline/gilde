@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.1",
+  "releasedAt": "2026-08-01T00:00:00Z",
+  "extends": "content-writing",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "language": {
+        "type": "string",
+        "title": "Which language?",
+        "description": "The language you want to practice, e.g. Spanish, Japanese, French.",
+        "default": "Spanish"
+      }
+    },
+    "required": [
+      "language"
+    ]
+  },
+  "nameTemplate": "{{language}} Language Trainer",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "language-trainer",
+      "voorman": true
+    }
+  ],
+  "scripts": {
+    "progress-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'progress-store',\n  description:\n    \"Read and update the student's language-learning progress (level, sessions, streak, notes). Call action:'status' at the start of a session to see where they are; action:'record' after a practice exchange to log it; action:'advance' when they're ready for the next level.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'status', 'record', or 'advance'.\",\n      required: true,\n    },\n    note: {\n      type: 'string',\n      description: 'Optional short note to append (what was practiced, a struggle to remember).',\n    },\n  },\n  outputs: {\n    level: { type: 'number', description: 'Current level (1+).' },\n    sessions: { type: 'number', description: 'Total practice sessions recorded.' },\n    streak: { type: 'number', description: 'Consecutive-session streak.' },\n    message: { type: 'string', description: 'Human-readable summary of the current state.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\ninterface Progress {\n  language: string;\n  level: number;\n  sessions: number;\n  streak: number;\n  notes: string[];\n}\n\nasync function load(): Promise<Progress> {\n  try {\n    const raw = await gezel.fs.read('progress.json');\n    const p = JSON.parse(raw) as Partial<Progress>;\n    return {\n      language: p.language ?? 'your language',\n      level: p.level ?? 1,\n      sessions: p.sessions ?? 0,\n      streak: p.streak ?? 0,\n      notes: Array.isArray(p.notes) ? p.notes : [],\n    };\n  } catch {\n    return { language: 'your language', level: 1, sessions: 0, streak: 0, notes: [] };\n  }\n}\n\nconst p = await load();\nif (input.action === 'record') {\n  p.sessions += 1;\n  p.streak += 1;\n  if (input.note) p.notes.push(input.note);\n} else if (input.action === 'advance') {\n  p.level += 1;\n  p.notes.push(`Advanced to level ${p.level}${input.note ? `: ${input.note}` : ''}`);\n}\nif (input.action !== 'status') {\n  await gezel.fs.write('progress.json', `${JSON.stringify(p, null, 2)}\\n`);\n}\n\ngezel.output({\n  level: p.level,\n  sessions: p.sessions,\n  streak: p.streak,\n  message: `Learning ${p.language}: level ${p.level}, ${p.sessions} session(s), ${p.streak}-session streak.`,\n});\n"
+  },
+  "tools": [
+    {
+      "name": "record_session",
+      "description": "Log that the student practiced this session.",
+      "script": "progress-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "record"
+      }
+    },
+    {
+      "name": "advance_level",
+      "description": "Advance the student to the next level.",
+      "script": "progress-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "advance"
+      }
+    }
+  ],
+  "pages": {
+    "entry": "dashboard/index.html",
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "progress.json"
+      }
+    ]
+  },
+  "workspaceSeed": [
+    "progress.json"
+  ]
+}

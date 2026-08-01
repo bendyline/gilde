@@ -57,6 +57,23 @@ against the JSON Schemas in schemas/ (generated from gezel's
 
 canonical Zod schemas — do not edit them here).
 
+## Try the project pages locally
+
+Run the standalone page gallery from the repository root:
+
+```
+npm run demos
+```
+
+Then open [http://127.0.0.1:4173/](http://127.0.0.1:4173/). The home page
+links to every latest project-type web experience. Each page recognizes
+that it is outside Gezel, uses local sample data, and can be reset by
+reloading. To choose a different address:
+
+```
+npm run demos -- --host 127.0.0.1 --port 8080
+```
+
 ## Licensing
 
 The catalog structure and tooling are MIT. Each model entry carries its

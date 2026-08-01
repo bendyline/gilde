@@ -1,0 +1,212 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.1",
+  "releasedAt": "2026-08-01T00:00:00Z",
+  "extends": "job-hunt",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "role": {
+        "type": "string",
+        "title": "What role are you hunting for?",
+        "description": "The role or title you're targeting — e.g. Staff Engineer, Product Designer, Data Analyst.",
+        "default": "Software Engineer"
+      },
+      "focus": {
+        "type": "string",
+        "title": "Anything about your search?",
+        "description": "Optional context for your coach — location constraints, timeline, dream companies.",
+        "default": "Just getting started."
+      }
+    },
+    "required": [
+      "role",
+      "focus"
+    ]
+  },
+  "nameTemplate": "{{role}} Job Hunt",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "career-coach",
+      "voorman": true
+    },
+    {
+      "templateId": "mock-interviewer"
+    }
+  ],
+  "scripts": {
+    "application-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { logStore, rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'application-store',\n  description:\n    \"Read and update the job-search pipeline (applications in pipeline.json, activity in activity.json). Call action:'status' at the start of a session to see where the search stands; 'record_application' the moment the user mentions applying somewhere; 'advance_stage' when reality moves; 'log_activity' for follow-ups, scheduled interviews, and thank-yous.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'status', 'record_application', 'advance_stage', or 'log_activity'.\",\n      required: true,\n    },\n    company: { type: 'string', description: 'Company name (identifies the application when id is omitted).' },\n    role: { type: 'string', description: 'Role title for a new application.' },\n    link: { type: 'string', description: 'Posting or application link.' },\n    notes: { type: 'string', description: 'Free-form notes for a new application.' },\n    id: { type: 'string', description: \"Application id (e.g. 'acme-staff-engineer') when advancing or logging.\" },\n    stage: {\n      type: 'string',\n      description: 'Target stage for advance_stage: applied, screening, interview, offer, or closed.',\n    },\n    outcome: { type: 'string', description: \"With stage 'closed': signed, rejected, or withdrawn.\" },\n    kind: {\n      type: 'string',\n      description: \"Activity kind for log_activity: follow-up, interview-scheduled, thank-you, offer-received, or note.\",\n    },\n    note: { type: 'string', description: 'The activity note for log_activity, or a note on a stage change.' },\n    due: { type: 'string', description: 'Due date (ISO) for a follow-up.' },\n  },\n  outputs: {\n    applications: { type: 'number', description: 'Total applications tracked.' },\n    summary: { type: 'string', description: 'Human-readable pipeline summary.' },\n    stale: { type: 'json', description: 'Active applications untouched for over 7 days.' },\n    followUps: { type: 'json', description: 'Follow-ups due within 7 days or overdue.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\nconst STAGES: [string, ...string[]] = ['applied', 'screening', 'interview', 'offer', 'closed'];\nconst OUTCOMES = ['signed', 'rejected', 'withdrawn'];\nconst WEEK_MS = 7 * 24 * 60 * 60 * 1000;\n\nconst roster = rosterStore(gezel.fs, 'pipeline.json', { stages: STAGES, idPrefix: 'app' });\nconst activity = logStore(gezel.fs, 'activity.json');\n\nfunction slugify(s: string): string {\n  return (\n    s\n      .toLowerCase()\n      .replace(/[^a-z0-9]+/g, '-')\n      .replace(/^-+|-+$/g, '') || 'application'\n  );\n}\n\nasync function freshId(company: string, role?: string): Promise<string> {\n  const base = slugify(role ? `${company} ${role}` : company);\n  let candidate = base;\n  for (let n = 2; (await roster.get(candidate)) !== null; n += 1) {\n    candidate = `${base}-${n}`;\n  }\n  return candidate;\n}\n\nasync function resolveId(): Promise<string> {\n  if (input.id) {\n    if ((await roster.get(input.id)) === null) throw new Error(`No application '${input.id}'.`);\n    return input.id;\n  }\n  if (input.company) {\n    const wanted = input.company.toLowerCase();\n    const matches = (await roster.list()).filter(\n      (r) => String(r.fields.company ?? '').toLowerCase() === wanted,\n    );\n    if (matches.length === 1) return matches[0]!.id;\n    if (matches.length > 1) {\n      throw new Error(\n        `Multiple applications match company '${input.company}': ${matches.map((m) => m.id).join(', ')}. Pass id.`,\n      );\n    }\n  }\n  throw new Error(\"Pass 'id' or a unique 'company' to identify the application.\");\n}\n\nasync function summarize(): Promise<{\n  applications: number;\n  summary: string;\n  stale: unknown[];\n  followUps: unknown[];\n}> {\n  const records = await roster.list();\n  const counts = await roster.counts();\n  const now = Date.now();\n  const stale = records\n    .filter((r) => r.status !== 'closed' && now - Date.parse(r.updatedAt) > WEEK_MS)\n    .map((r) => ({\n      id: r.id,\n      company: r.fields.company ?? r.id,\n      stage: r.status,\n      daysQuiet: Math.floor((now - Date.parse(r.updatedAt)) / (24 * 60 * 60 * 1000)),\n    }));\n  const followUps = (await activity.list({ kind: 'follow-up' }))\n    .filter((e) => {\n      const due = typeof e.data?.dueAt === 'string' ? Date.parse(e.data.dueAt) : null;\n      return due !== null && due <= now + WEEK_MS;\n    })\n    .map((e) => ({\n      note: e.note ?? '',\n      dueAt: e.data?.dueAt,\n      applicationId: e.data?.applicationId,\n      overdue: typeof e.data?.dueAt === 'string' && Date.parse(e.data.dueAt) < now,\n    }));\n  const active = records.filter((r) => r.status !== 'closed').length;\n  const stageLine = STAGES.filter((s) => (counts[s] ?? 0) > 0)\n    .map((s) => `${s} ${counts[s]}`)\n    .join(', ');\n  const summary = records.length\n    ? `${active} application(s) in play (${stageLine || 'none'}). ${stale.length} stale, ${followUps.length} follow-up(s) due this week.`\n    : 'No applications tracked yet.';\n  return { applications: records.length, summary, stale, followUps };\n}\n\nif (input.action === 'record_application') {\n  if (!input.company) throw new Error(\"record_application needs 'company'.\");\n  const id = await freshId(input.company, input.role);\n  const record = await roster.add({\n    id,\n    fields: {\n      company: input.company,\n      ...(input.role ? { role: input.role } : {}),\n      ...(input.link ? { link: input.link } : {}),\n      ...(input.notes ? { notes: input.notes } : {}),\n    },\n  });\n  await activity.append({\n    kind: 'applied',\n    note: `Applied to ${input.company}${input.role ? ` for ${input.role}` : ''}.`,\n    data: { applicationId: record.id },\n  });\n} else if (input.action === 'advance_stage') {\n  if (!input.stage) throw new Error(\"advance_stage needs 'stage'.\");\n  if (!STAGES.includes(input.stage)) {\n    throw new Error(`Unknown stage '${input.stage}'. Stages: ${STAGES.join(', ')}.`);\n  }\n  if (input.outcome && input.stage !== 'closed') {\n    throw new Error(\"'outcome' only applies when closing (stage 'closed').\");\n  }\n  if (input.outcome && !OUTCOMES.includes(input.outcome)) {\n    throw new Error(`Unknown outcome '${input.outcome}'. Outcomes: ${OUTCOMES.join(', ')}.`);\n  }\n  const id = await resolveId();\n  await roster.transition(id, input.stage, input.note ? { note: input.note } : {});\n  if (input.outcome) await roster.update(id, { fields: { outcome: input.outcome } });\n  const company = String((await roster.get(id))?.fields.company ?? id);\n  await activity.append({\n    kind: 'stage',\n    note: `${company} moved to ${input.stage}${input.outcome ? ` (${input.outcome})` : ''}.`,\n    data: { applicationId: id },\n  });\n} else if (input.action === 'log_activity') {\n  if (!input.note) throw new Error(\"log_activity needs 'note'.\");\n  let applicationId: string | undefined;\n  if (input.id || input.company) {\n    applicationId = await resolveId();\n    // A logged touch counts as attention — it resets the staleness clock.\n    await roster.update(applicationId, input.note ? { note: input.note } : {});\n  }\n  await activity.append({\n    kind: input.kind ?? 'note',\n    note: input.note,\n    data: {\n      ...(applicationId ? { applicationId } : {}),\n      ...(input.due ? { dueAt: input.due } : {}),\n    },\n  });\n} else if (input.action !== 'status') {\n  throw new Error(\n    `Unknown action '${input.action}'. Use status, record_application, advance_stage, or log_activity.`,\n  );\n}\n\ngezel.output(await summarize());\n"
+  },
+  "tools": [
+    {
+      "name": "record_application",
+      "description": "Track a new job application the moment it happens.",
+      "script": "application-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "company": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "role": {
+            "type": "string",
+            "description": "Role title."
+          },
+          "link": {
+            "type": "string",
+            "description": "Posting or application link."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Anything worth remembering about this one."
+          }
+        },
+        "required": [
+          "company"
+        ]
+      },
+      "bind": {
+        "action": "record_application"
+      }
+    },
+    {
+      "name": "advance_stage",
+      "description": "Move an application to a new pipeline stage (applied, screening, interview, offer, closed).",
+      "script": "application-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Application id."
+          },
+          "company": {
+            "type": "string",
+            "description": "Company name (when id is omitted)."
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "applied",
+              "screening",
+              "interview",
+              "offer",
+              "closed"
+            ],
+            "description": "The stage reality moved to."
+          },
+          "note": {
+            "type": "string",
+            "description": "What happened."
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "signed",
+              "rejected",
+              "withdrawn"
+            ],
+            "description": "Only when closing: how it ended."
+          }
+        },
+        "required": [
+          "stage"
+        ]
+      },
+      "bind": {
+        "action": "advance_stage"
+      }
+    },
+    {
+      "name": "log_activity",
+      "description": "Log activity on the search — a follow-up to send, an interview scheduled, a thank-you sent.",
+      "script": "application-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Application id this activity belongs to."
+          },
+          "company": {
+            "type": "string",
+            "description": "Company name (when id is omitted)."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "follow-up",
+              "interview-scheduled",
+              "thank-you",
+              "offer-received",
+              "note"
+            ],
+            "description": "What kind of activity this is."
+          },
+          "note": {
+            "type": "string",
+            "description": "The activity itself."
+          },
+          "due": {
+            "type": "string",
+            "description": "Due date (ISO) for a follow-up."
+          }
+        },
+        "required": [
+          "note"
+        ]
+      },
+      "bind": {
+        "action": "log_activity"
+      }
+    },
+    {
+      "name": "pipeline_status",
+      "description": "See the whole pipeline: counts per stage, stale applications, and follow-ups due this week.",
+      "script": "application-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "status"
+      }
+    }
+  ],
+  "craftbooks": [
+    "tailor-resume",
+    "company-research-brief",
+    "mock-interview",
+    "offer-compare",
+    "weekly-pipeline-review"
+  ],
+  "schedules": [
+    {
+      "cron": "0 17 * * 5",
+      "craftbook": "weekly-pipeline-review",
+      "consent": "ask",
+      "overlap": "skip"
+    }
+  ],
+  "pages": {
+    "entry": "dashboard/index.html",
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "pipeline.json"
+      },
+      {
+        "source": "workspace",
+        "path": "activity.json"
+      }
+    ]
+  },
+  "workspaceSeed": [
+    "pipeline.json",
+    "activity.json"
+  ]
+}

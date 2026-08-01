@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.1",
+  "releasedAt": "2026-08-01T00:00:00Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "business": {
+        "type": "string",
+        "title": "What do you do?",
+        "description": "One line about the business — e.g. 'freelance brand design'.",
+        "default": "freelance work"
+      }
+    },
+    "required": [
+      "business"
+    ]
+  },
+  "nameTemplate": "Freelance Office",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "kantoormeester",
+      "voorman": true
+    }
+  ],
+  "tools": [
+    {
+      "name": "record_invoice",
+      "description": "Add an invoice to the book (amount in ordinary units).",
+      "script": "office-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "client": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "due": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "client",
+          "amount"
+        ]
+      },
+      "bind": {
+        "action": "record_invoice"
+      }
+    },
+    {
+      "name": "invoice_sent",
+      "description": "Mark an invoice sent to the client.",
+      "script": "office-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "bind": {
+        "action": "invoice_sent"
+      }
+    },
+    {
+      "name": "invoice_paid",
+      "description": "Mark an invoice paid.",
+      "script": "office-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "bind": {
+        "action": "invoice_paid"
+      }
+    },
+    {
+      "name": "office_status",
+      "description": "The money picture: outstanding, overdue, paid this month.",
+      "script": "office-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "status"
+      }
+    },
+    {
+      "name": "list_invoices",
+      "description": "Read the whole invoice book.",
+      "script": "office-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "list_invoices"
+      }
+    }
+  ],
+  "craftbooks": [
+    "proposal-sow",
+    "weekly-review"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "dashboard/index.html",
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "invoices.json"
+      }
+    ]
+  },
+  "workspaceSeed": [
+    "invoices.json"
+  ],
+  "scripts": {
+    "office-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'office-store',\n  description:\n    \"Read and update the invoice book (invoices.json). Call action:'status' for outstanding/overdue/paid-this-month; 'record_invoice' when work is billed (amount in ordinary units, e.g. 1200.00); 'invoice_sent' / 'invoice_paid' as reality moves; 'list_invoices' to read the book.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description:\n        \"One of 'status', 'record_invoice', 'invoice_sent', 'invoice_paid', or 'list_invoices'.\",\n      required: true,\n    },\n    client: { type: 'string', description: 'Client name.' },\n    amount: { type: 'number', description: 'Invoice amount in ordinary units, e.g. 1200.00.' },\n    due: { type: 'string', description: 'Due date (ISO), e.g. 2026-08-15.' },\n    note: { type: 'string', description: 'Short note (what the invoice covers).' },\n    id: { type: 'string', description: \"Invoice id, e.g. 'inv-3'.\" },\n  },\n  outputs: {\n    invoices: { type: 'number', description: 'Invoices in the book.' },\n    outstandingCents: { type: 'number', description: 'Total sent-but-unpaid, in cents.' },\n    overdue: { type: 'number', description: 'Count of overdue invoices.' },\n    summary: { type: 'string', description: 'Human-readable office summary.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── office-rules-start ──\n// Pure derivations over rosterStore-shaped invoice records: statuses are\n// draft -> sent -> paid; fields carry {client, amountCents, dueAt, note}.\n\nfunction toCents(amount) {\n  if (typeof amount !== 'number' || !isFinite(amount) || amount <= 0) return null;\n  return Math.round(amount * 100);\n}\n\nfunction fmtCents(cents) {\n  var sign = cents < 0 ? '-' : '';\n  var abs = Math.abs(cents);\n  return sign + Math.floor(abs / 100) + '.' + String(abs % 100).padStart(2, '0');\n}\n\nfunction officeShape(records, nowMs) {\n  var outstanding = 0;\n  var overdue = [];\n  var paidMonth = 0;\n  var month = new Date(nowMs).toISOString().slice(0, 7);\n  records.forEach(function (r) {\n    var cents = typeof r.fields.amountCents === 'number' ? r.fields.amountCents : 0;\n    if (r.status === 'sent') {\n      outstanding += cents;\n      var due = typeof r.fields.dueAt === 'string' ? Date.parse(r.fields.dueAt) : NaN;\n      if (isFinite(due) && due < nowMs) overdue.push(r);\n    }\n    if (r.status === 'paid' && r.updatedAt.slice(0, 7) === month) paidMonth += cents;\n  });\n  return { outstanding: outstanding, overdue: overdue, paidMonth: paidMonth, month: month };\n}\n\nfunction officeLine(records, nowMs) {\n  var shape = officeShape(records, nowMs);\n  var chase = shape.overdue\n    .map(function (r) {\n      return r.fields.client + ' (' + r.id + ', ' + fmtCents(r.fields.amountCents || 0) + ')';\n    })\n    .join(', ');\n  return (\n    'Outstanding ' +\n    fmtCents(shape.outstanding) +\n    ' across ' +\n    records.filter(function (r) {\n      return r.status === 'sent';\n    }).length +\n    ' sent invoice(s); ' +\n    shape.overdue.length +\n    ' overdue' +\n    (chase ? ' (' + chase + ')' : '') +\n    '. Paid this month: ' +\n    fmtCents(shape.paidMonth) +\n    '.'\n  );\n}\n// ── office-rules-end ──\n\nconst invoices = rosterStore(gezel.fs, 'invoices.json', {\n  stages: ['draft', 'sent', 'paid'],\n  idPrefix: 'inv',\n});\n\nif (input.action === 'record_invoice') {\n  const cents = toCents(input.amount);\n  if (!input.client || cents === null) {\n    throw new Error(\"record_invoice needs 'client' and a positive 'amount' (ordinary units).\");\n  }\n  await invoices.add({\n    fields: {\n      client: input.client,\n      amountCents: cents,\n      ...(input.due ? { dueAt: input.due } : {}),\n      ...(input.note ? { note: input.note } : {}),\n    },\n  });\n} else if (input.action === 'invoice_sent' || input.action === 'invoice_paid') {\n  if (!input.id) throw new Error(\"Pass the invoice 'id', e.g. 'inv-3'.\");\n  await invoices.transition(input.id, input.action === 'invoice_sent' ? 'sent' : 'paid');\n} else if (input.action !== 'status' && input.action !== 'list_invoices') {\n  throw new Error(\n    `Unknown action '${input.action}'. Use status, record_invoice, invoice_sent, invoice_paid, or list_invoices.`,\n  );\n}\n\nconst records = await invoices.list();\nconst shape = officeShape(records, Date.now());\nconst listing =\n  input.action === 'list_invoices'\n    ? records\n        .map(\n          (r) =>\n            `${r.id} [${r.status}] ${String(r.fields.client ?? '?')} ${fmtCents(Number(r.fields.amountCents ?? 0))}${r.fields.dueAt ? ` due ${String(r.fields.dueAt).slice(0, 10)}` : ''}`,\n        )\n        .join('\\n') || 'The invoice book is empty.'\n    : '';\n\ngezel.output({\n  invoices: records.length,\n  outstandingCents: shape.outstanding,\n  overdue: shape.overdue.length,\n  summary: listing || officeLine(records, Date.now()),\n});\n"
+  }
+}

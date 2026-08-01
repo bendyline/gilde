@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Household manual</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2; --card: #fff; --ink: #2b2620; --muted: #7a7166;
+        --accent: #b5651d; --track: #ece5da; --good: #4a7c59; --warn: #a4552e;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+          --accent: #e0894a; --track: #3a352f; --good: #7fae8d; --warn: #d98a63;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--ink); padding: 1.5rem 1.25rem; }
+      main { max-width: 640px; margin: 0 auto; }
+      h1 { font-family: Georgia, 'PT Serif', 'Times New Roman', serif; font-size: 1.35rem; font-weight: 600; margin: 0 0 0.15rem; }
+      .sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.9rem; }
+      .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; margin-bottom: 0.9rem; }
+      .tile { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.7rem 0.85rem; }
+      .tile .n { font-size: 1.35rem; font-weight: 700; color: var(--accent); }
+      .tile .n.warn { color: var(--warn); }
+      .tile .l { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+      .list { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.5rem 0; }
+      .row { display: grid; grid-template-columns: 1fr auto; gap: 0.6rem; padding: 0.45rem 1rem; font-size: 0.9rem; align-items: baseline; }
+      .row + .row { border-top: 1px solid var(--track); }
+      .row .where { color: var(--muted); font-size: 0.78rem; }
+      .chip { display: inline-block; border: 1px solid var(--track); border-radius: 4px; padding: 0 0.3rem; font-size: 0.7rem; line-height: 1.4; margin-left: 0.3rem; }
+      .chip.due { color: var(--accent); border-color: var(--accent); }
+      .chip.attention { color: var(--warn); border-color: var(--warn); }
+      .empty { color: var(--muted); font-style: italic; padding: 0.85rem 1rem; }
++      .demo-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0 0 0.85rem;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid var(--accent, #8a5a2b);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--card, var(--surface, #fffdf8)) 88%, var(--accent, #8a5a2b));
+        color: var(--ink, #2b2620);
+        font-size: 0.8rem;
+      }
+      .demo-banner[hidden] { display: none; }
+      .demo-banner strong { font-weight: 700; }
+      .demo-reset {
+        flex: none;
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--accent, #8a5a2b);
+        border-radius: 6px;
+        background: var(--card, var(--surface, #fffdf8));
+        color: var(--ink, #2b2620);
+        cursor: pointer;
+        font: inherit;
+      }
+      .demo-reset:hover { border-color: var(--ink, #2b2620); }
+    </style>
+  </head>
+  <body>
+    <main>
++      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong> — sample data stays in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Household manual</h1>
+      <p class="sub" id="sub">Loading the system cards…</p>
+      <div class="tiles">
+        <div class="tile"><div class="n" id="t-sys">—</div><div class="l">Systems</div></div>
+        <div class="tile"><div class="n" id="t-due">—</div><div class="l">Care due</div></div>
+        <div class="tile"><div class="n warn" id="t-flag">—</div><div class="l">Flagged</div></div>
+      </div>
+      <div class="list" id="list"><p class="empty">No systems yet — tell your Huismeester about the furnace.</p></div>
+    </main>
+    <script>
+      (function () {
+        'use strict';
+        var parts = location.pathname.split('/').filter(Boolean);
+        var typeIdx = parts.indexOf('type');
+        var capability = typeIdx > 0 ? parts[typeIdx - 1] : null;
+        var projectId = typeIdx >= 0 ? parts[typeIdx + 1] : null;
+        var failedPolls = 0;
+        var DAY = 24 * 60 * 60 * 1000;
+        var demoMode = !capability || !projectId;
+        var demoHouse = { records: [
+          { id: 'sys-1', status: 'attention', createdAt: new Date(Date.now() - 120 * DAY).toISOString(), fields: { name: 'Boiler pressure', location: 'Utility cupboard', care: 'Check gauge and top up', intervalDays: 30, lastDoneAt: new Date(Date.now() - 42 * DAY).toISOString() } },
+          { id: 'sys-2', status: 'ok', createdAt: new Date(Date.now() - 80 * DAY).toISOString(), fields: { name: 'Smoke alarms', location: 'Each floor', care: 'Test and note batteries', intervalDays: 30, lastDoneAt: new Date(Date.now() - 9 * DAY).toISOString() } },
+          { id: 'sys-3', status: 'ok', createdAt: new Date(Date.now() - 200 * DAY).toISOString(), fields: { name: 'Water shutoff', location: 'Under kitchen sink', care: 'Keep access clear' } },
+          { id: 'sys-4', status: 'ok', createdAt: new Date(Date.now() - 90 * DAY).toISOString(), fields: { name: 'Range hood filter', location: 'Kitchen', care: 'Wash filter', intervalDays: 60, lastDoneAt: new Date(Date.now() - 67 * DAY).toISOString() } },
+        ] };
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+        function isDue(r, now) {
+          var f = r.fields || {};
+          if (typeof f.intervalDays !== 'number' || f.intervalDays <= 0) return false;
+          var last = typeof f.lastDoneAt === 'string' ? Date.parse(f.lastDoneAt) : Date.parse(r.createdAt);
+          return isFinite(last) && now - last >= f.intervalDays * DAY;
+        }
+
+        function render(house) {
+          var records = Array.isArray(house.records) ? house.records : [];
+          var now = Date.now();
+          var due = records.filter(function (r) { return isDue(r, now); });
+          var flagged = records.filter(function (r) { return r.status === 'attention'; });
+          document.getElementById('sub').textContent =
+            records.length === 0 ? 'An empty manual — the house has secrets to record.'
+              : due.length + flagged.length === 0 ? 'The house is quiet. Nothing due.'
+              : 'The house needs a little care.';
+          document.getElementById('t-sys').textContent = records.length;
+          document.getElementById('t-due').textContent = due.length;
+          document.getElementById('t-flag').textContent = flagged.length;
+
+          if (records.length) {
+            document.getElementById('list').innerHTML = records
+              .slice()
+              .sort(function (a, b) {
+                var pa = (a.status === 'attention' ? 0 : isDue(a, now) ? 1 : 2);
+                var pb = (b.status === 'attention' ? 0 : isDue(b, now) ? 1 : 2);
+                return pa - pb;
+              })
+              .map(function (r) {
+                var f = r.fields || {};
+                return '<div class="row"><span>' + esc(f.name || r.id) +
+                  (f.location ? '<span class="where"> — ' + esc(f.location) + '</span>' : '') +
+                  (f.care ? '<span class="where"> · ' + esc(f.care) + (f.intervalDays ? ' every ' + f.intervalDays + 'd' : '') + '</span>' : '') +
+                  '</span><span>' +
+                  (r.status === 'attention' ? '<span class="chip attention">attention</span>' : '') +
+                  (isDue(r, now) ? '<span class="chip due">due</span>' : '') +
+                  '</span></div>';
+              })
+              .join('');
+          }
+        }
+
+        function poll() {
+          if (demoMode) { render(demoHouse); return Promise.resolve(); }
+          if (!capability || !projectId) return Promise.resolve();
+          return fetch('/preview/' + encodeURIComponent(capability) + '/workspace/' + encodeURIComponent(projectId) + '/systems.json', { cache: 'no-store' })
+            .then(function (r) { if (!r.ok) throw new Error('poll ' + r.status); return r.json(); })
+            .then(function (next) { failedPolls = 0; render(next); })
+            .catch(function () {
+              failedPolls += 1;
+              if (failedPolls === 3 && window.parent !== window) window.parent.postMessage({ __gezelPageRefresh: true }, '*');
+            });
+        }
+        poll().then(function () { setInterval(function () { void poll(); }, 6000); });
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,177 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.1",
+  "releasedAt": "2026-08-01T00:00:00Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "person": {
+        "type": "string",
+        "title": "Who is the care for?",
+        "description": "A first name is enough — e.g. 'Mom', 'Jan'.",
+        "default": "Mom"
+      }
+    },
+    "required": [
+      "person"
+    ]
+  },
+  "nameTemplate": "Caregiving Binder",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "zorgcoordinator",
+      "voorman": true
+    }
+  ],
+  "tools": [
+    {
+      "name": "add_med",
+      "description": "Record a medication (name, dose/schedule, prescriber).",
+      "script": "care-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "dose": {
+            "type": "string"
+          },
+          "prescriber": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "dose"
+        ]
+      },
+      "bind": {
+        "action": "add_med"
+      }
+    },
+    {
+      "name": "stop_med",
+      "description": "Mark a medication stopped (with why, when known).",
+      "script": "care-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "stop_med"
+      }
+    },
+    {
+      "name": "log_entry",
+      "description": "Add a journal entry — a note, a symptom observation, an update.",
+      "script": "care-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "note",
+              "symptom",
+              "update"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "note"
+        ]
+      },
+      "bind": {
+        "action": "log_entry"
+      }
+    },
+    {
+      "name": "log_appointment",
+      "description": "Record an appointment (what and when, ISO).",
+      "script": "care-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": "string"
+          },
+          "when": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "note",
+          "when"
+        ]
+      },
+      "bind": {
+        "action": "log_appointment"
+      }
+    },
+    {
+      "name": "care_status",
+      "description": "Active meds, upcoming appointments, journal count.",
+      "script": "care-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "status"
+      }
+    },
+    {
+      "name": "visit_prep",
+      "description": "The one-page brief for the next doctor visit: meds + what happened since the last one.",
+      "script": "care-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "visit_prep"
+      }
+    }
+  ],
+  "craftbooks": [
+    "visit-prep"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "dashboard/index.html",
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "meds.json"
+      },
+      {
+        "source": "workspace",
+        "path": "care.json"
+      }
+    ]
+  },
+  "workspaceSeed": [
+    "meds.json",
+    "care.json"
+  ],
+  "scripts": {
+    "care-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { logStore, rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'care-store',\n  description:\n    \"Read and update the care record: medications (meds.json) and the care journal (care.json). Call action:'status' for active meds + upcoming appointments; 'add_med' / 'stop_med' on changes; 'log_entry' for journal notes and symptoms; 'log_appointment' with when (ISO); 'visit_prep' before a doctor visit.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description:\n        \"One of 'status', 'add_med', 'stop_med', 'log_entry', 'log_appointment', or 'visit_prep'.\",\n      required: true,\n    },\n    name: { type: 'string', description: 'Medication name.' },\n    dose: { type: 'string', description: \"Dose and schedule, e.g. '10mg mornings'.\" },\n    prescriber: { type: 'string', description: 'Who prescribed it.' },\n    id: { type: 'string', description: \"Medication id, e.g. 'med-2'.\" },\n    kind: { type: 'string', description: \"Journal kind: 'note', 'symptom', or 'update'.\" },\n    note: { type: 'string', description: 'The journal entry or appointment description.' },\n    when: { type: 'string', description: 'Appointment time (ISO), e.g. 2026-08-02T14:00.' },\n  },\n  outputs: {\n    meds: { type: 'number', description: 'Active medications.' },\n    upcoming: { type: 'number', description: 'Upcoming appointments.' },\n    summary: { type: 'string', description: 'The care picture (or the visit prep).' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── care-rules-start ──\n// Pure derivations: upcoming appointments (journal events kind\n// 'appointment' with data.whenAt in the future) and the since-last-visit\n// window for visit prep.\n\nfunction upcomingAppointments(events, nowMs) {\n  return events\n    .filter(function (e) {\n      var when = e.data && typeof e.data.whenAt === 'string' ? Date.parse(e.data.whenAt) : NaN;\n      return e.kind === 'appointment' && isFinite(when) && when >= nowMs;\n    })\n    .sort(function (a, b) {\n      return Date.parse(a.data.whenAt) - Date.parse(b.data.whenAt);\n    });\n}\n\nfunction lastVisitMs(events, nowMs) {\n  var past = events.filter(function (e) {\n    var when = e.data && typeof e.data.whenAt === 'string' ? Date.parse(e.data.whenAt) : NaN;\n    return e.kind === 'appointment' && isFinite(when) && when < nowMs;\n  });\n  if (past.length === 0) return null;\n  return Math.max.apply(\n    null,\n    past.map(function (e) {\n      return Date.parse(e.data.whenAt);\n    }),\n  );\n}\n\nfunction sinceWindow(events, nowMs) {\n  var last = lastVisitMs(events, nowMs);\n  return events.filter(function (e) {\n    return e.kind !== 'appointment' && (last === null || Date.parse(e.at) > last);\n  });\n}\n// ── care-rules-end ──\n\nconst meds = rosterStore(gezel.fs, 'meds.json', {\n  stages: ['active', 'stopped'],\n  idPrefix: 'med',\n});\nconst journal = logStore(gezel.fs, 'care.json');\n\nasync function resolveMed(): Promise<string> {\n  if (input.id) return input.id;\n  if (input.name) {\n    const wanted = input.name.toLowerCase();\n    const matches = (await meds.list({ status: 'active' })).filter(\n      (r) => String(r.fields.name ?? '').toLowerCase() === wanted,\n    );\n    if (matches.length === 1) return matches[0]!.id;\n  }\n  throw new Error(\"Pass 'id' (e.g. 'med-2') or an exact active medication 'name'.\");\n}\n\nif (input.action === 'add_med') {\n  if (!input.name || !input.dose) throw new Error(\"add_med needs 'name' and 'dose'.\");\n  await meds.add({\n    status: 'active',\n    fields: {\n      name: input.name,\n      dose: input.dose,\n      ...(input.prescriber ? { prescriber: input.prescriber } : {}),\n    },\n  });\n  await journal.append({ kind: 'update', note: `Started ${input.name} (${input.dose}).` });\n} else if (input.action === 'stop_med') {\n  const id = await resolveMed();\n  const med = await meds.get(id);\n  await meds.transition(id, 'stopped', input.note ? { note: input.note } : {});\n  await journal.append({\n    kind: 'update',\n    note: `Stopped ${String(med?.fields.name ?? id)}${input.note ? ` — ${input.note}` : ''}.`,\n  });\n} else if (input.action === 'log_entry') {\n  if (!input.note) throw new Error(\"log_entry needs 'note'.\");\n  const kind = input.kind === 'symptom' || input.kind === 'update' ? input.kind : 'note';\n  await journal.append({ kind, note: input.note });\n} else if (input.action === 'log_appointment') {\n  if (!input.note || !input.when) throw new Error(\"log_appointment needs 'note' and 'when' (ISO).\");\n  await journal.append({ kind: 'appointment', note: input.note, data: { whenAt: input.when } });\n} else if (input.action !== 'status' && input.action !== 'visit_prep') {\n  throw new Error(\n    `Unknown action '${input.action}'. Use status, add_med, stop_med, log_entry, log_appointment, or visit_prep.`,\n  );\n}\n\nconst activeMeds = await meds.list({ status: 'active' });\nconst events = await journal.list();\nconst nowMs = Date.now();\nconst upcoming = upcomingAppointments(events, nowMs);\n\nlet summary: string;\nif (input.action === 'visit_prep') {\n  const since = sinceWindow(events, nowMs);\n  const medLines = activeMeds\n    .map((m) => `- ${String(m.fields.name)} ${String(m.fields.dose ?? '')}`.trim())\n    .join('\\n');\n  const noteLines = since\n    .map((e) => `- [${e.kind}] ${String(e.at).slice(0, 10)}: ${e.note ?? ''}`)\n    .join('\\n');\n  summary = `VISIT PREP\\nActive medications:\\n${medLines || '- none recorded'}\\nSince the last visit:\\n${noteLines || '- quiet — nothing logged'}\\nUpcoming:\\n${upcoming.map((e) => `- ${String(e.data?.whenAt).slice(0, 16)} ${e.note ?? ''}`).join('\\n') || '- none scheduled'}`;\n} else {\n  const next = upcoming[0];\n  summary = `${activeMeds.length} active medication(s). ${upcoming.length} upcoming appointment(s)${\n    next ? ` — next: ${String(next.data?.whenAt).slice(0, 16)} ${next.note ?? ''}` : ''\n  }. ${events.filter((e) => e.kind !== 'appointment').length} journal entr(ies).`;\n}\n\ngezel.output({\n  meds: activeMeds.length,\n  upcoming: upcoming.length,\n  summary,\n});\n"
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.1",
+  "releasedAt": "2026-08-01T00:00:00Z",
+  "extends": "design-prototype",
+  "params": {
+    "type": "object",
+    "properties": {
+      "brief": {
+        "type": "string",
+        "title": "What are you designing?",
+        "description": "A short brief — e.g. \"a calm meditation app\", \"a bold sports brand\".",
+        "default": "a new brand"
+      }
+    },
+    "required": [
+      "brief"
+    ]
+  },
+  "nameTemplate": "Design Scheme: {{brief}}",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "designer",
+      "voorman": true
+    }
+  ],
+  "scripts": {
+    "scheme-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'scheme-store',\n  description:\n    \"Save and list the project's design color schemes. Call action:'save' with a name and an array of hex colors to add a scheme (it lands in artifacts/schemes/ and shows on the project's gallery). Call action:'list' to see what's saved.\",\n  inputs: {\n    action: { type: 'string', description: \"'save' or 'list'.\", required: true },\n    name: { type: 'string', description: \"Scheme name (required for 'save'), e.g. 'Dusk'.\" },\n    colors: {\n      type: 'json',\n      description: \"Array of hex colors for 'save', e.g. [\\\"#1b1a2e\\\", \\\"#e0894a\\\", \\\"#f5f0e8\\\"].\",\n    },\n  },\n  outputs: {\n    count: { type: 'number', description: 'How many schemes are saved.' },\n    message: { type: 'string', description: 'Human-readable summary.' },\n  },\n  requires: ['artifacts.read', 'artifacts.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\ninterface Scheme {\n  name: string;\n  file: string;\n  colors: string[];\n}\n\nconst INDEX = 'schemes/index.json';\n\nasync function loadIndex(): Promise<Scheme[]> {\n  try {\n    const raw = await gezel.artifacts.read(INDEX);\n    const parsed = JSON.parse(raw) as { schemes?: Scheme[] };\n    return Array.isArray(parsed.schemes) ? parsed.schemes : [];\n  } catch {\n    return [];\n  }\n}\n\nfunction slugify(s: string): string {\n  return (\n    s\n      .toLowerCase()\n      .replace(/[^a-z0-9]+/g, '-')\n      .replace(/^-+|-+$/g, '') || 'scheme'\n  );\n}\n\nconst schemes = await loadIndex();\n\nif (input.action === 'save') {\n  const name = (input.name ?? '').trim();\n  const colors = Array.isArray(input.colors) ? input.colors.map(String) : [];\n  if (!name || colors.length === 0) {\n    gezel.output({ count: schemes.length, message: 'save needs a name and a non-empty colors array.' });\n  } else {\n    const file = `schemes/${slugify(name)}.json`;\n    await gezel.artifacts.write(file, `${JSON.stringify({ name, colors }, null, 2)}\\n`);\n    const next = [...schemes.filter((s) => s.file !== file), { name, file, colors }];\n    await gezel.artifacts.write(INDEX, `${JSON.stringify({ schemes: next }, null, 2)}\\n`);\n    gezel.output({ count: next.length, message: `Saved \"${name}\" (${colors.length} colors). ${next.length} scheme(s) total.` });\n  }\n} else {\n  gezel.output({\n    count: schemes.length,\n    message: schemes.length\n      ? `${schemes.length} scheme(s): ${schemes.map((s) => s.name).join(', ')}.`\n      : 'No schemes saved yet.',\n  });\n}\n"
+  },
+  "tools": [
+    {
+      "name": "save_scheme",
+      "description": "Save a named color scheme so it shows on the gallery.",
+      "script": "scheme-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "colors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "bind": {
+        "action": "save"
+      }
+    }
+  ],
+  "pages": {
+    "entry": "gallery/index.html",
+    "reads": [
+      {
+        "source": "artifacts",
+        "path": "schemes/index.json"
+      }
+    ]
+  },
+  "artifactsSeed": [
+    "schemes/index.json",
+    "schemes/warm-dusk.json"
+  ]
+}

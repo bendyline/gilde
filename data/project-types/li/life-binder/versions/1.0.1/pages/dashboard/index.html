@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Life binder</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2; --card: #fff; --ink: #2b2620; --muted: #7a7166;
+        --accent: #b5651d; --track: #ece5da; --good: #4a7c59; --warn: #a4552e;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+          --accent: #e0894a; --track: #3a352f; --good: #7fae8d; --warn: #d98a63;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--ink); padding: 1.5rem 1.25rem; }
+      main { max-width: 620px; margin: 0 auto; }
+      h1 { font-family: Georgia, 'PT Serif', 'Times New Roman', serif; font-size: 1.35rem; font-weight: 600; margin: 0 0 0.15rem; }
+      .sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.9rem; }
+      .meter { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.85rem 1rem; margin-bottom: 0.75rem; }
+      .meter .line { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.4rem; }
+      .bar { background: var(--track); border-radius: 4px; height: 10px; overflow: hidden; }
+      .bar > span { display: block; height: 100%; background: var(--good); border-radius: 4px; transition: width 0.3s ease; }
+      .list { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.5rem 0; }
+      .row { display: grid; grid-template-columns: 1.4rem 1fr auto; gap: 0.6rem; align-items: baseline; padding: 0.45rem 1rem; font-size: 0.9rem; }
+      .row + .row { border-top: 1px solid var(--track); }
+      .mark { font-weight: 700; text-align: center; }
+      .row.present .mark { color: var(--good); }
+      .row.missing .mark { color: var(--warn); }
+      .row .where { color: var(--muted); font-size: 0.78rem; }
+      .chip { display: inline-block; border: 1px solid var(--warn); color: var(--warn); border-radius: 4px; padding: 0 0.3rem; font-size: 0.7rem; line-height: 1.4; }
+      .privacy { color: var(--muted); font-size: 0.78rem; text-align: center; margin-top: 0.75rem; }
++      .demo-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0 0 0.85rem;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid var(--accent, #8a5a2b);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--card, var(--surface, #fffdf8)) 88%, var(--accent, #8a5a2b));
+        color: var(--ink, #2b2620);
+        font-size: 0.8rem;
+      }
+      .demo-banner[hidden] { display: none; }
+      .demo-banner strong { font-weight: 700; }
+      .demo-reset {
+        flex: none;
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--accent, #8a5a2b);
+        border-radius: 6px;
+        background: var(--card, var(--surface, #fffdf8));
+        color: var(--ink, #2b2620);
+        cursor: pointer;
+        font: inherit;
+      }
+      .demo-reset:hover { border-color: var(--ink, #2b2620); }
+    </style>
+  </head>
+  <body>
+    <main>
++      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong> — sample data stays in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Life binder</h1>
+      <p class="sub" id="sub">Loading the checklist…</p>
+      <div class="meter">
+        <div class="line"><span id="m-label">—</span><span id="m-count">—</span></div>
+        <div class="bar"><span id="m-bar" style="width: 0%"></span></div>
+      </div>
+      <div class="list" id="list"></div>
+      <p class="privacy">Locations, never contents. Everything stays on this machine.</p>
+    </main>
+    <script>
+      (function () {
+        'use strict';
+        var parts = location.pathname.split('/').filter(Boolean);
+        var typeIdx = parts.indexOf('type');
+        var capability = typeIdx > 0 ? parts[typeIdx - 1] : null;
+        var projectId = typeIdx >= 0 ? parts[typeIdx + 1] : null;
+        var failedPolls = 0;
+        var YEAR = 365 * 24 * 60 * 60 * 1000;
+        var demoMode = !capability || !projectId;
+        var demoBinder = { records: [
+          { id: 'doc-1', status: 'present', updatedAt: new Date(Date.now() - 40 * 86400000).toISOString(), fields: { name: 'Will', location: 'Blue fire box', reviewedAt: new Date(Date.now() - 40 * 86400000).toISOString() } },
+          { id: 'doc-2', status: 'present', updatedAt: new Date(Date.now() - 420 * 86400000).toISOString(), fields: { name: 'Home insurance', location: 'Blue fire box', reviewedAt: new Date(Date.now() - 420 * 86400000).toISOString() } },
+          { id: 'doc-3', status: 'missing', updatedAt: new Date().toISOString(), fields: { name: 'Emergency contacts' } },
+          { id: 'doc-4', status: 'present', updatedAt: new Date(Date.now() - 20 * 86400000).toISOString(), fields: { name: 'Passport copies', location: 'Travel folder' } },
+          { id: 'doc-5', status: 'missing', updatedAt: new Date().toISOString(), fields: { name: 'Pet care instructions' } },
+        ] };
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+        function render(binder) {
+          var records = Array.isArray(binder.records) ? binder.records : [];
+          var present = records.filter(function (r) { return r.status === 'present'; });
+          var now = Date.now();
+          document.getElementById('sub').textContent =
+            present.length === records.length && records.length > 0
+              ? 'Everything in place. Well done.'
+              : (records.length - present.length) + ' gap(s) to close.';
+          document.getElementById('m-label').textContent = 'In place';
+          document.getElementById('m-count').textContent = present.length + ' of ' + records.length;
+          document.getElementById('m-bar').style.width =
+            (records.length ? Math.round((present.length / records.length) * 100) : 0) + '%';
+
+          document.getElementById('list').innerHTML = records
+            .slice()
+            .sort(function (a, b) { return a.status === b.status ? 0 : a.status === 'missing' ? -1 : 1; })
+            .map(function (r) {
+              var f = r.fields || {};
+              var reviewed = typeof f.reviewedAt === 'string' ? Date.parse(f.reviewedAt) : Date.parse(r.updatedAt);
+              var stale = r.status === 'present' && isFinite(reviewed) && now - reviewed > YEAR;
+              return (
+                '<div class="row ' + r.status + '"><span class="mark">' + (r.status === 'present' ? '+' : '-') + '</span>' +
+                '<span>' + esc(f.name || r.id) +
+                (f.location ? '<span class="where"> — ' + esc(f.location) + '</span>' : '') + '</span>' +
+                '<span>' + (stale ? '<span class="chip">review due</span>' : '') + '</span></div>'
+              );
+            })
+            .join('');
+        }
+
+        function poll() {
+          if (demoMode) { render(demoBinder); return Promise.resolve(); }
+          if (!capability || !projectId) return Promise.resolve();
+          return fetch('/preview/' + encodeURIComponent(capability) + '/workspace/' + encodeURIComponent(projectId) + '/documents.json', { cache: 'no-store' })
+            .then(function (r) { if (!r.ok) throw new Error('poll ' + r.status); return r.json(); })
+            .then(function (next) { failedPolls = 0; render(next); })
+            .catch(function () {
+              failedPolls += 1;
+              if (failedPolls === 3 && window.parent !== window) window.parent.postMessage({ __gezelPageRefresh: true }, '*');
+            });
+        }
+        poll().then(function () { setInterval(function () { void poll(); }, 6000); });
+      })();
+    </script>
+  </body>
+</html>

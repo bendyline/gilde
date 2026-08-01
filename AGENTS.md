@@ -59,6 +59,30 @@ The `versions/<semver>/` directory holds the released payload:
 Ship a `test.json` with every craftbook. A craftbook without an eval
 cannot be regression-checked.
 
+## Project page demo contract
+
+Every latest project-type page under `pages/**` must also run outside the
+Gezel preview host. These standalone pages are the live demos embedded on
+gezelgilde.com and the fastest way to dogfood a project type in a browser.
+
+- Detect live mode from the capability-scoped `/preview/<capability>/type/<projectId>/`
+  path. Being inside an iframe is not proof that the Gezel bridge exists.
+- Add `<meta name="gezel-demo" content="standalone" />` and a visible element
+  marked `data-gezel-demo-banner` that explains sample data stays in the page.
+- Without a live capability/project pair, render representative deterministic
+  sample data immediately. Do not leave the page empty or show a read-only/error
+  state.
+- Keep the page's meaningful controls usable in demo mode. Mutations stay in
+  memory, and a `Reset demo` control restores the initial sample state.
+- Demo mode must not fetch private project URLs, post messages to an arbitrary
+  parent, require credentials, or use external network assets.
+- Live behavior is unchanged: polling and tool calls still go through the Gezel
+  preview host and its postMessage bridge.
+
+`npm run check-page-demos` enforces the structural markers on every current
+project-type page. Browser interaction checks remain part of review for pages
+with controls.
+
 ## Never edit
 
 - `data/**/index.json` — generated. Run `npm run build-index` after any
@@ -75,6 +99,7 @@ cannot be regression-checked.
 npm run validate       full-tree structural + schema validation
 npm run check-index    generated indexes are fresh
 npm run lint-models    chat-model completeness lint
+npm run check-page-demos  latest project pages carry the standalone contract
 ```
 
 Findings print as:

@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Caregiving binder</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2; --card: #fff; --ink: #2b2620; --muted: #7a7166;
+        --accent: #b5651d; --track: #ece5da; --good: #4a7c59; --warn: #a4552e;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+          --accent: #e0894a; --track: #3a352f; --good: #7fae8d; --warn: #d98a63;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--ink); padding: 1.5rem 1.25rem; }
+      main { max-width: 680px; margin: 0 auto; }
+      h1 { font-family: Georgia, 'PT Serif', 'Times New Roman', serif; font-size: 1.35rem; font-weight: 600; margin: 0 0 0.15rem; }
+      .sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.9rem; }
+      .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+      .panel { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.85rem 1rem; font-size: 0.9rem; }
+      .panel h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 0.5rem; }
+      .panel ul { margin: 0; padding-left: 1.05rem; }
+      .panel li { margin: 0.25rem 0; }
+      .panel .meta { color: var(--muted); font-size: 0.78rem; }
+      .journal { margin-top: 0.6rem; }
+      .journal li { color: var(--muted); }
+      .journal li strong { color: var(--ink); font-weight: 600; }
+      .kind { display: inline-block; border: 1px solid var(--track); border-radius: 4px; padding: 0 0.3rem; font-size: 0.7rem; line-height: 1.4; margin-right: 0.3rem; color: var(--muted); }
+      .kind.symptom { color: var(--warn); border-color: var(--warn); }
+      .empty { color: var(--muted); font-style: italic; }
+      .privacy { color: var(--muted); font-size: 0.78rem; text-align: center; margin-top: 0.75rem; }
+      @media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
++      .demo-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0 0 0.85rem;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid var(--accent, #8a5a2b);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--card, var(--surface, #fffdf8)) 88%, var(--accent, #8a5a2b));
+        color: var(--ink, #2b2620);
+        font-size: 0.8rem;
+      }
+      .demo-banner[hidden] { display: none; }
+      .demo-banner strong { font-weight: 700; }
+      .demo-reset {
+        flex: none;
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--accent, #8a5a2b);
+        border-radius: 6px;
+        background: var(--card, var(--surface, #fffdf8));
+        color: var(--ink, #2b2620);
+        cursor: pointer;
+        font: inherit;
+      }
+      .demo-reset:hover { border-color: var(--ink, #2b2620); }
+    </style>
+  </head>
+  <body>
+    <main>
++      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong> — sample data stays in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Caregiving binder</h1>
+      <p class="sub" id="sub">Loading the record…</p>
+      <div class="cols">
+        <div class="panel">
+          <h2>Active medications</h2>
+          <ul id="meds"><li class="empty">None recorded yet.</li></ul>
+          <h2 style="margin-top: 0.9rem">Upcoming</h2>
+          <ul id="upcoming"><li class="empty">Nothing scheduled.</li></ul>
+        </div>
+        <div class="panel">
+          <h2>Recent journal</h2>
+          <ul class="journal" id="journal"><li class="empty">The journal is empty — a quiet start.</li></ul>
+        </div>
+      </div>
+      <p class="privacy">This record lives on this machine and never leaves it.</p>
+    </main>
+    <script>
+      (function () {
+        'use strict';
+        var parts = location.pathname.split('/').filter(Boolean);
+        var typeIdx = parts.indexOf('type');
+        var capability = typeIdx > 0 ? parts[typeIdx - 1] : null;
+        var projectId = typeIdx >= 0 ? parts[typeIdx + 1] : null;
+        var failedPolls = 0;
+        var demoMode = !capability || !projectId;
+        var demoNow = Date.now();
+        var demoMeds = { records: [
+          { id: 'med-1', status: 'active', fields: { name: 'Lisinopril', dose: '10 mg each morning', prescriber: 'Dr. Chen' } },
+          { id: 'med-2', status: 'active', fields: { name: 'Vitamin D', dose: '1 tablet with lunch' } },
+        ] };
+        var demoCare = { events: [
+          { kind: 'appointment', note: 'Primary care follow-up', data: { whenAt: new Date(demoNow + 12 * 86400000).toISOString() } },
+          { kind: 'symptom', at: new Date(demoNow - 86400000).toISOString(), note: 'Energy was better after an afternoon walk.' },
+          { kind: 'note', at: new Date(demoNow - 3 * 86400000).toISOString(), note: 'Refill collected; pill organizer set for the week.' },
+          { kind: 'update', at: new Date(demoNow - 6 * 86400000).toISOString(), note: 'Blood pressure readings added to the visit notes.' },
+        ] };
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+        function fetchJson(file) {
+          return fetch('/preview/' + encodeURIComponent(capability) + '/workspace/' + encodeURIComponent(projectId) + '/' + file, { cache: 'no-store' })
+            .then(function (r) { if (!r.ok) throw new Error('poll ' + r.status); return r.json(); });
+        }
+
+        function render(meds, care) {
+          var active = ((meds && meds.records) || []).filter(function (r) { return r.status === 'active'; });
+          var events = (care && care.events) || [];
+          var now = Date.now();
+          var upcoming = events.filter(function (e) {
+            var when = e.data && e.data.whenAt ? Date.parse(e.data.whenAt) : NaN;
+            return e.kind === 'appointment' && isFinite(when) && when >= now;
+          }).sort(function (a, b) { return Date.parse(a.data.whenAt) - Date.parse(b.data.whenAt); });
+
+          document.getElementById('sub').textContent =
+            active.length + ' active medication(s) · ' + upcoming.length + ' upcoming appointment(s)';
+
+          if (active.length) {
+            document.getElementById('meds').innerHTML = active.map(function (m) {
+              var f = m.fields || {};
+              return '<li>' + esc(f.name || m.id) + ' <span class="meta">' + esc(f.dose || '') +
+                (f.prescriber ? ' · ' + esc(f.prescriber) : '') + '</span></li>';
+            }).join('');
+          }
+          if (upcoming.length) {
+            document.getElementById('upcoming').innerHTML = upcoming.slice(0, 4).map(function (e) {
+              return '<li>' + esc(String(e.data.whenAt).slice(0, 16).replace('T', ' ')) + ' <span class="meta">' + esc(e.note || '') + '</span></li>';
+            }).join('');
+          }
+          var recent = events.filter(function (e) { return e.kind !== 'appointment'; }).slice(-6).reverse();
+          if (recent.length) {
+            document.getElementById('journal').innerHTML = recent.map(function (e) {
+              return '<li><span class="kind ' + esc(e.kind) + '">' + esc(e.kind) + '</span>' +
+                '<strong>' + esc(String(e.at).slice(0, 10)) + '</strong> — ' + esc(e.note || '') + '</li>';
+            }).join('');
+          }
+        }
+
+        function poll() {
+          if (demoMode) { render(demoMeds, demoCare); return Promise.resolve(); }
+          if (!capability || !projectId) return Promise.resolve();
+          return Promise.all([
+            fetchJson('meds.json').catch(function () { return { records: [] }; }),
+            fetchJson('care.json').catch(function () { return { events: [] }; }),
+          ])
+            .then(function (results) { failedPolls = 0; render(results[0], results[1]); })
+            .catch(function () {
+              failedPolls += 1;
+              if (failedPolls === 3 && window.parent !== window) window.parent.postMessage({ __gezelPageRefresh: true }, '*');
+            });
+        }
+        poll().then(function () { setInterval(function () { void poll(); }, 6000); });
+      })();
+    </script>
+  </body>
+</html>

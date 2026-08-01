@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.1",
+  "releasedAt": "2026-08-01T00:00:00Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "cause": {
+        "type": "string",
+        "title": "What are you raising for?",
+        "description": "e.g. 'new jerseys for the team', 'the library roof'.",
+        "default": "a good cause"
+      },
+      "goalCents": {
+        "type": "number",
+        "title": "Goal (in cents)",
+        "description": "The target, in cents — e.g. 500000 for 5,000.00.",
+        "default": 100000
+      }
+    },
+    "required": [
+      "cause",
+      "goalCents"
+    ]
+  },
+  "nameTemplate": "Fundraiser: {{cause}}",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "aanjager",
+      "voorman": true
+    }
+  ],
+  "tools": [
+    {
+      "name": "record_donation",
+      "description": "Record a gift the moment it lands (ordinary units, donor name).",
+      "script": "drive-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "donor": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount"
+        ]
+      },
+      "bind": {
+        "action": "record_donation"
+      }
+    },
+    {
+      "name": "mark_thanked",
+      "description": "Record that a thank-you went out for a gift.",
+      "script": "drive-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "donor": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "mark_thanked"
+      }
+    },
+    {
+      "name": "drive_status",
+      "description": "The thermometer and the thank-you debt.",
+      "script": "drive-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "status"
+      }
+    },
+    {
+      "name": "donor_list",
+      "description": "Every gift, with thank-you state.",
+      "script": "drive-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "donor_list"
+      }
+    }
+  ],
+  "craftbooks": [
+    "social-thread",
+    "drive-wrap-up"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "dashboard/index.html",
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "donations.json"
+      }
+    ]
+  },
+  "workspaceSeed": [
+    "donations.json"
+  ],
+  "scripts": {
+    "drive-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { ledgerStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'drive-store',\n  description:\n    \"Read and update the fundraising drive (donations.json). Call action:'status' for the thermometer + unthanked list; 'record_donation' the moment a gift lands (ordinary units, donor name); 'mark_thanked' once the thank-you goes out.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'status', 'record_donation', 'mark_thanked', or 'donor_list'.\",\n      required: true,\n    },\n    donor: { type: 'string', description: \"Donor name ('anonymous' is fine).\" },\n    amount: { type: 'number', description: 'Gift amount in ordinary units.' },\n    note: { type: 'string', description: 'Anything worth remembering about the gift.' },\n    id: { type: 'string', description: \"Donation id, e.g. 'ledger-4'.\" },\n  },\n  outputs: {\n    raisedCents: { type: 'number', description: 'Total raised, in cents.' },\n    donors: { type: 'number', description: 'Number of gifts.' },\n    unthanked: { type: 'number', description: 'Gifts still awaiting a thank-you.' },\n    summary: { type: 'string', description: 'The drive picture.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── drive-rules-start ──\n// Pure derivations over ledgerStore-shaped donation entries: entries are\n// kind 'in', category 'donation', data {donor, thanked}.\n\nfunction toCents(amount) {\n  if (typeof amount !== 'number' || !isFinite(amount) || amount <= 0) return null;\n  return Math.round(amount * 100);\n}\n\nfunction fmtCents(cents) {\n  var abs = Math.abs(cents);\n  return (cents < 0 ? '-' : '') + Math.floor(abs / 100) + '.' + String(abs % 100).padStart(2, '0');\n}\n\nfunction driveShape(entries) {\n  var raised = 0;\n  var unthanked = [];\n  entries.forEach(function (e) {\n    raised += e.amountCents;\n    if (!e.data || e.data.thanked !== true) unthanked.push(e);\n  });\n  return { raised: raised, unthanked: unthanked };\n}\n\nfunction driveLine(entries, goalCents) {\n  var shape = driveShape(entries);\n  var pct = goalCents > 0 ? Math.min(100, Math.round((shape.raised / goalCents) * 100)) : null;\n  return (\n    'Raised ' +\n    fmtCents(shape.raised) +\n    (goalCents > 0 ? ' of ' + fmtCents(goalCents) + ' (' + pct + ' percent)' : '') +\n    ' across ' +\n    entries.length +\n    ' gift(s). ' +\n    (shape.unthanked.length === 0\n      ? 'Everyone thanked.'\n      : shape.unthanked.length + ' thank-you(s) still owed.')\n  );\n}\n// ── drive-rules-end ──\n\nconst donations = ledgerStore(gezel.fs, 'donations.json');\n\nasync function readGoalCents(): Promise<number> {\n  try {\n    const parsed = JSON.parse(await gezel.fs.read('donations.json')) as { goalCents?: unknown };\n    const goal = Number(parsed.goalCents);\n    return Number.isFinite(goal) && goal > 0 ? Math.round(goal) : 0;\n  } catch {\n    return 0;\n  }\n}\n\nif (input.action === 'record_donation') {\n  const cents = toCents(input.amount);\n  if (cents === null) throw new Error(\"record_donation needs a positive 'amount' (ordinary units).\");\n  await donations.add({\n    amountCents: cents,\n    kind: 'in',\n    category: 'donation',\n    ...(input.note ? { note: input.note } : {}),\n    data: { donor: input.donor || 'anonymous', thanked: false },\n  });\n} else if (input.action === 'mark_thanked') {\n  if (!input.id && !input.donor) throw new Error(\"Pass 'id' (e.g. 'ledger-4') or a unique 'donor'.\");\n  // ledgerStore is append-only by design; thanked flips via a targeted\n  // read-modify-write on the entry's data (the one mutation this drive needs).\n  const raw = JSON.parse(await gezel.fs.read('donations.json')) as {\n    entries: Array<{ id: string; data?: { donor?: string; thanked?: boolean } }>;\n  };\n  const matches = raw.entries.filter((e) =>\n    input.id\n      ? e.id === input.id\n      : String(e.data?.donor ?? '').toLowerCase() === String(input.donor).toLowerCase() &&\n        e.data?.thanked !== true,\n  );\n  if (matches.length === 0) throw new Error('No matching unthanked donation found.');\n  if (matches.length > 1 && !input.id) {\n    throw new Error(\n      `Multiple unthanked gifts from '${input.donor}': ${matches.map((m) => m.id).join(', ')}. Pass id.`,\n    );\n  }\n  matches[0]!.data = { ...(matches[0]!.data ?? {}), thanked: true };\n  await gezel.fs.write('donations.json', `${JSON.stringify(raw, null, 2)}\\n`);\n} else if (input.action !== 'status' && input.action !== 'donor_list') {\n  throw new Error(\n    `Unknown action '${input.action}'. Use status, record_donation, mark_thanked, or donor_list.`,\n  );\n}\n\nconst entries = await donations.list();\nconst goalCents = await readGoalCents();\nconst shape = driveShape(entries);\nconst listing =\n  input.action === 'donor_list'\n    ? entries\n        .map(\n          (e) =>\n            `${e.id} ${fmtCents(e.amountCents)} from ${String(e.data?.donor ?? 'anonymous')}${e.data?.thanked === true ? '' : ' (thank-you owed)'}`,\n        )\n        .join('\\n') || 'No gifts yet.'\n    : '';\n\ngezel.output({\n  raisedCents: shape.raised,\n  donors: entries.length,\n  unthanked: shape.unthanked.length,\n  summary: listing || driveLine(entries, goalCents),\n});\n"
+  }
+}

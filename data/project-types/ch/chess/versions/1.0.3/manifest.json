@@ -1,0 +1,180 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.3",
+  "releasedAt": "2026-08-01T00:00:00Z",
+  "meesterManaged": false,
+  "mode": "solo",
+  "leadLabel": "Opponent",
+  "leanProfile": true,
+  "tabVisibility": {
+    "overview": false,
+    "tasks": false,
+    "approvals": false,
+    "workspace": false,
+    "artifacts": false,
+    "map": false
+  },
+  "params": {
+    "type": "object",
+    "properties": {
+      "personality": {
+        "type": "string",
+        "title": "Table-talk style",
+        "description": "How your opponent talks between moves.",
+        "enum": [
+          "peppy",
+          "cheeky",
+          "zen",
+          "gracious"
+        ],
+        "default": "peppy"
+      },
+      "playStyle": {
+        "type": "string",
+        "title": "How should the Schaakspeler play?",
+        "description": "An opponent keeps their strategy to themselves; an instructor offers light teaching notes.",
+        "enum": [
+          "Opponent",
+          "Instructor"
+        ],
+        "default": "Opponent"
+      }
+    },
+    "required": [
+      "personality",
+      "playStyle"
+    ]
+  },
+  "nameTemplate": "Chess vs the Schaakspeler",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "chess-player",
+      "voorman": true
+    }
+  ],
+  "scripts": {
+    "game-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'game-store',\n  description:\n    \"Read and update the chess game (game.json). Call action:'board' to see the position and every legal move; action:'ai_move' to play your move (from/to, optional promotion and moveThought); action:'state' for a light summary; action:'new_game' to reset. Illegal moves fail with the engine's legal-move list.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'state', 'board', 'user_move', 'ai_move', or 'new_game'.\",\n      required: true,\n    },\n    from: { type: 'string', description: \"Origin square, e.g. 'e7'.\" },\n    to: { type: 'string', description: \"Destination square, e.g. 'e5'.\" },\n    promotion: {\n      type: 'string',\n      description: \"Promotion piece: 'q', 'r', 'b', or 'n'. Defaults to queen.\",\n    },\n    moveThought: {\n      type: 'string',\n      description: 'A short line of table talk to show on the board (max 140 chars).',\n    },\n  },\n  outputs: {\n    board: { type: 'string', description: 'ASCII board with coordinates.' },\n    turn: { type: 'string', description: \"Whose move: 'user' (white) or 'ai' (black).\" },\n    status: {\n      type: 'string',\n      description: 'playing, user_won, ai_won, or draw.',\n    },\n    lastMove: { type: 'string', description: \"The move just played, e.g. 'e2-e4'.\" },\n    legalMoves: { type: 'string', description: 'Rendered legal moves for the side to move.' },\n    summary: { type: 'string', description: 'Human-readable game summary.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── chess-rules-start ──\n// Pure, annotation-free chess engine. Squares are a 64-character row-major\n// string: y0 is rank 8, x0 is file a. Uppercase pieces are white (the user);\n// lowercase pieces are black (the AI).\n\nvar FILES = 'abcdefgh';\nvar PROMOTIONS = ['q', 'r', 'b', 'n'];\n\nfunction sqName(x, y) {\n  return FILES[x] + String(8 - y);\n}\n\nfunction parseSq(name) {\n  if (typeof name !== 'string' || name.length !== 2) return null;\n  var x = FILES.indexOf(name[0].toLowerCase());\n  var rank = Number(name[1]);\n  if (x < 0 || !(rank >= 1 && rank <= 8)) return null;\n  return { x: x, y: 8 - rank };\n}\n\nfunction inBounds(x, y) {\n  return x >= 0 && x < 8 && y >= 0 && y < 8;\n}\n\nfunction pieceAt(squares, x, y) {\n  return squares[y * 8 + x];\n}\n\nfunction withPiece(squares, x, y, ch) {\n  var i = y * 8 + x;\n  return squares.slice(0, i) + ch + squares.slice(i + 1);\n}\n\nfunction sideOf(ch) {\n  if (!ch || ch === '.') return null;\n  return ch === ch.toUpperCase() ? 'user' : 'ai';\n}\n\nfunction otherSide(side) {\n  return side === 'user' ? 'ai' : 'user';\n}\n\nfunction kindOf(ch) {\n  return ch && ch !== '.' ? ch.toLowerCase() : '';\n}\n\nfunction buildInitial() {\n  return 'rnbqkbnr' + 'pppppppp' + '.'.repeat(32) + 'PPPPPPPP' + 'RNBQKBNR';\n}\n\nfunction findKing(squares, side) {\n  var needle = side === 'user' ? 'K' : 'k';\n  var i = squares.indexOf(needle);\n  return i < 0 ? null : { x: i % 8, y: Math.floor(i / 8) };\n}\n\nfunction isAttacked(squares, x, y, bySide) {\n  var pawn = bySide === 'user' ? 'P' : 'p';\n  var pawnY = y - (bySide === 'user' ? -1 : 1);\n  for (var pdx of [-1, 1]) {\n    var px = x - pdx;\n    if (inBounds(px, pawnY) && pieceAt(squares, px, pawnY) === pawn) return true;\n  }\n\n  var knight = bySide === 'user' ? 'N' : 'n';\n  var knightSteps = [\n    [-2, -1],\n    [-2, 1],\n    [-1, -2],\n    [-1, 2],\n    [1, -2],\n    [1, 2],\n    [2, -1],\n    [2, 1],\n  ];\n  for (var n of knightSteps) {\n    if (inBounds(x + n[0], y + n[1]) && pieceAt(squares, x + n[0], y + n[1]) === knight) {\n      return true;\n    }\n  }\n\n  var rays = [\n    [-1, 0, 'rq'],\n    [1, 0, 'rq'],\n    [0, -1, 'rq'],\n    [0, 1, 'rq'],\n    [-1, -1, 'bq'],\n    [-1, 1, 'bq'],\n    [1, -1, 'bq'],\n    [1, 1, 'bq'],\n  ];\n  for (var ray of rays) {\n    var rx = x + ray[0];\n    var ry = y + ray[1];\n    while (inBounds(rx, ry)) {\n      var seen = pieceAt(squares, rx, ry);\n      if (seen !== '.') {\n        if (sideOf(seen) === bySide && ray[2].indexOf(kindOf(seen)) >= 0) return true;\n        break;\n      }\n      rx += ray[0];\n      ry += ray[1];\n    }\n  }\n\n  var king = bySide === 'user' ? 'K' : 'k';\n  for (var ky = -1; ky <= 1; ky += 1) {\n    for (var kx = -1; kx <= 1; kx += 1) {\n      if (\n        (kx !== 0 || ky !== 0) &&\n        inBounds(x + kx, y + ky) &&\n        pieceAt(squares, x + kx, y + ky) === king\n      ) {\n        return true;\n      }\n    }\n  }\n  return false;\n}\n\nfunction inCheck(squares, side) {\n  var king = findKing(squares, side);\n  return !king || isAttacked(squares, king.x, king.y, otherSide(side));\n}\n\nfunction pushMove(out, fromX, fromY, toX, toY, extra) {\n  out.push(\n    Object.assign(\n      {\n        from: sqName(fromX, fromY),\n        to: sqName(toX, toY),\n        capture: false,\n      },\n      extra || {},\n    ),\n  );\n}\n\nfunction pseudoMovesFor(squares, side, castling, enPassant) {\n  var out = [];\n  for (var y = 0; y < 8; y += 1) {\n    for (var x = 0; x < 8; x += 1) {\n      var ch = pieceAt(squares, x, y);\n      if (sideOf(ch) !== side) continue;\n      var kind = kindOf(ch);\n\n      if (kind === 'p') {\n        var dir = side === 'user' ? -1 : 1;\n        var startY = side === 'user' ? 6 : 1;\n        var promotionY = side === 'user' ? 0 : 7;\n        var oneY = y + dir;\n        if (inBounds(x, oneY) && pieceAt(squares, x, oneY) === '.') {\n          if (oneY === promotionY) {\n            for (var promotion of PROMOTIONS) {\n              pushMove(out, x, y, x, oneY, { promotion: promotion });\n            }\n          } else {\n            pushMove(out, x, y, x, oneY);\n            var twoY = y + dir * 2;\n            if (y === startY && pieceAt(squares, x, twoY) === '.') {\n              pushMove(out, x, y, x, twoY, { doublePawn: true });\n            }\n          }\n        }\n        for (var dx of [-1, 1]) {\n          var cx = x + dx;\n          var cy = y + dir;\n          if (!inBounds(cx, cy)) continue;\n          var target = pieceAt(squares, cx, cy);\n          var targetName = sqName(cx, cy);\n          var isEp = targetName === enPassant && target === '.';\n          if ((target !== '.' && sideOf(target) === otherSide(side)) || isEp) {\n            if (cy === promotionY) {\n              for (var capturePromotion of PROMOTIONS) {\n                pushMove(out, x, y, cx, cy, {\n                  capture: true,\n                  promotion: capturePromotion,\n                  enPassant: isEp,\n                });\n              }\n            } else {\n              pushMove(out, x, y, cx, cy, { capture: true, enPassant: isEp });\n            }\n          }\n        }\n        continue;\n      }\n\n      if (kind === 'n') {\n        var jumps = [\n          [-2, -1],\n          [-2, 1],\n          [-1, -2],\n          [-1, 2],\n          [1, -2],\n          [1, 2],\n          [2, -1],\n          [2, 1],\n        ];\n        for (var jump of jumps) {\n          var nx = x + jump[0];\n          var ny = y + jump[1];\n          if (!inBounds(nx, ny) || sideOf(pieceAt(squares, nx, ny)) === side) continue;\n          pushMove(out, x, y, nx, ny, { capture: pieceAt(squares, nx, ny) !== '.' });\n        }\n        continue;\n      }\n\n      if (kind === 'b' || kind === 'r' || kind === 'q') {\n        var dirs = [];\n        if (kind === 'b' || kind === 'q') dirs.push([-1, -1], [-1, 1], [1, -1], [1, 1]);\n        if (kind === 'r' || kind === 'q') dirs.push([-1, 0], [1, 0], [0, -1], [0, 1]);\n        for (var d of dirs) {\n          var sx = x + d[0];\n          var sy = y + d[1];\n          while (inBounds(sx, sy)) {\n            var occupant = pieceAt(squares, sx, sy);\n            if (sideOf(occupant) === side) break;\n            pushMove(out, x, y, sx, sy, { capture: occupant !== '.' });\n            if (occupant !== '.') break;\n            sx += d[0];\n            sy += d[1];\n          }\n        }\n        continue;\n      }\n\n      if (kind === 'k') {\n        for (var kdy = -1; kdy <= 1; kdy += 1) {\n          for (var kdx = -1; kdx <= 1; kdx += 1) {\n            if (kdx === 0 && kdy === 0) continue;\n            var ktx = x + kdx;\n            var kty = y + kdy;\n            if (!inBounds(ktx, kty) || sideOf(pieceAt(squares, ktx, kty)) === side) continue;\n            pushMove(out, x, y, ktx, kty, { capture: pieceAt(squares, ktx, kty) !== '.' });\n          }\n        }\n\n        var homeY = side === 'user' ? 7 : 0;\n        var kingChar = side === 'user' ? 'K' : 'k';\n        var rookChar = side === 'user' ? 'R' : 'r';\n        var enemy = otherSide(side);\n        if (x === 4 && y === homeY && ch === kingChar && !isAttacked(squares, 4, homeY, enemy)) {\n          var kingRight = side === 'user' ? castling.indexOf('K') >= 0 : castling.indexOf('k') >= 0;\n          if (\n            kingRight &&\n            pieceAt(squares, 7, homeY) === rookChar &&\n            pieceAt(squares, 5, homeY) === '.' &&\n            pieceAt(squares, 6, homeY) === '.' &&\n            !isAttacked(squares, 5, homeY, enemy) &&\n            !isAttacked(squares, 6, homeY, enemy)\n          ) {\n            pushMove(out, x, y, 6, homeY, { castle: 'king' });\n          }\n          var queenRight = side === 'user' ? castling.indexOf('Q') >= 0 : castling.indexOf('q') >= 0;\n          if (\n            queenRight &&\n            pieceAt(squares, 0, homeY) === rookChar &&\n            pieceAt(squares, 1, homeY) === '.' &&\n            pieceAt(squares, 2, homeY) === '.' &&\n            pieceAt(squares, 3, homeY) === '.' &&\n            !isAttacked(squares, 3, homeY, enemy) &&\n            !isAttacked(squares, 2, homeY, enemy)\n          ) {\n            pushMove(out, x, y, 2, homeY, { castle: 'queen' });\n          }\n        }\n      }\n    }\n  }\n  return out;\n}\n\nfunction applyUnchecked(squares, move, side) {\n  var from = parseSq(move.from);\n  var to = parseSq(move.to);\n  var ch = pieceAt(squares, from.x, from.y);\n  var next = withPiece(squares, from.x, from.y, '.');\n  if (move.enPassant) {\n    next = withPiece(next, to.x, from.y, '.');\n  }\n  if (move.castle === 'king') {\n    next = withPiece(next, 7, from.y, '.');\n    next = withPiece(next, 5, from.y, side === 'user' ? 'R' : 'r');\n  } else if (move.castle === 'queen') {\n    next = withPiece(next, 0, from.y, '.');\n    next = withPiece(next, 3, from.y, side === 'user' ? 'R' : 'r');\n  }\n  if (move.promotion) ch = side === 'user' ? move.promotion.toUpperCase() : move.promotion;\n  return withPiece(next, to.x, to.y, ch);\n}\n\nfunction legalMovesFor(squares, side, castling, enPassant) {\n  return pseudoMovesFor(squares, side, castling || '', enPassant || null).filter(function (move) {\n    return !inCheck(applyUnchecked(squares, move, side), side);\n  });\n}\n\nfunction nextCastling(castling, squares, move) {\n  var rights = castling || '';\n  var ch = pieceAt(squares, parseSq(move.from).x, parseSq(move.from).y);\n  if (ch === 'K') rights = rights.replace(/K|Q/g, '');\n  if (ch === 'k') rights = rights.replace(/k|q/g, '');\n  if (move.from === 'a1' || move.to === 'a1') rights = rights.replace('Q', '');\n  if (move.from === 'h1' || move.to === 'h1') rights = rights.replace('K', '');\n  if (move.from === 'a8' || move.to === 'a8') rights = rights.replace('q', '');\n  if (move.from === 'h8' || move.to === 'h8') rights = rights.replace('k', '');\n  return rights;\n}\n\nfunction nextEnPassant(move, side) {\n  if (!move.doublePawn) return null;\n  var from = parseSq(move.from);\n  var to = parseSq(move.to);\n  return sqName(from.x, (from.y + to.y) / 2);\n}\n\nfunction isInsufficientMaterial(squares) {\n  var pieces = [];\n  for (var i = 0; i < squares.length; i += 1) {\n    var ch = squares[i];\n    if (ch !== '.' && kindOf(ch) !== 'k') pieces.push({ ch: ch, x: i % 8, y: Math.floor(i / 8) });\n  }\n  if (pieces.length === 0) return true;\n  if (pieces.length === 1 && (kindOf(pieces[0].ch) === 'b' || kindOf(pieces[0].ch) === 'n')) {\n    return true;\n  }\n  if (\n    pieces.length > 0 &&\n    pieces.every(function (p) {\n      return kindOf(p.ch) === 'b';\n    })\n  ) {\n    var color = (pieces[0].x + pieces[0].y) % 2;\n    return pieces.every(function (p) {\n      return (p.x + p.y) % 2 === color;\n    });\n  }\n  return false;\n}\n\nfunction positionKey(squares, side, castling, enPassant) {\n  var effectiveEnPassant =\n    enPassant &&\n    legalMovesFor(squares, side, castling, enPassant).some(function (move) {\n      return move.enPassant;\n    })\n      ? enPassant\n      : '-';\n  return [squares, side, castling || '-', effectiveEnPassant].join('|');\n}\n\nfunction statusAfter(squares, sideToMove, castling, enPassant) {\n  if (isInsufficientMaterial(squares)) return 'draw';\n  var moves = legalMovesFor(squares, sideToMove, castling, enPassant);\n  if (moves.length > 0) return 'playing';\n  if (!inCheck(squares, sideToMove)) return 'draw';\n  return sideToMove === 'user' ? 'ai_won' : 'user_won';\n}\n\nfunction describeMove(move) {\n  if (move.castle === 'king') return move.from + '-' + move.to + ' (O-O)';\n  if (move.castle === 'queen') return move.from + '-' + move.to + ' (O-O-O)';\n  var text = move.from + (move.capture ? 'x' : '-') + move.to;\n  if (move.promotion) text += '=' + move.promotion.toUpperCase();\n  if (move.enPassant) text += ' e.p.';\n  return text;\n}\n\nfunction renderAscii(squares) {\n  var lines = ['  a b c d e f g h'];\n  for (var y = 0; y < 8; y += 1) {\n    var row = String(8 - y);\n    for (var x = 0; x < 8; x += 1) row += ' ' + pieceAt(squares, x, y);\n    lines.push(row + ' ' + String(8 - y));\n  }\n  lines.push('  a b c d e f g h');\n  lines.push('Uppercase = white (user). Lowercase = black (you).');\n  return lines.join('\\n');\n}\n// ── chess-rules-end ──\n\nconst STATE_FILE = 'game.json';\nconst SIDE_NAMES = { user: 'white', ai: 'black' };\n\ninterface ChessMove {\n  from: string;\n  to: string;\n  capture: boolean;\n  promotion?: string;\n  doublePawn?: boolean;\n  enPassant?: boolean;\n  castle?: string;\n}\n\ninterface GameState {\n  version: number;\n  squares: string;\n  turn: 'user' | 'ai';\n  status: 'playing' | 'user_won' | 'ai_won' | 'draw';\n  castling: string;\n  enPassant: string | null;\n  halfmoveClock: number;\n  fullmoveNumber: number;\n  positionHistory: string[];\n  legalMoves: ChessMove[];\n  moveLog: Array<{\n    by: 'user' | 'ai';\n    from: string;\n    to: string;\n    promotion?: string;\n    notation: string;\n    at: string;\n    moveThought?: string;\n  }>;\n  lastMove: {\n    by: 'user' | 'ai';\n    from: string;\n    to: string;\n    promotion?: string;\n    notation: string;\n  } | null;\n  lastMoveThought: string;\n  updatedAt: string;\n}\n\nfunction freshState(): GameState {\n  const squares = buildInitial();\n  const castling = 'KQkq';\n  return {\n    version: 1,\n    squares,\n    turn: 'user',\n    status: 'playing',\n    castling,\n    enPassant: null,\n    halfmoveClock: 0,\n    fullmoveNumber: 1,\n    positionHistory: [positionKey(squares, 'user', castling, null)],\n    legalMoves: legalMovesFor(squares, 'user', castling, null),\n    moveLog: [],\n    lastMove: null,\n    lastMoveThought: '',\n    updatedAt: new Date().toISOString(),\n  };\n}\n\nasync function load(): Promise<GameState> {\n  let raw: string;\n  try {\n    raw = await gezel.fs.read(STATE_FILE);\n  } catch {\n    return freshState();\n  }\n  const parsed = JSON.parse(raw) as Partial<GameState>;\n  if (typeof parsed.squares !== 'string' || parsed.squares.length !== 64) {\n    throw new Error(`${STATE_FILE} is corrupt; call action:'new_game' to reset.`);\n  }\n  return {\n    ...freshState(),\n    ...parsed,\n    castling: typeof parsed.castling === 'string' ? parsed.castling : '',\n    enPassant: parsed.enPassant ?? null,\n  } as GameState;\n}\n\nasync function persist(state: GameState): Promise<GameState> {\n  state.legalMoves =\n    state.status === 'playing'\n      ? legalMovesFor(state.squares, state.turn, state.castling, state.enPassant)\n      : [];\n  state.updatedAt = new Date().toISOString();\n  await gezel.fs.write(STATE_FILE, `${JSON.stringify(state, null, 2)}\\n`);\n  return state;\n}\n\nfunction renderLegal(state: GameState): string {\n  if (state.status !== 'playing') return '(game over)';\n  return state.legalMoves.map(describeMove).join(', ') || '(none)';\n}\n\nfunction summarize(state: GameState): string {\n  if (state.status === 'user_won') return 'Checkmate — the user (white) won.';\n  if (state.status === 'ai_won') return 'Checkmate — you (black) won.';\n  if (state.status === 'draw') return 'Game over — draw.';\n  const check = inCheck(state.squares, state.turn) ? ' The king is in check.' : '';\n  return `Move ${state.fullmoveNumber}: ${SIDE_NAMES[state.turn]} (${state.turn}) to move.${check}`;\n}\n\nfunction applyTurn(\n  state: GameState,\n  by: 'user' | 'ai',\n  moveThought?: string,\n): { state: GameState; move: ChessMove } {\n  if (state.status !== 'playing') {\n    throw new Error(`The game is over (${state.status}). Call action:'new_game' to start another.`);\n  }\n  if (state.turn !== by) {\n    throw new Error(by === 'ai' ? \"It's not your turn yet.\" : 'The opponent is still to move.');\n  }\n  if (!input.from || !input.to) throw new Error(\"Pass 'from' and 'to' squares.\");\n  const wantedPromotion = (input.promotion || 'q').toLowerCase();\n  const candidates = state.legalMoves.filter(\n    (move) =>\n      move.from === input.from!.toLowerCase() &&\n      move.to === input.to!.toLowerCase(),\n  );\n  const move =\n    candidates.find((candidate) => (candidate.promotion || 'q') === wantedPromotion) ??\n    candidates.find((candidate) => !candidate.promotion);\n  if (!move) {\n    throw new Error(\n      `Illegal move ${input.from}-${input.to}. Legal moves for ${SIDE_NAMES[by]}: ${renderLegal(state)}`,\n    );\n  }\n\n  const movingPiece = pieceAt(\n    state.squares,\n    parseSq(move.from)!.x,\n    parseSq(move.from)!.y,\n  );\n  const oldSquares = state.squares;\n  state.castling = nextCastling(state.castling, oldSquares, move);\n  state.squares = applyUnchecked(oldSquares, move, by);\n  state.enPassant = nextEnPassant(move, by);\n  state.halfmoveClock =\n    kindOf(movingPiece) === 'p' || move.capture ? 0 : state.halfmoveClock + 1;\n  if (by === 'ai') state.fullmoveNumber += 1;\n  state.turn = otherSide(by) as 'user' | 'ai';\n  const key = positionKey(state.squares, state.turn, state.castling, state.enPassant);\n  state.positionHistory.push(key);\n  state.status = statusAfter(\n    state.squares,\n    state.turn,\n    state.castling,\n    state.enPassant,\n  ) as GameState['status'];\n  if (\n    state.status === 'playing' &&\n    (state.halfmoveClock >= 100 ||\n      state.positionHistory.filter((candidate) => candidate === key).length >= 3)\n  ) {\n    state.status = 'draw';\n  }\n\n  const notation = describeMove(move);\n  const entry = {\n    by,\n    from: move.from,\n    to: move.to,\n    ...(move.promotion ? { promotion: move.promotion } : {}),\n    notation,\n    at: new Date().toISOString(),\n    ...(moveThought ? { moveThought } : {}),\n  };\n  state.moveLog.push(entry);\n  state.lastMove = {\n    by,\n    from: move.from,\n    to: move.to,\n    ...(move.promotion ? { promotion: move.promotion } : {}),\n    notation,\n  };\n  if (by === 'ai' && moveThought) state.lastMoveThought = moveThought;\n  return { state, move };\n}\n\nlet state = await load();\nlet lastMoveText = state.lastMove?.notation ?? '(none)';\n\nif (input.action === 'new_game') {\n  state = await persist(freshState());\n  lastMoveText = '(none)';\n} else if (input.action === 'user_move' || input.action === 'ai_move') {\n  const by = input.action === 'user_move' ? 'user' : 'ai';\n  const moveThought = input.moveThought?.trim().slice(0, 140);\n  const applied = applyTurn(state, by, moveThought);\n  state = await persist(applied.state);\n  lastMoveText = describeMove(applied.move);\n} else if (input.action !== 'state' && input.action !== 'board') {\n  throw new Error(`Unknown action '${input.action}'. Use state, board, user_move, ai_move, or new_game.`);\n}\n\ngezel.output({\n  board:\n    `${renderAscii(state.squares)}\\nTurn: ${SIDE_NAMES[state.turn]} (${state.turn}).` +\n    `${inCheck(state.squares, state.turn) && state.status === 'playing' ? ' CHECK.' : ''}\\n` +\n    `Legal moves: ${renderLegal(state)}`,\n  turn: state.turn,\n  status: state.status,\n  lastMove: lastMoveText,\n  legalMoves: renderLegal(state),\n  summary: summarize(state),\n});\n"
+  },
+  "tools": [
+    {
+      "name": "get_board",
+      "description": "See the authoritative chess position, whose turn it is, and every legal move.",
+      "script": "game-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "board"
+      }
+    },
+    {
+      "name": "make_move",
+      "description": "Play your black move. Pass from/to; for promotion optionally choose 'q', 'r', 'b', or 'n'. Include a short moveThought for the board.",
+      "script": "game-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Origin square, e.g. 'e7'."
+          },
+          "to": {
+            "type": "string",
+            "description": "Destination square, e.g. 'e5'."
+          },
+          "promotion": {
+            "type": "string",
+            "enum": [
+              "q",
+              "r",
+              "b",
+              "n"
+            ],
+            "description": "Promotion piece. Defaults to queen."
+          },
+          "moveThought": {
+            "type": "string",
+            "description": "A short line of table talk (max 140 chars)."
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "bind": {
+        "action": "ai_move"
+      }
+    },
+    {
+      "name": "user_move",
+      "description": "The user's white move, played from the chess board.",
+      "script": "game-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "promotion": {
+            "type": "string",
+            "enum": [
+              "q",
+              "r",
+              "b",
+              "n"
+            ]
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "bind": {
+        "action": "user_move"
+      },
+      "reaction": {
+        "gezel": "chess-player",
+        "hideSeed": true,
+        "prompt": "Your opponent played {{output.lastMove}}. Status: {{output.status}}. Board now:\n{{output.board}}\nThe board and Legal moves line come directly from the chess engine and are always correct. Do not re-derive the position, dispute a listed move, or invent a move outside that list. Spend your thought on choosing among the listed legal moves.\nStyle: {{playStyle}}. In Opponent style, do not volunteer advice or reveal the user’s available moves, threats, tactics, or your plan; comment only about your own move or the atmosphere. In Instructor style, offer at most one brief teaching observation without choosing the user’s move. Answer strategy questions when asked.\nAct on this latest position. If the game is over, do not move — give one gracious line and offer a new game. Otherwise choose a strong legal move and play it with make_move, including a short {{personality}} moveThought that follows the selected style. If make_move rejects it, choose one move verbatim from the legal list in the error and retry. After moving, reply with ONE short line of table talk."
+      }
+    },
+    {
+      "name": "new_game",
+      "description": "Reset the chess board to the standard opening position.",
+      "script": "game-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "new_game"
+      }
+    }
+  ],
+  "craftbooks": [],
+  "schedules": [],
+  "pages": {
+    "entry": "board/index.html",
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "game.json"
+      }
+    ],
+    "tools": [
+      "user_move",
+      "new_game"
+    ]
+  },
+  "workspaceSeed": [
+    "game.json"
+  ]
+}

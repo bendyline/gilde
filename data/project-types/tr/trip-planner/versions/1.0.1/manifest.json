@@ -1,0 +1,193 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.1",
+  "releasedAt": "2026-08-01T00:00:00Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "destination": {
+        "type": "string",
+        "title": "Where to?",
+        "description": "e.g. 'Kyoto', 'the Scottish Highlands'.",
+        "default": "somewhere wonderful"
+      },
+      "start": {
+        "type": "string",
+        "title": "Departure date",
+        "description": "e.g. 2026-09-12. A rough date is fine.",
+        "default": "2026-12-01"
+      }
+    },
+    "required": [
+      "destination",
+      "start"
+    ]
+  },
+  "nameTemplate": "Trip: {{destination}}",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "reisleider",
+      "voorman": true
+    }
+  ],
+  "tools": [
+    {
+      "name": "plan_day",
+      "description": "Set a day's plan (one anchor, options, slack).",
+      "script": "trip-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "plan": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "plan"
+        ]
+      },
+      "bind": {
+        "action": "plan_day"
+      }
+    },
+    {
+      "name": "pack_add",
+      "description": "Add an item to the packing list.",
+      "script": "trip-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item"
+        ]
+      },
+      "bind": {
+        "action": "pack_add"
+      }
+    },
+    {
+      "name": "pack_check",
+      "description": "Mark an item packed.",
+      "script": "trip-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "item": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "pack_check"
+      }
+    },
+    {
+      "name": "journal_entry",
+      "description": "Capture a trip moment — a line a day.",
+      "script": "trip-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "note"
+        ]
+      },
+      "bind": {
+        "action": "journal_entry"
+      }
+    },
+    {
+      "name": "trip_status",
+      "description": "Countdown, days planned, and the packing state.",
+      "script": "trip-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "status"
+      }
+    },
+    {
+      "name": "itinerary",
+      "description": "Read the full day-by-day itinerary.",
+      "script": "trip-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "itinerary"
+      }
+    },
+    {
+      "name": "mark_packed",
+      "description": "The dashboard's packing checkbox.",
+      "script": "trip-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "bind": {
+        "action": "pack_check"
+      }
+    }
+  ],
+  "craftbooks": [
+    "pre-departure-countdown"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "dashboard/index.html",
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "trip.json"
+      },
+      {
+        "source": "workspace",
+        "path": "packing.json"
+      },
+      {
+        "source": "workspace",
+        "path": "journal.json"
+      }
+    ],
+    "tools": [
+      "mark_packed"
+    ]
+  },
+  "workspaceSeed": [
+    "trip.json",
+    "packing.json",
+    "journal.json"
+  ],
+  "scripts": {
+    "trip-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { logStore, rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'trip-store',\n  description:\n    \"Read and update the trip: itinerary + packing (trip.json) and the journal (journal.json). Call action:'status' for the shape of the trip; 'plan_day' with date + plan; 'pack_add' / 'pack_check' for the packing list; 'journal_entry' during the trip.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description:\n        \"One of 'status', 'plan_day', 'pack_add', 'pack_check', 'journal_entry', or 'itinerary'.\",\n      required: true,\n    },\n    date: { type: 'string', description: 'Day being planned, e.g. 2026-09-14.' },\n    plan: { type: 'string', description: \"The day's plan (anchor + options).\" },\n    item: { type: 'string', description: 'Packing item name.' },\n    id: { type: 'string', description: \"Packing item id, e.g. 'pack-3'.\" },\n    note: { type: 'string', description: 'Journal entry text.' },\n  },\n  outputs: {\n    daysPlanned: { type: 'number', description: 'Days with a plan.' },\n    unpacked: { type: 'number', description: 'Packing items still unpacked.' },\n    summary: { type: 'string', description: 'The trip picture (or the itinerary).' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── trip-rules-start ──\n// Pure derivations over the trip doc: countdown and itinerary rendering.\n\nfunction daysUntil(dateStr, nowMs) {\n  var when = Date.parse(dateStr);\n  if (!isFinite(when)) return null;\n  return Math.ceil((when - nowMs) / (24 * 60 * 60 * 1000));\n}\n\nfunction renderItinerary(days) {\n  var dates = Object.keys(days).sort();\n  if (dates.length === 0) return 'No days planned yet.';\n  return dates\n    .map(function (d) {\n      return d + ': ' + days[d];\n    })\n    .join('\\n');\n}\n\nfunction tripLine(trip, unpackedCount, nowMs) {\n  var start = daysUntil(trip.startDate, nowMs);\n  var planned = Object.keys(trip.days || {}).length;\n  var lead =\n    start === null\n      ? ''\n      : start > 0\n        ? start + ' day(s) until departure. '\n        : start === 0\n          ? 'Departure day! '\n          : 'On the road (or home again). ';\n  return (\n    lead + planned + ' day(s) planned. Packing: ' +\n    (unpackedCount === 0 ? 'all packed.' : unpackedCount + ' item(s) still unpacked.')\n  );\n}\n// ── trip-rules-end ──\n\nconst TRIP_FILE = 'trip.json';\nconst packing = rosterStore(gezel.fs, 'packing.json', {\n  stages: ['unpacked', 'packed'],\n  idPrefix: 'pack',\n});\nconst journal = logStore(gezel.fs, 'journal.json');\n\ninterface Trip {\n  version: number;\n  destination: string;\n  startDate: string;\n  days: Record<string, string>;\n  updatedAt: string;\n}\n\nasync function loadTrip(): Promise<Trip> {\n  try {\n    const parsed = JSON.parse(await gezel.fs.read(TRIP_FILE)) as Partial<Trip>;\n    return {\n      version: 1,\n      destination: typeof parsed.destination === 'string' ? parsed.destination : '',\n      startDate: typeof parsed.startDate === 'string' ? parsed.startDate : '',\n      days: parsed.days && typeof parsed.days === 'object' ? (parsed.days as Record<string, string>) : {},\n      updatedAt: new Date().toISOString(),\n    };\n  } catch {\n    return { version: 1, destination: '', startDate: '', days: {}, updatedAt: new Date().toISOString() };\n  }\n}\n\nasync function saveTrip(trip: Trip): Promise<void> {\n  trip.updatedAt = new Date().toISOString();\n  await gezel.fs.write(TRIP_FILE, `${JSON.stringify(trip, null, 2)}\\n`);\n}\n\nconst trip = await loadTrip();\n\nif (input.action === 'plan_day') {\n  if (!input.date || !input.plan) throw new Error(\"plan_day needs 'date' (YYYY-MM-DD) and 'plan'.\");\n  trip.days[input.date.slice(0, 10)] = input.plan;\n  await saveTrip(trip);\n} else if (input.action === 'pack_add') {\n  if (!input.item) throw new Error(\"pack_add needs 'item'.\");\n  await packing.add({ status: 'unpacked', fields: { name: input.item } });\n} else if (input.action === 'pack_check') {\n  let id = input.id;\n  if (!id && input.item) {\n    const wanted = input.item.toLowerCase();\n    const matches = (await packing.list()).filter(\n      (r) => String(r.fields.name ?? '').toLowerCase() === wanted,\n    );\n    if (matches.length === 1) id = matches[0]!.id;\n  }\n  if (!id) throw new Error(\"Pass 'id' (e.g. 'pack-3') or an exact packing 'item'.\");\n  await packing.transition(id, 'packed');\n} else if (input.action === 'journal_entry') {\n  if (!input.note) throw new Error(\"journal_entry needs 'note'.\");\n  await journal.append({ kind: 'entry', note: input.note });\n} else if (input.action !== 'status' && input.action !== 'itinerary') {\n  throw new Error(\n    `Unknown action '${input.action}'. Use status, plan_day, pack_add, pack_check, journal_entry, or itinerary.`,\n  );\n}\n\nconst packItems = await packing.list();\nconst unpacked = packItems.filter((r) => r.status === 'unpacked').length;\n\ngezel.output({\n  daysPlanned: Object.keys(trip.days).length,\n  unpacked,\n  summary:\n    input.action === 'itinerary' ? renderItinerary(trip.days) : tripLine(trip, unpacked, Date.now()),\n});\n"
+  }
+}

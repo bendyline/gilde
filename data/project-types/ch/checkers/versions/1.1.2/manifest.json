@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "version": "1.1.2",
+  "releasedAt": "2026-08-01T00:00:00Z",
+  "meesterManaged": false,
+  "mode": "solo",
+  "leadLabel": "Opponent",
+  "leanProfile": true,
+  "tabVisibility": {
+    "overview": false,
+    "tasks": false,
+    "approvals": false,
+    "workspace": false,
+    "artifacts": false,
+    "map": false
+  },
+  "params": {
+    "type": "object",
+    "properties": {
+      "personality": {
+        "type": "string",
+        "title": "Table-talk style",
+        "description": "How your opponent talks between moves.",
+        "enum": [
+          "peppy",
+          "cheeky",
+          "zen",
+          "gracious"
+        ],
+        "default": "peppy"
+      },
+      "playStyle": {
+        "type": "string",
+        "title": "How should the Damspeler play?",
+        "description": "An opponent keeps their strategy to themselves; an instructor offers light teaching notes.",
+        "enum": [
+          "Opponent",
+          "Instructor"
+        ],
+        "default": "Opponent"
+      }
+    },
+    "required": [
+      "personality",
+      "playStyle"
+    ]
+  },
+  "nameTemplate": "Checkers vs the Damspeler",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "checkers-player",
+      "voorman": true
+    }
+  ],
+  "scripts": {
+    "game-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'game-store',\n  description:\n    \"Read and update the checkers game (game.json). Call action:'board' to see the position, the side to move, and every legal move; action:'ai_move' to play your move (from/to, optional moveThought); action:'state' for a light summary; action:'new_game' to reset, optionally with forceCaptures:false. An illegal ai_move fails with the full legal-move list — pick one of those and call again.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'state', 'board', 'user_move', 'ai_move', or 'new_game'.\",\n      required: true,\n    },\n    from: { type: 'string', description: \"Origin square, e.g. 'c3'.\" },\n    to: { type: 'string', description: \"Destination square (a jump sequence's final square).\" },\n    moveThought: { type: 'string', description: 'A short line of table talk to show on the board (max 140 chars).' },\n    forceCaptures: {\n      type: 'boolean',\n      description: \"For new_game: true for standard forced captures; false to keep ordinary moves legal when a capture is available.\",\n    },\n  },\n  outputs: {\n    board: { type: 'string', description: 'Legacy human-readable ASCII board with coordinates.' },\n    modelState: {\n      type: 'object',\n      description:\n        'Authoritative model-facing state: orientation, square lists, capture availability, and structured legal moves.',\n    },\n    turn: { type: 'string', description: \"Whose move: 'user' or 'ai'.\" },\n    status: { type: 'string', description: 'playing, user_won, or ai_won.' },\n    lastMove: { type: 'string', description: \"The move just played, e.g. 'c3-d4' or 'b6xd4'.\" },\n    legalMoves: { type: 'string', description: 'Rendered legal moves for the side to move.' },\n    captureRule: { type: 'string', description: \"Either 'forced' or 'optional'.\" },\n    summary: { type: 'string', description: 'Human-readable game summary.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── checkers-rules-start ──\n// Pure, annotation-free rules engine (American/English draughts, 8x8).\n// Squares: 64-char row-major string, index = y*8+x, y0 = rank 8, x0 = file a.\n// 'r'/'R' = red (the user, moving toward rank 8 / decreasing y);\n// 'b'/'B' = black (the AI, moving toward rank 1 / increasing y); '.' empty.\n// Kept self-contained between these sentinels so unit tests execute the\n// shipped bytes directly (new Function) on every platform.\n\nvar FILES = 'abcdefgh';\n\nfunction sqName(x, y) {\n  return FILES[x] + String(8 - y);\n}\n\nfunction parseSq(name) {\n  if (typeof name !== 'string' || name.length !== 2) return null;\n  var x = FILES.indexOf(name[0].toLowerCase());\n  var rank = Number(name[1]);\n  if (x < 0 || !(rank >= 1 && rank <= 8)) return null;\n  return { x: x, y: 8 - rank };\n}\n\nfunction pieceAt(squares, x, y) {\n  return squares[y * 8 + x];\n}\n\nfunction withPiece(squares, x, y, ch) {\n  var i = y * 8 + x;\n  return squares.slice(0, i) + ch + squares.slice(i + 1);\n}\n\nfunction sideOf(ch) {\n  if (ch === 'r' || ch === 'R') return 'user';\n  if (ch === 'b' || ch === 'B') return 'ai';\n  return null;\n}\n\nfunction isKing(ch) {\n  return ch === 'R' || ch === 'B';\n}\n\nfunction kingRowY(side) {\n  return side === 'user' ? 0 : 7;\n}\n\nfunction dirsFor(ch) {\n  if (isKing(ch)) {\n    return [\n      { dx: -1, dy: -1 },\n      { dx: 1, dy: -1 },\n      { dx: -1, dy: 1 },\n      { dx: 1, dy: 1 },\n    ];\n  }\n  var dy = ch === 'r' ? -1 : 1;\n  return [\n    { dx: -1, dy: dy },\n    { dx: 1, dy: dy },\n  ];\n}\n\nfunction inBounds(x, y) {\n  return x >= 0 && x < 8 && y >= 0 && y < 8;\n}\n\nfunction buildInitial() {\n  var out = '';\n  for (var y = 0; y < 8; y += 1) {\n    for (var x = 0; x < 8; x += 1) {\n      var dark = (x + y) % 2 === 1;\n      if (dark && y <= 2) out += 'b';\n      else if (dark && y >= 5) out += 'r';\n      else out += '.';\n    }\n  }\n  return out;\n}\n\n// All complete jump sequences for the piece at (x, y). A sequence keeps\n// jumping with the same piece while another capture is available; a man\n// that reaches the king row STOPS there (standard rule — the move ends on\n// crowning). Each result: { from, to, path, captures } (square names).\nfunction jumpSequencesFrom(squares, x, y, ch) {\n  var side = sideOf(ch);\n  var results = [];\n\n  function explore(sq, cx, cy, curCh, path, captures) {\n    var extended = false;\n    var dirs = dirsFor(curCh);\n    for (var i = 0; i < dirs.length; i += 1) {\n      var mx = cx + dirs[i].dx;\n      var my = cy + dirs[i].dy;\n      var lx = cx + dirs[i].dx * 2;\n      var ly = cy + dirs[i].dy * 2;\n      if (!inBounds(lx, ly)) continue;\n      var mid = pieceAt(sq, mx, my);\n      if (sideOf(mid) === null || sideOf(mid) === side) continue;\n      if (pieceAt(sq, lx, ly) !== '.') continue;\n\n      var nextCh = curCh;\n      var crowned = false;\n      if (!isKing(curCh) && ly === kingRowY(side)) {\n        nextCh = side === 'user' ? 'R' : 'B';\n        crowned = true;\n      }\n      var nextSq = withPiece(withPiece(withPiece(sq, cx, cy, '.'), mx, my, '.'), lx, ly, nextCh);\n      var nextPath = path.concat([sqName(lx, ly)]);\n      var nextCaptures = captures.concat([sqName(mx, my)]);\n      extended = true;\n      if (crowned) {\n        results.push({\n          from: path[0],\n          to: sqName(lx, ly),\n          path: nextPath,\n          captures: nextCaptures,\n        });\n      } else {\n        explore(nextSq, lx, ly, nextCh, nextPath, nextCaptures);\n      }\n    }\n    if (!extended && captures.length > 0) {\n      results.push({ from: path[0], to: path[path.length - 1], path: path, captures: captures });\n    }\n  }\n\n  explore(squares, x, y, ch, [sqName(x, y)], []);\n  return results;\n}\n\n// Every legal move for `side`. With standard forced captures, any jump\n// masks quiet moves. In the optional-capture variant, both remain legal.\n// Simple moves are single diagonal steps.\nfunction legalMovesFor(squares, side, forceCaptures) {\n  var jumps = [];\n  var steps = [];\n  for (var y = 0; y < 8; y += 1) {\n    for (var x = 0; x < 8; x += 1) {\n      var ch = pieceAt(squares, x, y);\n      if (sideOf(ch) !== side) continue;\n      var seqs = jumpSequencesFrom(squares, x, y, ch);\n      for (var j = 0; j < seqs.length; j += 1) jumps.push(seqs[j]);\n      var dirs = dirsFor(ch);\n      for (var i = 0; i < dirs.length; i += 1) {\n        var nx = x + dirs[i].dx;\n        var ny = y + dirs[i].dy;\n        if (!inBounds(nx, ny) || pieceAt(squares, nx, ny) !== '.') continue;\n        steps.push({\n          from: sqName(x, y),\n          to: sqName(nx, ny),\n          path: [sqName(x, y), sqName(nx, ny)],\n          captures: [],\n        });\n      }\n    }\n  }\n  return forceCaptures !== false && jumps.length > 0 ? jumps : jumps.concat(steps);\n}\n\n// Apply a legal sequence, returning the new squares string. Crowns a man\n// that ends on the king row (mid-sequence crowning already ended the\n// sequence in jumpSequencesFrom, so end-of-path crowning is complete).\nfunction applySequence(squares, seq) {\n  var start = parseSq(seq.from);\n  var end = parseSq(seq.to);\n  var ch = pieceAt(squares, start.x, start.y);\n  var side = sideOf(ch);\n  var next = withPiece(squares, start.x, start.y, '.');\n  for (var i = 0; i < seq.captures.length; i += 1) {\n    var cap = parseSq(seq.captures[i]);\n    next = withPiece(next, cap.x, cap.y, '.');\n  }\n  var finalCh = ch;\n  if (!isKing(ch) && end.y === kingRowY(side)) finalCh = side === 'user' ? 'R' : 'B';\n  return withPiece(next, end.x, end.y, finalCh);\n}\n\n// The side to move with no legal move has lost (covers zero pieces too).\nfunction statusAfter(squares, sideToMove, forceCaptures) {\n  if (legalMovesFor(squares, sideToMove, forceCaptures).length > 0) return 'playing';\n  return sideToMove === 'user' ? 'ai_won' : 'user_won';\n}\n\nfunction describeMove(seq) {\n  var joiner = seq.captures.length > 0 ? 'x' : '-';\n  var text = seq.path.join(joiner);\n  if (seq.captures.length > 0) text += ' (captures ' + seq.captures.join(', ') + ')';\n  return text;\n}\n\nfunction renderAscii(squares) {\n  var lines = ['  a b c d e f g h'];\n  for (var y = 0; y < 8; y += 1) {\n    var row = String(8 - y);\n    for (var x = 0; x < 8; x += 1) {\n      row += ' ' + pieceAt(squares, x, y);\n    }\n    lines.push(row);\n  }\n  lines.push('r/R = red (your opponent, moving up). b/B = black (you, moving down). Capitals are kings.');\n  return lines.join('\\n');\n}\n\nfunction renderPieces(squares) {\n  var redMen = [];\n  var redKings = [];\n  var blackMen = [];\n  var blackKings = [];\n  for (var y = 0; y < 8; y += 1) {\n    for (var x = 0; x < 8; x += 1) {\n      var ch = pieceAt(squares, x, y);\n      var name = sqName(x, y);\n      if (ch === 'r') redMen.push(name);\n      else if (ch === 'R') redKings.push(name);\n      else if (ch === 'b') blackMen.push(name);\n      else if (ch === 'B') blackKings.push(name);\n    }\n  }\n  return { redMen: redMen, redKings: redKings, blackMen: blackMen, blackKings: blackKings };\n}\n// ── checkers-rules-end ──\n\nconst STATE_FILE = 'game.json';\nconst STAGE_SIDES = { user: 'red', ai: 'black' };\n\ninterface GameState {\n  version: number;\n  squares: string;\n  turn: 'user' | 'ai';\n  status: 'playing' | 'user_won' | 'ai_won' | 'draw';\n  userColor: string;\n  forceCaptures: boolean;\n  legalMoves: Array<{ from: string; to: string; path: string[]; captures: string[] }>;\n  moveLog: Array<{\n    by: 'user' | 'ai';\n    from: string;\n    to: string;\n    captures: string[];\n    at: string;\n    moveThought?: string;\n  }>;\n  lastMove: { by: 'user' | 'ai'; from: string; to: string; captures: string[] } | null;\n  lastMoveThought: string;\n  updatedAt: string;\n}\n\nfunction freshState(forceCaptures = true): GameState {\n  const squares = buildInitial();\n  return {\n    version: 1,\n    squares,\n    turn: 'user',\n    status: 'playing',\n    userColor: 'red',\n    forceCaptures,\n    legalMoves: legalMovesFor(squares, 'user', forceCaptures),\n    moveLog: [],\n    lastMove: null,\n    lastMoveThought: '',\n    updatedAt: new Date().toISOString(),\n  };\n}\n\nasync function load(): Promise<GameState> {\n  let raw: string;\n  try {\n    raw = await gezel.fs.read(STATE_FILE);\n  } catch {\n    return freshState();\n  }\n  const parsed = JSON.parse(raw) as Partial<GameState>;\n  if (typeof parsed.squares !== 'string' || parsed.squares.length !== 64) {\n    throw new Error(`${STATE_FILE} is corrupt (squares missing); call action:'new_game' to reset.`);\n  }\n  return { ...freshState(parsed.forceCaptures !== false), ...parsed, forceCaptures: parsed.forceCaptures !== false } as GameState;\n}\n\nasync function persist(state: GameState): Promise<GameState> {\n  state.legalMoves = state.status === 'playing' ? legalMovesFor(state.squares, state.turn, state.forceCaptures) : [];\n  state.updatedAt = new Date().toISOString();\n  await gezel.fs.write(STATE_FILE, `${JSON.stringify(state, null, 2)}\\n`);\n  return state;\n}\n\nfunction summarize(state: GameState): string {\n  const counts = { r: 0, b: 0 };\n  for (const ch of state.squares) {\n    if (ch === 'r' || ch === 'R') counts.r += 1;\n    if (ch === 'b' || ch === 'B') counts.b += 1;\n  }\n  if (state.status === 'user_won') return `Game over — the user (red) won. Red ${counts.r} pieces, black ${counts.b}.`;\n  if (state.status === 'ai_won') return `Game over — you (black) won. Red ${counts.r} pieces, black ${counts.b}.`;\n  return `Move ${state.moveLog.length + 1}: ${STAGE_SIDES[state.turn]} (${state.turn}) to move. Red ${counts.r} pieces, black ${counts.b}. Captures are ${state.forceCaptures ? 'forced' : 'optional'}.`;\n}\n\nfunction renderLegal(state: GameState): string {\n  if (state.status !== 'playing') return '(game over)';\n  return state.legalMoves.map(describeMove).join(', ') || '(none)';\n}\n\nfunction renderModelState(state: GameState) {\n  return {\n    status: state.status,\n    sideToMove: STAGE_SIDES[state.turn],\n    coordinateFormat: 'file-rank (for example e3)',\n    orientation: { redForwardRankDelta: 1, blackForwardRankDelta: -1 },\n    pieces: renderPieces(state.squares),\n    capturePolicy: state.forceCaptures ? 'mandatory-if-available' : 'optional',\n    capturesAvailable: state.legalMoves.some((move) => move.captures.length > 0),\n    legalMoves: state.legalMoves.map((move) => ({\n      from: move.from,\n      to: move.to,\n      path: move.path,\n      captures: move.captures,\n      type: move.captures.length > 0 ? 'capture' : 'step',\n    })),\n  };\n}\n\nfunction applyTurn(state: GameState, by: 'user' | 'ai', moveThought?: string): GameState {\n  if (state.status !== 'playing') {\n    throw new Error(`The game is over (${state.status}). Call action:'new_game' to start another.`);\n  }\n  if (state.turn !== by) {\n    throw new Error(\n      by === 'ai'\n        ? \"It's not your turn — the user has not moved yet.\"\n        : \"It's not your turn — the AI is still to move.\",\n    );\n  }\n  if (!input.from || !input.to) throw new Error(\"Pass 'from' and 'to' squares, e.g. from:'c3' to:'d4'.\");\n  const seq = state.legalMoves.find(\n    (m) => m.from === input.from!.toLowerCase() && m.to === input.to!.toLowerCase(),\n  );\n  if (!seq) {\n    throw new Error(\n      `Illegal move ${input.from}-${input.to}. Legal moves for ${STAGE_SIDES[by]}: ${renderLegal(state)}`,\n    );\n  }\n  state.squares = applySequence(state.squares, seq);\n  const nextTurn = by === 'user' ? 'ai' : 'user';\n  state.status = statusAfter(state.squares, nextTurn, state.forceCaptures) as GameState['status'];\n  state.turn = nextTurn;\n  const entry = {\n    by,\n    from: seq.from,\n    to: seq.to,\n    captures: seq.captures,\n    at: new Date().toISOString(),\n    ...(moveThought ? { moveThought } : {}),\n  };\n  state.moveLog.push(entry);\n  state.lastMove = { by, from: seq.from, to: seq.to, captures: seq.captures };\n  if (by === 'ai' && moveThought) state.lastMoveThought = moveThought;\n  return state;\n}\n\nlet state = await load();\nlet lastMoveText = state.lastMove\n  ? describeMove({ ...state.lastMove, path: [state.lastMove.from, state.lastMove.to] })\n  : '(none)';\n\nif (input.action === 'new_game') {\n  state = await persist(freshState(input.forceCaptures !== false));\n  lastMoveText = '(none)';\n} else if (input.action === 'user_move' || input.action === 'ai_move') {\n  const by = input.action === 'user_move' ? 'user' : 'ai';\n  const moveThought = input.moveThought ? input.moveThought.trim().slice(0, 140) : undefined;\n  const before = state.legalMoves.find(\n    (m) => m.from === (input.from ?? '').toLowerCase() && m.to === (input.to ?? '').toLowerCase(),\n  );\n  applyTurn(state, by, moveThought);\n  state = await persist(state);\n  lastMoveText = before ? describeMove(before) : `${input.from}-${input.to}`;\n} else if (input.action !== 'state' && input.action !== 'board') {\n  throw new Error(`Unknown action '${input.action}'. Use state, board, user_move, ai_move, or new_game.`);\n}\n\ngezel.output({\n  board:\n    input.action === 'state'\n      ? `${renderAscii(state.squares).split('\\n').slice(0, 9).join('\\n')}`\n      : `${renderAscii(state.squares)}\\nCapture rule: ${state.forceCaptures ? 'forced' : 'optional'}.\\nTurn: ${STAGE_SIDES[state.turn]} (${state.turn}). Legal moves: ${renderLegal(state)}`,\n  modelState: renderModelState(state),\n  turn: state.turn,\n  status: state.status,\n  lastMove: lastMoveText,\n  legalMoves: renderLegal(state),\n  captureRule: state.forceCaptures ? 'forced' : 'optional',\n  summary: summarize(state),\n});\n"
+  },
+  "tools": [
+    {
+      "name": "get_board",
+      "description": "See the authoritative structured checkers position, whose turn it is, capture availability, and every legal move. A legacy ASCII board is included for human readability.",
+      "script": "game-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "board"
+      }
+    },
+    {
+      "name": "make_move",
+      "description": "Play your (black's) move. Pass the from/to squares of a legal move; include a short moveThought to show on the board.",
+      "script": "game-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Origin square, e.g. 'b6'."
+          },
+          "to": {
+            "type": "string",
+            "description": "Destination square (a jump's final landing square)."
+          },
+          "moveThought": {
+            "type": "string",
+            "description": "A short line of table talk (max 140 chars)."
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "bind": {
+        "action": "ai_move"
+      }
+    },
+    {
+      "name": "user_move",
+      "description": "The user's move, played from the board page.",
+      "script": "game-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "bind": {
+        "action": "user_move"
+      },
+      "reaction": {
+        "gezel": "checkers-player",
+        "hideSeed": true,
+        "prompt": "Your opponent played {{output.lastMove}}. The game engine returned this authoritative state:\n```json\n{{output.modelState}}\n```\nEvery `legalMoves` entry is legal. Its `type` and `captures` fields explicitly say whether it is a jump. Do not redraw the position as a grid, re-derive legality, recalculate capture availability, recount pieces, or question the stated orientation. Spend any thinking only on which listed move is strongest.\nStyle: {{playStyle}}. In Opponent style, do not volunteer advice or reveal the user's available moves, captures, threats, or tactics; comment only about your own move or the atmosphere. In Instructor style, offer at most one brief teaching observation without choosing the user's move. Answer strategy questions when asked.\nAct on the state above. If the game is over, do not move — one gracious line and offer new_game. Otherwise it is your turn: choose one listed move and call make_move with its `from` and `to` strings, including a short {{personality}} moveThought that follows the selected style. If make_move rejects it, choose one move from the legal list in the error and try again. After moving, reply with ONE short line of table talk that follows the selected style."
+      }
+    },
+    {
+      "name": "new_game",
+      "description": "Reset the board to the opening position (user moves first).",
+      "script": "game-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "forceCaptures": {
+            "type": "boolean",
+            "description": "Whether captures are required when available. Defaults to true."
+          }
+        }
+      },
+      "bind": {
+        "action": "new_game"
+      }
+    }
+  ],
+  "craftbooks": [],
+  "schedules": [],
+  "pages": {
+    "entry": "board/index.html",
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "game.json"
+      }
+    ],
+    "tools": [
+      "user_move",
+      "new_game"
+    ]
+  },
+  "workspaceSeed": [
+    "game.json"
+  ]
+}

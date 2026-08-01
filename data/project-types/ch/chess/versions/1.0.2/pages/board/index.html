@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chess</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2;
+        --card: #fff;
+        --ink: #2b2620;
+        --muted: #7a7166;
+        --accent: #9a5928;
+        --track: #e8dfd2;
+        --sq-light: #efe4d1;
+        --sq-dark: #9a7455;
+        --sq-hint: #557a5b;
+        --frame-a: #8d694d;
+        --frame-b: #4d3424;
+        --frame-edge: #342116;
+        --white-piece-face: #fff8e8;
+        --white-piece-side: #a8987e;
+        --white-piece-edge: #594b3c;
+        --white-piece-highlight: rgba(255, 255, 255, 0.9);
+        --black-piece-face: #302a24;
+        --black-piece-side: #100d0a;
+        --black-piece-edge: #090705;
+        --black-piece-highlight: rgba(255, 255, 255, 0.2);
+        --last-move: rgba(241, 184, 84, 0.42);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1c1a17;
+          --card: #262320;
+          --ink: #efe9e0;
+          --muted: #a59a8c;
+          --accent: #e0894a;
+          --track: #3a352f;
+          --sq-light: #b8a58b;
+          --sq-dark: #674a35;
+          --sq-hint: #6f9b70;
+          --frame-a: #74543d;
+          --frame-b: #34241a;
+          --frame-edge: #1b120d;
+          --white-piece-face: #fff5dc;
+          --white-piece-side: #9d8b70;
+          --white-piece-edge: #4b3d30;
+          --white-piece-highlight: rgba(255, 255, 255, 0.88);
+          --black-piece-face: #29221c;
+          --black-piece-side: #0b0907;
+          --black-piece-edge: #050403;
+          --black-piece-highlight: rgba(255, 255, 255, 0.18);
+          --last-move: rgba(236, 159, 85, 0.38);
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 1.25rem;
+        background: var(--bg);
+        color: var(--ink);
+        font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+      }
+      main { max-width: 760px; margin: 0 auto; }
+      header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+      }
+      h1 {
+        margin: 0;
+        font-family: Georgia, 'PT Serif', 'Times New Roman', serif;
+        font-size: 1.35rem;
+      }
+      button { font: inherit; }
+      .newgame,
+      .passive-button {
+        border: 1px solid var(--track);
+        border-radius: 6px;
+        padding: 0.32rem 0.7rem;
+        background: var(--card);
+        color: var(--ink);
+        cursor: pointer;
+      }
+      .newgame:hover,
+      .passive-button:hover { border-color: var(--accent); }
+      .status { min-height: 1.5em; margin: 0.15rem 0 0.9rem; color: var(--muted); }
+      .status.thinking { color: var(--accent); }
+      .banner {
+        display: none;
+        margin-bottom: 0.75rem;
+        padding: 0.45rem 0.7rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        font-size: 0.85rem;
+      }
+      .banner.show { display: block; }
+      .table { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 0.9rem; }
+      .boardwrap {
+        padding: 0.85rem;
+        border: 1px solid var(--frame-edge);
+        border-radius: 14px;
+        background: linear-gradient(145deg, var(--frame-a), var(--frame-b));
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.2),
+          inset 0 -4px 8px rgba(0, 0, 0, 0.25),
+          0 10px 24px rgba(31, 21, 15, 0.22);
+      }
+      .board {
+        display: grid;
+        grid-template-columns: repeat(8, minmax(0, 1fr));
+        width: 100%;
+        aspect-ratio: 1;
+        overflow: hidden;
+        border: 1px solid var(--frame-edge);
+        border-radius: 8px;
+        box-shadow: 0 5px 12px rgba(0, 0, 0, 0.3);
+        user-select: none;
+      }
+      .cell {
+        position: relative;
+        display: grid;
+        min-width: 0;
+        min-height: 0;
+        aspect-ratio: 1;
+        place-items: center;
+        padding: 0;
+        border: 0;
+        color: inherit;
+      }
+      .cell.light { background: var(--sq-light); }
+      .cell.dark { background: var(--sq-dark); }
+      .cell.selectable { cursor: pointer; }
+      .cell.selected {
+        outline: 3px solid var(--accent);
+        outline-offset: -3px;
+        z-index: 2;
+      }
+      .cell.hint { cursor: pointer; }
+      .cell.hint::after {
+        position: absolute;
+        z-index: 2;
+        width: 24%;
+        height: 24%;
+        border-radius: 50%;
+        background: var(--sq-hint);
+        box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.18);
+        content: '';
+      }
+      .cell.hint.capture::after {
+        width: 72%;
+        height: 72%;
+        border: 5px solid var(--sq-hint);
+        background: transparent;
+        box-shadow: none;
+      }
+      .cell.last-from { box-shadow: inset 0 0 0 3px var(--last-move); }
+      .cell.last-to { box-shadow: inset 0 0 0 999px var(--last-move); }
+      .piece {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        width: 100%;
+        height: 100%;
+        place-items: center;
+        font-family: Georgia, 'Times New Roman', serif;
+        font-size: clamp(1.5rem, 7vw, 3.25rem);
+        line-height: 1;
+        isolation: isolate;
+        transform: translate(-2px, -3px);
+        transition: transform 140ms ease-out;
+      }
+      .piece.white {
+        --piece-face: var(--white-piece-face);
+        --piece-side: var(--white-piece-side);
+        --piece-edge: var(--white-piece-edge);
+        --piece-highlight: var(--white-piece-highlight);
+      }
+      .piece.black {
+        --piece-face: var(--black-piece-face);
+        --piece-side: var(--black-piece-side);
+        --piece-edge: var(--black-piece-edge);
+        --piece-highlight: var(--black-piece-highlight);
+      }
+      .piece::before,
+      .piece::after {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        content: attr(data-glyph);
+      }
+      .piece::before {
+        z-index: -1;
+        color: var(--piece-side);
+        -webkit-text-stroke: 1px var(--piece-edge);
+        text-shadow:
+          1px 1px 0 var(--piece-edge),
+          2px 2px 0 var(--piece-edge),
+          3px 3px 0 var(--piece-edge),
+          4px 5px 4px rgba(0, 0, 0, 0.34);
+        transform: translate(3px, 4px);
+      }
+      .piece::after {
+        color: var(--piece-face);
+        -webkit-text-stroke: 1px var(--piece-edge);
+        text-shadow:
+          -1px -1px 0 var(--piece-highlight),
+          1px 1px 0 color-mix(in srgb, var(--piece-side) 68%, transparent);
+      }
+      .cell.selectable:hover .piece,
+      .cell.selected .piece { transform: translate(-3px, -5px) scale(1.04); }
+      .coord {
+        position: absolute;
+        z-index: 3;
+        color: rgba(43, 38, 32, 0.55);
+        font-size: clamp(0.45rem, 1.3vw, 0.65rem);
+        font-weight: 700;
+        line-height: 1;
+        pointer-events: none;
+      }
+      .coord.rank { top: 5%; left: 6%; }
+      .coord.file { right: 6%; bottom: 5%; }
+      .dark .coord { color: rgba(255, 250, 242, 0.58); }
+      .aside { display: flex; flex-direction: column; gap: 0.6rem; min-width: 0; }
+      .panel {
+        padding: 0.7rem 0.85rem;
+        border: 1px solid var(--track);
+        border-radius: 10px;
+        background: var(--card);
+        font-size: 0.85rem;
+      }
+      .panel h2 {
+        margin: 0 0 0.35rem;
+        color: var(--muted);
+        font-size: 0.72rem;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+      .move-thought { font-style: italic; }
+      .move-thought .who {
+        display: block;
+        margin-bottom: 0.15rem;
+        color: var(--muted);
+        font-size: 0.78rem;
+        font-style: normal;
+      }
+      .log { max-height: 230px; margin: 0; padding-left: 1.2rem; overflow-y: auto; }
+      .log li { margin: 0.12rem 0; color: var(--muted); }
+      .log li.latest { color: var(--ink); }
+      dialog {
+        width: min(410px, calc(100vw - 2rem));
+        padding: 0;
+        border: 1px solid var(--track);
+        border-radius: 10px;
+        background: var(--card);
+        color: var(--ink);
+        box-shadow: 0 18px 55px rgba(0, 0, 0, 0.35);
+      }
+      dialog::backdrop { background: rgba(20, 17, 14, 0.62); }
+      .dialog-content { padding: 1rem; }
+      .dialog-content h2 {
+        margin: 0 0 0.2rem;
+        font-family: Georgia, 'PT Serif', serif;
+        font-size: 1.1rem;
+      }
+      .dialog-content p { margin: 0 0 0.85rem; color: var(--muted); font-size: 0.85rem; }
+      .piece-tray {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.35rem;
+        padding: 0.35rem;
+        border: 1px solid var(--track);
+        border-radius: 10px;
+        background: var(--track);
+      }
+      .promotion-key {
+        min-height: 3.2rem;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        background: var(--card);
+        color: var(--ink);
+        cursor: pointer;
+        font-family: Georgia, 'Times New Roman', serif;
+        font-size: 1.8rem;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+      }
+      .promotion-key:hover { border-color: var(--accent); }
+      .dialog-actions { display: flex; justify-content: flex-end; margin-top: 0.8rem; }
+      @media (max-width: 640px) {
+        .table { grid-template-columns: 1fr; }
+        .aside { display: grid; grid-template-columns: 1fr 1fr; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .piece { transition: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="banner" id="banner"></div>
+      <header>
+        <h1>Chess</h1>
+        <button type="button" class="newgame" id="newgame">New game</button>
+      </header>
+      <p class="status" id="status">Setting up the board…</p>
+      <div class="table">
+        <div class="boardwrap"><div class="board" id="board" aria-label="Chess board"></div></div>
+        <div class="aside">
+          <div class="panel move-thought" id="move-thought-panel" hidden>
+            <span class="who">Schaakspeler says</span>
+            <span id="move-thought"></span>
+          </div>
+          <div class="panel">
+            <h2>Moves</h2>
+            <ol class="log" id="log"><li>No moves yet — white opens.</li></ol>
+          </div>
+        </div>
+      </div>
+      <dialog id="promotion-dialog" aria-labelledby="promotion-title">
+        <div class="dialog-content">
+          <h2 id="promotion-title">Promote your pawn</h2>
+          <p>Choose the piece that arrives on the back rank.</p>
+          <div class="piece-tray" id="promotion-choices"></div>
+          <div class="dialog-actions">
+            <button type="button" class="passive-button" id="cancel-promotion">Cancel</button>
+          </div>
+        </div>
+      </dialog>
+    </main>
+    <script>
+      (function () {
+        'use strict';
+
+        var gezelPage = (function () {
+          var seq = 0;
+          var pending = {};
+          window.addEventListener('message', function (event) {
+            var data = event.data;
+            if (!data || data.__gezelPageResult !== true || typeof data.id !== 'string') return;
+            var entry = pending[data.id];
+            if (!entry) return;
+            delete pending[data.id];
+            clearTimeout(entry.timer);
+            if (data.ok) entry.resolve(data);
+            else entry.reject(new Error(data.error || 'invoke failed'));
+          });
+          return {
+            embedded: function () { return window.parent !== window; },
+            invoke: function (tool, input) {
+              return new Promise(function (resolve, reject) {
+                if (window.parent === window) return reject(new Error('not embedded in Gezel'));
+                seq += 1;
+                var id = 'pi-' + Date.now() + '-' + seq;
+                pending[id] = {
+                  resolve: resolve,
+                  reject: reject,
+                  timer: setTimeout(function () {
+                    delete pending[id];
+                    reject(new Error('invoke timed out'));
+                  }, 45000),
+                };
+                window.parent.postMessage(
+                  { __gezelPageInvoke: true, id: id, tool: tool, input: input || {} },
+                  '*',
+                );
+              });
+            },
+            refresh: function () {
+              if (window.parent !== window) window.parent.postMessage({ __gezelPageRefresh: true }, '*');
+            },
+          };
+        })();
+
+        var parts = location.pathname.split('/').filter(Boolean);
+        var typeIndex = parts.indexOf('type');
+        var capability = typeIndex > 0 ? parts[typeIndex - 1] : null;
+        var projectId = typeIndex >= 0 ? parts[typeIndex + 1] : null;
+        var FILES = 'abcdefgh';
+        var PIECES = {
+          K: '♚', Q: '♛', R: '♜', B: '♝', N: '♞', P: '♟',
+          k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟',
+        };
+        var PROMOTION_PIECES = { q: '♛', r: '♜', b: '♝', n: '♞' };
+        var state = null;
+        var selected = null;
+        var busy = false;
+        var pollTimer = null;
+        var failedPolls = 0;
+        var promotionMoves = [];
+
+        function squareName(x, y) { return FILES[x] + String(8 - y); }
+        function sideOf(piece) {
+          if (!piece || piece === '.') return null;
+          return piece === piece.toUpperCase() ? 'user' : 'ai';
+        }
+        function setBanner(text) {
+          var banner = document.getElementById('banner');
+          banner.textContent = text || '';
+          banner.className = text ? 'banner show' : 'banner';
+        }
+        function statusLine() {
+          if (!state) return 'Setting up the board…';
+          if (state.status === 'user_won') return 'Checkmate — you won. The Schaakspeler is ready for a rematch.';
+          if (state.status === 'ai_won') return 'Checkmate — the Schaakspeler takes this one.';
+          if (state.status === 'draw') return 'Draw — a balanced board, and a rematch whenever you like.';
+          if (busy) return 'Sending your move…';
+          if (state.turn === 'ai') return 'Schaakspeler is thinking…';
+          return selected ? 'Choose a highlighted destination.' : 'Your move — you have white.';
+        }
+        function movesFrom(name) {
+          if (!state) return [];
+          return state.legalMoves.filter(function (move) { return move.from === name; });
+        }
+        function movesTo(name) {
+          return selected
+            ? movesFrom(selected).filter(function (move) { return move.to === name; })
+            : [];
+        }
+        function render() {
+          var status = document.getElementById('status');
+          status.textContent = statusLine();
+          status.className =
+            state && state.turn === 'ai' && state.status === 'playing'
+              ? 'status thinking'
+              : 'status';
+
+          var thoughtPanel = document.getElementById('move-thought-panel');
+          if (state && state.lastMoveThought) {
+            thoughtPanel.hidden = false;
+            document.getElementById('move-thought').textContent = state.lastMoveThought;
+          } else {
+            thoughtPanel.hidden = true;
+          }
+
+          var log = document.getElementById('log');
+          if (state && state.moveLog.length) {
+            log.innerHTML = '';
+            state.moveLog.forEach(function (entry, index) {
+              var item = document.createElement('li');
+              item.textContent = (entry.by === 'user' ? 'White ' : 'Black ') + entry.notation;
+              if (index === state.moveLog.length - 1) item.className = 'latest';
+              log.appendChild(item);
+            });
+            log.scrollTop = log.scrollHeight;
+          } else {
+            log.innerHTML = '<li>No moves yet — white opens.</li>';
+          }
+
+          var board = document.getElementById('board');
+          board.innerHTML = '';
+          var myTurn = state && state.turn === 'user' && state.status === 'playing' && !busy;
+          for (var y = 0; y < 8; y += 1) {
+            for (var x = 0; x < 8; x += 1) {
+              var name = squareName(x, y);
+              var piece = state ? state.squares[y * 8 + x] : '.';
+              var choices = movesTo(name);
+              var cell = document.createElement('button');
+              cell.type = 'button';
+              cell.className = 'cell ' + ((x + y) % 2 ? 'dark' : 'light');
+              cell.setAttribute('aria-label', name + (piece === '.' ? ', empty' : ', ' + piece));
+              cell.dataset.square = name;
+              if (state && state.lastMove) {
+                if (state.lastMove.from === name) cell.className += ' last-from';
+                if (state.lastMove.to === name) cell.className += ' last-to';
+              }
+              if (selected === name) cell.className += ' selected';
+              if (choices.length) {
+                cell.className += ' hint';
+                if (piece !== '.') cell.className += ' capture';
+              }
+              if (myTurn && (movesFrom(name).length || choices.length)) cell.className += ' selectable';
+
+              if (x === 0) {
+                var rank = document.createElement('span');
+                rank.className = 'coord rank';
+                rank.textContent = String(8 - y);
+                cell.appendChild(rank);
+              }
+              if (y === 7) {
+                var file = document.createElement('span');
+                file.className = 'coord file';
+                file.textContent = FILES[x];
+                cell.appendChild(file);
+              }
+              if (piece !== '.') {
+                var figure = document.createElement('span');
+                figure.className = 'piece ' + (sideOf(piece) === 'user' ? 'white' : 'black');
+                figure.dataset.glyph = PIECES[piece];
+                figure.setAttribute('aria-hidden', 'true');
+                cell.appendChild(figure);
+              }
+              cell.addEventListener('click', onSquareClick);
+              board.appendChild(cell);
+            }
+          }
+        }
+
+        function onSquareClick(event) {
+          if (!state || state.turn !== 'user' || state.status !== 'playing' || busy) return;
+          var name = event.currentTarget.dataset.square;
+          var destinations = movesTo(name);
+          if (selected && destinations.length) {
+            if (destinations.some(function (move) { return move.promotion; })) {
+              openPromotion(destinations);
+            } else {
+              submitMove(destinations[0]);
+            }
+            return;
+          }
+          if (movesFrom(name).length) selected = name;
+          else selected = null;
+          render();
+        }
+
+        function openPromotion(moves) {
+          promotionMoves = moves;
+          var tray = document.getElementById('promotion-choices');
+          tray.innerHTML = '';
+          moves.forEach(function (move) {
+            var button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'promotion-key';
+            button.textContent = PROMOTION_PIECES[move.promotion];
+            button.setAttribute('aria-label', 'Promote to ' + move.promotion);
+            button.addEventListener('click', function () {
+              document.getElementById('promotion-dialog').close();
+              submitMove(move);
+            });
+            tray.appendChild(button);
+          });
+          document.getElementById('promotion-dialog').showModal();
+        }
+
+        function submitMove(move) {
+          selected = null;
+          busy = true;
+          render();
+          gezelPage
+            .invoke('user_move', {
+              from: move.from,
+              to: move.to,
+              ...(move.promotion ? { promotion: move.promotion } : {}),
+            })
+            .then(function (result) {
+              busy = false;
+              if (
+                result.reaction &&
+                result.reaction.delivered === false &&
+                result.reaction.reason === 'engagement-off'
+              ) {
+                setBanner('Move played — but AI engagement is off, so the Schaakspeler cannot reply.');
+              }
+              return poll();
+            })
+            .catch(function (error) {
+              busy = false;
+              setBanner(String(error && error.message ? error.message : error));
+              render();
+            });
+        }
+
+        function newGame() {
+          if (!gezelPage.embedded() || busy) return;
+          selected = null;
+          busy = true;
+          render();
+          gezelPage
+            .invoke('new_game', {})
+            .then(function () {
+              busy = false;
+              setBanner('');
+              return poll();
+            })
+            .catch(function (error) {
+              busy = false;
+              setBanner(String(error && error.message ? error.message : error));
+              render();
+            });
+        }
+
+        function transitionState(next) {
+          state = next;
+          if (selected && !movesFrom(selected).length) selected = null;
+          render();
+        }
+        function poll() {
+          if (!capability || !projectId) return Promise.resolve();
+          return fetch(
+            '/preview/' + encodeURIComponent(capability) + '/workspace/' + encodeURIComponent(projectId) + '/game.json',
+            { cache: 'no-store' },
+          )
+            .then(function (response) {
+              if (!response.ok) throw new Error('poll ' + response.status);
+              return response.json();
+            })
+            .then(function (next) {
+              failedPolls = 0;
+              transitionState(next);
+            })
+            .catch(function () {
+              failedPolls += 1;
+              if (failedPolls === 3) gezelPage.refresh();
+            });
+        }
+        function schedule() {
+          if (pollTimer) clearTimeout(pollTimer);
+          var wait = state && state.turn === 'ai' && state.status === 'playing' ? 1500 : 5000;
+          pollTimer = setTimeout(function () { poll().then(schedule, schedule); }, wait);
+        }
+
+        document.getElementById('newgame').addEventListener('click', newGame);
+        document.getElementById('cancel-promotion').addEventListener('click', function () {
+          promotionMoves = [];
+          document.getElementById('promotion-dialog').close();
+        });
+        if (!gezelPage.embedded()) {
+          setBanner('Read-only view — moves need the Gezel app (open this project and use the Output tab).');
+        }
+        poll().then(schedule, schedule);
+      })();
+    </script>
+  </body>
+</html>

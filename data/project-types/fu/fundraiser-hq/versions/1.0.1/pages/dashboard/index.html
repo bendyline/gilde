@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Fundraiser HQ</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2; --card: #fff; --ink: #2b2620; --muted: #7a7166;
+        --accent: #b5651d; --track: #ece5da; --good: #4a7c59; --warn: #a4552e;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+          --accent: #e0894a; --track: #3a352f; --good: #7fae8d; --warn: #d98a63;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--ink); padding: 1.5rem 1.25rem; }
+      main { max-width: 620px; margin: 0 auto; }
+      h1 { font-family: Georgia, 'PT Serif', 'Times New Roman', serif; font-size: 1.35rem; font-weight: 600; margin: 0 0 0.15rem; }
+      .sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.9rem; }
+      .thermo { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 1rem; margin-bottom: 0.75rem; }
+      .thermo .raised { font-size: 1.9rem; font-weight: 700; color: var(--good); font-variant-numeric: tabular-nums; }
+      .thermo .goal { color: var(--muted); font-size: 0.9rem; }
+      .bar { background: var(--track); border-radius: 4px; height: 14px; overflow: hidden; margin-top: 0.6rem; }
+      .bar > span { display: block; height: 100%; background: var(--good); border-radius: 4px; transition: width 0.4s ease; }
+      .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+      .panel { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.85rem 1rem; font-size: 0.9rem; }
+      .panel h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 0.5rem; }
+      .panel ul { margin: 0; padding-left: 1.05rem; }
+      .panel li { margin: 0.25rem 0; }
+      .panel .amt { font-weight: 600; }
+      .panel .who { color: var(--muted); }
+      .owed li { color: var(--warn); }
+      .empty { color: var(--muted); font-style: italic; }
+      @media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
++      .demo-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0 0 0.85rem;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid var(--accent, #8a5a2b);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--card, var(--surface, #fffdf8)) 88%, var(--accent, #8a5a2b));
+        color: var(--ink, #2b2620);
+        font-size: 0.8rem;
+      }
+      .demo-banner[hidden] { display: none; }
+      .demo-banner strong { font-weight: 700; }
+      .demo-reset {
+        flex: none;
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--accent, #8a5a2b);
+        border-radius: 6px;
+        background: var(--card, var(--surface, #fffdf8));
+        color: var(--ink, #2b2620);
+        cursor: pointer;
+        font: inherit;
+      }
+      .demo-reset:hover { border-color: var(--ink, #2b2620); }
+    </style>
+  </head>
+  <body>
+    <main>
++      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong> — sample data stays in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1 id="title">Fundraiser HQ</h1>
+      <p class="sub" id="sub">Loading the drive…</p>
+      <div class="thermo">
+        <div class="raised" id="raised">—</div>
+        <div class="goal" id="goal"></div>
+        <div class="bar"><span id="bar" style="width: 0%"></span></div>
+      </div>
+      <div class="cols">
+        <div class="panel">
+          <h2>Latest gifts</h2>
+          <ul id="gifts"><li class="empty">No gifts yet — the first one starts the story.</li></ul>
+        </div>
+        <div class="panel">
+          <h2>Thank-yous owed</h2>
+          <ul class="owed" id="owed"><li class="empty">All caught up.</li></ul>
+        </div>
+      </div>
+    </main>
+    <script>
+      (function () {
+        'use strict';
+        var parts = location.pathname.split('/').filter(Boolean);
+        var typeIdx = parts.indexOf('type');
+        var capability = typeIdx > 0 ? parts[typeIdx - 1] : null;
+        var projectId = typeIdx >= 0 ? parts[typeIdx + 1] : null;
+        var failedPolls = 0;
+        var demoMode = !capability || !projectId;
+        var demoDonations = {
+          cause: 'The neighborhood reading garden',
+          goalCents: 1000000,
+          entries: [
+            { amountCents: 12500, data: { donor: 'Mara', thanked: true } },
+            { amountCents: 50000, data: { donor: 'Canal Street Books', thanked: true } },
+            { amountCents: 7500, data: { donor: 'Anonymous', thanked: false } },
+            { amountCents: 25000, data: { donor: 'The De Vries family', thanked: false } },
+            { amountCents: 100000, data: { donor: 'Veld Works', thanked: true } },
+          ],
+        };
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+        function fmt(cents) { var abs = Math.abs(cents); return (cents < 0 ? '-' : '') + Math.floor(abs / 100) + '.' + String(abs % 100).padStart(2, '0'); }
+
+        function render(doc) {
+          var entries = Array.isArray(doc.entries) ? doc.entries : [];
+          var goal = Number(doc.goalCents);
+          if (!isFinite(goal) || goal <= 0) goal = 0;
+          var raised = 0;
+          entries.forEach(function (e) { raised += e.amountCents; });
+          if (doc.cause) document.getElementById('title').textContent = 'Fundraiser: ' + doc.cause;
+          document.getElementById('sub').textContent = entries.length + ' gift(s) so far';
+          document.getElementById('raised').textContent = fmt(raised);
+          document.getElementById('goal').textContent = goal > 0 ? 'of ' + fmt(goal) + ' — ' + Math.min(100, Math.round((raised / goal) * 100)) + ' percent there' : '';
+          document.getElementById('bar').style.width = (goal > 0 ? Math.min(100, Math.round((raised / goal) * 100)) : raised > 0 ? 100 : 0) + '%';
+
+          var recent = entries.slice(-6).reverse();
+          if (recent.length) {
+            document.getElementById('gifts').innerHTML = recent.map(function (e) {
+              return '<li><span class="amt">' + fmt(e.amountCents) + '</span> <span class="who">from ' + esc((e.data && e.data.donor) || 'anonymous') + '</span></li>';
+            }).join('');
+          }
+          var owed = entries.filter(function (e) { return !e.data || e.data.thanked !== true; });
+          if (owed.length) {
+            document.getElementById('owed').innerHTML = owed.slice(0, 8).map(function (e) {
+              return '<li>' + esc((e.data && e.data.donor) || 'anonymous') + ' (' + fmt(e.amountCents) + ')</li>';
+            }).join('');
+          } else {
+            document.getElementById('owed').innerHTML = '<li class="empty">All caught up.</li>';
+          }
+        }
+
+        function poll() {
+          if (demoMode) { render(demoDonations); return Promise.resolve(); }
+          if (!capability || !projectId) return Promise.resolve();
+          return fetch('/preview/' + encodeURIComponent(capability) + '/workspace/' + encodeURIComponent(projectId) + '/donations.json', { cache: 'no-store' })
+            .then(function (r) { if (!r.ok) throw new Error('poll ' + r.status); return r.json(); })
+            .then(function (next) { failedPolls = 0; render(next); })
+            .catch(function () {
+              failedPolls += 1;
+              if (failedPolls === 3 && window.parent !== window) window.parent.postMessage({ __gezelPageRefresh: true }, '*');
+            });
+        }
+        poll().then(function () { setInterval(function () { void poll(); }, 5000); });
+      })();
+    </script>
+  </body>
+</html>

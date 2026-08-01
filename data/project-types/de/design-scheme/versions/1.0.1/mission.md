@@ -1,0 +1,3 @@
+- Develop color schemes and design directions for {{brief}}.
+- Save each promising palette so it shows on the gallery for comparison.
+- Converge on a small set of strong directions worth taking forward.

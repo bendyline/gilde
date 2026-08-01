@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.1",
+  "releasedAt": "2026-08-01T00:00:00Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "title": {
+        "type": "string",
+        "title": "Working title",
+        "description": "The novel, as it is known today. Change it any time.",
+        "default": "Untitled"
+      },
+      "weeklyWordGoal": {
+        "type": "number",
+        "title": "Words per week",
+        "description": "The weekly writing rhythm to aim for.",
+        "default": 5000
+      }
+    },
+    "required": [
+      "title",
+      "weeklyWordGoal"
+    ]
+  },
+  "nameTemplate": "Novel: {{title}}",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "schrijfmaat",
+      "voorman": true
+    }
+  ],
+  "tools": [
+    {
+      "name": "log_session",
+      "description": "Log a writing session (words written) the moment it is reported.",
+      "script": "manuscript-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "words": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "words"
+        ]
+      },
+      "bind": {
+        "action": "log_session"
+      }
+    },
+    {
+      "name": "add_chapter",
+      "description": "Put a chapter on the board (starts in outline).",
+      "script": "manuscript-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add_chapter"
+      }
+    },
+    {
+      "name": "chapter_stage",
+      "description": "Move a chapter between stages: 'outline', 'drafting', 'revised', 'done'.",
+      "script": "manuscript-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "stage"
+        ]
+      },
+      "bind": {
+        "action": "chapter_stage"
+      }
+    },
+    {
+      "name": "novel_status",
+      "description": "Total words, this week against the goal, the chapter shape.",
+      "script": "manuscript-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "status"
+      }
+    },
+    {
+      "name": "outline",
+      "description": "Every chapter with its stage and summary.",
+      "script": "manuscript-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "outline"
+      }
+    }
+  ],
+  "craftbooks": [
+    "copy-review",
+    "ebook-compile"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "dashboard/index.html",
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "sessions.json"
+      },
+      {
+        "source": "workspace",
+        "path": "chapters.json"
+      }
+    ]
+  },
+  "workspaceSeed": [
+    "sessions.json",
+    "chapters.json"
+  ],
+  "scripts": {
+    "manuscript-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { logStore, rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'manuscript-store',\n  description:\n    \"Read and update the manuscript record (sessions.json + chapters.json). Call action:'status' for total words, weekly pace, and the chapter board; 'log_session' after every writing session (words written); 'add_chapter' / 'chapter_stage' to keep the board honest; 'outline' to list every chapter.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'status', 'log_session', 'add_chapter', 'chapter_stage', or 'outline'.\",\n      required: true,\n    },\n    words: { type: 'number', description: 'Words written this session (log_session).' },\n    note: { type: 'string', description: 'Anything worth remembering.' },\n    title: { type: 'string', description: 'Chapter title (add_chapter).' },\n    summary: { type: 'string', description: 'One-line chapter summary (add_chapter).' },\n    id: { type: 'string', description: \"Chapter id, e.g. 'ch-3' (chapter_stage).\" },\n    stage: {\n      type: 'string',\n      description: \"Target stage: 'outline', 'drafting', 'revised', or 'done' (chapter_stage).\",\n    },\n  },\n  outputs: {\n    totalWords: { type: 'number', description: 'Words logged across all sessions.' },\n    thisWeekWords: { type: 'number', description: 'Words logged this week (Monday UTC start).' },\n    chapters: { type: 'number', description: 'Chapters on the board.' },\n    summary: { type: 'string', description: 'The manuscript picture.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── novel-rules-start ──\n// Pure derivations over logStore-shaped writing sessions (kind 'writing',\n// data {words}) and rosterStore-shaped chapters (stages outline → drafting\n// → revised → done). Weeks start Monday 00:00 UTC; nowIso is a parameter\n// so the rules stay clock-independent and testable.\n\nfunction sessionWords(e) {\n  var words = e && e.data ? Number(e.data.words) : NaN;\n  return isFinite(words) && words > 0 ? Math.round(words) : 0;\n}\n\nfunction totalWords(events) {\n  return events.reduce(function (sum, e) {\n    return sum + sessionWords(e);\n  }, 0);\n}\n\nfunction weekStartMs(nowIso) {\n  var day = new Date(nowIso.slice(0, 10) + 'T00:00:00Z');\n  var sinceMonday = (day.getUTCDay() + 6) % 7;\n  return day.getTime() - sinceMonday * 86400000;\n}\n\nfunction thisWeekWords(events, nowIso) {\n  var start = weekStartMs(nowIso);\n  return totalWords(\n    events.filter(function (e) {\n      return Date.parse(e.at) >= start;\n    }),\n  );\n}\n\nfunction chapterShape(records) {\n  var byStage = { outline: 0, drafting: 0, revised: 0, done: 0 };\n  records.forEach(function (r) {\n    if (byStage[r.status] !== undefined) byStage[r.status] += 1;\n  });\n  return byStage;\n}\n\nfunction novelLine(events, records, nowIso, weeklyWordGoal) {\n  var total = totalWords(events);\n  var week = thisWeekWords(events, nowIso);\n  var shape = chapterShape(records);\n  var goal = weeklyWordGoal > 0 ? weeklyWordGoal : 0;\n  return (\n    total +\n    ' words logged; ' +\n    week +\n    (goal > 0 ? ' of ' + goal : '') +\n    ' this week. Chapters: ' +\n    shape.outline +\n    ' outlined, ' +\n    shape.drafting +\n    ' drafting, ' +\n    shape.revised +\n    ' revised, ' +\n    shape.done +\n    ' done.'\n  );\n}\n// ── novel-rules-end ──\n\nconst sessions = logStore(gezel.fs, 'sessions.json');\nconst chapters = rosterStore(gezel.fs, 'chapters.json', {\n  stages: ['outline', 'drafting', 'revised', 'done'],\n  idPrefix: 'ch',\n});\n\nasync function readWeeklyWordGoal(): Promise<number> {\n  try {\n    const parsed = JSON.parse(await gezel.fs.read('sessions.json')) as { weeklyWordGoal?: unknown };\n    const goal = Number(parsed.weeklyWordGoal);\n    return Number.isFinite(goal) && goal > 0 ? Math.round(goal) : 0;\n  } catch {\n    return 0;\n  }\n}\n\nif (input.action === 'log_session') {\n  const words = Number(input.words);\n  if (!Number.isFinite(words) || words <= 0) {\n    throw new Error(\"log_session needs a positive 'words' count.\");\n  }\n  await sessions.append({\n    kind: 'writing',\n    ...(input.note ? { note: input.note } : {}),\n    data: { words: Math.round(words) },\n  });\n} else if (input.action === 'add_chapter') {\n  if (!input.title) throw new Error(\"add_chapter needs a 'title'.\");\n  await chapters.add({\n    fields: { title: input.title, ...(input.summary ? { summary: input.summary } : {}) },\n    ...(input.note ? { note: input.note } : {}),\n  });\n} else if (input.action === 'chapter_stage') {\n  if (!input.id || !input.stage) {\n    throw new Error(\"chapter_stage needs 'id' (e.g. 'ch-3') and 'stage'.\");\n  }\n  await chapters.transition(input.id, input.stage, input.note ? { note: input.note } : undefined);\n} else if (input.action !== 'status' && input.action !== 'outline') {\n  throw new Error(\n    `Unknown action '${input.action}'. Use status, log_session, add_chapter, chapter_stage, or outline.`,\n  );\n}\n\nconst events = await sessions.list();\nconst records = await chapters.list();\nconst weeklyWordGoal = await readWeeklyWordGoal();\nconst nowIso = new Date().toISOString();\nconst listing =\n  input.action === 'outline'\n    ? records\n        .map(\n          (r) =>\n            `${r.id} [${r.status}] ${String(r.fields.title ?? '')}${r.fields.summary ? ` — ${String(r.fields.summary)}` : ''}`,\n        )\n        .join('\\n') || 'No chapters on the board yet.'\n    : '';\n\ngezel.output({\n  totalWords: totalWords(events),\n  thisWeekWords: thisWeekWords(events, nowIso),\n  chapters: records.length,\n  summary: listing || novelLine(events, records, nowIso, weeklyWordGoal),\n});\n"
+  }
+}

@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Fitness Coach</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2; --card: #fff; --ink: #2b2620; --muted: #7a7166;
+        --accent: #b5651d; --track: #ece5da; --good: #4a7c59;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+          --accent: #e0894a; --track: #3a352f; --good: #7fae8d;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--ink); padding: 1.5rem 1.25rem; }
+      main { max-width: 620px; margin: 0 auto; }
+      h1 { font-family: Georgia, 'PT Serif', 'Times New Roman', serif; font-size: 1.35rem; font-weight: 600; margin: 0 0 0.15rem; }
+      .sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.9rem; }
+      .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-bottom: 0.75rem; }
+      .stat { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.85rem 1rem; }
+      .stat .num { font-size: 1.9rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .stat .num.good { color: var(--good); }
+      .stat .lbl { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; }
+      .week { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.85rem 1rem; margin-bottom: 0.75rem; }
+      .week h2, .recent h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 0.5rem; }
+      .dots { display: flex; gap: 0.4rem; }
+      .dot { width: 22px; height: 22px; border-radius: 6px; background: var(--track); }
+      .dot.hit { background: var(--good); }
+      .week .note { color: var(--muted); font-size: 0.85rem; margin-top: 0.5rem; }
+      .recent { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.85rem 1rem; font-size: 0.9rem; }
+      .recent ul { margin: 0; padding-left: 1.05rem; }
+      .recent li { margin: 0.25rem 0; }
+      .recent .when { color: var(--muted); font-variant-numeric: tabular-nums; }
+      .empty { color: var(--muted); font-style: italic; }
++      .demo-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0 0 0.85rem;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid var(--accent, #8a5a2b);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--card, var(--surface, #fffdf8)) 88%, var(--accent, #8a5a2b));
+        color: var(--ink, #2b2620);
+        font-size: 0.8rem;
+      }
+      .demo-banner[hidden] { display: none; }
+      .demo-banner strong { font-weight: 700; }
+      .demo-reset {
+        flex: none;
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--accent, #8a5a2b);
+        border-radius: 6px;
+        background: var(--card, var(--surface, #fffdf8));
+        color: var(--ink, #2b2620);
+        cursor: pointer;
+        font: inherit;
+      }
+      .demo-reset:hover { border-color: var(--ink, #2b2620); }
+    </style>
+  </head>
+  <body>
+    <main>
++      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong> — sample data stays in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1 id="title">Fitness Coach</h1>
+      <p class="sub" id="sub">Loading the training log…</p>
+      <div class="stats">
+        <div class="stat"><div class="num good" id="streak">—</div><div class="lbl">Day streak</div></div>
+        <div class="stat"><div class="num" id="total">—</div><div class="lbl">Sessions all time</div></div>
+      </div>
+      <div class="week">
+        <h2>This week</h2>
+        <div class="dots" id="dots"></div>
+        <div class="note" id="weekNote"></div>
+      </div>
+      <div class="recent">
+        <h2>Recent sessions</h2>
+        <ul id="recent"><li class="empty">Nothing logged yet — tell your Coach about your first session.</li></ul>
+      </div>
+    </main>
+    <script>
+      (function () {
+        'use strict';
+        var parts = location.pathname.split('/').filter(Boolean);
+        var typeIdx = parts.indexOf('type');
+        var capability = typeIdx > 0 ? parts[typeIdx - 1] : null;
+        var projectId = typeIdx >= 0 ? parts[typeIdx + 1] : null;
+        var failedPolls = 0;
+        var DAY = 86400000;
+        var demoMode = !capability || !projectId;
+        var demoTraining = {
+          goal: 'a comfortable 10K',
+          weeklyTarget: 4,
+          events: [
+            { at: new Date(Date.now() - 6 * DAY).toISOString(), data: { activity: 'Easy run', minutes: 32 } },
+            { at: new Date(Date.now() - 4 * DAY).toISOString(), data: { activity: 'Mobility and strength', minutes: 25 } },
+            { at: new Date(Date.now() - 2 * DAY).toISOString(), data: { activity: 'Tempo intervals', minutes: 38 } },
+            { at: new Date().toISOString(), data: { activity: 'Recovery walk', minutes: 28 } },
+          ],
+        };
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+        function utcDay(iso) { return iso.slice(0, 10); }
+        function weekStartMs(nowIso) {
+          var d = new Date(nowIso.slice(0, 10) + 'T00:00:00Z');
+          return d.getTime() - ((d.getUTCDay() + 6) % 7) * DAY;
+        }
+        function streakDays(events) {
+          if (!events.length) return 0;
+          var days = {};
+          var last = null;
+          events.forEach(function (e) { days[utcDay(e.at)] = true; if (last === null || e.at > last) last = e.at; });
+          var streak = 0;
+          var cursor = Date.parse(utcDay(last) + 'T00:00:00Z');
+          while (days[new Date(cursor).toISOString().slice(0, 10)]) { streak += 1; cursor -= DAY; }
+          return streak;
+        }
+
+        function render(doc) {
+          var events = Array.isArray(doc.events) ? doc.events : [];
+          var target = Number(doc.weeklyTarget);
+          if (!isFinite(target) || target <= 0) target = 0;
+          if (doc.goal) document.getElementById('title').textContent = 'Training toward: ' + doc.goal;
+          document.getElementById('sub').textContent = events.length ? events.length + ' session(s) on record' : 'The record starts with the first session.';
+          document.getElementById('streak').textContent = String(streakDays(events));
+          document.getElementById('total').textContent = String(events.length);
+
+          var start = weekStartMs(new Date().toISOString());
+          var week = events.filter(function (e) { return Date.parse(e.at) >= start; }).length;
+          var slots = Math.max(target, week, 1);
+          var dots = '';
+          for (var i = 0; i < slots; i++) dots += '<span class="dot' + (i < week ? ' hit' : '') + '"></span>';
+          document.getElementById('dots').innerHTML = dots;
+          document.getElementById('weekNote').textContent = target > 0
+            ? week + ' of ' + target + ' session(s)' + (week >= target ? ' — target met.' : '.')
+            : week + ' session(s) this week.';
+
+          if (events.length) {
+            document.getElementById('recent').innerHTML = events.slice(-8).reverse().map(function (e) {
+              var mins = e.data && isFinite(Number(e.data.minutes)) && Number(e.data.minutes) > 0 ? ' (' + Number(e.data.minutes) + ' min)' : '';
+              return '<li><span class="when">' + esc(utcDay(e.at)) + '</span> ' + esc((e.data && e.data.activity) || 'session') + mins + '</li>';
+            }).join('');
+          }
+        }
+
+        function poll() {
+          if (demoMode) { render(demoTraining); return Promise.resolve(); }
+          if (!capability || !projectId) return Promise.resolve();
+          return fetch('/preview/' + encodeURIComponent(capability) + '/workspace/' + encodeURIComponent(projectId) + '/training.json', { cache: 'no-store' })
+            .then(function (r) { if (!r.ok) throw new Error('poll ' + r.status); return r.json(); })
+            .then(function (next) { failedPolls = 0; render(next); })
+            .catch(function () {
+              failedPolls += 1;
+              if (failedPolls === 3 && window.parent !== window) window.parent.postMessage({ __gezelPageRefresh: true }, '*');
+            });
+        }
+        poll().then(function () { setInterval(function () { void poll(); }, 5000); });
+      })();
+    </script>
+  </body>
+</html>

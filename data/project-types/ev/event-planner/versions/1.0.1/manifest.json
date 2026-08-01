@@ -1,0 +1,170 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.1",
+  "releasedAt": "2026-08-01T00:00:00Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "occasion": {
+        "type": "string",
+        "title": "What are we celebrating?",
+        "description": "e.g. 'our wedding', 'Dad's 70th', 'the class reunion'.",
+        "default": "a big celebration"
+      },
+      "date": {
+        "type": "string",
+        "title": "When is it?",
+        "description": "The date, e.g. 2026-09-12. A rough date is fine — change it later.",
+        "default": "2026-12-31"
+      }
+    },
+    "required": [
+      "occasion",
+      "date"
+    ]
+  },
+  "nameTemplate": "Event: {{occasion}}",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "ceremoniemeester",
+      "voorman": true
+    }
+  ],
+  "tools": [
+    {
+      "name": "add_guest",
+      "description": "Add a guest or party to the list (status starts at invited).",
+      "script": "event-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "party": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "bind": {
+        "action": "add_guest"
+      }
+    },
+    {
+      "name": "guest_status",
+      "description": "Record an RSVP: 'yes', 'no', or back to 'invited'.",
+      "script": "event-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "invited",
+              "yes",
+              "no"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "bind": {
+        "action": "guest_status"
+      }
+    },
+    {
+      "name": "record_spend",
+      "description": "Record committed spending (deposit, balance, purchase) in ordinary units.",
+      "script": "event-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "category": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "category"
+        ]
+      },
+      "bind": {
+        "action": "record_spend"
+      }
+    },
+    {
+      "name": "event_status",
+      "description": "Countdown, headcount, and budget in one line.",
+      "script": "event-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "status"
+      }
+    },
+    {
+      "name": "guest_list",
+      "description": "Read the whole guest list with statuses.",
+      "script": "event-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "guest_list"
+      }
+    }
+  ],
+  "craftbooks": [
+    "runbook"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "dashboard/index.html",
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "guests.json"
+      },
+      {
+        "source": "workspace",
+        "path": "budget.json"
+      }
+    ]
+  },
+  "workspaceSeed": [
+    "guests.json",
+    "budget.json"
+  ],
+  "scripts": {
+    "event-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { ledgerStore, rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'event-store',\n  description:\n    \"Read and update the event: guests (guests.json) and spending (budget.json). Call action:'status' for headcount + budget + countdown; 'add_guest' as invitations go out; 'guest_status' as RSVPs land (invited/yes/no); 'record_spend' when money is committed (ordinary units); 'guest_list' to read everyone.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description:\n        \"One of 'status', 'add_guest', 'guest_status', 'record_spend', or 'guest_list'.\",\n      required: true,\n    },\n    name: { type: 'string', description: 'Guest name (party name is fine).' },\n    party: { type: 'number', description: 'How many people this entry covers (default 1).' },\n    status: { type: 'string', description: \"RSVP status: 'invited', 'yes', or 'no'.\" },\n    id: { type: 'string', description: \"Guest id, e.g. 'guest-4'.\" },\n    amount: { type: 'number', description: 'Spend amount in ordinary units.' },\n    category: { type: 'string', description: \"Spend category, e.g. 'venue', 'catering'.\" },\n    note: { type: 'string', description: 'Short note.' },\n  },\n  outputs: {\n    invited: { type: 'number', description: 'People invited (sum of parties).' },\n    coming: { type: 'number', description: \"People who said yes.\" },\n    spentCents: { type: 'number', description: 'Total committed spend, in cents.' },\n    summary: { type: 'string', description: 'The event picture.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── event-rules-start ──\n// Pure derivations: headcounts weighted by party size, and the countdown.\n\nfunction toCents(amount) {\n  if (typeof amount !== 'number' || !isFinite(amount) || amount <= 0) return null;\n  return Math.round(amount * 100);\n}\n\nfunction fmtCents(cents) {\n  var abs = Math.abs(cents);\n  return (cents < 0 ? '-' : '') + Math.floor(abs / 100) + '.' + String(abs % 100).padStart(2, '0');\n}\n\nfunction partyOf(record) {\n  var p = record.fields && record.fields.party;\n  return typeof p === 'number' && p >= 1 ? Math.floor(p) : 1;\n}\n\nfunction headcounts(records) {\n  var invited = 0;\n  var coming = 0;\n  var awaiting = 0;\n  records.forEach(function (r) {\n    var size = partyOf(r);\n    invited += size;\n    if (r.status === 'yes') coming += size;\n    if (r.status === 'invited') awaiting += size;\n  });\n  return { invited: invited, coming: coming, awaiting: awaiting };\n}\n\nfunction daysUntil(dateStr, nowMs) {\n  var when = Date.parse(dateStr);\n  if (!isFinite(when)) return null;\n  return Math.ceil((when - nowMs) / (24 * 60 * 60 * 1000));\n}\n\nfunction eventLine(records, spentCents, eventDate, nowMs) {\n  var heads = headcounts(records);\n  var days = daysUntil(eventDate, nowMs);\n  return (\n    (days === null ? '' : days >= 0 ? days + ' day(s) to go. ' : 'The day has passed. ') +\n    heads.coming +\n    ' coming, ' +\n    heads.awaiting +\n    ' awaiting reply (' +\n    heads.invited +\n    ' invited). Spent ' +\n    fmtCents(spentCents) +\n    '.'\n  );\n}\n// ── event-rules-end ──\n\nconst guests = rosterStore(gezel.fs, 'guests.json', {\n  stages: ['invited', 'yes', 'no'],\n  idPrefix: 'guest',\n});\nconst budget = ledgerStore(gezel.fs, 'budget.json');\n\nasync function readEventDate(): Promise<string> {\n  try {\n    const parsed = JSON.parse(await gezel.fs.read('guests.json')) as { eventDate?: string };\n    return typeof parsed.eventDate === 'string' ? parsed.eventDate : '';\n  } catch {\n    return '';\n  }\n}\n\nasync function resolveGuest(): Promise<string> {\n  if (input.id) return input.id;\n  if (input.name) {\n    const wanted = input.name.toLowerCase();\n    const matches = (await guests.list()).filter(\n      (r) => String(r.fields.name ?? '').toLowerCase() === wanted,\n    );\n    if (matches.length === 1) return matches[0]!.id;\n  }\n  throw new Error(\"Pass 'id' (e.g. 'guest-4') or an exact guest 'name'.\");\n}\n\nif (input.action === 'add_guest') {\n  if (!input.name) throw new Error(\"add_guest needs 'name'.\");\n  await guests.add({\n    status: 'invited',\n    fields: {\n      name: input.name,\n      ...(typeof input.party === 'number' && input.party >= 1 ? { party: Math.floor(input.party) } : {}),\n      ...(input.note ? { note: input.note } : {}),\n    },\n  });\n} else if (input.action === 'guest_status') {\n  if (!input.status || !['invited', 'yes', 'no'].includes(input.status)) {\n    throw new Error(\"guest_status needs status 'invited', 'yes', or 'no'.\");\n  }\n  await guests.transition(await resolveGuest(), input.status, input.note ? { note: input.note } : {});\n} else if (input.action === 'record_spend') {\n  const cents = toCents(input.amount);\n  if (cents === null || !input.category) {\n    throw new Error(\"record_spend needs a positive 'amount' and a 'category' (e.g. 'venue').\");\n  }\n  await budget.add({\n    amountCents: cents,\n    kind: 'out',\n    category: input.category.toLowerCase(),\n    ...(input.note ? { note: input.note } : {}),\n  });\n} else if (input.action !== 'status' && input.action !== 'guest_list') {\n  throw new Error(\n    `Unknown action '${input.action}'. Use status, add_guest, guest_status, record_spend, or guest_list.`,\n  );\n}\n\nconst records = await guests.list();\nconst totals = await budget.totals();\nconst heads = headcounts(records);\nconst eventDate = await readEventDate();\nconst listing =\n  input.action === 'guest_list'\n    ? records\n        .map(\n          (r) =>\n            `${r.id} [${r.status}] ${String(r.fields.name ?? '?')}${partyOf(r) > 1 ? ` (party of ${partyOf(r)})` : ''}`,\n        )\n        .join('\\n') || 'The guest list is empty.'\n    : '';\n\ngezel.output({\n  invited: heads.invited,\n  coming: heads.coming,\n  spentCents: totals.outCents,\n  summary: listing || eventLine(records, totals.outCents, eventDate, Date.now()),\n});\n"
+  }
+}

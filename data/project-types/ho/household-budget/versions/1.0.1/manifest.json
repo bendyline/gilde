@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.1",
+  "releasedAt": "2026-08-01T00:00:00Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "currency": {
+        "type": "string",
+        "title": "Currency",
+        "description": "Shown on the dashboard; entries are unit-agnostic.",
+        "default": "USD"
+      }
+    },
+    "required": [
+      "currency"
+    ]
+  },
+  "nameTemplate": "Household Budget",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "penningmeester",
+      "voorman": true
+    }
+  ],
+  "tools": [
+    {
+      "name": "add_expense",
+      "description": "Record spending the moment it happens (amount in ordinary units).",
+      "script": "budget-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "category": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "category"
+        ]
+      },
+      "bind": {
+        "action": "add_expense"
+      }
+    },
+    {
+      "name": "add_income",
+      "description": "Record money coming in.",
+      "script": "budget-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "category": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "category"
+        ]
+      },
+      "bind": {
+        "action": "add_income"
+      }
+    },
+    {
+      "name": "budget_status",
+      "description": "This month's shape: in, out, net, and the biggest categories.",
+      "script": "budget-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "status"
+      }
+    },
+    {
+      "name": "month_summary",
+      "description": "Summarize any month ('YYYY-MM').",
+      "script": "budget-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "month": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "month"
+        ]
+      },
+      "bind": {
+        "action": "month_summary"
+      }
+    },
+    {
+      "name": "record_expense",
+      "description": "The dashboard's quick-add expense entry.",
+      "script": "budget-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "category": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "category"
+        ]
+      },
+      "bind": {
+        "action": "add_expense"
+      }
+    }
+  ],
+  "craftbooks": [
+    "subscription-audit",
+    "month-close"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "dashboard/index.html",
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "ledger.json"
+      }
+    ],
+    "tools": [
+      "record_expense"
+    ]
+  },
+  "workspaceSeed": [
+    "ledger.json"
+  ],
+  "scripts": {
+    "budget-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { ledgerStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'budget-store',\n  description:\n    \"Read and update the household ledger (ledger.json). Call action:'status' for this month's shape (in/out/net, top categories); 'add_expense' or 'add_income' the moment money moves (amount in ordinary units, e.g. 12.50); 'month_summary' with month 'YYYY-MM' for any past month.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'status', 'add_expense', 'add_income', or 'month_summary'.\",\n      required: true,\n    },\n    amount: { type: 'number', description: 'Amount in ordinary currency units, e.g. 12.50.' },\n    category: { type: 'string', description: \"Category, e.g. 'groceries', 'rent', 'salary'.\" },\n    note: { type: 'string', description: 'Short note on the entry.' },\n    month: { type: 'string', description: \"Month for month_summary, e.g. '2026-06'.\" },\n  },\n  outputs: {\n    entries: { type: 'number', description: 'Total ledger entries.' },\n    summary: { type: 'string', description: 'Human-readable money summary.' },\n    netCents: { type: 'number', description: 'Net for the summarized month, in cents.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── budget-rules-start ──\n// Pure derivations shared with tests: cents conversion and the month\n// summary line, kept engine-side so the dashboard, the tools, and the\n// tests agree on one rendering.\n\nfunction toCents(amount) {\n  if (typeof amount !== 'number' || !isFinite(amount) || amount <= 0) return null;\n  return Math.round(amount * 100);\n}\n\nfunction fmtCents(cents) {\n  var sign = cents < 0 ? '-' : '';\n  var abs = Math.abs(cents);\n  return sign + Math.floor(abs / 100) + '.' + String(abs % 100).padStart(2, '0');\n}\n\nfunction topCategories(byCategory, kind, limit) {\n  return Object.entries(byCategory)\n    .map(function (pair) {\n      return { category: pair[0], cents: kind === 'out' ? pair[1].outCents : pair[1].inCents };\n    })\n    .filter(function (row) {\n      return row.cents > 0;\n    })\n    .sort(function (a, b) {\n      return b.cents - a.cents;\n    })\n    .slice(0, limit);\n}\n\nfunction monthLine(month, totals) {\n  var top = topCategories(totals.byCategory, 'out', 3)\n    .map(function (row) {\n      return row.category + ' ' + fmtCents(row.cents);\n    })\n    .join(', ');\n  return (\n    month +\n    ': in ' +\n    fmtCents(totals.inCents) +\n    ', out ' +\n    fmtCents(totals.outCents) +\n    ', net ' +\n    fmtCents(totals.netCents) +\n    (top ? '. Biggest: ' + top + '.' : '. No spending recorded.')\n  );\n}\n// ── budget-rules-end ──\n\nconst ledger = ledgerStore(gezel.fs, 'ledger.json');\nconst currentMonth = new Date().toISOString().slice(0, 7);\n\nif (input.action === 'add_expense' || input.action === 'add_income') {\n  const cents = toCents(input.amount);\n  if (cents === null) throw new Error(\"Pass a positive 'amount' in ordinary units, e.g. 12.50.\");\n  if (!input.category) throw new Error(\"Pass a 'category', e.g. 'groceries' or 'salary'.\");\n  await ledger.add({\n    amountCents: cents,\n    kind: input.action === 'add_expense' ? 'out' : 'in',\n    category: input.category.toLowerCase(),\n    ...(input.note ? { note: input.note } : {}),\n  });\n} else if (input.action !== 'status' && input.action !== 'month_summary') {\n  throw new Error(\n    `Unknown action '${input.action}'. Use status, add_expense, add_income, or month_summary.`,\n  );\n}\n\nconst month =\n  input.action === 'month_summary' && input.month ? input.month : currentMonth;\nconst totals = await ledger.totals({ month });\nconst all = await ledger.list();\n\ngezel.output({\n  entries: all.length,\n  summary: monthLine(month, totals),\n  netCents: totals.netCents,\n});\n"
+  }
+}

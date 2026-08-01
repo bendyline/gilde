@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Event planner</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2; --card: #fff; --ink: #2b2620; --muted: #7a7166;
+        --accent: #b5651d; --track: #ece5da; --good: #4a7c59; --warn: #a4552e;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+          --accent: #e0894a; --track: #3a352f; --good: #7fae8d; --warn: #d98a63;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--ink); padding: 1.5rem 1.25rem; }
+      main { max-width: 680px; margin: 0 auto; }
+      h1 { font-family: Georgia, 'PT Serif', 'Times New Roman', serif; font-size: 1.35rem; font-weight: 600; margin: 0 0 0.15rem; }
+      .sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.9rem; }
+      .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.6rem; margin-bottom: 0.9rem; }
+      .tile { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.7rem 0.85rem; }
+      .tile .n { font-size: 1.35rem; font-weight: 700; color: var(--accent); }
+      .tile .n.good { color: var(--good); }
+      .tile .l { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+      .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+      .panel { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.85rem 1rem; font-size: 0.9rem; }
+      .panel h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 0.5rem; }
+      .panel ul { margin: 0; padding-left: 1.05rem; }
+      .panel li { margin: 0.2rem 0; }
+      .rsvp { color: var(--muted); font-size: 0.78rem; }
+      .rsvp.yes { color: var(--good); }
+      .rsvp.no { color: var(--warn); }
+      .bar-row { display: grid; grid-template-columns: 6.5rem 1fr 4.5rem; gap: 0.5rem; align-items: center; margin: 0.3rem 0; }
+      .bar { background: var(--track); border-radius: 4px; height: 10px; overflow: hidden; }
+      .bar > span { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+      .amt { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+      .empty { color: var(--muted); font-style: italic; }
+      @media (max-width: 640px) { .cols { grid-template-columns: 1fr; } .tiles { grid-template-columns: 1fr 1fr; } }
++      .demo-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0 0 0.85rem;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid var(--accent, #8a5a2b);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--card, var(--surface, #fffdf8)) 88%, var(--accent, #8a5a2b));
+        color: var(--ink, #2b2620);
+        font-size: 0.8rem;
+      }
+      .demo-banner[hidden] { display: none; }
+      .demo-banner strong { font-weight: 700; }
+      .demo-reset {
+        flex: none;
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--accent, #8a5a2b);
+        border-radius: 6px;
+        background: var(--card, var(--surface, #fffdf8));
+        color: var(--ink, #2b2620);
+        cursor: pointer;
+        font: inherit;
+      }
+      .demo-reset:hover { border-color: var(--ink, #2b2620); }
+    </style>
+  </head>
+  <body>
+    <main>
++      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong> — sample data stays in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1 id="title">Event planner</h1>
+      <p class="sub" id="sub">Loading the plan…</p>
+      <div class="tiles">
+        <div class="tile"><div class="n" id="t-days">—</div><div class="l">Days to go</div></div>
+        <div class="tile"><div class="n good" id="t-coming">—</div><div class="l">Coming</div></div>
+        <div class="tile"><div class="n" id="t-await">—</div><div class="l">Awaiting reply</div></div>
+        <div class="tile"><div class="n" id="t-spent">—</div><div class="l">Spent</div></div>
+      </div>
+      <div class="cols">
+        <div class="panel">
+          <h2>Guest list</h2>
+          <ul id="guests"><li class="empty">No guests yet — start the list with your Ceremoniemeester.</li></ul>
+        </div>
+        <div class="panel">
+          <h2>Where the budget went</h2>
+          <div id="budget"><p class="empty">Nothing committed yet.</p></div>
+        </div>
+      </div>
+    </main>
+    <script>
+      (function () {
+        'use strict';
+        var parts = location.pathname.split('/').filter(Boolean);
+        var typeIdx = parts.indexOf('type');
+        var capability = typeIdx > 0 ? parts[typeIdx - 1] : null;
+        var projectId = typeIdx >= 0 ? parts[typeIdx + 1] : null;
+        var failedPolls = 0;
+        var demoMode = !capability || !projectId;
+        var demoGuests = {
+          eventDate: new Date(Date.now() + 28 * 86400000).toISOString(),
+          records: [
+            { id: 'guest-1', status: 'yes', fields: { name: 'Mara & Jo', party: 2 } },
+            { id: 'guest-2', status: 'yes', fields: { name: 'The De Vries family', party: 4 } },
+            { id: 'guest-3', status: 'invited', fields: { name: 'Samir Patel', party: 1 } },
+            { id: 'guest-4', status: 'invited', fields: { name: 'Anika Bose', party: 2 } },
+            { id: 'guest-5', status: 'no', fields: { name: 'Leo Martins', party: 1 } },
+          ],
+        };
+        var demoBudget = { entries: [
+          { kind: 'out', category: 'Venue', amountCents: 185000 },
+          { kind: 'out', category: 'Food', amountCents: 92000 },
+          { kind: 'out', category: 'Flowers', amountCents: 36000 },
+          { kind: 'out', category: 'Music', amountCents: 54000 },
+        ] };
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+        function fmt(cents) { var abs = Math.abs(cents); return (cents < 0 ? '-' : '') + Math.floor(abs / 100) + '.' + String(abs % 100).padStart(2, '0'); }
+        function fetchJson(file) {
+          return fetch('/preview/' + encodeURIComponent(capability) + '/workspace/' + encodeURIComponent(projectId) + '/' + file, { cache: 'no-store' })
+            .then(function (r) { if (!r.ok) throw new Error('poll ' + r.status); return r.json(); });
+        }
+        function partyOf(r) { var p = r.fields && r.fields.party; return typeof p === 'number' && p >= 1 ? Math.floor(p) : 1; }
+
+        function render(guestsDoc, budgetDoc) {
+          var records = (guestsDoc && guestsDoc.records) || [];
+          var entries = (budgetDoc && budgetDoc.entries) || [];
+          var coming = 0, awaiting = 0;
+          records.forEach(function (r) {
+            if (r.status === 'yes') coming += partyOf(r);
+            if (r.status === 'invited') awaiting += partyOf(r);
+          });
+          var spent = 0; var byCat = {};
+          entries.forEach(function (e) {
+            if (e.kind === 'out') { spent += e.amountCents; byCat[e.category] = (byCat[e.category] || 0) + e.amountCents; }
+          });
+          var days = guestsDoc && guestsDoc.eventDate ? Math.ceil((Date.parse(guestsDoc.eventDate) - Date.now()) / 86400000) : null;
+
+          document.getElementById('sub').textContent =
+            (guestsDoc && guestsDoc.eventDate ? 'The day: ' + String(guestsDoc.eventDate).slice(0, 10) + ' · ' : '') +
+            records.length + ' invitation(s) on the list';
+          document.getElementById('t-days').textContent = days === null || !isFinite(days) ? '—' : Math.max(0, days);
+          document.getElementById('t-coming').textContent = coming;
+          document.getElementById('t-await').textContent = awaiting;
+          document.getElementById('t-spent').textContent = fmt(spent);
+
+          if (records.length) {
+            document.getElementById('guests').innerHTML = records.slice(0, 12).map(function (r) {
+              return '<li>' + esc((r.fields && r.fields.name) || r.id) + (partyOf(r) > 1 ? ' (+' + (partyOf(r) - 1) + ')' : '') +
+                ' <span class="rsvp ' + r.status + '">' + (r.status === 'invited' ? 'awaiting' : r.status) + '</span></li>';
+            }).join('') + (records.length > 12 ? '<li class="empty">and ' + (records.length - 12) + ' more…</li>' : '');
+          }
+          var cats = Object.entries(byCat).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 6);
+          if (cats.length) {
+            var max = cats[0][1];
+            document.getElementById('budget').innerHTML = cats.map(function (pair) {
+              return '<div class="bar-row"><span>' + esc(pair[0]) + '</span><span class="bar"><span style="width:' + Math.max(4, Math.round((pair[1] / max) * 100)) + '%"></span></span><span class="amt">' + fmt(pair[1]) + '</span></div>';
+            }).join('');
+          }
+        }
+
+        function poll() {
+          if (demoMode) { render(demoGuests, demoBudget); return Promise.resolve(); }
+          if (!capability || !projectId) return Promise.resolve();
+          return Promise.all([
+            fetchJson('guests.json').catch(function () { return { records: [] }; }),
+            fetchJson('budget.json').catch(function () { return { entries: [] }; }),
+          ])
+            .then(function (results) { failedPolls = 0; render(results[0], results[1]); })
+            .catch(function () {
+              failedPolls += 1;
+              if (failedPolls === 3 && window.parent !== window) window.parent.postMessage({ __gezelPageRefresh: true }, '*');
+            });
+        }
+        poll().then(function () { setInterval(function () { void poll(); }, 6000); });
+      })();
+    </script>
+  </body>
+</html>

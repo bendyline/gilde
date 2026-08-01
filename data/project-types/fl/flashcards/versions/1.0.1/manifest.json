@@ -1,0 +1,167 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.1",
+  "releasedAt": "2026-08-01T00:00:00Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "subject": {
+        "type": "string",
+        "title": "What are you learning?",
+        "description": "The deck's subject — e.g. Spanish vocabulary, AWS certification, organic chemistry.",
+        "default": "Spanish vocabulary"
+      }
+    },
+    "required": [
+      "subject"
+    ]
+  },
+  "nameTemplate": "{{subject}} Flashcards",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "study-buddy",
+      "voorman": true
+    }
+  ],
+  "scripts": {
+    "deck-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'deck-store',\n  description:\n    \"Read and update the flashcard deck (deck.json). Call action:'add_cards' with a cards array ([{front, back}, ...]) to add practice cards; action:'state' to see due counts and box distribution; action:'list_deck' to read every card. The review page drives 'record_review' and 'finish_session' itself.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description:\n        \"One of 'state', 'list_deck', 'add_cards', 'record_review', or 'finish_session'.\",\n      required: true,\n    },\n    cards: {\n      type: 'json',\n      description: 'For add_cards: an array of {front, back} objects.',\n    },\n    cardId: { type: 'string', description: \"For record_review: the card id, e.g. 'card-3'.\" },\n    verdict: { type: 'string', description: \"For record_review: 'got-it' or 'missed'.\" },\n    reviewed: { type: 'number', description: 'For finish_session: how many cards were reviewed.' },\n    missedIds: { type: 'json', description: 'For finish_session: array of card ids that were missed.' },\n  },\n  outputs: {\n    total: { type: 'number', description: 'Cards in the deck.' },\n    due: { type: 'number', description: 'Cards due for review now.' },\n    summary: { type: 'string', description: 'Human-readable deck or session summary.' },\n    missedList: { type: 'string', description: 'Fronts of the cards missed this session (finish_session).' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── leitner-rules-start ──\n// Pure Leitner-box scheduling (3 boxes). Box 1 reviews daily, box 2 every\n// 3 days, box 3 weekly. A got-it promotes (capped at 3); a miss goes back\n// to box 1. Never-reviewed cards are always due. Kept self-contained\n// between these sentinels so unit tests execute the shipped bytes.\n\nvar BOX_INTERVAL_DAYS = { 1: 1, 2: 3, 3: 7 };\nvar DAY_MS = 24 * 60 * 60 * 1000;\n\nfunction isDue(card, nowMs) {\n  if (!card.lastReviewedAt) return true;\n  var interval = BOX_INTERVAL_DAYS[card.box] || 1;\n  return nowMs - Date.parse(card.lastReviewedAt) >= interval * DAY_MS;\n}\n\nfunction computeDueIds(cards, nowMs) {\n  return cards\n    .filter(function (c) {\n      return isDue(c, nowMs);\n    })\n    .sort(function (a, b) {\n      if (a.box !== b.box) return a.box - b.box;\n      return a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0;\n    })\n    .map(function (c) {\n      return c.id;\n    });\n}\n\nfunction applyReview(card, verdict, nowIso) {\n  if (verdict === 'got-it') card.box = Math.min(3, card.box + 1);\n  else card.box = 1;\n  card.lastReviewedAt = nowIso;\n  card.stats = card.stats || { gotIt: 0, missed: 0 };\n  if (verdict === 'got-it') card.stats.gotIt += 1;\n  else card.stats.missed += 1;\n  return card;\n}\n\nfunction nextCardId(cards) {\n  var max = 0;\n  for (var i = 0; i < cards.length; i += 1) {\n    var m = /^card-(\\d+)$/.exec(cards[i].id);\n    if (m) max = Math.max(max, Number(m[1]));\n  }\n  return 'card-' + (max + 1);\n}\n// ── leitner-rules-end ──\n\nconst DECK_FILE = 'deck.json';\n\ninterface Card {\n  id: string;\n  front: string;\n  back: string;\n  box: number;\n  lastReviewedAt: string | null;\n  createdAt: string;\n  stats: { gotIt: number; missed: number };\n}\n\ninterface Deck {\n  version: number;\n  subject: string;\n  cards: Card[];\n  dueCardIds: string[];\n  updatedAt: string;\n}\n\nasync function load(): Promise<Deck> {\n  let raw: string;\n  try {\n    raw = await gezel.fs.read(DECK_FILE);\n  } catch {\n    return { version: 1, subject: 'your subject', cards: [], dueCardIds: [], updatedAt: new Date().toISOString() };\n  }\n  const parsed = JSON.parse(raw) as Partial<Deck>;\n  return {\n    version: 1,\n    subject: typeof parsed.subject === 'string' ? parsed.subject : 'your subject',\n    cards: Array.isArray(parsed.cards) ? (parsed.cards as Card[]) : [],\n    dueCardIds: [],\n    updatedAt: new Date().toISOString(),\n  };\n}\n\nasync function persist(deck: Deck): Promise<Deck> {\n  deck.dueCardIds = computeDueIds(deck.cards, Date.now());\n  deck.updatedAt = new Date().toISOString();\n  await gezel.fs.write(DECK_FILE, `${JSON.stringify(deck, null, 2)}\\n`);\n  return deck;\n}\n\nconst deck = await load();\ndeck.dueCardIds = computeDueIds(deck.cards, Date.now());\nlet summary = '';\nlet missedList = '';\n\nif (input.action === 'add_cards') {\n  const raw = Array.isArray(input.cards) ? input.cards : [];\n  const added: string[] = [];\n  for (const entry of raw) {\n    const front = typeof (entry as { front?: unknown }).front === 'string' ? (entry as { front: string }).front.trim() : '';\n    const back = typeof (entry as { back?: unknown }).back === 'string' ? (entry as { back: string }).back.trim() : '';\n    if (!front || !back) continue;\n    const card: Card = {\n      id: nextCardId(deck.cards),\n      front: front.slice(0, 300),\n      back: back.slice(0, 500),\n      box: 1,\n      lastReviewedAt: null,\n      createdAt: new Date().toISOString(),\n      stats: { gotIt: 0, missed: 0 },\n    };\n    deck.cards.push(card);\n    added.push(card.id);\n  }\n  if (added.length === 0) {\n    throw new Error(\"add_cards needs a non-empty 'cards' array of {front, back} objects.\");\n  }\n  await persist(deck);\n  summary = `Added ${added.length} card(s). ${deck.cards.length} in the deck, ${deck.dueCardIds.length} due now.`;\n} else if (input.action === 'record_review') {\n  if (!input.cardId || (input.verdict !== 'got-it' && input.verdict !== 'missed')) {\n    throw new Error(\"record_review needs 'cardId' and verdict 'got-it' or 'missed'.\");\n  }\n  const card = deck.cards.find((c) => c.id === input.cardId);\n  if (!card) throw new Error(`No card '${input.cardId}' in the deck.`);\n  applyReview(card, input.verdict, new Date().toISOString());\n  await persist(deck);\n  summary = `${card.id} marked ${input.verdict} (now box ${card.box}). ${deck.dueCardIds.length} still due.`;\n} else if (input.action === 'finish_session') {\n  const reviewed = typeof input.reviewed === 'number' ? input.reviewed : 0;\n  const missedIds = Array.isArray(input.missedIds) ? input.missedIds.map(String) : [];\n  const missedFronts = missedIds\n    .map((id) => deck.cards.find((c) => c.id === id)?.front)\n    .filter((f): f is string => typeof f === 'string');\n  missedList = missedFronts.length ? missedFronts.join(' | ') : '(none)';\n  summary = `Reviewed ${reviewed} card(s): ${reviewed - missedIds.length} got it, ${missedIds.length} missed. ${deck.dueCardIds.length} due next.`;\n} else if (input.action === 'list_deck') {\n  summary = deck.cards.length\n    ? deck.cards\n        .map((c) => `${c.id} [box ${c.box}] ${c.front} -> ${c.back}`)\n        .join('\\n')\n    : 'The deck is empty — add cards with add_cards.';\n} else if (input.action === 'state') {\n  const boxes = { 1: 0, 2: 0, 3: 0 } as Record<number, number>;\n  for (const c of deck.cards) boxes[c.box] = (boxes[c.box] ?? 0) + 1;\n  summary = deck.cards.length\n    ? `${deck.cards.length} card(s) on \"${deck.subject}\": ${deck.dueCardIds.length} due now. Boxes: ${boxes[1]} daily, ${boxes[2]} every-3-days, ${boxes[3]} weekly.`\n    : `The deck for \"${deck.subject}\" is empty — offer to write the first cards.`;\n} else {\n  throw new Error(\n    `Unknown action '${input.action}'. Use state, list_deck, add_cards, record_review, or finish_session.`,\n  );\n}\n\ngezel.output({\n  total: deck.cards.length,\n  due: deck.dueCardIds.length,\n  summary,\n  missedList,\n});\n"
+  },
+  "tools": [
+    {
+      "name": "add_cards",
+      "description": "Add flashcards to the deck. Pass a cards array of {front, back} objects — one fact per card.",
+      "script": "deck-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "cards": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "front": {
+                  "type": "string"
+                },
+                "back": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "front",
+                "back"
+              ]
+            },
+            "description": "The cards to add."
+          }
+        },
+        "required": [
+          "cards"
+        ]
+      },
+      "bind": {
+        "action": "add_cards"
+      }
+    },
+    {
+      "name": "deck_status",
+      "description": "See the deck: how many cards, how many due, and the box distribution.",
+      "script": "deck-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "state"
+      }
+    },
+    {
+      "name": "list_deck",
+      "description": "Read every card in the deck (id, box, front, back).",
+      "script": "deck-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "list_deck"
+      }
+    },
+    {
+      "name": "record_review",
+      "description": "The review page's per-card verdict.",
+      "script": "deck-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "cardId": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "got-it",
+              "missed"
+            ]
+          }
+        },
+        "required": [
+          "cardId",
+          "verdict"
+        ]
+      },
+      "bind": {
+        "action": "record_review"
+      }
+    },
+    {
+      "name": "finish_session",
+      "description": "The review page's end-of-session summary.",
+      "script": "deck-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "reviewed": {
+            "type": "number"
+          },
+          "missedIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "reviewed"
+        ]
+      },
+      "bind": {
+        "action": "finish_session"
+      },
+      "reaction": {
+        "gezel": "study-buddy",
+        "prompt": "The user finished a flashcard review session. {{output.summary}}\nMissed cards: {{output.missedList}}\nReply with ONE short encouraging line — specific beats generic. If any cards were missed, offer to add fresh practice cards that come at those same ideas from a new angle (add them with your deck capabilities if the user agrees)."
+      }
+    }
+  ],
+  "craftbooks": [],
+  "schedules": [],
+  "pages": {
+    "entry": "review/index.html",
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "deck.json"
+      }
+    ],
+    "tools": [
+      "record_review",
+      "finish_session"
+    ]
+  },
+  "workspaceSeed": [
+    "deck.json"
+  ]
+}
