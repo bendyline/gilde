@@ -49,6 +49,7 @@ npm run check         runs all validation checks below
 npm run validate      structural + schema validation of the whole tree
 npm run check-index   verifies the generated index.json files are fresh
 npm run lint-models   completeness lint for chat-model manifests
+npm run format        rewrites non-canonical JSON in place (check never writes)
 ```
 
 Validation is dependency-light on purpose: plain Node 24 plus `ajv`,
