@@ -1,0 +1,138 @@
+{
+  "id": "powerpoint-deck",
+  "name": "PowerPoint from Content",
+  "description": "Turn source content into a real, editable PowerPoint without hand-building HTML, JavaScript, XML, or binary bytes. A planner locks the audience, narrative, and one message per slide. A copywriter writes deck.md as ordinary Markdown with one level-one heading per deliberate slide boundary. A designer then uses the pre-authorized DocBlocks toolset to convert the workspace file directly to PPTX, preview every slide, save an artifact copy, and copy the exact bytes to the requested workspace output path.\n\nDocBlocks 2.3.x treats plain Markdown as the normal authoring surface and selects compatible templates automatically. Optional authoring context is for targeted visual control, not a mandatory preflight.",
+  "entryStepId": "outline",
+  "triggers": [
+    "make a powerpoint",
+    "create a pptx",
+    "powerpoint from this content",
+    "turn this into a presentation",
+    "build a slide deck file",
+    "export these slides to powerpoint"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "outputPath": {
+        "type": "string",
+        "title": "Workspace output path",
+        "description": "Project-workspace-relative path for the finished PowerPoint.",
+        "default": "deck.pptx"
+      }
+    }
+  },
+  "toolsets": [
+    {
+      "toolsetId": "docblocks",
+      "sourceId": "bundled",
+      "autoAllow": true,
+      "reason": "convert deck.md directly to PPTX, preview slides, and save the finished PowerPoint without a prompt per call"
+    }
+  ],
+  "steps": [
+    {
+      "id": "outline",
+      "name": "Outline the deck",
+      "description": "Lock the audience, purpose, takeaway, and one message per slide.",
+      "prompt": "Read the named source content and plan the deck before authoring slides. 1. State the audience, occasion, and ONE takeaway. 2. Draft an 8-15 slide outline unless the user requested another length; for each slide provide a working title and the single idea it must land. 3. Mark where a compact table, comparison, image, or quote genuinely helps. 4. Write acceptance criteria: every outline slide appears in order, one idea per slide, no wall-of-text slides, claims stay grounded in the source, the deck opens with context and closes with the ask/next step, visual preview passes, an artifact copy is retained, and the exact workspace file {{outputPath}} is delivered. Write the outline to notes/outline.md and call write_task_note with the slide count, takeaway, and requested output path. Do not write slide content or HTML.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/outline.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/outline.md",
+            "bytes": 180
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/outline.md",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "outline",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the Markdown deck",
+      "description": "Write deck.md with one H1 heading per slide.",
+      "prompt": "Write deck.md to the locked outline. 1. Use exactly one `#` level-one heading per slide; each H1 is a deliberate slide boundary. Do not add `---` separators unless a visible horizontal rule is intended. 2. The first H1 is the title slide and the final H1 is the ask or next-steps slide. 3. Under each H1, land one idea with 3-6 short bullet phrases, a compact Markdown table, or a short quote; never use paragraph walls. 4. Bold the load-bearing figure or claim. 5. Keep every claim traceable to the source and include only the slides in notes/outline.md, in order. 6. On loop-back, repair only the slides the reviewer names. Call write_task_note with the path and H1 slide count. Do not create HTML, JavaScript, OOXML, or PPTX bytes.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "deck.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "deck.md",
+            "bytes": 700
+          },
+          {
+            "kind": "contains",
+            "file": "deck.md",
+            "pattern": "(?:^|\\n)#\\s+\\S",
+            "label": "at least one H1 slide heading"
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "publish"
+    },
+    {
+      "id": "publish",
+      "name": "Publish the PowerPoint",
+      "description": "Convert deck.md with DocBlocks, preview every slide, and deliver {{outputPath}}.",
+      "prompt": "Publish deck.md as a real editable PowerPoint with the pre-authorized DocBlocks tools. 1. Call list_roots first and identify the read-enabled workspace root and write-enabled artifacts root. If there is no write root, report the blocker rather than substituting HTML. 2. Call get_authoring_context with targetFormat \"pptx\", goal \"visual-polish\", and the deck.md file source only if target guidance or template examples would help; ordinary Markdown needs no preflight. 3. Call convert_document with source `{ \"kind\": \"file\", \"rootId\": <workspace root id>, \"path\": \"deck.md\" }`, target `[{ \"format\": \"pptx\", \"fidelity\": \"editable-native\", \"slideBreak\": \"h1\", \"title\": <deck title> }]`, an audience-appropriate theme when useful, and `autoTemplates: true`. 4. Call preview_document on the PPTX artifact URI and inspect every slide (paginate after 20): expected slide count, no overflow or tiny text, tables legible, visual hierarchy consistent. If QA fails, fix deck.md and convert again. 5. Call save_artifact with destination `{ \"rootId\": <artifacts root id>, \"path\": \"{{outputPath}}\", \"ifExists\": \"error\" }`; on a loop-back, replace only with the current expectedSha256. 6. Call copy_artifact_to_workspace with source `{{outputPath}}` and dest `{{outputPath}}` so the user receives the exact requested workspace file without a text/binary round-trip. 7. Call write_task_note with the artifact path, workspace path, slide count, theme, and preview result. Do not hand-build an HTML deck or presentation XML.",
+      "suggestedRole": "designer",
+      "advanceWhen": {
+        "file": "{{outputPath}}",
+        "minBytes": 1
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{outputPath}}",
+            "bytes": 1000
+          }
+        ],
+        "onReject": "publish",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Review the saved PowerPoint against the narrative and visual criteria.",
+      "prompt": "Review artifacts/{{outputPath}} against every criterion in notes/outline.md. Use list_roots to identify the artifacts root and preview_document with source `{ \"kind\": \"file\", \"rootId\": <artifacts root id>, \"path\": \"{{outputPath}}\" }`; inspect all slides. Confirm the file is a real PPTX, workspace/{{outputPath}} also exists, every outlined slide appears once and in order, each slide has one message, the source facts are preserved, bullets are concise, tables and text fit, the theme is consistent, and the closing ask is present. Write PASS/FAIL for every criterion and name the slide for any failure.\n\nThen route:\n\n- Every criterion PASSES → call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- Any criterion FAILS → write the exact gaps to task notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })`.\n\nNever route to finish while any criterion is unmet. After about three unproductive loops, stop with DONE_WITH_CONCERNS.",
+      "suggestedRole": "reviewer",
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All narrative, slide, and file checks passed.",
+      "prompt": "Every acceptance criterion passed. Call write_task_note with a short DONE summary naming deck.md as the source, artifacts/{{outputPath}} as the retained production copy, and workspace/{{outputPath}} as the requested finished deliverable, plus the slide count and confirmation that visual preview passed. Then report DONE.",
+      "suggestedRole": "designer",
+      "terminal": true
+    }
+  ],
+  "version": "1.3.0",
+  "releasedAt": "2026-08-05T00:00:00Z"
+}
