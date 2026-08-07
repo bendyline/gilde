@@ -352,6 +352,14 @@ function mergeIdentityAndVersion(kind, identity, version, availableVersions) {
       approxSizeBytes: version.approxSizeBytes,
       supportsTools: identity.supportsTools,
       ...(identity.contextWindow !== undefined ? { contextWindow: identity.contextWindow } : {}),
+      // Architecture-determined KV geometry. Forwarded explicitly to stay in
+      // lockstep with gezel's BundledSource merge in packages/catalog/src/source.ts.
+      ...(identity.kvBytesPerTokenF16 !== undefined
+        ? { kvBytesPerTokenF16: identity.kvBytesPerTokenF16 }
+        : {}),
+      ...(identity.kvFixedBytesF16 !== undefined
+        ? { kvFixedBytesF16: identity.kvFixedBytesF16 }
+        : {}),
       ...(identity.upstream !== undefined ? { upstream: identity.upstream } : {}),
       ...(identity.category ? { category: identity.category } : {}),
       ...(identity.style ? { style: identity.style } : {}),
