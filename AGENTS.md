@@ -30,7 +30,7 @@ The identity `manifest.json` holds what is true across versions:
 `schemaVersion`, `kind` (singular, e.g. `chat-model`), `id`, `name`,
 `description`, `tags`, `maintainer`, `license`, plus kind-specific fields
 (models: `parameterSize`, `contextWindow`, `tuning`, `style`; templates:
-`role`; craftbooks: nothing extra). `yankedVersions` (optional) lists
+`role`; craftbooks: lifecycle `role`). `yankedVersions` (optional) lists
 released versions that must not be installed — entries must name version
 directories that actually exist.
 
@@ -50,6 +50,9 @@ The `versions/<semver>/` directory holds the released payload:
 
 `craftbook.json` must be fully resolved:
 
+- Identity `role` is one of `project-starter`, `maintenance-review`, or
+  `general`. Use `project-starter` only for greenfield recipes that assume a
+  blank workspace; established codebases intentionally hide that shelf.
 - `entryStepId` names an existing step.
 - Every step has an explicit, unique `id`.
 - No `deliverable` shorthand anywhere — write the expanded steps.

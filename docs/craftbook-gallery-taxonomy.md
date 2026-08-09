@@ -37,13 +37,20 @@ Shipped seed (in `craftbook-archetypes.ts` today): `html-arcade-game`,
 
 ---
 
-## Two axes
+## Three axes
 
 1. **Outcome axis** — "what the human wants." The 12 families below.
 2. **Capability axis** — "one craftbook per MCP." Enumerable directly from
    the catalog's toolset list; see the last section. These are the
    fastest, most reliable seed (grounded in real tools) and double as
    building blocks the outcome books compose.
+3. **Lifecycle-role axis** — "where this recipe belongs in a project's life."
+   Every identity has one coarse `role`: `project-starter` for greenfield
+   recipes that assume a blank workspace, `maintenance-review` for work that
+   inspects or improves something that already exists, and `general` for
+   recipes that are not tied to codebase maturity. Gezel hides
+   `project-starter` books when the active workspace is already an established
+   codebase; they remain grouped on their own shelf for blank projects.
 
 ---
 
