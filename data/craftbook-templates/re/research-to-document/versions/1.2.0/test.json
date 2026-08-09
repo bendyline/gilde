@@ -1,15 +1,16 @@
 {
   "schemaVersion": 1,
-  "title": "Word Document Markdown-source smoke eval",
-  "objective": "Verify that the Word workflow produces a complete, source-grounded Markdown document before DocBlocks conversion; catalog contract tests cover the DOCX toolset and artifact gate.",
+  "title": "Word Document DocBlocks artifact-surface eval",
+  "objective": "Verify the research-to-document craftbook carries a reviewed Markdown source all the way to a real editable DOCX in the ARTIFACTS drawer via the DocBlocks template route (list_templates / describe_template / convert_document / preview_document / save_artifact) \u2014 the surface and tool family powerpoint-deck's workspace-copy route does not cover.",
   "tags": [
-    "corpus"
+    "external",
+    "documents"
   ],
-  "prompt": "Read source/brief.md and write the complete Word-document source to report.md. Include a title, executive summary, compact metrics table, findings, and next actions. Do not create HTML or document XML.",
+  "prompt": "Read `source/brief.md` and publish a Word document.\n\n1. Write the complete document source to `report.md`: a title, executive summary, compact metrics table, findings, and next actions. Do not create HTML or document XML by hand.\n2. Publish it with the pre-authorized DocBlocks tools. Call `list_roots` to find the read-enabled workspace root and the write-enabled artifacts root. Call `list_templates` and `describe_template` to choose a document template and follow its section expectations. Then `convert_document` to DOCX, `preview_document` to confirm it rendered, and `save_artifact` to persist it to `report.docx` in the artifacts drawer.\n\nThe finished deliverable is the real DOCX at `report.docx` in the artifacts drawer. Markdown, HTML, or hand-built OOXML written to that path is not a substitute.",
   "setup": {
     "projectName": "Word Document from Content Eval",
-    "about": "The reviewed source is Markdown and will be converted to editable DOCX by DocBlocks.",
-    "missionObjectives": "Create a complete, source-grounded report.md ready for direct DOCX conversion.",
+    "about": "The reviewed source is Markdown and is converted to an editable DOCX by DocBlocks. The finished document lands in the project ARTIFACTS drawer, not the workspace.",
+    "missionObjectives": "Create a complete, source-grounded report.md, then convert and save it as a real artifacts-drawer report.docx through the DocBlocks template route.",
     "files": [
       {
         "path": "source/brief.md",
@@ -21,9 +22,135 @@
       "role": "Copywriter"
     }
   },
-  "mocks": [],
+  "mocks": [
+    {
+      "kind": "mcp",
+      "id": "docblocks",
+      "toolsetId": "docblocks",
+      "description": "Deterministic fake DocBlocks MCP for template selection, DOCX conversion, preview, and artifact-drawer saving.",
+      "tools": [
+        {
+          "name": "list_roots",
+          "description": "List the workspace read root and artifacts write root.",
+          "resultTemplate": {
+            "roots": [
+              {
+                "id": "workspace",
+                "name": "workspace",
+                "capabilities": [
+                  "read"
+                ]
+              },
+              {
+                "id": "artifacts",
+                "name": "artifacts",
+                "capabilities": [
+                  "read",
+                  "write"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "get_authoring_context",
+          "description": "Return optional DOCX authoring guidance.",
+          "resultTemplate": {
+            "targetFormat": "docx",
+            "guidance": "Content-first Markdown; one H1 title, H2 sections, real tables."
+          }
+        },
+        {
+          "name": "list_templates",
+          "description": "List the document templates available for DOCX conversion.",
+          "resultTemplate": {
+            "templates": [
+              {
+                "id": "briefing-report",
+                "label": "Briefing report",
+                "formats": [
+                  "docx",
+                  "pdf"
+                ]
+              },
+              {
+                "id": "one-pager",
+                "label": "Executive one-pager",
+                "formats": [
+                  "docx"
+                ]
+              },
+              {
+                "id": "slide-notes",
+                "label": "Slide notes",
+                "formats": [
+                  "pptx"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "describe_template",
+          "description": "Describe a template's expected sections and styles.",
+          "resultTemplate": {
+            "id": "briefing-report",
+            "sections": [
+              "Title",
+              "Executive summary",
+              "Metrics",
+              "Findings",
+              "Next actions"
+            ],
+            "styles": {
+              "heading": "Heading 1",
+              "table": "Grid Table 4"
+            }
+          }
+        },
+        {
+          "name": "convert_document",
+          "description": "Convert approved Markdown to a deterministic DOCX artifact URI.",
+          "resultTemplate": {
+            "artifacts": [
+              {
+                "format": "docx",
+                "uri": "mock://docblocks/report.docx",
+                "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+              }
+            ],
+            "diagnostics": []
+          }
+        },
+        {
+          "name": "preview_document",
+          "description": "Return deterministic page-preview evidence.",
+          "resultTemplate": {
+            "pages": 4,
+            "overflow": false,
+            "missingStyles": [],
+            "previewed": true
+          }
+        },
+        {
+          "name": "save_artifact",
+          "description": "Save the converted DOCX into the project artifacts drawer.",
+          "resultTemplate": {
+            "ok": true,
+            "bytes": 2100,
+            "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+          },
+          "writeFixture": {
+            "surface": "artifact",
+            "pathArgument": "destination.path",
+            "fixture": "minimal-docx"
+          }
+        }
+      ]
+    }
+  ],
   "success": {
-    "summary": "report.md is a complete Markdown source ready for direct editable DOCX conversion.",
+    "summary": "report.md is a complete source-grounded Markdown document, and artifacts/report.docx is a real ZIP-shaped DOCX produced through the DocBlocks template route rather than written by hand.",
     "deliverables": [
       {
         "path": "report.md",
@@ -61,6 +188,27 @@
             "flags": "i"
           }
         ]
+      }
+    ],
+    "mocks": [
+      {
+        "service": "docblocks",
+        "requiredTools": [
+          "list_roots",
+          "list_templates",
+          "describe_template",
+          "convert_document",
+          "preview_document",
+          "save_artifact"
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "kind": "binaryDocument",
+        "file": "report.docx",
+        "artifact": true,
+        "minBytes": 800
       }
     ]
   },
