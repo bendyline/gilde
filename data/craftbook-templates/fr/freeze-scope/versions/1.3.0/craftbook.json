@@ -1,0 +1,50 @@
+{
+  "id": "freeze-scope",
+  "name": "Freeze Scope",
+  "description": "Confine Gezel’s built-in workspace mutation surface to one directory. Direct file writes, patches, renames, deletes, directory creation, copies, and archive extraction are allowed only inside the chosen boundary. Built-in code/package executors whose write targets cannot be proven are blocked until the task ends. Custom project-type and third-party tools are outside this hook contract and must not be used while frozen.",
+  "basedOn": {
+    "name": "gstack",
+    "url": "https://github.com/garrytan/gstack"
+  },
+  "plan": "Step 1 agrees the boundary with the user and records it at `.gezel/freeze.json`. From then on the PreToolUse hook checks every built-in workspace mutation destination and denies paths outside the frozen directory. It also fails closed on built-in code/package executors whose filesystem effects are not declared. Custom project-type and third-party tools are explicitly out of contract and must not be called while frozen (the state file itself stays writable so the boundary can be adjusted deliberately).",
+  "entryStepId": "set-boundary",
+  "triggers": [
+    "freeze scope",
+    "only touch",
+    "stay inside",
+    "lock edits to"
+  ],
+  "command": "freeze-scope",
+  "hooks": [
+    {
+      "phase": "PreToolUse",
+      "matcher": "^(write_file|append_to_file|replace_in_file|replace_lines|apply_patch|insert_at_marker|copy_artifact_to_workspace|make_dir|delete_path|rename|extract_archive|npm_install|run_package_script|run_npx|run_nodejs_script|derive_file|run_playwright_script|run_installed_script|apply_project_type)$",
+      "script": {
+        "name": "check-freeze",
+        "scope": "craftbook"
+      },
+      "label": "freeze: write-boundary check"
+    }
+  ],
+  "steps": [
+    {
+      "id": "set-boundary",
+      "name": "Agree the frozen directory",
+      "prompt": "Confirm with the user which single workspace directory edits are allowed in — use `ask_user_question` if the kickoff didn’t name one. Then record it by writing `.gezel/freeze.json` with exactly:\n\n```json\n{ \"dir\": \"<workspace-relative-directory>\" }\n```\n\nUse a relative path with no leading `./` and no trailing slash (e.g. `src/billing`). Tell the user the freeze is on and advance.",
+      "suggestedRole": "planner",
+      "next": "frozen"
+    },
+    {
+      "id": "frozen",
+      "name": "Freeze active",
+      "prompt": "The built-in write boundary is active: direct file mutations outside the frozen directory are denied automatically — you will see the denial as a tool error naming the boundary. Opaque built-in execution tools (`npm_install`, package/npx/Node/Playwright/installed scripts, `derive_file`, and project-type application) are blocked because their extra write targets cannot be proven. Custom project-type and third-party tools are not covered by this hook and must not be called while frozen. Work with direct workspace tools inside the directory. If the work genuinely needs an executor, custom tool, or outside path, do NOT fight the boundary: explain why and let the user widen `.gezel/freeze.json` or end this task.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "scripts": {
+    "check-freeze": "import { defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'check-freeze',\n  description: 'Block workspace writes outside the frozen directory (freeze scope).',\n  inputs: {\n    toolName: { type: 'string', description: 'Matched MCP tool name.', required: true },\n    args: { type: 'json', description: 'Tool arguments.', required: true },\n    phase: { type: 'string', description: 'Hook phase.', required: true },\n  },\n  outputs: {\n    decision: { type: 'string', description: 'allow | deny' },\n    message: { type: 'string', description: 'Reason shown on deny.' },\n  },\n  requires: ['workspace.read'],\n});\n\nconst STATE_FILE = '.gezel/freeze.json';\n\nfunction normalize(p: string): string {\n  return p.replace(/\\\\/g, '/').replace(/\\/{2,}/g, '/').replace(/^\\.\\//, '').replace(/\\/$/, '');\n}\n\nasync function main(): Promise<void> {\n  const input = gezel.input as { toolName?: unknown; args?: Record<string, unknown> };\n  const toolName = String(input.toolName ?? '');\n  const args = input.args ?? {};\n\n  let frozenDir = '';\n  try {\n    const raw = await gezel.fs.read(STATE_FILE);\n    frozenDir = normalize(String(JSON.parse(raw).dir ?? ''));\n  } catch {\n    // Not configured yet (the setup step writes it) — allow everything.\n    gezel.output({ decision: 'allow', message: '' });\n    return;\n  }\n  if (!frozenDir) {\n    gezel.output({ decision: 'allow', message: '' });\n    return;\n  }\n\n  // Arbitrary code and project-type application can write paths that are not\n  // declared in their tool arguments. Fail closed: direct file tools remain\n  // available inside the boundary, while opaque executors must wait until\n  // the freeze is lifted.\n  const unboundedWriteTools = new Set([\n    'npm_install',\n    'run_package_script',\n    'run_npx',\n    'run_nodejs_script',\n    'derive_file',\n    'run_playwright_script',\n    'run_installed_script',\n    'apply_project_type',\n  ]);\n  if (unboundedWriteTools.has(toolName)) {\n    gezel.output({\n      decision: 'deny',\n      message:\n        '[freeze] ' + toolName + ' can write undeclared paths, so it is blocked while freeze scope is active. Use direct workspace tools inside \"' + frozenDir + '/\", or end the freeze before running code.',\n    });\n    return;\n  }\n\n  // Only write destinations count. Source paths may live elsewhere and are\n  // safe to read (copy_artifact_to_workspace and extract_archive).\n  const candidateKeys =\n    toolName === 'rename'\n      ? ['fromPath', 'toPath']\n      : toolName === 'copy_artifact_to_workspace'\n        ? ['dest']\n        : toolName === 'extract_archive'\n          ? ['outputPath']\n          : ['path'];\n  const candidates = candidateKeys\n    .map((key) => (args as Record<string, unknown>)[key])\n    .filter((value): value is string => typeof value === 'string' && value.length > 0)\n    .map(normalize);\n  if (candidates.length === 0) {\n    gezel.output({\n      decision: 'deny',\n      message: '[freeze] This write call did not expose a destination path, so its boundary cannot be verified.',\n    });\n    return;\n  }\n\n  for (const candidate of candidates) {\n    const inside = candidate === frozenDir || candidate.startsWith(frozenDir + '/');\n    const isStateFile = candidate === normalize(STATE_FILE);\n    if (candidate.includes('..')) {\n      gezel.output({ decision: 'deny', message: '[freeze] Path escapes are blocked while freeze scope is active.' });\n      return;\n    }\n    if (!inside && !isStateFile) {\n      gezel.output({\n        decision: 'deny',\n        message:\n          '[freeze] Writes are frozen to \"' + frozenDir + '/\" — \"' + candidate + '\" is outside it. Finish the scoped work first, or end the freeze-scope task to lift the boundary.',\n      });\n      return;\n    }\n  }\n  gezel.output({ decision: 'allow', message: '' });\n}\n\nawait main();\n"
+  },
+  "version": "1.3.0",
+  "releasedAt": "2026-08-10T00:00:00Z"
+}

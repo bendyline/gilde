@@ -6,7 +6,10 @@ The open catalog that powers [gezel](https://github.com/bendyline/gezel). Browse
 npm install @bendyline/gilde
 ```
 
-The package is this repo, verbatim: raw JSON, Markdown and implementations, no tools, no dependencies.
+The package is raw JSON, Markdown, and implementations with no runtime
+dependencies. It includes the released `data/`, exported schemas, and the
+small authoring source trees consumers need to verify generated families
+against their inputs; repository tooling and CI files are not published.
 
 ## What's inside
 
@@ -21,6 +24,7 @@ The package is this repo, verbatim: raw JSON, Markdown and implementations, no t
 | Video models | data/video-models/ | Video generation model manifests |
 | Toolsets | data/toolsets/ | Hand-curated first-party toolsets |
 | Community toolsets | data/community/toolsets/ | Auto-imported from the MCP registry, permissive licenses only — bot-managed |
+| Authoring sources | authoring/ | Reproducible source material for generated catalog families; inert at runtime |
 
 Every item follows the same layout:
 

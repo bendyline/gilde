@@ -1,0 +1,128 @@
+{
+  "workflow": {
+    "plan": "Reproduce first, diagnose second, change code only after the evidence identifies a root cause. Keep an explicit hypothesis ledger so plausible stories cannot silently become facts. Prefer the smallest experiment that separates competing explanations. The final report must connect symptom, causal mechanism, fix, and regression proof with inspectable paths and command results.",
+    "phases": [
+      {
+        "id": "reproduce",
+        "name": "Reproduce and bound the failure",
+        "description": "Establish a stable failing case, expected behavior, environment, and blast radius.",
+        "suggestedRole": "debugging engineer",
+        "prompt": "Read the request, relevant code, existing tests, logs, and configuration. Reproduce the problem with the smallest safe case you can run. Record exact inputs, expected and actual results, environment details, frequency, and whether the failure is deterministic. If it cannot be reproduced, document the attempts and the missing observation needed; do not invent a cause or edit production code.",
+        "output": {
+          "path": "investigations/reproduction.md",
+          "minBytes": 700,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Symptom",
+              "label": "Symptom section"
+            },
+            {
+              "pattern": "^##\\s+Minimal reproduction",
+              "label": "Minimal reproduction section"
+            },
+            {
+              "pattern": "^##\\s+Expected",
+              "label": "Expected behavior section"
+            },
+            {
+              "pattern": "^##\\s+Actual",
+              "label": "Actual behavior section"
+            },
+            {
+              "pattern": "^##\\s+Evidence",
+              "label": "Evidence section"
+            }
+          ]
+        }
+      },
+      {
+        "id": "diagnose",
+        "name": "Prove the root cause",
+        "description": "Test competing hypotheses and identify the causal mechanism before modifying code.",
+        "suggestedRole": "root-cause analyst",
+        "prompt": "Use `investigations/reproduction.md` to form at least two plausible hypotheses. Trace the relevant execution and data paths with workspace search and file-reading tools. For each hypothesis, run a discriminating experiment and record its predicted versus observed outcome. Name the first bad state or decision, explain how it produces the symptom, and check for sibling cases. Do not change source code in this phase.",
+        "output": {
+          "path": "investigations/root-cause-analysis.md",
+          "minBytes": 1000,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Hypotheses",
+              "label": "Hypotheses section"
+            },
+            {
+              "pattern": "^##\\s+Experiments",
+              "label": "Experiments section"
+            },
+            {
+              "pattern": "^##\\s+Root cause",
+              "label": "Root cause section"
+            },
+            {
+              "pattern": "^##\\s+Causal chain",
+              "label": "Causal chain section"
+            },
+            {
+              "pattern": "^##\\s+Blast radius",
+              "label": "Blast radius section"
+            }
+          ]
+        }
+      },
+      {
+        "id": "fix-and-verify",
+        "name": "Implement the smallest fix and verify it",
+        "description": "Correct the proven mechanism and demonstrate both regression coverage and non-regression.",
+        "suggestedRole": "software engineer",
+        "prompt": "Read both investigation files. Implement the smallest maintainable change that breaks the documented causal chain. Add or strengthen a regression test that fails on the old behavior and passes with the fix. Run the focused test, relevant neighboring tests, and any proportionate static checks. Record exact changed paths and exact verification commands with exit results. If the environment prevents a check, label it unverified and explain what is needed to run it.",
+        "output": {
+          "path": "reports/root-cause-investigation.md",
+          "minBytes": 1200,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Root cause",
+              "label": "Root cause section"
+            },
+            {
+              "pattern": "^##\\s+Fix",
+              "label": "Fix section"
+            },
+            {
+              "pattern": "^##\\s+Changed files",
+              "label": "Changed files section"
+            },
+            {
+              "pattern": "^##\\s+Regression coverage",
+              "label": "Regression coverage section"
+            },
+            {
+              "pattern": "^##\\s+Verification",
+              "label": "Verification section"
+            },
+            {
+              "pattern": "^##\\s+Rollback",
+              "label": "Rollback section"
+            }
+          ]
+        }
+      }
+    ],
+    "review": {
+      "artifactPath": "reports/root-cause-investigation.md",
+      "relatedPaths": [
+        "investigations/reproduction.md",
+        "investigations/root-cause-analysis.md"
+      ],
+      "reviewPath": "reviews/root-cause-investigation-review.md",
+      "reviewerRole": "debugging reviewer",
+      "repairRole": "software engineer",
+      "criteria": [
+        "The failure is reproducible or the report explicitly stops without claiming an unproven diagnosis.",
+        "Competing hypotheses were separated by recorded experiments rather than intuition.",
+        "The stated root cause includes a causal chain from first bad state to observed symptom.",
+        "The change is limited to that causal mechanism and covers identified sibling cases.",
+        "A regression test and neighboring checks have concrete, credible results with no fabricated execution evidence.",
+        "The report identifies changed files, residual risk, and a viable rollback."
+      ]
+    }
+  }
+}

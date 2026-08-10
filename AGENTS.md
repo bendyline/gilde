@@ -10,6 +10,7 @@ first try.
 data/<kind-dir>/<shard>/<id>/manifest.json                    identity
 data/<kind-dir>/<shard>/<id>/versions/<semver>/...            released content
 data/<kind-dir>/index.json                                    generated listing
+authoring/<family>/                                            generator inputs
 ```
 
 - `<kind-dir>` is one of: `chat-models`, `image-models`, `video-models`,
@@ -62,6 +63,34 @@ The `versions/<semver>/` directory holds the released payload:
 Ship a `test.json` with every craftbook. A craftbook without an eval
 cannot be regression-checked.
 
+## Generated-family authoring
+
+`authoring/` holds maintained inputs for catalog families whose released
+payloads are expanded by a generator. It is not an alternate runtime catalog:
+generated `manifest.json`, `craftbook.json`, and `test.json` still belong
+under `data/`, and the index builder reads only `data/`.
+
+It does ship in the npm package, unlike `tools/`. Downstream regeneration
+checks resolve these inputs from the installed package and go quiet rather
+than fail without them, so `tools/check-package-size.mjs` asserts the pinned
+sources are in the tarball. That same guardrail caps `authoring/` at a byte
+budget: `files` grants the whole directory, so a new family ships
+automatically unless the budget forces the decision. Adding one means raising
+`MAX_AUTHORING_BYTES` on purpose, not discovering it in a release.
+
+For `authoring/gstack/`:
+
+- `wave.json` owns release metadata and the source-to-craftbook mapping.
+- `snapshots/` is a frozen upstream capture; do not casually rewrite it.
+- `overlays/` owns Gezel-native workflow curation.
+- `evals/` owns the source form of each generated `test.json`.
+- `persona-drafts/` is review-only and never ships as a gezel template
+  without a separate curated release.
+
+Run the Gezel-side importer documented in `authoring/gstack/README.md`, then
+commit source and generated output together. Never hand-edit an emitted
+released version or generate from a different Gilde revision.
+
 ## Project page demo contract
 
 Every latest project-type page under `pages/**` must also run outside the
@@ -100,6 +129,7 @@ with controls.
 
 ```
 npm run validate       full-tree structural + schema validation
+npm run check-authoring  generated-family source/output consistency
 npm run check-index    generated indexes are fresh
 npm run lint-models    chat-model completeness lint
 npm run check-page-demos  latest project pages carry the standalone contract

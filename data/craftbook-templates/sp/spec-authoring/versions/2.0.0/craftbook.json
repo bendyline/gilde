@@ -1,0 +1,391 @@
+{
+  "id": "spec-authoring",
+  "name": "Spec Authoring",
+  "description": "Turn a rough intent into a backlog-ready spec: interrogate scope and requirements against the real code, then file a well-formed, unambiguous issue.",
+  "basedOn": {
+    "name": "gstack",
+    "url": "https://github.com/garrytan/gstack"
+  },
+  "plan": "Turn an already-approved intent into an implementation-ready workspace specification. Inspect the real project before asking questions, resolve one consequential decision at a time, and leave no hidden architecture choice to the implementer. Acceptance criteria must be pass/fail, references must use real paths, and risky changes need verification and rollback. The canonical deliverable stays in the workspace; publishing it elsewhere is a separate user-authorized action.",
+  "entryStepId": "inspect",
+  "triggers": [
+    "spec this out",
+    "file an issue",
+    "write up a ticket",
+    "turn this into an issue",
+    "make this a github issue",
+    "turn this into a backlog item"
+  ],
+  "command": "spec-authoring",
+  "steps": [
+    {
+      "id": "inspect",
+      "name": "Inspect the current system",
+      "description": "Map present behavior, relevant code, conventions, dependencies, tests, and constraints.",
+      "prompt": "Read the approved intent and inspect the relevant workspace before asking the user anything. Trace current behavior through entry points, interfaces, data models, dependencies, tests, and adjacent patterns. Record exact paths and what each proves. Identify root cause for bugs, compatibility boundaries, security or migration risks, and unknowns that cannot be answered from the project. Do not design the change yet.\n\nObservable handoff: write the completed result to `specs/source-audit.md` in the workspace. Do not merely describe what the file would contain. Re-read it before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "principal engineer",
+      "advanceWhen": {
+        "file": "specs/source-audit.md",
+        "minBytes": 1000,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "goto": "resolve-decisions"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "specs/source-audit.md",
+            "bytes": 1000
+          },
+          {
+            "kind": "sniff",
+            "file": "specs/source-audit.md",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/source-audit.md",
+            "pattern": "^##\\s+Current behavior",
+            "flags": "im",
+            "label": "Current behavior section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/source-audit.md",
+            "pattern": "^##\\s+Source map",
+            "flags": "im",
+            "label": "Source map section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/source-audit.md",
+            "pattern": "^##\\s+Conventions",
+            "flags": "im",
+            "label": "Conventions section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/source-audit.md",
+            "pattern": "^##\\s+Constraints",
+            "flags": "im",
+            "label": "Constraints section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/source-audit.md",
+            "pattern": "^##\\s+Unknowns",
+            "flags": "im",
+            "label": "Unknowns section"
+          }
+        ],
+        "onReject": "inspect",
+        "maxAttempts": 3
+      },
+      "next": "resolve-decisions"
+    },
+    {
+      "id": "resolve-decisions",
+      "name": "Resolve scope and design decisions",
+      "description": "Close consequential ambiguities and record alternatives, rationale, and boundaries.",
+      "prompt": "Use `specs/source-audit.md` to enumerate only decisions the workspace cannot settle. Ask the user one consequential question at a time with `ask_user_question`, supplying a recommendation and trade-offs. In unattended mode, make only reversible assumptions and label them. Record the selected architecture, data and interface shapes, compatibility choices, dependency order, out-of-scope items, alternatives rejected, and decisions still blocked.\n\nObservable handoff: write the completed result to `specs/decision-log.md` in the workspace. Do not merely describe what the file would contain. Re-read it before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "solution architect",
+      "advanceWhen": {
+        "file": "specs/decision-log.md",
+        "minBytes": 900,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "goto": "write-spec"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "specs/decision-log.md",
+            "bytes": 900
+          },
+          {
+            "kind": "sniff",
+            "file": "specs/decision-log.md",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/decision-log.md",
+            "pattern": "^##\\s+Scope",
+            "flags": "im",
+            "label": "Scope section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/decision-log.md",
+            "pattern": "^##\\s+Decisions",
+            "flags": "im",
+            "label": "Decisions section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/decision-log.md",
+            "pattern": "^##\\s+Alternatives",
+            "flags": "im",
+            "label": "Alternatives section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/decision-log.md",
+            "pattern": "^##\\s+Out of scope",
+            "flags": "im",
+            "label": "Out of scope section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/decision-log.md",
+            "pattern": "^##\\s+Open blockers",
+            "flags": "im",
+            "label": "Open blockers section"
+          }
+        ],
+        "onReject": "resolve-decisions",
+        "maxAttempts": 3
+      },
+      "next": "write-spec"
+    },
+    {
+      "id": "write-spec",
+      "name": "Write the implementation specification",
+      "description": "Produce a backlog-ready spec with concrete interfaces, sequencing, tests, and rollback.",
+      "prompt": "Synthesize the source audit and decision log into a self-contained implementation specification. Include current versus proposed behavior, precise file changes, actual schema or API shapes where relevant, dependency-ordered work, measurable acceptance criteria, a testing pyramid, observability, rollout and rollback, effort by component, and explicit exclusions. Split work that cannot be completed safely as one bounded change. Use real workspace paths; never manufacture line numbers or execution results.\n\nObservable handoff: write the completed result to `specs/implementation-spec.md` in the workspace. Do not merely describe what the file would contain. Re-read it before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "specification writer",
+      "advanceWhen": {
+        "file": "specs/implementation-spec.md",
+        "minBytes": 1800,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "specs/implementation-spec.md",
+            "bytes": 1800
+          },
+          {
+            "kind": "sniff",
+            "file": "specs/implementation-spec.md",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/implementation-spec.md",
+            "pattern": "^##\\s+Context",
+            "flags": "im",
+            "label": "Context section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/implementation-spec.md",
+            "pattern": "^##\\s+Current state",
+            "flags": "im",
+            "label": "Current state section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/implementation-spec.md",
+            "pattern": "^##\\s+Proposed change",
+            "flags": "im",
+            "label": "Proposed change section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/implementation-spec.md",
+            "pattern": "^##\\s+Implementation details",
+            "flags": "im",
+            "label": "Implementation details section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/implementation-spec.md",
+            "pattern": "^##\\s+Acceptance criteria",
+            "flags": "im",
+            "label": "Acceptance criteria section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/implementation-spec.md",
+            "pattern": "^##\\s+Testing plan",
+            "flags": "im",
+            "label": "Testing plan section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/implementation-spec.md",
+            "pattern": "^##\\s+Rollback plan",
+            "flags": "im",
+            "label": "Rollback plan section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/implementation-spec.md",
+            "pattern": "^##\\s+Out of scope",
+            "flags": "im",
+            "label": "Out of scope section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/implementation-spec.md",
+            "pattern": "^##\\s+File reference",
+            "flags": "im",
+            "label": "File reference section"
+          }
+        ],
+        "onReject": "write-spec",
+        "maxAttempts": 3
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate the deliverable",
+      "description": "Independently grade the observable deliverable and route it to finish, repair, or user escalation.",
+      "prompt": "Review `specs/implementation-spec.md`, `specs/source-audit.md`, `specs/decision-log.md` against every criterion below. Inspect the underlying evidence files named by the workflow; do not grade from the author's summary alone.\n\n1. Every material current-state claim and file reference traces to inspected workspace evidence.\n2. The proposed architecture, interfaces, data shapes, and sequencing leave no hidden design decision to the implementer.\n3. Acceptance criteria are individually observable and pass/fail rather than subjective.\n4. The testing plan covers unit, integration, and end-to-end layers in proportion to risk.\n5. Migration, compatibility, observability, rollout, and rollback are addressed when relevant.\n6. Scope is bounded, exclusions are explicit, and unresolved blockers are not disguised as assumptions.\n\nWrite an evidence-backed review to `reviews/spec-authoring-review.md`. Give each criterion a PASS or FAIL with a concrete path, excerpt, measurement, or observed behavior. End with exactly `Verdict: PASS` or `Verdict: REVISE`. Then use `advance_task_step` for the active task: PASS routes to `finish`; REVISE routes to `repair` for review rounds 1 through 2, and the 3th REVISE routes to `needs-user`. Never route to finish while a criterion is unmet.",
+      "suggestedRole": "engineering reviewer",
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "reviews/spec-authoring-review.md",
+            "bytes": 400
+          },
+          {
+            "kind": "contains",
+            "file": "reviews/spec-authoring-review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit PASS or REVISE verdict"
+          }
+        ],
+        "onReject": "evaluate",
+        "maxAttempts": 3
+      },
+      "next": "repair"
+    },
+    {
+      "id": "repair",
+      "name": "Repair the deliverable",
+      "description": "Fix only the concrete gaps from the latest independent review.",
+      "prompt": "Read `reviews/spec-authoring-review.md` and repair every failed criterion in `specs/implementation-spec.md`, `specs/source-audit.md`, `specs/decision-log.md`. Make the changes in the actual workspace files, not just in task notes or a reply. Preserve evidence that already passed. Re-run or re-check anything the reviewer found unproven. Ensure `specs/implementation-spec.md` is genuinely updated this turn so the repair is observable, then hand it back for independent evaluation.",
+      "suggestedRole": "specification writer",
+      "advanceWhen": {
+        "file": "specs/implementation-spec.md",
+        "minBytes": 1800,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "specs/implementation-spec.md",
+            "bytes": 1800
+          },
+          {
+            "kind": "sniff",
+            "file": "specs/implementation-spec.md",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/implementation-spec.md",
+            "pattern": "^##\\s+Context",
+            "flags": "im",
+            "label": "Context section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/implementation-spec.md",
+            "pattern": "^##\\s+Current state",
+            "flags": "im",
+            "label": "Current state section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/implementation-spec.md",
+            "pattern": "^##\\s+Proposed change",
+            "flags": "im",
+            "label": "Proposed change section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/implementation-spec.md",
+            "pattern": "^##\\s+Implementation details",
+            "flags": "im",
+            "label": "Implementation details section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/implementation-spec.md",
+            "pattern": "^##\\s+Acceptance criteria",
+            "flags": "im",
+            "label": "Acceptance criteria section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/implementation-spec.md",
+            "pattern": "^##\\s+Testing plan",
+            "flags": "im",
+            "label": "Testing plan section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/implementation-spec.md",
+            "pattern": "^##\\s+Rollback plan",
+            "flags": "im",
+            "label": "Rollback plan section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/implementation-spec.md",
+            "pattern": "^##\\s+Out of scope",
+            "flags": "im",
+            "label": "Out of scope section"
+          },
+          {
+            "kind": "contains",
+            "file": "specs/implementation-spec.md",
+            "pattern": "^##\\s+File reference",
+            "flags": "im",
+            "label": "File reference section"
+          }
+        ],
+        "onReject": "repair",
+        "maxAttempts": 3
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All deterministic and reviewer criteria passed.",
+      "prompt": "The independent review passed. Read `reviews/spec-authoring-review.md`, then use `write_task_note` to record a concise DONE summary with the final deliverable paths (`specs/implementation-spec.md`, `specs/source-audit.md`, `specs/decision-log.md`) and the evidence that each acceptance criterion passed. Report DONE without starting new work.",
+      "suggestedRole": "project lead",
+      "terminal": true
+    },
+    {
+      "id": "needs-user",
+      "name": "Escalate unresolved concerns",
+      "description": "The bounded repair loop ended without a defensible pass.",
+      "prompt": "The deliverable did not pass after 3 review rounds. Do not claim success. Read `reviews/spec-authoring-review.md`, then use `write_task_note` to record DONE_WITH_CONCERNS: the unmet criteria, what was attempted, the affected paths, and the smallest user decision or missing input needed to continue.",
+      "suggestedRole": "project lead",
+      "terminal": true
+    }
+  ],
+  "version": "2.0.0",
+  "releasedAt": "2026-08-09T00:00:00Z"
+}

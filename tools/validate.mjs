@@ -40,6 +40,10 @@ const ALLOWED_EXTENSIONS = new Set([...TEXT_EXTENSIONS, '.webp']);
 const ALLOWED_EXTENSIONS_LABEL = [...ALLOWED_EXTENSIONS].map((ext) => ext.slice(1)).join('/');
 const HF_URL_PREFIX = 'https://huggingface.co/';
 const URI_TEMPLATE_VARIABLE = /\{[A-Za-z_][A-Za-z0-9_-]*\}/g;
+// Runtime-managed system toolsets ship with the app rather than as gilde
+// catalog identities. Craftbooks may depend on them exactly like builtin.*
+// groups without creating an unresolvable content reference.
+const SYSTEM_TOOLSET_IDS = new Set(['@playwright/mcp']);
 
 function parseArgs(argv) {
   const out = { mode: 'human', root: join(REPO_ROOT, 'data') };
@@ -506,7 +510,14 @@ function main() {
       // Yanked releases remain immutable and cannot be installed, so a
       // dependency that disappeared (or was misnamed before the yank)
       // should not keep producing an actionable catalog warning.
-      if (yanked || typeof toolsetId !== 'string' || toolsetId.startsWith('builtin.')) continue;
+      if (
+        yanked ||
+        typeof toolsetId !== 'string' ||
+        toolsetId.startsWith('builtin.') ||
+        SYSTEM_TOOLSET_IDS.has(toolsetId)
+      ) {
+        continue;
+      }
       if (!knownToolsetIds.has(toolsetId)) {
         c.warn(path, `/toolsets/${i}/toolsetId`, 'unresolvable-toolset-ref', `"${toolsetId}" is not a bundled or community toolset id`);
       }

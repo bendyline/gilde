@@ -35,6 +35,19 @@ A craftbook is a step-by-step playbook a gezel follows. To add one:
    [docs/craftbook-evaluation-framework.md](docs/craftbook-evaluation-framework.md).
 6. `npm run build-index`, then validate.
 
+### Generated craftbook families
+
+Some released craftbooks have a maintained source representation under
+`authoring/`. For those families, edit the authoring source and run its named
+generator instead of hand-editing the expanded payload. The gstack-derived
+family is documented in `authoring/gstack/README.md`; its schema-aware
+compiler lives in the Gezel repository because it depends on Gezel's parser
+and runtime schemas.
+
+Both source and generated files belong in the same Gilde change. Released
+version directories remain immutable: bump the family version and generate a
+new directory.
+
 ## Updating a model entry
 
 Model manifests split identity (name, description, license) from released
@@ -64,6 +77,9 @@ versions (engine sources with pinned revisions and sha256s).
   there. Do not edit them in this repo.
 - `data/community/` is bot-managed (imported from the MCP registry). To
   fix a community entry, fix it upstream in the registry.
+- `authoring/gstack/snapshots/` is a frozen upstream capture. Change it only
+  as part of an explicit upstream refresh; ordinary curation belongs in the
+  overlays and evals beside it.
 
 ## Sign-off
 

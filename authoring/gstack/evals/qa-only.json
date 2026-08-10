@@ -1,0 +1,376 @@
+{
+  "schemaVersion": 1,
+  "title": "Browser QA Audit — Harbor signup fixture",
+  "objective": "Exercise the Browser QA Audit craftbook against a self-contained workspace page with deterministic functional, console, accessibility, link, and responsive defects.",
+  "tags": [
+    "workflow",
+    "browser",
+    "qa",
+    "html-page"
+  ],
+  "prompt": "Use the Browser QA Audit craftbook in report-only mode. The running target is the Gezel workspace preview URL `file:///workspace/fixtures/signup.html`; navigate to that exact URL with the configured browser tools. Test it as a user at 1280x720 and 375x812 using `source/expected-behavior.md` as the product contract. Exercise the menu, empty and valid form submissions, keyboard focus, and the Help link; inspect console errors and take evidence screenshots. Retry every suspected defect once. Do not read or edit the HTML source during the audit and do not fix anything. Produce the workflow plan, browser evidence, `qa/baseline.json`, and `qa/browser-qa-report.md`.",
+  "setup": {
+    "projectName": "Harbor signup browser QA",
+    "about": "A self-contained report-only QA evaluation. The HTML fixture is served through Gezel's workspace preview mapping; no external URL, credential, or live service is needed.",
+    "missionObjectives": "Run the Browser QA Audit craftbook as a real task, use actual browser tools on file:///workspace/fixtures/signup.html, capture reproducible evidence, and leave the fixture unchanged.",
+    "files": [
+      {
+        "path": "source/expected-behavior.md",
+        "content": "# Signup acceptance brief\n\n- The Menu button reveals and hides the navigation links.\n- Email is required. Empty or malformed email submission must show an inline validation error and must not show success.\n- A valid address such as `crew@example.com` shows `Welcome aboard` after submission.\n- Help opens a real help destination rather than a missing page.\n- The form is usable with keyboard alone and every focused control has a visible focus indicator.\n- At 375x812 there is no horizontal page overflow.\n- A clean user journey emits no console errors.\n\nDo not inspect implementation source during black-box QA.\n"
+      },
+      {
+        "path": "fixtures/signup.html",
+        "content": "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Harbor Crew Signup</title>\n<style>\nbody{margin:0;background:#f6f7f8;color:#334;font:16px Arial,sans-serif}header{background:#10233f;color:#fff;padding:18px}.shell{width:980px;margin:32px auto;background:#fff;padding:24px}.muted{color:#c2c5ca}button,a,input{font:inherit}button:focus,a:focus,input:focus{outline:none}.nav{display:none}.card{border:1px solid #dde1e6;padding:20px}input{display:block;width:360px;padding:10px;margin:8px 0}.success{display:none;color:#16783b}a{color:#d97706}\n</style>\n</head>\n<body>\n<header><strong>Harbor Crew</strong> <span class=\"muted\">Shift updates without noise</span></header>\n<main class=\"shell\">\n<button id=\"menu\">Menu</button>\n<nav class=\"nav\"><a href=\"#signup\">Signup</a> <a href=\"missing-help.html\">Help</a></nav>\n<section class=\"card\" id=\"signup\">\n<h1>Join shift updates</h1>\n<p>One concise email before every assignment window.</p>\n<form id=\"signup-form\">\n<input id=\"email\" type=\"text\" placeholder=\"you@example.com\">\n<button type=\"submit\">Join</button>\n</form>\n<p class=\"success\" id=\"success\">Welcome aboard</p>\n</section>\n</main>\n<script>\nconsole.error('fixture-console-error: signup analytics failed');\ndocument.querySelector('#signup-form').addEventListener('submit',event=>{event.preventDefault();document.querySelector('#success').style.display='block'});\n</script>\n</body>\n</html>\n",
+        "modelInput": false
+      }
+    ]
+  },
+  "mocks": [
+    {
+      "kind": "mcp",
+      "id": "playwright",
+      "description": "Hermetic black-box browser simulator for the seeded Harbor signup page. It records real MCP tool calls while returning deterministic observations from the fixed fixture.",
+      "toolsetId": "@playwright/mcp",
+      "tools": [
+        {
+          "name": "browser_navigate",
+          "description": "Navigate to a URL. Use file:///workspace/fixtures/signup.html for this audit.",
+          "resultTemplate": {
+            "url": "file:///workspace/fixtures/signup.html",
+            "title": "Harbor Crew Signup",
+            "status": "loaded",
+            "viewport": "1280x720"
+          }
+        },
+        {
+          "name": "browser_resize",
+          "description": "Set the browser viewport width and height before repeating a journey.",
+          "resultSequence": [
+            {
+              "status": "viewport updated",
+              "viewport": "1280x720"
+            },
+            {
+              "status": "viewport updated",
+              "viewport": "375x812",
+              "horizontalOverflow": "980px shell exceeds the 375px viewport"
+            }
+          ]
+        },
+        {
+          "name": "browser_snapshot",
+          "description": "Return the current page accessibility snapshot and visible state. Call after each interaction and on each viewport.",
+          "resultSequence": [
+            {
+              "state": "desktop initial",
+              "heading": "Join shift updates",
+              "controls": [
+                "Menu button",
+                "email textbox",
+                "Join button"
+              ],
+              "focusIndicator": "none on button, link, and input"
+            },
+            {
+              "state": "after menu attempt 1",
+              "navigation": "still hidden"
+            },
+            {
+              "state": "after menu retry",
+              "navigation": "still hidden"
+            },
+            {
+              "state": "after empty submit",
+              "email": "",
+              "inlineError": null,
+              "success": "Welcome aboard is visible"
+            },
+            {
+              "state": "after malformed submit retry",
+              "email": "not-an-email",
+              "inlineError": null,
+              "success": "Welcome aboard is visible"
+            },
+            {
+              "state": "mobile and help",
+              "viewport": "375x812",
+              "horizontalOverflow": "980px shell exceeds viewport",
+              "helpTarget": "missing-help.html"
+            }
+          ]
+        },
+        {
+          "name": "browser_click",
+          "description": "Activate a referenced control. Repeat suspected defects once and record expected versus actual behavior.",
+          "resultSequence": [
+            {
+              "action": "menu attempt 1 recorded"
+            },
+            {
+              "action": "menu retry recorded"
+            },
+            {
+              "action": "empty submission attempt 1 recorded"
+            },
+            {
+              "action": "empty or malformed submission retry recorded"
+            },
+            {
+              "action": "valid crew@example.com submission recorded"
+            },
+            {
+              "action": "Help link activation recorded",
+              "destination": "missing-help.html"
+            }
+          ]
+        },
+        {
+          "name": "browser_type",
+          "description": "Enter text into the email field for invalid and valid submission journeys.",
+          "resultSequence": [
+            {
+              "status": "text entered",
+              "valueClass": "malformed-email"
+            },
+            {
+              "status": "text entered",
+              "valueClass": "valid-email"
+            }
+          ]
+        },
+        {
+          "name": "browser_console_messages",
+          "description": "Read console messages emitted by the current page.",
+          "resultTemplate": {
+            "messages": [
+              "error: fixture-console-error: signup analytics failed"
+            ]
+          }
+        },
+        {
+          "name": "browser_take_screenshot",
+          "description": "Capture a screenshot to a distinct workspace-relative PNG path beneath qa/screenshots/.",
+          "resultTemplate": {
+            "saved": true
+          },
+          "writeFixture": {
+            "surface": "workspace",
+            "pathArgument": "path",
+            "fixture": "minimal-png"
+          }
+        }
+      ]
+    }
+  ],
+  "success": {
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    },
+    "summary": "The real craftbook uses browser tools, preserves the fixture, and reports reproducible functional, console, link, accessibility, and mobile defects with transparent scoring.",
+    "deliverables": [
+      {
+        "path": "qa/browser-evidence.md",
+        "kind": "markdown-report",
+        "minBytes": 1000,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "qa/browser-evidence.md",
+            "pattern": "^#{1,3}\\s+Run metadata\\b[\\s\\S]*^#{1,3}\\s+Journey results\\b[\\s\\S]*^#{1,3}\\s+Console\\b[\\s\\S]*^#{1,3}\\s+Responsive and accessibility\\b[\\s\\S]*^#{1,3}\\s+Evidence index\\b",
+            "flags": "im",
+            "label": "complete browser evidence structure"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/browser-evidence.md",
+            "pattern": "1280\\s*[x×]\\s*720[\\s\\S]*375\\s*[x×]\\s*812|375\\s*[x×]\\s*812[\\s\\S]*1280\\s*[x×]\\s*720",
+            "flags": "i",
+            "label": "both required viewports exercised"
+          }
+        ]
+      },
+      {
+        "path": "qa/baseline.json",
+        "kind": "json",
+        "minBytes": 250,
+        "checks": [
+          {
+            "kind": "sniff",
+            "file": "qa/baseline.json",
+            "sniff": "json-valid"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/baseline.json",
+            "pattern": "healthScore[\\s\\S]*issues[\\s\\S]*(console|functional|accessibility|responsive)",
+            "flags": "i",
+            "label": "machine-readable score and categorized issues"
+          }
+        ]
+      },
+      {
+        "path": "qa/browser-qa-report.md",
+        "kind": "markdown-report",
+        "minBytes": 1500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "qa/browser-qa-report.md",
+            "pattern": "^#{1,3}\\s+Executive summary\\b[\\s\\S]*^#{1,3}\\s+Coverage\\b[\\s\\S]*^#{1,3}\\s+Findings\\b[\\s\\S]*^#{1,3}\\s+Console health\\b[\\s\\S]*^#{1,3}\\s+Health score\\b[\\s\\S]*^#{1,3}\\s+Top three fixes\\b",
+            "flags": "im",
+            "label": "complete QA report structure"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/browser-qa-report.md",
+            "pattern": "fixture-console-error",
+            "flags": "i",
+            "label": "observed console failure"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/browser-qa-report.md",
+            "pattern": "empty[\\s\\S]*(email|form)[\\s\\S]*(success|Welcome aboard)|(success|Welcome aboard)[\\s\\S]*empty[\\s\\S]*(email|form)",
+            "flags": "i",
+            "label": "empty submission false-success defect"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/browser-qa-report.md",
+            "pattern": "Menu[\\s\\S]*(does not|doesn't|fails|no change|hidden)|navigation[\\s\\S]*(remains|stays)\\s+hidden",
+            "flags": "i",
+            "label": "dead menu interaction"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/browser-qa-report.md",
+            "pattern": "375[\\s\\S]*(overflow|horizontal|980)|(?:overflow|horizontal|980)[\\s\\S]*375",
+            "flags": "i",
+            "label": "mobile overflow finding"
+          }
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "kind": "contains",
+        "file": "fixtures/signup.html",
+        "pattern": "fixture-console-error: signup analytics failed",
+        "label": "report-only run preserves the seeded console defect"
+      },
+      {
+        "kind": "contains",
+        "file": "fixtures/signup.html",
+        "pattern": "button:focus,a:focus,input:focus\\{outline:none\\}",
+        "label": "report-only run preserves the seeded focus defect"
+      },
+      {
+        "kind": "fileCount",
+        "dir": "qa/screenshots",
+        "ext": [
+          ".png"
+        ],
+        "min": 2,
+        "verifyImageBytes": true
+      }
+    ],
+    "taskNotes": {
+      "minBytes": 180,
+      "requireCraftbookTask": true,
+      "checks": [
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "\\bDONE\\b[\\s\\S]*qa/browser-qa-report\\.md[\\s\\S]*(browser|journey|evidence)",
+          "flags": "i",
+          "label": "terminal task note records the browser audit"
+        }
+      ]
+    },
+    "mocks": [
+      {
+        "service": "playwright",
+        "requiredTools": [
+          "browser_navigate",
+          "browser_resize",
+          "browser_snapshot",
+          "browser_click",
+          "browser_type",
+          "browser_console_messages",
+          "browser_take_screenshot"
+        ],
+        "toolCalls": {
+          "browser_navigate": {
+            "minCalls": 1
+          },
+          "browser_resize": {
+            "minCalls": 2
+          },
+          "browser_snapshot": {
+            "minCalls": 6
+          },
+          "browser_click": {
+            "minCalls": 6
+          },
+          "browser_type": {
+            "minCalls": 2
+          },
+          "browser_console_messages": {
+            "minCalls": 1
+          },
+          "browser_take_screenshot": {
+            "minCalls": 2
+          }
+        }
+      }
+    ],
+    "history": [
+      {
+        "kind": "tool.called",
+        "minEntries": 20,
+        "summaryPattern": "Tool .*?(?:browser_|playwright)",
+        "flags": "i"
+      },
+      {
+        "kind": "tool.called",
+        "minEntries": 0,
+        "maxEntries": 0,
+        "details": {
+          "name": "read_file",
+          "path": "fixtures/signup.html"
+        }
+      }
+    ],
+    "unchangedFixtures": [
+      "source/expected-behavior.md",
+      "fixtures/signup.html"
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "qa/browser-qa-report.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "Browser evidence",
+        "description": "Findings cite actual repeated journeys, viewport, console, focus, and screenshot evidence rather than source inspection or speculation."
+      },
+      {
+        "name": "Triage quality",
+        "description": "Severity, confidence, expected versus actual behavior, reproduction, and user impact are clear and proportionate."
+      },
+      {
+        "name": "Scoring honesty",
+        "description": "Coverage boundaries and blocked checks are visible, and the health score can be recomputed from the category arithmetic."
+      }
+    ],
+    "contextNote": "This is report-only black-box QA. Editing the fixture or deriving findings by reading its source is a failure."
+  },
+  "qualityFocus": [
+    "Actual browser use is required and audited in History",
+    "Deterministic fixture defects must be reproduced rather than guessed",
+    "The HTML fixture remains unchanged"
+  ]
+}

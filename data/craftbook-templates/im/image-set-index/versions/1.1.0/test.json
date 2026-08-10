@@ -1,0 +1,177 @@
+{
+  "schemaVersion": 1,
+  "title": "Deterministic image-index workflow",
+  "objective": "Run the Index & Describe an Image Set craftbook against deterministic metadata, verifying schema-first staging, exact coverage, valid JSON, and no invented images.",
+  "tags": [
+    "media",
+    "json",
+    "workflow"
+  ],
+  "prompt": "Use the Index & Describe an Image Set craftbook. This text-only local-model eval supplies authoritative vision metadata in workspace `images/descriptions.csv`; read it as the sidecar for the four named images. Define the schema first, stage valid JSON in workspace `work/image-descriptions.json`, and write final workspace `index.json` as an object with an `images` array containing exactly one record per source filename. Each record must include filename, caption, tags, dominantColors, orientation, containsText, and qualityFlags. Use only the sidecar facts and report coverage as 4/4.",
+  "setup": {
+    "projectName": "Image Set Index Eval",
+    "about": "Self-contained workflow eval for a non-vision local model. The seeded descriptions.csv is authoritative image metadata; the schema belongs in artifacts, while staged and final JSON belong in the workspace.",
+    "missionObjectives": "Index all four seeded images into valid JSON with exact filenames, complete required fields, controlled tags, consistent arrays/booleans, and no invented images.",
+    "files": [
+      {
+        "path": "images/descriptions.csv",
+        "content": "filename,caption,tags,dominantColors,orientation,containsText,qualityFlags\nmarket-stand.jpg,Outdoor produce stand with crates of greens,produce;outdoor;market,green;wood;white,landscape,false,usable\npacking-sheet.png,Spreadsheet screenshot showing Thursday packing counts,spreadsheet;packing;counts,white;blue;gray,landscape,true,text-heavy\nvolunteer-badge.jpg,Close-up volunteer badge on a red lanyard,volunteer;badge;people,red;white;black,portrait,true,cropped\npickup-line.jpg,Members waiting near pickup tables at dusk,pickup;members;queue,navy;yellow;gray,landscape,false,low-light\n"
+      },
+      {
+        "path": "tests/verify-index.mjs",
+        "content": "import { readFileSync } from 'node:fs';\n\nconst expected = ['market-stand.jpg', 'packing-sheet.png', 'pickup-line.jpg', 'volunteer-badge.jpg'];\nconst required = ['filename', 'caption', 'tags', 'dominantColors', 'orientation', 'containsText', 'qualityFlags'];\nconst doc = JSON.parse(readFileSync('index.json', 'utf8'));\nif (!Array.isArray(doc.images)) throw new Error('images must be an array');\nif (doc.images.length !== expected.length) throw new Error(`expected 4 records, got ${doc.images.length}`);\nconst names = doc.images.map((row) => row.filename).sort();\nif (JSON.stringify(names) !== JSON.stringify(expected)) throw new Error(`filename coverage mismatch: ${names.join(', ')}`);\nfor (const row of doc.images) {\n  for (const field of required) if (!(field in row)) throw new Error(`${row.filename}: missing ${field}`);\n  if (typeof row.caption !== 'string' || row.caption.trim().length < 12) throw new Error(`${row.filename}: caption too short`);\n  if (!Array.isArray(row.tags) || row.tags.length < 2) throw new Error(`${row.filename}: tags must be an array`);\n  if (!Array.isArray(row.dominantColors) || row.dominantColors.length < 2) throw new Error(`${row.filename}: dominantColors must be an array`);\n  if (typeof row.containsText !== 'boolean') throw new Error(`${row.filename}: containsText must be boolean`);\n  if (!Array.isArray(row.qualityFlags)) throw new Error(`${row.filename}: qualityFlags must be an array`);\n}\nconsole.log('INDEX_OK 4/4');\n",
+        "surface": "harness"
+      }
+    ],
+    "worker": {
+      "name": "Iris",
+      "role": "Analyst"
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "A craftbook task records a schema artifact, stages valid per-image JSON, and ships index.json with exact 4/4 fixture coverage.",
+    "deliverables": [
+      {
+        "path": "index.json",
+        "kind": "json",
+        "minBytes": 900,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "index.json",
+            "pattern": "market-stand\\.jpg"
+          },
+          {
+            "kind": "contains",
+            "file": "index.json",
+            "pattern": "packing-sheet\\.png"
+          },
+          {
+            "kind": "contains",
+            "file": "index.json",
+            "pattern": "volunteer-badge\\.jpg"
+          },
+          {
+            "kind": "contains",
+            "file": "index.json",
+            "pattern": "pickup-line\\.jpg"
+          },
+          {
+            "kind": "contains",
+            "file": "index.json",
+            "pattern": "dominantColors[\\s\\S]*containsText[\\s\\S]*qualityFlags"
+          },
+          {
+            "kind": "notContains",
+            "file": "index.json",
+            "pattern": "hero\\.png|logo\\.png|unknown",
+            "flags": "i"
+          }
+        ]
+      },
+      {
+        "path": "work/image-descriptions.json",
+        "kind": "json",
+        "minBytes": 700,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "work/image-descriptions.json",
+            "pattern": "filename[\\s\\S]*caption[\\s\\S]*tags",
+            "flags": "i"
+          }
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "kind": "minBytes",
+        "file": "image-index/schema.md",
+        "bytes": 500,
+        "artifact": true
+      },
+      {
+        "kind": "contains",
+        "file": "image-index/schema.md",
+        "pattern": "filename[\\s\\S]*caption[\\s\\S]*tags[\\s\\S]*dominantColors",
+        "flags": "i",
+        "artifact": true
+      },
+      {
+        "kind": "nodeScriptPasses",
+        "script": "tests/verify-index.mjs",
+        "requiredOutput": [
+          {
+            "pattern": "INDEX_OK 4/4",
+            "label": "exact image coverage"
+          }
+        ]
+      }
+    ],
+    "taskNotes": {
+      "minBytes": 160,
+      "requireCraftbookTask": true,
+      "checks": [
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "4/4|four of four|coverage.*4",
+          "flags": "i"
+        },
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "schema\\.md",
+          "flags": "i"
+        },
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "image-descriptions\\.json",
+          "flags": "i"
+        },
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "index\\.json",
+          "flags": "i"
+        }
+      ]
+    },
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    }
+  },
+  "rubric": {
+    "artifact": {
+      "path": "index.json",
+      "kind": "json"
+    },
+    "axes": [
+      {
+        "name": "schema consistency",
+        "description": "Every record uses the same types and required fields, with arrays and booleans represented consistently."
+      },
+      {
+        "name": "grounding",
+        "description": "Captions, tags, colors, orientation, text flags, and quality flags preserve only the authoritative sidecar facts."
+      },
+      {
+        "name": "coverage",
+        "description": "Every source filename appears exactly once, with no missing or invented images."
+      },
+      {
+        "name": "workflow evidence",
+        "description": "The schema artifact and staged JSON demonstrate a schema-first, reviewable indexing workflow."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "craftbook attribution",
+    "schema-first indexing",
+    "executable exact-coverage check",
+    "text-only vision surrogate"
+  ]
+}

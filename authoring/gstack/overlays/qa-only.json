@@ -1,0 +1,145 @@
+{
+  "set": {
+    "toolsets": [
+      {
+        "toolsetId": "@playwright/mcp",
+        "optional": false,
+        "reason": "exercise the target through a real browser and capture reproducible evidence"
+      }
+    ]
+  },
+  "workflow": {
+    "plan": "Perform black-box, report-only browser QA. Do not read implementation code and do not fix defects. Test the supplied running target as a real user across core journeys, navigation, forms, validation, state changes, console health, responsive layouts, and accessibility basics. Capture evidence at the time of observation, retry suspected defects once, redact credentials, and distinguish tested, blocked, and out-of-scope surfaces. A health score is only valid when its evidence and arithmetic are inspectable.",
+    "phases": [
+      {
+        "id": "plan-coverage",
+        "name": "Plan observable coverage",
+        "description": "Confirm the target and turn user intent into bounded journeys, states, and evidence requirements.",
+        "suggestedRole": "QA analyst",
+        "prompt": "Confirm the target URL, requested scope, authentication constraints, viewport requirements, destructive-action limits, and expected behavior from the task context. Ask only for missing information that blocks browser use, and never store credentials in output. Open the target with the configured browser toolset to verify reachability. Map the visible navigation and prioritize core journeys. Define happy, empty, invalid, error, loading, permission, and responsive states to exercise, plus a clear tested versus excluded boundary.",
+        "output": {
+          "path": "qa/test-plan.md",
+          "minBytes": 700,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Target",
+              "label": "Target section"
+            },
+            {
+              "pattern": "^##\\s+Core journeys",
+              "label": "Core journeys section"
+            },
+            {
+              "pattern": "^##\\s+State matrix",
+              "label": "State matrix section"
+            },
+            {
+              "pattern": "^##\\s+Viewports",
+              "label": "Viewports section"
+            },
+            {
+              "pattern": "^##\\s+Scope boundaries",
+              "label": "Scope boundaries section"
+            }
+          ]
+        }
+      },
+      {
+        "id": "exercise",
+        "name": "Exercise the application",
+        "description": "Run the planned journeys in a real browser and capture reproducible, redacted evidence.",
+        "suggestedRole": "browser QA engineer",
+        "prompt": "Execute `qa/test-plan.md` with the configured browser tools, using `run_playwright_script` for repeatable multi-step journeys when useful. At every journey, record URL, viewport, input state, actions, visible result, console errors, and screenshot path. Test keyboard focus and basic accessible naming, realistic invalid input, browser back and forward behavior, and at least one narrow viewport. Retry each suspected issue once. Save screenshots beneath `qa/screenshots/` and a machine-readable issue summary to `qa/baseline.json`. Redact secrets and never submit destructive or externally visible actions without explicit permission.",
+        "output": {
+          "path": "qa/browser-evidence.md",
+          "minBytes": 1200,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Run metadata",
+              "label": "Run metadata section"
+            },
+            {
+              "pattern": "^##\\s+Journey results",
+              "label": "Journey results section"
+            },
+            {
+              "pattern": "^##\\s+Console",
+              "label": "Console section"
+            },
+            {
+              "pattern": "^##\\s+Responsive and accessibility",
+              "label": "responsive and accessibility section"
+            },
+            {
+              "pattern": "^##\\s+Evidence index",
+              "label": "Evidence index section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "sniff",
+              "file": "qa/baseline.json",
+              "sniff": "json-valid"
+            }
+          ]
+        }
+      },
+      {
+        "id": "report-findings",
+        "name": "Write the QA report",
+        "description": "Triage observed defects, compute the health score, and provide owners with exact reproduction evidence.",
+        "suggestedRole": "QA reporter",
+        "prompt": "Write the report only from `qa/test-plan.md`, `qa/browser-evidence.md`, screenshots, and baseline data. For every issue include severity, confidence, category, affected journey, exact reproduction steps, expected versus actual behavior, screenshot or console evidence, frequency, and user impact. Keep blocked checks separate from passes. Compute category scores and the weighted health score with visible arithmetic. End with the top three fixes by user impact, but do not edit code or prescribe speculative implementation details.",
+        "output": {
+          "path": "qa/browser-qa-report.md",
+          "minBytes": 1500,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Executive summary",
+              "label": "Executive summary section"
+            },
+            {
+              "pattern": "^##\\s+Coverage",
+              "label": "Coverage section"
+            },
+            {
+              "pattern": "^##\\s+Findings",
+              "label": "Findings section"
+            },
+            {
+              "pattern": "^##\\s+Console health",
+              "label": "Console health section"
+            },
+            {
+              "pattern": "^##\\s+Health score",
+              "label": "Health score section"
+            },
+            {
+              "pattern": "^##\\s+Top three fixes",
+              "label": "Top three fixes section"
+            }
+          ]
+        }
+      }
+    ],
+    "review": {
+      "artifactPath": "qa/browser-qa-report.md",
+      "relatedPaths": [
+        "qa/test-plan.md",
+        "qa/browser-evidence.md",
+        "qa/baseline.json"
+      ],
+      "reviewPath": "reviews/browser-qa-audit-review.md",
+      "reviewerRole": "QA reviewer",
+      "repairRole": "QA reporter",
+      "criteria": [
+        "Every claimed pass, fail, and blocked check traces to an actual browser journey in the evidence log.",
+        "Each defect was reproduced twice or its confidence was reduced, and includes expected versus actual behavior plus screenshot or console evidence.",
+        "Core journeys cover meaningful state changes, invalid input, navigation, console health, responsive layout, and accessibility basics in proportion to scope.",
+        "Credentials and sensitive data are redacted, and no destructive or externally visible action was taken without permission.",
+        "Severity reflects user impact and reach, while untested surfaces are never counted as passing.",
+        "The category and overall health-score arithmetic is reproducible from the report."
+      ]
+    }
+  }
+}
