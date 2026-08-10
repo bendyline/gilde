@@ -4,6 +4,32 @@ import { loadSchema, zodParse } from './jsonshape.mjs';
 import { isSemver, safeCompare } from './semver.mjs';
 import { listVersionDirs } from './walk.mjs';
 
+/** Numeric component-wise comparison for Gezel's date-based versions. */
+function compareGezelVersions(a, b) {
+  const pa = a.split('.');
+  const pb = b.split('.');
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const na = pa[i] === undefined || pa[i] === '' ? 0 : Number(pa[i]);
+    const nb = pb[i] === undefined || pb[i] === '' ? 0 : Number(pb[i]);
+    if (!Number.isFinite(na) || !Number.isFinite(nb)) return Number.NaN;
+    if (na !== nb) return na < nb ? -1 : 1;
+  }
+  return 0;
+}
+
+/** Preserve the stricter identity/version app floor in resolved manifests. */
+function maxMinGezelVersion(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const cmp = compareGezelVersions(a, b);
+  if (Number.isNaN(cmp)) {
+    const aValid = !Number.isNaN(compareGezelVersions(a, '0'));
+    return aValid ? a : b;
+  }
+  return cmp >= 0 ? a : b;
+}
+
 /**
  * Port of gezel packages/catalog/src/source.ts's identity+version merge
  * pipeline (loadIdentity / discoverVersionFolders / pickVersion /
@@ -147,6 +173,7 @@ function craftbookManifestFromDoc(identity, doc, version, availableVersions) {
   const steps = rebuildSteps(doc.steps, `craftbook-template/${identity.id}@${version}`);
   const entryStepId = doc.entryStepId ?? steps[0].id;
   const scriptNames = Object.keys(doc.scripts ?? {});
+  const minGezelVersion = maxMinGezelVersion(identity.minGezelVersion, doc.minGezelVersion);
   return {
     schemaVersion: 1,
     kind: 'craftbook-template',
@@ -157,6 +184,7 @@ function craftbookManifestFromDoc(identity, doc, version, availableVersions) {
     maintainer: identity.maintainer,
     ...(identity.logo !== undefined ? { logo: identity.logo } : {}),
     ...(identity.license !== undefined ? { license: identity.license } : {}),
+    ...(minGezelVersion !== undefined ? { minGezelVersion } : {}),
     version,
     releasedAt: doc.releasedAt,
     role: identity.role ?? 'general',
@@ -183,6 +211,7 @@ function craftbookManifestFromDoc(identity, doc, version, availableVersions) {
 
 /** source.ts mergeIdentityAndVersion, field-for-field per kind. */
 function mergeIdentityAndVersion(kind, identity, version, availableVersions) {
+  const minGezelVersion = maxMinGezelVersion(identity.minGezelVersion, version.minGezelVersion);
   if (kind === 'toolset') {
     return {
       schemaVersion: 1,
@@ -194,6 +223,7 @@ function mergeIdentityAndVersion(kind, identity, version, availableVersions) {
       maintainer: identity.maintainer,
       ...(identity.logo !== undefined ? { logo: identity.logo } : {}),
       ...(identity.license !== undefined ? { license: identity.license } : {}),
+      ...(minGezelVersion !== undefined ? { minGezelVersion } : {}),
       version: version.version,
       releasedAt: version.releasedAt,
       runtime: version.runtime,
@@ -218,6 +248,7 @@ function mergeIdentityAndVersion(kind, identity, version, availableVersions) {
       maintainer: identity.maintainer,
       ...(identity.logo !== undefined ? { logo: identity.logo } : {}),
       ...(identity.license !== undefined ? { license: identity.license } : {}),
+      ...(minGezelVersion !== undefined ? { minGezelVersion } : {}),
       version: version.version,
       releasedAt: version.releasedAt,
       role: identity.role ?? 'general',
@@ -252,6 +283,7 @@ function mergeIdentityAndVersion(kind, identity, version, availableVersions) {
       maintainer: identity.maintainer,
       ...(identity.logo !== undefined ? { logo: identity.logo } : {}),
       ...(identity.license !== undefined ? { license: identity.license } : {}),
+      ...(minGezelVersion !== undefined ? { minGezelVersion } : {}),
       version: version.version,
       releasedAt: version.releasedAt,
       ...(version.extends !== undefined ? { extends: version.extends } : {}),
@@ -290,6 +322,7 @@ function mergeIdentityAndVersion(kind, identity, version, availableVersions) {
       maintainer: identity.maintainer,
       ...(identity.logo !== undefined ? { logo: identity.logo } : {}),
       ...(identity.license !== undefined ? { license: identity.license } : {}),
+      ...(minGezelVersion !== undefined ? { minGezelVersion } : {}),
       version: version.version,
       releasedAt: version.releasedAt,
       driver: version.driver,
@@ -314,6 +347,7 @@ function mergeIdentityAndVersion(kind, identity, version, availableVersions) {
       maintainer: identity.maintainer,
       ...(identity.logo !== undefined ? { logo: identity.logo } : {}),
       ...(identity.license !== undefined ? { license: identity.license } : {}),
+      ...(minGezelVersion !== undefined ? { minGezelVersion } : {}),
       version: version.version,
       releasedAt: version.releasedAt,
       role: identity.role,
@@ -348,6 +382,7 @@ function mergeIdentityAndVersion(kind, identity, version, availableVersions) {
         : {}),
       ...(identity.licenseUrl !== undefined ? { licenseUrl: identity.licenseUrl } : {}),
       ...(identity.recoScore !== undefined ? { recoScore: identity.recoScore } : {}),
+      ...(minGezelVersion !== undefined ? { minGezelVersion } : {}),
       version: version.version,
       releasedAt: version.releasedAt,
       parameterSize: identity.parameterSize,
@@ -392,6 +427,7 @@ function mergeIdentityAndVersion(kind, identity, version, availableVersions) {
         : {}),
       ...(identity.licenseUrl !== undefined ? { licenseUrl: identity.licenseUrl } : {}),
       ...(identity.recoScore !== undefined ? { recoScore: identity.recoScore } : {}),
+      ...(minGezelVersion !== undefined ? { minGezelVersion } : {}),
       version: version.version,
       releasedAt: version.releasedAt,
       downloadUrl: version.downloadUrl,
@@ -432,6 +468,7 @@ function mergeIdentityAndVersion(kind, identity, version, availableVersions) {
         : {}),
       ...(identity.licenseUrl !== undefined ? { licenseUrl: identity.licenseUrl } : {}),
       ...(identity.recoScore !== undefined ? { recoScore: identity.recoScore } : {}),
+      ...(minGezelVersion !== undefined ? { minGezelVersion } : {}),
       version: version.version,
       releasedAt: version.releasedAt,
       family: identity.family,
