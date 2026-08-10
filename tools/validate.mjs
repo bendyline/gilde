@@ -440,8 +440,8 @@ function main() {
       c.error(manifestPath, '/releasedAt', 'missing-releasedAt', 'version payload must carry releasedAt');
     }
 
-    if (kind === 'chat-model' && !version.ollama && !version.llamaCpp && !version.mlx) {
-      c.error(manifestPath, '', 'chat-model-no-engine-source', 'no ollama / llamaCpp / mlx source - the runtime skips the item');
+    if (kind === 'chat-model' && !version.ollama && !version.llamaCpp && !version.mlx && !version.ds4) {
+      c.error(manifestPath, '', 'chat-model-no-engine-source', 'no ollama / llamaCpp / mlx / ds4 source - the runtime skips the item');
     }
     if (kind === 'video-model' && !(Array.isArray(version.source?.files) && version.source.files.length > 0)) {
       c.error(manifestPath, '/source/files', 'video-model-no-source-files', 'empty source.files - the runtime skips the item');

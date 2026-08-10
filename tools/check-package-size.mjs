@@ -20,15 +20,23 @@ const MAX_UNPACKED_BYTES = 200 * 1024 * 1024;
 const MAX_AUTHORING_BYTES = 4 * 1024 * 1024;
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const result = spawnSync('npm', ['pack', '--dry-run', '--json'], {
+const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const result = spawnSync(npmCommand, ['pack', '--dry-run', '--json'], {
   cwd: repoRoot,
   encoding: 'utf8',
   maxBuffer: 64 * 1024 * 1024,
   env: process.env,
+  // Windows cannot spawn .cmd shims directly (EINVAL); the shell is needed
+  // only to dispatch this fixed npm command and receives no user input.
+  shell: process.platform === 'win32',
 });
 
 if (result.status !== 0) {
-  console.error((result.stderr ?? '').trim() || 'npm pack --dry-run failed.');
+  console.error(
+    (result.stderr ?? '').trim() ||
+      result.error?.message ||
+      `${npmCommand} pack --dry-run failed.`,
+  );
   process.exit(1);
 }
 
@@ -69,6 +77,8 @@ for (const required of [
   'authoring/gstack/snapshots/spec/SKILL.md',
   'authoring/gstack/overlays/spec.json',
   'authoring/gstack/evals/spec.json',
+  'authoring/chat-models/README.md',
+  'authoring/chat-models/muse-glimmer-30b-q4.json',
 ]) {
   if (!packagedPaths.has(required)) {
     console.error(`FAIL: required exact-pinned authoring source is missing: ${required}`);

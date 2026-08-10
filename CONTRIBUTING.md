@@ -68,6 +68,28 @@ versions (engine sources with pinned revisions and sha256s).
 - Every released version carries `releasedAt` (ISO date).
 - Never rewrite a released `versions/<v>/` — add a new version.
 
+## Gezel version floors (`minGezelVersion`)
+
+Some content only works on a new-enough gezel build — a model that needs a
+newer bundled engine, a craftbook that leans on newer runtime behavior.
+Declare that with an optional `minGezelVersion` on the **version** payload
+(`versions/<v>/manifest.json` or `craftbook.json`); older gezel builds then
+skip that version and keep resolving the previous one. An identity-level
+`minGezelVersion` hides the whole item from older builds — reserve it for
+items that have never worked on older gezels.
+
+- Gezel versions are date-based: `1.YYDDD.RUN` (two-digit year,
+  day-of-year, CI run number). Author floors as `1.YYDDD` — major.minor
+  only; the run number is unknowable ahead of a release. When targeting an
+  unreleased gezel, guess its release day: a floor a day or two high just
+  delays availability by one release, it never breaks anything.
+- Add floors on **new** versions only. Never retro-add one to a released
+  version — older item versions are the compatibility path for older gezel
+  builds, and gezel's live-update gate refuses content that would make a
+  currently-resolvable item vanish.
+- Unstamped dev builds of gezel (`0.0.0`) ignore floors entirely, so local
+  `link:gilde` testing always sees everything.
+
 ## Generated files
 
 - `data/**/index.json` are generated. Run `npm run build-index` before

@@ -16,15 +16,16 @@
  * allowlist entries (no longer firing) also fail so the list only
  * shrinks. Warnings never gate.
  *
- * Note: the lint reads the item-root manifest.json (the identity file).
- * On this tree those files still carry the informational llamaCpp / mlx
- * / ds4 blocks the residentBytes rule inspects - same as in gezel.
+ * The lint resolves identity + latest eligible version exactly like the
+ * runtime. Version-owned engine blocks never need to be copied into the
+ * identity just to make this check work.
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { loadResolvedManifest } from './lib/manifest-merge.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = resolve(HERE, '..', 'data', 'chat-models');
@@ -108,12 +109,13 @@ export function lintChatModelManifest(manifest) {
     const bounded =
       typeof r?.thinkingBudget === 'number' ||
       typeof r?.effort === 'string' ||
+      typeof r?.templateKwargs?.reasoning_strength === 'string' ||
       r?.enableThinking === false;
     if (!bounded) {
       errors.push({
         modelId,
         rule: 'unbounded-reasoning',
-        detail: `style.reasoningFormat=${reasoningFormat} but tuning.reasoning has no thinkingBudget / effort / enableThinking:false - unbounded thinking stalls turns (deepseek-r1 was 0/19 until thinkingBudget:512 landed)`,
+        detail: `style.reasoningFormat=${reasoningFormat} but tuning.reasoning has no thinkingBudget / effort / templateKwargs.reasoning_strength / enableThinking:false - unbounded thinking stalls turns (deepseek-r1 was 0/19 until thinkingBudget:512 landed)`,
       });
     }
   }
@@ -160,20 +162,18 @@ export function lintAllChatModelManifests(dataDir = DATA_DIR) {
       (a, b) => (a.name < b.name ? -1 : 1),
     )) {
       if (!entry.isDirectory()) continue;
-      const manifestPath = join(dataDir, prefix.name, entry.name, 'manifest.json');
-      let manifest;
-      try {
-        manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-      } catch {
+      const itemDir = join(dataDir, prefix.name, entry.name);
+      const resolved = loadResolvedManifest(itemDir, 'chat-model', entry.name);
+      if (!resolved.manifest) {
         errors.push({
           modelId: entry.name,
-          rule: 'unreadable-manifest',
-          detail: `cannot read/parse ${manifestPath}`,
+          rule: 'unresolvable-manifest',
+          detail: `cannot resolve identity + version (${resolved.skip ?? 'unknown reason'})`,
         });
         continue;
       }
       modelCount += 1;
-      const report = lintChatModelManifest(manifest);
+      const report = lintChatModelManifest(resolved.manifest);
       errors.push(...report.errors);
       warnings.push(...report.warnings);
     }

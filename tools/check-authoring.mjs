@@ -10,6 +10,8 @@ import addFormats from 'ajv-formats';
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..');
 const authoringRoot = join(repoRoot, 'authoring', 'gstack');
+const chatModelAuthoringRoot = join(repoRoot, 'authoring', 'chat-models');
+const chatModelDataRoot = join(repoRoot, 'data', 'chat-models');
 const dataRoot = join(repoRoot, 'data', 'craftbook-templates');
 const errors = [];
 
@@ -134,9 +136,82 @@ for (const book of books) {
   }
 }
 
+const chatModelRecipes = new Map();
+for (const filename of readdirSync(chatModelAuthoringRoot).filter((name) => name.endsWith('.json'))) {
+  const recipe = readJson(join(chatModelAuthoringRoot, filename), `chat-models/${filename}`);
+  if (!recipe) continue;
+  const expectedId = filename.slice(0, -'.json'.length);
+  if (recipe.id !== expectedId) {
+    errors.push(`chat-models/${filename}: id must match the filename (${expectedId})`);
+  }
+  if (chatModelRecipes.has(recipe.id)) {
+    errors.push(`chat-models/${filename}: duplicate recipe id ${recipe.id}`);
+  }
+  chatModelRecipes.set(recipe.id, recipe);
+  for (const field of [
+    'id',
+    'name',
+    'description',
+    'tags',
+    'category',
+    'maintainer',
+    'version',
+    'updatedAt',
+    'license',
+    'parameterSize',
+    'approxSizeBytes',
+    'supportsTools',
+    'contextWindow',
+    'upstream',
+  ]) {
+    if (recipe[field] === undefined) {
+      errors.push(`chat-models/${filename}: missing required field ${field}`);
+    }
+  }
+  if (!/^\d+\.\d+\.\d+$/.test(String(recipe.version ?? ''))) {
+    errors.push(`chat-models/${filename}: version must be semver`);
+  }
+  if (!recipe.ollama && !recipe.llamaCpp && !recipe.mlx && !recipe.ds4) {
+    errors.push(`chat-models/${filename}: requires an ollama, llamaCpp, mlx, or ds4 source`);
+  }
+}
+
+const chatModelIdentities = new Set();
+for (const shard of readdirSync(chatModelDataRoot, { withFileTypes: true })) {
+  if (!shard.isDirectory()) continue;
+  for (const entry of readdirSync(join(chatModelDataRoot, shard.name), { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const id = entry.name;
+    chatModelIdentities.add(id);
+    const recipe = chatModelRecipes.get(id);
+    if (!recipe) {
+      errors.push(`${id}: identity has no authoring/chat-models recipe`);
+      continue;
+    }
+    const versionPath = join(
+      chatModelDataRoot,
+      shard.name,
+      id,
+      'versions',
+      String(recipe.version),
+      'manifest.json',
+    );
+    if (!existsSync(versionPath)) {
+      errors.push(`${id}: recipe version ${recipe.version} has no generated version manifest`);
+    }
+  }
+}
+for (const id of chatModelRecipes.keys()) {
+  if (!chatModelIdentities.has(id)) {
+    errors.push(`${id}: authoring recipe has no generated identity manifest`);
+  }
+}
+
 if (errors.length) {
   for (const error of errors) console.error(`ERROR authoring/gstack — ${error}`);
   process.exit(1);
 }
 
-console.log(`authoring: checked ${books.length} gstack source/generated pair(s), 0 errors`);
+console.log(
+  `authoring: checked ${books.length} gstack pair(s) and ${chatModelRecipes.size} chat-model recipe(s), 0 errors`,
+);

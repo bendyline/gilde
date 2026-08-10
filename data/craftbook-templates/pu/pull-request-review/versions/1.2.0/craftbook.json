@@ -1,0 +1,159 @@
+{
+  "id": "pull-request-review",
+  "name": "Pull Request Review",
+  "description": "Review the open GitHub pull request for the project's checked-out branch and deliver a gated, evidence-based report. This is the PR-aware companion to Code Review: it resolves the current branch's PR by default, reads PR metadata, comments, files, and diff through the GitHub toolset, and writes `pr-review.md` without modifying source or posting back to GitHub. Three steps:\n\n1. **Scope the PR** — select an explicit PR number or the unique current-branch match and record the review surface\n2. **Review and report** — walk every changed file, cite concrete `path:line` evidence, and write a severity-ranked report\n3. **Deliver the verdict** — summarize approve vs request-changes in task notes\n\nIf the current branch has no unique open PR, the reviewer asks instead of silently choosing another branch's PR.",
+  "basedOn": {
+    "name": "Gezel Code Review",
+    "url": "https://github.com/bendyline/gezel"
+  },
+  "entryStepId": "scope",
+  "triggers": [
+    "review this pr",
+    "review the current pr",
+    "review this pull request",
+    "pr review",
+    "review the github pull request"
+  ],
+  "requirements": [
+    {
+      "kind": "github"
+    },
+    {
+      "kind": "non-main-branch"
+    }
+  ],
+  "toolsets": [
+    {
+      "toolsetId": "github",
+      "optional": true,
+      "autoAllow": true,
+      "reason": "read pull-request metadata, comments, changed files, and the unified diff"
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "number": {
+        "type": "number",
+        "title": "Pull request number",
+        "description": "Optional PR number. Leave blank to use the open PR whose head matches the project's checked-out branch."
+      },
+      "focus": {
+        "type": "string",
+        "title": "Review focus",
+        "description": "Optional area to emphasize, e.g. security, performance, or tests."
+      },
+      "intensity": {
+        "type": "string",
+        "title": "Intensity",
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "default": "medium",
+        "squisq": {
+          "control": "segmented"
+        },
+        "description": "How deep to go on the diff walk."
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the pull request",
+      "description": "Resolve an explicit PR or the unique open PR for the checked-out branch, then record its metadata, changed files, existing review context, and review themes.",
+      "prompt": "**You are reviewing a pull request, not authoring it. Never modify project source in this craftbook.**\n\n**Your first tool call this turn:** `github_pr_list({})`. It lists open PRs for this project, puts PRs whose head matches the checked-out branch first, and marks a unique one `Current branch match — default`.\n\nSelect the PR with this precedence:\n\n1. If the invocation parameters or user message supply a PR number, use it.\n2. Otherwise use the unique `Current branch match — default`.\n3. If multiple PRs match the current branch, or no PR matches and more than one PR is open, call `ask_user_question` with the concrete choices. Never take an unrelated first result.\n4. If no PR is open, write a task note explaining that and stop.\n\nFor the selected number, call `github_pr_view`, `github_pr_files`, and `github_pr_comments`. Read the title/body, head and base branches, file list, additions/deletions, and any feedback already raised so you do not duplicate it. Then write ONE task note beginning `## Scope — PR #<number>` and include: title, URL, head → base, draft state, changed-file list, existing-review themes, and 3–6 review themes weighted by the requested focus and intensity. End by calling `advance_task_step`.",
+      "suggestedRole": "reviewer",
+      "gate": {
+        "at": "completion",
+        "scripts": [
+          {
+            "name": "checkTaskNoteContains",
+            "scope": "standard",
+            "inputs": {
+              "pattern": "##\\s*Scope\\s*[—-]\\s*PR\\s*#\\d+"
+            }
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Review and write the report",
+      "description": "Walk the full PR diff and every changed file, then write a gated report with concrete citations and a verdict. The report is local; this recipe never posts to GitHub automatically.",
+      "prompt": "Use the PR number selected in the Scope note. Call `github_pr_diff` for the complete unified diff and `github_pr_files` for the per-file patches. Walk every changed file and review for correctness, security, data-loss risk, error handling, concurrency, compatibility, tests, and clarity — weighted by the requested focus and intensity. Use `read_file` only when you need surrounding workspace context. Do not repeat an existing PR comment unless the issue still needs action and you explicitly say it was already raised.\n\nCite every finding as `path:line` using a changed path and a line from the new side of the diff. Do not invent files, behavior, or line numbers. Any critical or major finding requires `request-changes`; otherwise use `approve`.\n\nWrite `pr-review.md` in ONE `write_file` call using exactly this skeleton:\n\n```\n# Pull Request Review — PR #<number>: <title>\n\n## Summary\n<2–6 sentences: what changes, overall risk, and whether existing comments cover any issue. Say \"No findings.\" when there are none.>\n\n## Findings\n| # | Severity | File | Line | Finding | Recommendation |\n|---|----------|------|------|---------|----------------|\n<one row per finding; severities: critical, major, minor, nit. Keep the header when there are no findings.>\n\n## Verdict\nVerdict: approve\n<or> Verdict: request-changes\n<one sentence of rationale>\n```\n\nDo not modify source and do not call `github_pr_comment`; the user asked for a review report, not an automatic public side effect. If the gate rejects, fix exactly the named gap and rewrite the whole report. Then call `advance_task_step`.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "pr-review.md",
+        "minBytes": 500
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "pr-review.md",
+            "bytes": 500
+          },
+          {
+            "kind": "contains",
+            "file": "pr-review.md",
+            "pattern": "#\\s+Pull Request Review\\s+[—-]\\s+PR\\s+#\\d+",
+            "label": "PR-numbered title"
+          },
+          {
+            "kind": "contains",
+            "file": "pr-review.md",
+            "pattern": "##\\s+Summary",
+            "label": "Summary section"
+          },
+          {
+            "kind": "contains",
+            "file": "pr-review.md",
+            "pattern": "##\\s+Findings",
+            "label": "Findings section"
+          },
+          {
+            "kind": "contains",
+            "file": "pr-review.md",
+            "pattern": "\\|\\s*Severity\\s*\\|",
+            "label": "findings table header"
+          },
+          {
+            "kind": "contains",
+            "file": "pr-review.md",
+            "pattern": "Verdict:\\s*(approve|request-changes)",
+            "label": "verdict line"
+          },
+          {
+            "kind": "tableShape",
+            "file": "pr-review.md",
+            "requiredColumns": [
+              "Severity",
+              "File",
+              "Finding"
+            ]
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "done"
+    },
+    {
+      "id": "done",
+      "name": "Deliver the verdict",
+      "description": "The report passed its gates. Summarize the verdict and point the user to the local report.",
+      "prompt": "Read `pr-review.md`, then write one final task note with `write_task_note`: `PR #<number> — Verdict: <approve|request-changes> — N findings (a critical, b major, c minor, d nit)` plus a one-paragraph summary. Tell the user the full local review is at `pr-review.md` and was not posted to GitHub. Then call `advance_task_step` to complete the task.",
+      "suggestedRole": "reviewer",
+      "terminal": true
+    }
+  ],
+  "version": "1.2.0",
+  "releasedAt": "2026-08-10T00:00:00Z"
+}

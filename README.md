@@ -16,7 +16,7 @@ against their inputs; repository tooling and CI files are not published.
 | Category | Path | What it is |
 | --- | --- | --- |
 | Craftbooks | data/craftbook-templates/ | Step-by-step task playbooks a gezel can follow, each with an eval sidecar (`test.json`) |
-| Chat models | data/chat-models/ | Local model manifests: engine sources (llama.cpp / MLX), pinned revisions and sha256s, tuning defaults |
+| Chat models | data/chat-models/ | Local model manifests: engine sources (llama.cpp / MLX / ds4), pinned revisions and sha256s, tuning defaults |
 | Roles | data/gezel-templates/ | Gezel role templates — the `about.md` prose that gives a gezel its character |
 | Project types | data/project-types/ | Ready-made project scaffolds (mission, about, pages, embedded craftbooks) |
 | Image models | data/image-models/ | Image generation model manifests |
@@ -35,6 +35,11 @@ data/<category>/index.json                          generated listing (do not ha
 ```
 
 where `<shard>` is the first two characters of the id.
+
+Chat-model introductions are Gilde-only: add an authoring recipe under
+`authoring/chat-models/`, run `npm run build-chat-model`, and commit the new
+identity, version payload, and regenerated index. See
+`authoring/chat-models/README.md` for the recipe contract.
 
 ## Contributing
 

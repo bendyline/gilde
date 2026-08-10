@@ -38,7 +38,7 @@ directories that actually exist.
 The `versions/<semver>/` directory holds the released payload:
 
 - chat/image/video models: `manifest.json` with the engine source blocks
-  (`llamaCpp`, `mlx`, `ollama` for chat; `downloadUrl`/`source` for
+  (`llamaCpp`, `mlx`, `ollama`, `ds4` for chat; `downloadUrl`/`source` for
   image/video). Every `sha256` is 64 lowercase hex chars; download URLs
   point at `https://huggingface.co/...`.
 - gezel-templates: `manifest.json` + `about.md` (the role's prose).

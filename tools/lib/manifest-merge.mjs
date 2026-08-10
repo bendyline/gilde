@@ -4,7 +4,26 @@ import { loadSchema, zodParse } from './jsonshape.mjs';
 import { isSemver, safeCompare } from './semver.mjs';
 import { listVersionDirs } from './walk.mjs';
 
-/** Numeric component-wise comparison for Gezel's date-based versions. */
+/**
+ * Port of gezel packages/catalog/src/source.ts's identity+version merge
+ * pipeline (loadIdentity / discoverVersionFolders / pickVersion /
+ * mergeIdentityAndVersion / craftbookManifestFromDoc). The per-kind
+ * field spreads are copied field-for-field, including the exact
+ * truthy-vs-undefined spread conditions - this is what makes
+ * build-index output byte-identical to gezel's generator.
+ *
+ * `minGezelVersion` gating is deliberately NOT ported: the index is
+ * built with no app-version context, so it always embeds the newest
+ * eligible version (with its effective floor stamped on the resolved
+ * manifest). Gezel's reader gates at read time; its dev builds (0.0.0)
+ * never filter, which is what keeps this output byte-identical to a
+ * dev gezel's disk walk.
+ */
+
+/**
+ * Port of core's gezel-version.ts compare: numeric per component,
+ * missing components as 0, NaN on malformed input.
+ */
 function compareGezelVersions(a, b) {
   const pa = a.split('.');
   const pb = b.split('.');
@@ -18,7 +37,7 @@ function compareGezelVersions(a, b) {
   return 0;
 }
 
-/** Preserve the stricter identity/version app floor in resolved manifests. */
+/** Port of core's maxMinGezelVersion: the stricter of two optional floors. */
 function maxMinGezelVersion(a, b) {
   if (!a) return b;
   if (!b) return a;
@@ -29,15 +48,6 @@ function maxMinGezelVersion(a, b) {
   }
   return cmp >= 0 ? a : b;
 }
-
-/**
- * Port of gezel packages/catalog/src/source.ts's identity+version merge
- * pipeline (loadIdentity / discoverVersionFolders / pickVersion /
- * mergeIdentityAndVersion / craftbookManifestFromDoc). The per-kind
- * field spreads are copied field-for-field, including the exact
- * truthy-vs-undefined spread conditions - this is what makes
- * build-index output byte-identical to gezel's generator.
- */
 
 /** Read + validate the identity (root) manifest. Null on any failure (= skip item). */
 export function loadIdentity(itemDir, kind, id) {
@@ -211,6 +221,8 @@ function craftbookManifestFromDoc(identity, doc, version, availableVersions) {
 
 /** source.ts mergeIdentityAndVersion, field-for-field per kind. */
 function mergeIdentityAndVersion(kind, identity, version, availableVersions) {
+  // Effective app-version floor - the stricter of identity and version.
+  // Mirrors source.ts: forwarded explicitly in every branch below.
   const minGezelVersion = maxMinGezelVersion(identity.minGezelVersion, version.minGezelVersion);
   if (kind === 'toolset') {
     return {
@@ -546,7 +558,13 @@ export function loadResolvedManifest(itemDir, kind, id) {
   const parsedVersion = zodParse(loadSchema(`${kind}-version`), versionJson);
   if (!parsedVersion.ok) return { skip: 'invalid-version-manifest', errors: parsedVersion.errors };
   const version = parsedVersion.value;
-  if (kind === 'chat-model' && !version.ollama && !version.llamaCpp && !version.mlx) {
+  if (
+    kind === 'chat-model' &&
+    !version.ollama &&
+    !version.llamaCpp &&
+    !version.mlx &&
+    !version.ds4
+  ) {
     return { skip: 'chat-model-no-engine-source' };
   }
   if (
