@@ -1,0 +1,170 @@
+{
+  "id": "reception-report",
+  "name": "Reception Report",
+  "description": "Weekly review of how the posting landed: reconcile published posts with their live synced records (stamp corpusRef where it is missing), build a per-post engagement ledger, analyze each post against the account's recent baseline, then write the reception report — scoreboard, three findings, three recommendations, and exactly one one-click action seeding the next draft-social-post run with the strongest theme. Every metric must trace to the ledger, and the ledger to a synced record. Runs gracefully with no connector bound: the ledger then carries what the workspace knows, with metric cells marked as unknown.",
+  "entryStepId": "reconcile",
+  "triggers": [
+    "reception report",
+    "how did our posts do",
+    "social performance review",
+    "weekly social report"
+  ],
+  "command": "reception-report",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "lookbackDays": {
+        "type": "integer",
+        "default": 7,
+        "description": "How many days of posting the review covers. Default 7."
+      }
+    }
+  },
+  "runModes": {
+    "scheduled": "recommended",
+    "nightShift": "supported"
+  },
+  "connectors": [
+    {
+      "typeId": "bluesky-posts",
+      "optional": true,
+      "reason": "Match published posts to their live Bluesky records and read the engagement counts the ledger reports."
+    },
+    {
+      "typeId": "x-posts",
+      "optional": true,
+      "reason": "Match published posts to their live X records and read the engagement counts the ledger reports."
+    },
+    {
+      "typeId": "instagram-media",
+      "optional": true,
+      "reason": "Read the synced Instagram records so caption performance can join the ledger."
+    }
+  ],
+  "steps": [
+    {
+      "id": "reconcile",
+      "name": "Reconcile posts with live records",
+      "description": "Stamp missing corpusRef links and build the engagement ledger from the synced records.",
+      "suggestedRole": "omroeper",
+      "prompt": "You are reconciling our published posts with their live feed records, looking back {{lookbackDays}} days (if that value reads as a raw {{...}} placeholder, use the default: 7).\n\n1. Read `posts/index.json` with `read_file`, then each listed post folder's `post.md` and every file under its `variants/`. Collect every variant whose `status` is `published` or `scheduled`.\n2. For each collected variant MISSING a `corpusRef` in its frontmatter: find its live record in the project artifacts under `data/` (`list_artifacts`, then `read_artifact`) by matching the variant's `postId` or `permalink` against the record frontmatter — fall back to matching the opening text. When found, stamp it: call `record_publication` if it is in your function schema; otherwise edit the variant file with `write_file`, adding `corpusRef: <artifacts-relative record path>` (and `publishedAt` from the record when the variant lacks it). Leave variants that already carry `corpusRef` untouched.\n3. If there is no `data/` corpus at all, note \"no synced corpus — reconciliation skipped\" and still write the ledger from what the workspace knows, with unknown metric cells marked `-`.\n4. Write the artifact `reports/reception-ledger.md` with `write_artifact`: a markdown table, one row per published or scheduled variant, columns `Post` (slug), `Platform`, `Live record` (the corpusRef path or `-`), `Likes`, `Reposts`, `Replies`, `Metrics as of` (the record's `metrics_updated_at`). Copy every count verbatim from its record; use `-` where unknown. Below the table, add one line per reconciliation you performed this run.\n\nWhen the ledger artifact is written, call `advance_task_step` to move to analyze.",
+      "advanceWhen": {
+        "file": "reports/reception-ledger.md",
+        "artifact": true,
+        "minBytes": 150
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "reports/reception-ledger.md",
+            "bytes": 150,
+            "artifact": true
+          }
+        ],
+        "maxAttempts": 3
+      },
+      "next": "analyze"
+    },
+    {
+      "id": "analyze",
+      "name": "Analyze reception",
+      "description": "Read the ledger and work out what over- and under-performed against the account's own baseline.",
+      "suggestedRole": "omroeper",
+      "prompt": "Read `reports/reception-ledger.md` with `read_artifact`. Every number in your analysis must come from that ledger — cite the post slug next to each figure; no other source of numbers is allowed.\n\nWrite the artifact `reports/reception-analysis.md` with `write_artifact`:\n\n- `## Per-post` — each post against the account's recent baseline. The median of the ledger's like/repost/reply counts is a fine baseline; name the baseline you used.\n- `## What worked, what did not` — formats, themes, or posting times that over- or under-performed, each claim tied to specific ledger rows.\n- `## Cadence` — posts shipped in the window versus the project's cadence target when the mission or voice guide states one; when none is stated, say so and suggest a target.\n\nBe honest about small samples: with only a handful of posts, call patterns \"early signals\", never conclusions. When the analysis artifact is written, call `advance_task_step` to move to report.",
+      "advanceWhen": {
+        "file": "reports/reception-analysis.md",
+        "artifact": true,
+        "minBytes": 300
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "reports/reception-analysis.md",
+            "bytes": 300,
+            "artifact": true
+          },
+          {
+            "kind": "judge",
+            "file": "reports/reception-analysis.md",
+            "rubric": "Every metric named in the analysis appears in the ledger; baselines are computed from ledger rows, not invented; claims cite post slugs.",
+            "sourceFiles": [
+              "reports/reception-ledger.md"
+            ],
+            "label": "no metric absent from the ledger",
+            "artifact": true
+          }
+        ],
+        "onReject": "analyze",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the reception report",
+      "description": "Scoreboard, three findings, three recommendations, and exactly one one-click next-post action.",
+      "suggestedRole": "omroeper",
+      "prompt": "Assemble the reception report from `reports/reception-ledger.md` and `reports/reception-analysis.md` (read both with `read_artifact`). Cite no number that is not in the ledger.\n\nWrite the report to the artifact `reports/reception-report-<today YYYY-MM-DD>.md` with `write_artifact` (use today's real date in the filename), then write the exact same content to `reports/reception-report-latest.md` — the stable path the completion gate reads. Write the latest file last. Structure:\n\n- `## Scoreboard` — the ledger table trimmed to `Post`, `Platform`, `Likes`, `Reposts`, `Replies`.\n- `## Findings` — exactly 3, each one sentence plus one line of supporting evidence from the ledger or analysis.\n- `## Recommendations` — exactly 3, each concrete enough to act on this week.\n- `## Next post` — one paragraph naming the strongest theme to post about next, followed by EXACTLY ONE ```gezel-action fenced YAML block. Rules for the block: flat YAML keys (only `params` nests one level); a unique `id` slug that stays stable across weekly runs unless the theme changes; short `title`; one-sentence `reason`; never invent craftbook ids — reference only `draft-social-post`, which ships alongside this workflow:\n\n```gezel-action\nkind: fire-craftbook\nid: next-post-<theme-slug>\ntitle: Draft the next post\nreason: <the strongest theme, grounded in the findings>\ncraftbookId: draft-social-post\nparams:\n  topic: <the suggested topic>\n```\n\nWhen both report files are written, call `advance_task_step` to move to evaluate.",
+      "advanceWhen": {
+        "file": "reports/reception-report-latest.md",
+        "artifact": true,
+        "minBytes": 400,
+        "requireChange": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "reports/reception-report-latest.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "reports/reception-report-latest.md",
+            "pattern": "```gezel-action",
+            "label": "report carries the one-click next-post action",
+            "artifact": true
+          },
+          {
+            "kind": "judge",
+            "file": "reports/reception-report-latest.md",
+            "rubric": "Every metric in the report appears in the ledger; the findings follow from the analysis; there is exactly one gezel-action block and it references craftbookId draft-social-post with a topic grounded in the findings.",
+            "sourceFiles": [
+              "reports/reception-ledger.md",
+              "reports/reception-analysis.md"
+            ],
+            "label": "grounded scoreboard and single action",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the report against every criterion. All pass — finish; any fail — loop back to report with the named gaps.",
+      "suggestedRole": "reviewer",
+      "prompt": "Open `reports/reception-report-latest.md`, `reports/reception-analysis.md`, and `reports/reception-ledger.md` with `read_artifact` and grade the report. Check EACH criterion and write PASS/FAIL with a one-line reason:\n\n1. The scoreboard covers every ledger row (no post silently dropped).\n2. Every number in the report traces to the ledger (spot-check at least three).\n3. There are exactly 3 findings, each with evidence.\n4. There are exactly 3 recommendations, each actionable this week.\n5. There is exactly one ```gezel-action block, it is valid flat YAML, and its `craftbookId` is `draft-social-post` with a `params.topic` seeded from the strongest theme.\n6. Small samples are read honestly — early signals, not sweeping conclusions.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to task notes with `write_task_note`, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The report step fixes exactly those gaps.\n\nNever route to finish while a criterion is unmet. After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "next": "report"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "Stamp the summary note and stop.",
+      "suggestedRole": "omroeper",
+      "prompt": "Write a one-paragraph DONE summary with `write_task_note`: the report artifact paths (the dated file and `reports/reception-report-latest.md`), the top finding in one line, how many posts were reconciled this run, and the recommended next topic. Report DONE.",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-08-12T00:00:00Z"
+}

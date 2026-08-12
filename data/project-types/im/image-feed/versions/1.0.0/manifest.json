@@ -1,0 +1,330 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "releasedAt": "2026-08-12T00:00:00Z",
+  "extends": "social-media",
+  "meesterManaged": true,
+  "mode": "crew",
+  "leadLabel": "Omroeper",
+  "params": {
+    "type": "object",
+    "properties": {
+      "brand": {
+        "type": "string",
+        "title": "Who does this feed speak for?",
+        "description": "The name, brand, or studio this feed speaks for.",
+        "default": "Our studio"
+      },
+      "instagramHandle": {
+        "type": "string",
+        "title": "Instagram handle",
+        "description": "Instagram handle (e.g. @studio). Leave empty if unused.",
+        "default": ""
+      },
+      "visualStyle": {
+        "type": "string",
+        "title": "Visual style",
+        "description": "One sentence on how the feed should look — seeded into style-guide.md.",
+        "default": "Natural light, honest color, one subject per image."
+      },
+      "voice": {
+        "type": "string",
+        "title": "Tone of voice",
+        "description": "One sentence on tone of voice for captions.",
+        "default": "Warm, plain, and human — never corporate."
+      },
+      "cadence": {
+        "type": "string",
+        "title": "Posting cadence",
+        "description": "Target posting cadence (e.g. 4 images a week).",
+        "default": "4 images a week"
+      }
+    },
+    "required": [
+      "brand"
+    ]
+  },
+  "nameTemplate": "{{brand}} Image Feed",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "omroeper",
+      "voorman": true
+    },
+    {
+      "templateId": "image-generator"
+    }
+  ],
+  "scripts": {
+    "posts-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'posts-store',\n  description:\n    \"Read and update the post pipeline under posts/. Call action:'list' to see every post (optional status/platform filters); 'get' for one post's frontmatter, body, variants, and media; 'create' to commit the staged posts/_drafting/ folder as a real post; 'update' to patch frontmatter or move a post one pipeline stage (idea, draft, in-review, approved, scheduled, published, archived from anywhere); 'record_publication' to stamp a platform variant with its permalink after it goes live. Illegal stage jumps fail with the legal next stages — move one stage at a time.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'list', 'get', 'create', 'update', or 'record_publication'.\",\n      required: true,\n    },\n    id: { type: 'string', description: \"Post id — its folder name under posts/, e.g. '2026-08-12-launch-teaser'.\" },\n    status: {\n      type: 'string',\n      description: \"Target status: idea, draft, in-review, approved, scheduled, published, or archived. For 'create', the initial status (defaults to approved).\",\n    },\n    platform: { type: 'string', description: \"Platform filter for 'list', or the published variant for 'record_publication' (e.g. 'bluesky').\" },\n    fields: {\n      type: 'json',\n      description: \"For 'update': an object of frontmatter patches, e.g. {\\\"scheduledFor\\\": \\\"2026-08-15T09:00:00Z\\\", \\\"campaign\\\": \\\"autumn\\\"}. A null value clears the key.\",\n    },\n    permalink: { type: 'string', description: 'Public URL of the live post, for record_publication.' },\n    postId: { type: 'string', description: \"The platform's own id for the live post, for record_publication.\" },\n    corpusRef: { type: 'string', description: 'Connector corpus record reference for the live post, when one exists.' },\n    publishedAt: { type: 'string', description: 'ISO timestamp the post went live (defaults to now).' },\n    markPublished: {\n      type: 'boolean',\n      description: 'For record_publication: force the post to published even if other target platforms are not stamped yet.',\n    },\n  },\n  outputs: {\n    posts: { type: 'json', description: \"For 'list': the post listing entries.\" },\n    total: { type: 'number', description: \"For 'list': how many posts exist before filtering.\" },\n    post: { type: 'json', description: \"For 'get': frontmatter plus body, variants map, and media names.\" },\n    id: { type: 'string', description: 'The post id the action touched.' },\n    status: { type: 'string', description: \"The post's status after the action.\" },\n    summary: { type: 'string', description: 'Human-readable result.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\nconst POSTS_DIR = 'posts';\nconst DRAFTING = 'posts/_drafting';\nconst INDEX_FILE = 'posts/index.json';\nconst ID_RE = /^[a-z0-9][a-z0-9-]{0,99}$/;\nconst PLATFORM_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;\nconst STAGES = ['idea', 'draft', 'in-review', 'approved', 'scheduled', 'published'] as const;\nconst STATUSES: string[] = [...STAGES, 'archived'];\n\n// ── frontmatter ──\n// Hand-rolled, deliberately simple: `---`-delimited `key: value` lines,\n// arrays as [a, b]. Unknown keys and even unparseable lines are preserved\n// in order so a round-trip never loses what a human or another tool wrote.\n\ntype FmEntry = { key: string; value: string | string[] } | { raw: string };\ninterface FmDoc {\n  entries: FmEntry[];\n  body: string;\n}\n\nfunction parseArrayish(value: string): string[] {\n  return value\n    .slice(1, -1)\n    .split(',')\n    .map((part) => part.trim().replace(/^[\"']|[\"']$/g, ''))\n    .filter((part) => part.length > 0);\n}\n\nfunction parseFrontmatter(text: string): FmDoc {\n  const lines = text.split(/\\r?\\n/);\n  if (lines[0]?.trim() !== '---') return { entries: [], body: text };\n  const entries: FmEntry[] = [];\n  let at = 1;\n  for (; at < lines.length; at += 1) {\n    const line = lines[at]!;\n    if (line.trim() === '---') {\n      return { entries, body: lines.slice(at + 1).join('\\n').replace(/^\\n/, '') };\n    }\n    const sep = line.indexOf(':');\n    if (sep <= 0) {\n      if (line.trim().length > 0) entries.push({ raw: line });\n      continue;\n    }\n    const key = line.slice(0, sep).trim();\n    const value = line.slice(sep + 1).trim();\n    if (!key) {\n      entries.push({ raw: line });\n      continue;\n    }\n    entries.push({\n      key,\n      value: value.startsWith('[') && value.endsWith(']') ? parseArrayish(value) : value,\n    });\n  }\n  return { entries: [], body: text };\n}\n\nfunction serializeFrontmatter(doc: FmDoc): string {\n  const lines = doc.entries.map((entry) => {\n    if ('raw' in entry) return entry.raw;\n    const value = Array.isArray(entry.value) ? `[${entry.value.join(', ')}]` : entry.value;\n    return `${entry.key}: ${value}`;\n  });\n  return `---\\n${lines.join('\\n')}\\n---\\n\\n${doc.body.replace(/^\\n+/, '')}`;\n}\n\nfunction fmGet(doc: FmDoc, key: string): string | string[] | undefined {\n  for (const entry of doc.entries) {\n    if ('key' in entry && entry.key === key) return entry.value;\n  }\n  return undefined;\n}\n\nfunction fmGetString(doc: FmDoc, key: string): string {\n  const value = fmGet(doc, key);\n  if (Array.isArray(value)) return value.join(', ');\n  return value ?? '';\n}\n\nfunction fmGetArray(doc: FmDoc, key: string): string[] {\n  const value = fmGet(doc, key);\n  if (Array.isArray(value)) return value;\n  if (typeof value === 'string' && value.length > 0) return [value];\n  return [];\n}\n\nfunction fmSet(doc: FmDoc, key: string, value: string | string[]): void {\n  for (const entry of doc.entries) {\n    if ('key' in entry && entry.key === key) {\n      entry.value = value;\n      return;\n    }\n  }\n  doc.entries.push({ key, value });\n}\n\nfunction fmDelete(doc: FmDoc, key: string): void {\n  doc.entries = doc.entries.filter((entry) => !('key' in entry && entry.key === key));\n}\n\n// ── pipeline rules ──\n\nfunction legalNext(from: string): string[] {\n  if (from === 'archived') return [];\n  const at = STAGES.indexOf(from as (typeof STAGES)[number]);\n  const forward = at >= 0 && at < STAGES.length - 1 ? [STAGES[at + 1]!] : [];\n  return [...forward, 'archived'];\n}\n\nfunction assertTransition(id: string, from: string, to: string): void {\n  if (to === from) return;\n  if (!STATUSES.includes(to)) {\n    throw new Error(`Unknown status '${to}'. Statuses: ${STATUSES.join(', ')}.`);\n  }\n  if (!legalNext(from).includes(to)) {\n    const next = legalNext(from);\n    throw new Error(\n      `Cannot move '${id}' from ${from} to ${to} — posts move one stage at a time. ` +\n        (next.length > 0 ? `Legal next: ${next.join(', ')}.` : `'${from}' is final; create a new post instead.`),\n    );\n  }\n}\n\nfunction requireId(): string {\n  const id = (input.id ?? '').trim();\n  if (!id) throw new Error(\"Pass 'id' — the post's folder name under posts/ (see action:'list').\");\n  if (!ID_RE.test(id)) {\n    throw new Error(`Invalid post id '${id}'. Ids are lowercase [a-z0-9-], no slashes or dots.`);\n  }\n  return id;\n}\n\nfunction today(): string {\n  return new Date().toISOString().slice(0, 10);\n}\n\nfunction slugify(text: string): string {\n  return text\n    .toLowerCase()\n    .replace(/[^a-z0-9]+/g, '-')\n    .replace(/^-+|-+$/g, '')\n    .slice(0, 60);\n}\n\n// ── store ──\n\ninterface IndexEntry {\n  id: string;\n  title: string;\n  status: string;\n  platforms: string[];\n  created: string;\n  scheduledFor?: string;\n  campaign?: string;\n}\n\nasync function readPostDoc(id: string): Promise<FmDoc> {\n  let raw: string;\n  try {\n    raw = await gezel.fs.read(`${POSTS_DIR}/${id}/post.md`);\n  } catch {\n    throw new Error(`No post '${id}' — posts/${id}/post.md does not exist. Call action:'list' to see what does.`);\n  }\n  return parseFrontmatter(raw);\n}\n\nasync function writePostDoc(id: string, doc: FmDoc): Promise<void> {\n  await gezel.fs.write(`${POSTS_DIR}/${id}/post.md`, serializeFrontmatter(doc));\n}\n\nfunction toIndexEntry(id: string, doc: FmDoc): IndexEntry {\n  const entry: IndexEntry = {\n    id,\n    title: fmGetString(doc, 'title') || id,\n    status: fmGetString(doc, 'status') || 'idea',\n    platforms: fmGetArray(doc, 'platforms'),\n    created: fmGetString(doc, 'created') || today(),\n  };\n  const scheduledFor = fmGetString(doc, 'scheduledFor');\n  if (scheduledFor) entry.scheduledFor = scheduledFor;\n  const campaign = fmGetString(doc, 'campaign');\n  if (campaign) entry.campaign = campaign;\n  return entry;\n}\n\nasync function regenerateIndex(): Promise<IndexEntry[]> {\n  let names: string[] = [];\n  try {\n    names = (await gezel.fs.list(POSTS_DIR))\n      .filter((entry) => entry.isDirectory && entry.name !== '_drafting' && ID_RE.test(entry.name))\n      .map((entry) => entry.name);\n  } catch {\n    names = [];\n  }\n  const posts: IndexEntry[] = [];\n  for (const name of names) {\n    try {\n      posts.push(toIndexEntry(name, await readPostDoc(name)));\n    } catch {\n      // A folder without a parseable post.md is not a post; leave it be.\n    }\n  }\n  posts.sort((a, b) => (a.created === b.created ? (a.id < b.id ? 1 : -1) : a.created < b.created ? 1 : -1));\n  await gezel.fs.write(INDEX_FILE, `${JSON.stringify({ version: 1, posts }, null, 2)}\\n`);\n  return posts;\n}\n\nasync function readIndex(): Promise<IndexEntry[]> {\n  try {\n    const parsed = JSON.parse(await gezel.fs.read(INDEX_FILE)) as { posts?: IndexEntry[] };\n    return Array.isArray(parsed.posts) ? parsed.posts : [];\n  } catch {\n    return [];\n  }\n}\n\nasync function listVariants(id: string): Promise<Record<string, Record<string, unknown>>> {\n  let names: string[] = [];\n  try {\n    names = (await gezel.fs.list(`${POSTS_DIR}/${id}/variants`))\n      .filter((entry) => !entry.isDirectory && entry.name.endsWith('.md'))\n      .map((entry) => entry.name);\n  } catch {\n    return {};\n  }\n  const variants: Record<string, Record<string, unknown>> = {};\n  for (const name of names) {\n    const platform = name.slice(0, -3);\n    const doc = parseFrontmatter(await gezel.fs.read(`${POSTS_DIR}/${id}/variants/${name}`));\n    const body = doc.body.trim();\n    const variant: Record<string, unknown> = {\n      charCount: Number(fmGetString(doc, 'charCount')) || body.length,\n      body,\n    };\n    for (const key of ['publishedAt', 'permalink', 'postId', 'corpusRef']) {\n      const value = fmGetString(doc, key);\n      if (value) variant[key] = value;\n    }\n    variants[platform] = variant;\n  }\n  return variants;\n}\n\nasync function listMedia(id: string): Promise<string[]> {\n  try {\n    return (await gezel.fs.list(`${POSTS_DIR}/${id}/media`))\n      .filter((entry) => !entry.isDirectory)\n      .map((entry) => entry.name);\n  } catch {\n    return [];\n  }\n}\n\n// ── actions ──\n\nif (input.action === 'list') {\n  const all = await readIndex();\n  let posts = all;\n  if (input.status) posts = posts.filter((post) => post.status === input.status);\n  if (input.platform) posts = posts.filter((post) => post.platforms.includes(input.platform!));\n  const counts = STATUSES.map((status) => {\n    const n = all.filter((post) => post.status === status).length;\n    return n > 0 ? `${status} ${n}` : null;\n  })\n    .filter((line) => line !== null)\n    .join(', ');\n  gezel.output({\n    posts,\n    total: all.length,\n    summary: all.length === 0 ? 'No posts yet — stage one in posts/_drafting/ and call create.' : `${all.length} post(s): ${counts}.`,\n  });\n} else if (input.action === 'get') {\n  const id = requireId();\n  const doc = await readPostDoc(id);\n  const fields: Record<string, unknown> = {};\n  for (const entry of doc.entries) {\n    if ('key' in entry) fields[entry.key] = entry.value;\n  }\n  const post = {\n    id,\n    ...fields,\n    status: fmGetString(doc, 'status') || 'idea',\n    platforms: fmGetArray(doc, 'platforms'),\n    body: doc.body.trim(),\n    variants: await listVariants(id),\n    media: await listMedia(id),\n  };\n  gezel.output({\n    post,\n    id,\n    status: post.status,\n    summary: `'${fmGetString(doc, 'title') || id}' is ${post.status}; ${Object.keys(post.variants).length} variant(s), ${post.media.length} media file(s).`,\n  });\n} else if (input.action === 'create') {\n  let staged: FmDoc;\n  try {\n    staged = parseFrontmatter(await gezel.fs.read(`${DRAFTING}/post.md`));\n  } catch {\n    throw new Error('Nothing is staged — write posts/_drafting/post.md (frontmatter + body) first, then call create again.');\n  }\n  const slug = slugify(fmGetString(staged, 'slug') || fmGetString(staged, 'title'));\n  if (!slug) throw new Error(\"The staged post.md needs a 'slug' or a 'title' in its frontmatter to name the post folder.\");\n  const createdRaw = fmGetString(staged, 'created');\n  const created = /^\\d{4}-\\d{2}-\\d{2}$/.test(createdRaw) ? createdRaw : today();\n  const id = `${created}-${slug}`;\n  if (!ID_RE.test(id)) throw new Error(`Derived post id '${id}' is invalid — keep slug to lowercase letters, digits, and dashes.`);\n  const siblings = await gezel.fs.list(POSTS_DIR).catch(() => []);\n  if (siblings.some((entry) => entry.name === id)) {\n    throw new Error(`posts/${id}/ already exists. Change the staged slug (or created date) and call create again.`);\n  }\n  const status = input.status ?? 'approved';\n  if (!STATUSES.includes(status)) {\n    throw new Error(`'${status}' is not a status. Statuses: ${STATUSES.join(', ')}.`);\n  }\n  fmSet(staged, 'status', status);\n  fmSet(staged, 'slug', slug);\n  fmSet(staged, 'created', created);\n  await gezel.fs.write(`${DRAFTING}/post.md`, serializeFrontmatter(staged));\n  await gezel.fs.rename(DRAFTING, `${POSTS_DIR}/${id}`);\n  await regenerateIndex();\n  gezel.output({\n    id,\n    status,\n    summary: `Committed posts/_drafting/ as posts/${id}/ with status ${status}.`,\n  });\n} else if (input.action === 'update') {\n  const id = requireId();\n  const doc = await readPostDoc(id);\n  const patches = (input.fields && typeof input.fields === 'object' && !Array.isArray(input.fields) ? input.fields : {}) as Record<string, unknown>;\n  let nextStatus = input.status;\n  if (typeof patches.status === 'string' && !nextStatus) nextStatus = patches.status;\n  delete patches.status;\n  if (!nextStatus && Object.keys(patches).length === 0) {\n    throw new Error(\"Nothing to change — pass 'status' and/or a 'fields' object of frontmatter patches.\");\n  }\n  const from = fmGetString(doc, 'status') || 'idea';\n  if (nextStatus) assertTransition(id, from, nextStatus);\n  for (const [key, value] of Object.entries(patches)) {\n    if (value === null || value === undefined) fmDelete(doc, key);\n    else if (Array.isArray(value)) fmSet(doc, key, value.map((item) => String(item)));\n    else fmSet(doc, key, String(value));\n  }\n  if (nextStatus) fmSet(doc, 'status', nextStatus);\n  await writePostDoc(id, doc);\n  await regenerateIndex();\n  const status = nextStatus ?? from;\n  gezel.output({\n    id,\n    status,\n    summary: nextStatus && nextStatus !== from ? `Moved '${id}' from ${from} to ${status}.` : `Updated '${id}' (${status}).`,\n  });\n} else if (input.action === 'record_publication') {\n  const id = requireId();\n  const platform = (input.platform ?? '').trim();\n  if (!PLATFORM_RE.test(platform)) {\n    throw new Error(\"Pass 'platform' — the variant that went live, e.g. 'bluesky', 'x', or 'instagram'.\");\n  }\n  const doc = await readPostDoc(id);\n  const variantPath = `${POSTS_DIR}/${id}/variants/${platform}.md`;\n  const variant = parseFrontmatter(await gezel.fs.read(variantPath).catch(() => '---\\n---\\n'));\n  fmSet(variant, 'publishedAt', input.publishedAt ?? new Date().toISOString());\n  if (input.permalink) fmSet(variant, 'permalink', input.permalink);\n  if (input.postId) fmSet(variant, 'postId', input.postId);\n  if (input.corpusRef) fmSet(variant, 'corpusRef', input.corpusRef);\n  await gezel.fs.write(variantPath, serializeFrontmatter(variant));\n  const targets = fmGetArray(doc, 'platforms');\n  const stamped = await listVariants(id);\n  const allLive = targets.length > 0 && targets.every((target) => typeof stamped[target]?.publishedAt === 'string');\n  let status = fmGetString(doc, 'status') || 'idea';\n  // Recording reality bypasses the stage chain: once every target variant\n  // is live (or the caller says so), the post IS published.\n  if (allLive || input.markPublished === true) {\n    status = 'published';\n    fmSet(doc, 'status', status);\n    await writePostDoc(id, doc);\n  }\n  await regenerateIndex();\n  const waiting = targets.filter((target) => typeof stamped[target]?.publishedAt !== 'string');\n  gezel.output({\n    id,\n    status,\n    summary:\n      status === 'published'\n        ? `Recorded ${platform} publication for '${id}' — the post is published.`\n        : `Recorded ${platform} publication for '${id}'; still waiting on: ${waiting.join(', ') || '(none)'}.`,\n  });\n} else {\n  throw new Error(`Unknown action '${input.action}'. Use list, get, create, update, or record_publication.`);\n}\n"
+  },
+  "tools": [
+    {
+      "name": "list_posts",
+      "description": "See the whole post pipeline: every post with its status, platforms, and dates. Optionally filter by status or platform.",
+      "script": "posts-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "idea",
+              "draft",
+              "in-review",
+              "approved",
+              "scheduled",
+              "published",
+              "archived"
+            ],
+            "description": "Only posts currently in this status."
+          },
+          "platform": {
+            "type": "string",
+            "description": "Only posts targeting this platform, e.g. 'bluesky'."
+          }
+        }
+      },
+      "bind": {
+        "action": "list"
+      }
+    },
+    {
+      "name": "get_post",
+      "description": "Read one post in full: frontmatter, body, each platform variant with its character count (and permalink once live), and media files.",
+      "script": "posts-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Post id — its folder name under posts/, e.g. '2026-08-12-launch-teaser'."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "bind": {
+        "action": "get"
+      }
+    },
+    {
+      "name": "create_post",
+      "description": "Commit the staged posts/_drafting/ folder as a real post. Stage post.md (frontmatter + body), variants/, and media/ there first; the post folder is named from the created date and slug.",
+      "script": "posts-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "idea",
+              "draft",
+              "in-review",
+              "approved",
+              "scheduled",
+              "published",
+              "archived"
+            ],
+            "description": "Initial status for the new post. Defaults to approved."
+          }
+        }
+      },
+      "bind": {
+        "action": "create"
+      }
+    },
+    {
+      "name": "update_post",
+      "description": "Patch a post's frontmatter (fields object; null clears a key) and/or move it one pipeline stage. Stages run idea, draft, in-review, approved, scheduled, published — archived from anywhere.",
+      "script": "posts-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Post id."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Frontmatter patches, e.g. {\"scheduledFor\": \"2026-08-15T09:00:00Z\", \"campaign\": \"autumn\"}."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "idea",
+              "draft",
+              "in-review",
+              "approved",
+              "scheduled",
+              "published",
+              "archived"
+            ],
+            "description": "Target status (one stage at a time)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "bind": {
+        "action": "update"
+      }
+    },
+    {
+      "name": "record_publication",
+      "description": "The moment a variant goes live, stamp it with its permalink and platform post id. The post flips to published once every target platform is stamped (or markPublished is passed).",
+      "script": "posts-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Post id."
+          },
+          "platform": {
+            "type": "string",
+            "description": "The platform that went live, e.g. 'bluesky'."
+          },
+          "permalink": {
+            "type": "string",
+            "description": "Public URL of the live post."
+          },
+          "postId": {
+            "type": "string",
+            "description": "The platform's own id for the live post."
+          },
+          "corpusRef": {
+            "type": "string",
+            "description": "Connector corpus record reference, when one exists."
+          },
+          "publishedAt": {
+            "type": "string",
+            "description": "ISO timestamp it went live (defaults to now)."
+          },
+          "markPublished": {
+            "type": "boolean",
+            "description": "Force the post to published even with unstamped platforms."
+          }
+        },
+        "required": [
+          "id",
+          "platform"
+        ]
+      },
+      "bind": {
+        "action": "record_publication"
+      }
+    },
+    {
+      "name": "page_set_status",
+      "description": "Page-only: move a post between pipeline columns on the gallery.",
+      "script": "posts-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Post id."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "idea",
+              "draft",
+              "in-review",
+              "approved",
+              "scheduled",
+              "published",
+              "archived"
+            ],
+            "description": "The column the post was moved to."
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ]
+      },
+      "bind": {
+        "action": "update"
+      },
+      "reaction": {
+        "gezel": "omroeper",
+        "hideSeed": true,
+        "prompt": "[Feed gallery]: The user moved post {{output.id}} to '{{output.status}}' on the gallery. Reply with ONE short line acknowledging the move. If it landed in 'draft', offer to run the draft-social-post craftbook on it. Do not restate the pipeline."
+      }
+    },
+    {
+      "name": "page_get_post",
+      "description": "Page-only: the detail drawer's read of one post with variants and media.",
+      "script": "posts-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Post id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "bind": {
+        "action": "get"
+      }
+    }
+  ],
+  "craftbooks": [
+    "draft-social-post",
+    "social-digest",
+    "reception-report"
+  ],
+  "schedules": [
+    {
+      "runMode": "night-shift",
+      "craftbook": "social-digest",
+      "consent": "ask",
+      "overlap": "skip"
+    },
+    {
+      "runMode": "scheduled",
+      "cron": "0 15 * * 1",
+      "craftbook": "reception-report",
+      "consent": "ask",
+      "overlap": "skip"
+    }
+  ],
+  "pages": {
+    "entry": "gallery/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "posts",
+        "subtree": true
+      },
+      {
+        "source": "workspace",
+        "path": "style-guide.md"
+      },
+      {
+        "source": "artifacts",
+        "path": "data",
+        "subtree": true
+      }
+    ],
+    "tools": [
+      "page_set_status",
+      "page_get_post"
+    ]
+  },
+  "workspaceSeed": [
+    "style-guide.md",
+    "posts/index.json"
+  ],
+  "notes": "posts/index.json is seeded at its subpath (applyProjectType preserves seed subpaths and creates parents) and is ALSO regenerated by posts-store on every mutation, so the gallery tolerates a missing or stale index. Posts live one folder per post under posts/ (post.md + variants/ + media/), staged in posts/_drafting/ until create_post commits them. page_set_status and page_get_post are the page-only twins of update_post/get_post — pages.tools names are removed from the model surface, so the model keeps its own read tools."
+}

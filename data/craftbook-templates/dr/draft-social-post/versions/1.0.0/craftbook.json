@@ -1,0 +1,176 @@
+{
+  "id": "draft-social-post",
+  "name": "Draft a Social Post",
+  "description": "Take one post from idea to approved, committed copy: brief (voice, recent posts, what resonated on the synced feeds), draft (base copy plus one platform-fitted variant per target, each within its character limit), a human review gate (approve / revise / approve-and-queue-to-Bluesky), then commit to the posts folder and — only when the user asked for it — queue the Bluesky variant through the outbox. The post-folder convention: drafts stage in posts/_drafting/, approved posts live at posts/<created>-<slug>/, and posts/index.json lists them. Works with or without a connected social account: with no synced corpus the brief proceeds from workspace content alone and says so.",
+  "entryStepId": "brief",
+  "triggers": [
+    "draft a social post",
+    "write a social post",
+    "draft a post about",
+    "draft a bluesky post",
+    "draft a tweet"
+  ],
+  "command": "draft-social-post",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "topic": {
+        "type": "string",
+        "description": "What the post is about. When absent, the brief step asks the user interactively with 2-3 angle options."
+      },
+      "platforms": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": [
+            "bluesky",
+            "x",
+            "instagram"
+          ]
+        },
+        "description": "Target platforms. When absent, use whatever handles the project's synced corpora declare, defaulting to bluesky."
+      },
+      "campaign": {
+        "type": "string",
+        "description": "Optional campaign tag stamped into the post frontmatter."
+      }
+    }
+  },
+  "connectors": [
+    {
+      "typeId": "bluesky-posts",
+      "optional": true,
+      "reason": "Ground voice research in recent posts and queue approved posts for publishing."
+    },
+    {
+      "typeId": "x-posts",
+      "optional": true,
+      "reason": "Ground voice research in what recently resonated on X when fitting the 280-character variant."
+    },
+    {
+      "typeId": "instagram-media",
+      "optional": true,
+      "reason": "Ground caption and media-brief choices in the synced Instagram record (draft-only; publishing stays manual)."
+    }
+  ],
+  "steps": [
+    {
+      "id": "brief",
+      "name": "Brief",
+      "description": "Resolve the topic and angle, read the voice, and write the drafting brief.",
+      "suggestedRole": "omroeper",
+      "capabilityFloor": "small",
+      "prompt": "You are preparing the brief for one social post.\n\n1. Resolve the topic. The topic parameter is: \"{{topic}}\". If that value is empty or still reads as a raw {{...}} placeholder, no topic was provided: do the reading below first, pick 2-3 concrete angles worth posting about, and ask the user to choose. Ask with `ask_user_question` if it is in your function schema — one call, `choices` = your angles, `allowWriteIn` true. If `ask_user_question` is NOT in your function schema, post the numbered angles as a short prose reply and end the turn — the user's next message is the answer.\n2. Read the voice: open `voice-guide.md` and `style-guide.md` in the workspace when they exist (`read_file`). Note register, phrases to use or avoid, and the hashtag policy.\n3. Read what we posted lately: call `list_posts` if it is in your function schema, otherwise read `posts/index.json`. Note the last few titles and dates so this post does not repeat one.\n4. Read what resonates: call `list_artifacts` on `data/` in the project artifacts. Each subfolder there is one synced feed corpus (its `_meta.json` says which feed). Read the freshest few records with `read_artifact` and note which recent posts drew likes, reposts, or replies. If there is no `data/` corpus, write \"no synced corpus — working from workspace content alone\" in the brief and continue; never invent engagement facts.\n5. Write `posts/_drafting/brief.md` with `write_file`: the chosen angle (one short paragraph), the target platforms with their limits (Bluesky 300 graphemes, X 280 characters, Instagram caption up to 2200 characters with only the first 125 shown in feed), the key message in one sentence, the campaign tag when \"{{campaign}}\" resolved to a real value, and anything the voice guide demands.\n\nTarget platforms parameter: \"{{platforms}}\". If it is empty or a raw placeholder, use the platforms the project's synced corpora imply, defaulting to bluesky.\n\nWhen `posts/_drafting/brief.md` is written, call `advance_task_step` to move to the draft step.",
+      "advanceWhen": {
+        "file": "posts/_drafting/brief.md",
+        "minBytes": 200
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "posts/_drafting/brief.md",
+            "bytes": 200
+          }
+        ],
+        "maxAttempts": 3
+      },
+      "next": "draft"
+    },
+    {
+      "id": "draft",
+      "name": "Draft the post and variants",
+      "description": "Write the base copy and one platform-fitted variant per target, each within its limit.",
+      "suggestedRole": "copywriter",
+      "prompt": "Write the post from `posts/_drafting/brief.md`. Read the brief and `voice-guide.md` (when present) first. If `posts/_drafting/review.md` exists, this is a revision round — read it and honor every note in it.\n\n1. Write `posts/_drafting/post.md` with `write_file`. Frontmatter (YAML between `---` lines): `status: in-review`, `title`, `slug` (lowercase-hyphenated, derived from the title), `platforms` (the target list from the brief), `created` (today, YYYY-MM-DD), `campaign` (only when the brief names one), `tags` (a short YAML list). Body: the base copy — the full message in the project's voice, not yet fitted to any platform.\n2. For each target platform, write `posts/_drafting/variants/<platform>.md` (for example `posts/_drafting/variants/bluesky.md`). Frontmatter: `platform: <name>` and `charCount: <n>` — the honest character count of the variant body. Body: the platform-fitted copy. Bluesky: at most 300 graphemes; hashtags only when they earn their place. X: at most 280 characters. Instagram: caption up to 2200 characters, hook inside the first 125 characters (that is all the feed shows), hashtags grouped at the end where idiomatic. If the copy cannot fit its limit, split it into a numbered thread (1/3, 2/3, ...) inside the same variant file and set `charCount` to the longest part. Where the post carries media, add an `alt-text:` line under the body describing the image for screen readers.\n3. If instagram or another image-led platform is a target, write `posts/_drafting/media/brief.md`: what the image or short clip should show, format and aspect ratio, and any text overlay.\n\nKeep every claim grounded in the brief or workspace files — invent no product facts, prices, or dates. When all files are written, call `advance_task_step` to move to review.",
+      "advanceWhen": {
+        "file": "posts/_drafting/post.md",
+        "minBytes": 200,
+        "requireChange": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "posts/_drafting/post.md",
+            "bytes": 200
+          },
+          {
+            "kind": "contains",
+            "file": "posts/_drafting/post.md",
+            "pattern": "status: in-review",
+            "label": "draft carries in-review status"
+          },
+          {
+            "kind": "judge",
+            "file": "posts/_drafting/post.md",
+            "rubric": "Each platform variant under posts/_drafting/variants/ respects its platform's character limit (Bluesky 300 graphemes, X 280 characters, Instagram caption 2200 with the hook in the first 125), and the copy follows the project's voice guide when one exists.",
+            "sourceFiles": [
+              "voice-guide.md",
+              "posts/_drafting/brief.md",
+              "posts/_drafting/variants/bluesky.md",
+              "posts/_drafting/variants/x.md",
+              "posts/_drafting/variants/instagram.md"
+            ],
+            "label": "variants fit their platforms and the voice"
+          }
+        ],
+        "onReject": "draft",
+        "maxAttempts": 4
+      },
+      "next": "review"
+    },
+    {
+      "id": "review",
+      "name": "User review",
+      "description": "The human gate. Present the draft and variants; wait for an explicit answer. The scheduler stands down while the question is pending.",
+      "suggestedRole": "omroeper",
+      "prompt": "This is the human approval gate. Do not publish, finalize, or edit any post file this turn.\n\nRead `posts/_drafting/post.md` and every file under `posts/_drafting/variants/`. Compose a short review request: the base copy first, then each variant with its `charCount`, all quoted inline so the user can read everything without opening files.\n\nFirst save the full review request (base copy + every variant) as an artifact via `write_artifact` to `reviews/draft-post-review.md` — `documentPath` only resolves documents and artifacts, never workspace paths, so this snapshot is what the user’s review card previews. Then ask with `ask_user_question` if it is in your function schema — one call: `question` = the review request (markdown), `documentPath` = \"reviews/draft-post-review.md\" (the current task attaches automatically), `allowWriteIn` = true, `choices` = [\"Approve\", \"Revise\"], adding the choice \"Approve and queue to Bluesky\" ONLY when `posts/_drafting/variants/bluesky.md` exists and this project has a live Bluesky connection with publishing enabled (the `draft_post` and `queue_post` tools are in your function schema). If `ask_user_question` is NOT in your function schema: save the same review request with the choices as a numbered list via `write_task_note`, post it as a short prose reply, and end the turn — the task waits for the user's next message.\n\nWhen the answer arrives, act on it:\n- Revise → append the user's notes verbatim to `posts/_drafting/review.md` (create it if missing; keep earlier rounds above), record the decision with `write_task_note` (\"review round N: revise\"), then call `advance_task_step` with `next: \"draft\"` to loop back.\n- Approve → record \"review decision: approve\" with `write_task_note`, then call `advance_task_step` to move to finalize.\n- Approve and queue to Bluesky → record \"review decision: approve-and-queue-bluesky\" with `write_task_note`, then call `advance_task_step` to move to finalize.\n\nNever advance without an explicit user answer.",
+      "next": "finalize"
+    },
+    {
+      "id": "finalize",
+      "name": "Commit the post",
+      "description": "Move the approved draft out of staging into posts/<created>-<slug>/ and update the index.",
+      "suggestedRole": "omroeper",
+      "prompt": "Commit the approved draft.\n\nPreferred: call `create_post` if it is in your function schema — it commits `posts/_drafting/` to `posts/<created>-<slug>/` and updates `posts/index.json` in one step. Then set the committed post's status to `approved` with `update_post`.\n\nFallback (no `create_post` in your function schema): do it with file tools. Read `posts/_drafting/post.md` for `created` and `slug`, then create `posts/<created>-<slug>/` with `make_dir` and recreate each staged file there with `read_file` + `write_file` — `post.md` at the folder root (set `status: approved` in its frontmatter), the `variants/` files, and `media/` when present. Update `posts/index.json` with `write_file`: append an entry with `slug`, `folder` (the new posts/<created>-<slug> path), `title`, `status` (\"approved\"), `platforms`, and `created` to the `entries` array, creating the file with an `entries` array when it does not exist. Finally remove the copied staging files under `posts/_drafting/` with `delete_path` so the next post starts clean.\n\nDo not publish anything in this step. When the post folder and the index update are in place, call `advance_task_step` to continue.",
+      "advanceWhen": {
+        "file": "posts/index.json",
+        "minBytes": 2,
+        "requireChange": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "posts/index.json",
+            "bytes": 2
+          }
+        ],
+        "maxAttempts": 3
+      },
+      "next": "queue-publish"
+    },
+    {
+      "id": "queue-publish",
+      "name": "Queue to Bluesky (only when asked)",
+      "description": "Queue the approved Bluesky variant through the outbox — skipped unless the review answer asked for it.",
+      "suggestedRole": "omroeper",
+      "prompt": "First read the task notes with `read_task_notes`. If the recorded review decision was NOT \"approve-and-queue-bluesky\", this step is a no-op: call `advance_task_step` with `next: \"finish\"` immediately and do nothing else.\n\nOtherwise queue the Bluesky publish:\n1. Read the committed bluesky variant (`posts/<created>-<slug>/variants/bluesky.md`).\n2. Call `draft_post` with the variant body (and its alt text when present), then `queue_post` on the returned draft. Queued posts ride the project's outbox, so the user's standing consent settings decide when it actually goes out. These tools exist only when a Bluesky connection is live: if they are not in your function schema, record \"Bluesky queue requested but no live connection — post manually\" with `write_task_note` and continue to the bookkeeping below.\n3. Bookkeeping: set the queued variant's status to `scheduled` and stamp whatever the draft/queue response returned (for example `scheduledFor` and a queue or post id) into the bluesky variant frontmatter — with `update_post` when it is in your function schema, otherwise by editing the variant file with `write_file`.\n\nVariants for X and Instagram stay `approved` — they are posted by hand. Write a short manual-posting checklist with `write_task_note`: which variant file carries each platform's copy, each platform's limit, and the media brief path when one exists. Then call `advance_task_step` to finish.",
+      "next": "finish"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "Summarize the outcome and stop.",
+      "suggestedRole": "omroeper",
+      "prompt": "Wrap up. Write one `write_task_note` summary: the final post folder path, the per-platform disposition (queued to Bluesky via the outbox / manual post needed / not targeted), and any follow-ups — media still to produce, a good time to post, replies to watch for. Report DONE.",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-08-12T00:00:00Z"
+}
