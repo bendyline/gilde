@@ -167,6 +167,7 @@ function rebuildSteps(steps, context) {
       ...(s.assignee ? { assignee: s.assignee } : {}),
       ...(s.onEnter ? { onEnter: s.onEnter } : {}),
       ...(s.onExit ? { onExit: s.onExit } : {}),
+      ...(s.consumes && s.consumes.length > 0 ? { consumes: s.consumes } : {}),
       ...(s.advanceWhen ? { advanceWhen: s.advanceWhen } : {}),
       ...(s.gate ? { gate: s.gate } : {}),
       ...(s.next ? { next: s.next } : {}),

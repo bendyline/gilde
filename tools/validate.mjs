@@ -490,6 +490,19 @@ function main() {
       if (ids.has(step.id)) {
         c.error(path, `/steps/${i}/id`, 'duplicate-step-id', `step id "${step.id}" appears more than once`);
       }
+      for (const [inputIndex, input] of (step.consumes ?? []).entries()) {
+        if (
+          input?.artifact === true &&
+          !/`read_artifact(?:`|\()/.test(typeof step.prompt === 'string' ? step.prompt : '')
+        ) {
+          c.error(
+            path,
+            `/steps/${i}/consumes/${inputIndex}`,
+            'artifact-input-missing-explicit-read',
+            `step "${step.id}" consumes artifact "${input.file}" but its prompt does not explicitly call \`read_artifact\``,
+          );
+        }
+      }
       ids.add(step.id);
     });
     for (const [i, step] of (doc.spawn?.steps ?? []).entries()) {

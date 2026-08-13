@@ -35,6 +35,23 @@ A craftbook is a step-by-step playbook a gezel follows. To add one:
    [docs/craftbook-evaluation-framework.md](docs/craftbook-evaluation-framework.md).
 6. `npm run build-index`, then validate.
 
+### Declaring step inputs
+
+When a step depends on a file produced by an earlier step, declare its drawer
+and path instead of leaving a bare relative path for the model to guess:
+
+```json
+"consumes": [
+  { "file": "security/review-scope.md", "artifact": true }
+]
+```
+
+Omit `artifact` (or set it to `false`) for project-workspace files. For an
+artifact input, the step prompt must also explicitly name `read_artifact` so
+the procedure remains unambiguous on older runtimes and the model's first
+tool action is correct. The workspace and artifacts are separate drawers;
+never rely on `read_file` to fall back across that boundary.
+
 ### Generated craftbook families
 
 Some released craftbooks have a maintained source representation under
