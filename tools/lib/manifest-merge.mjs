@@ -342,6 +342,9 @@ function mergeIdentityAndVersion(kind, identity, version, availableVersions) {
       driver: version.driver,
       ...(version.configSchema !== undefined ? { configSchema: version.configSchema } : {}),
       ...(version.secretShape !== undefined ? { secretShape: version.secretShape } : {}),
+      ...(version.setupInstructions !== undefined
+        ? { setupInstructions: version.setupInstructions }
+        : {}),
       source: version.source,
       normalize: version.normalize,
       actions: version.actions,
