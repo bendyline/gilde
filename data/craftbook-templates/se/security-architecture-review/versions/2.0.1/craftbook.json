@@ -1,0 +1,390 @@
+{
+  "id": "security-architecture-review",
+  "name": "Security Architecture Review",
+  "description": "A structured security architecture review: walk the stack for secrets, dependencies, auth, and common vulnerability classes, then report findings ranked by severity and confidence.",
+  "basedOn": {
+    "name": "gstack",
+    "url": "https://github.com/garrytan/gstack"
+  },
+  "plan": "Run an evidence-first architecture review without changing product code. Trace trust boundaries, data flows, identity, authorization, secrets, dependencies, and operational controls from actual workspace material. Never copy secret values into notes or reports. Separate confirmed findings from hypotheses and research gaps. Rank actionable findings by severity, exploitability, confidence, and blast radius, then give the owner a practical remediation and verification path.",
+  "entryStepId": "model-system",
+  "triggers": [
+    "security audit",
+    "check for vulnerabilities",
+    "owasp review"
+  ],
+  "command": "security-architecture-review",
+  "steps": [
+    {
+      "id": "model-system",
+      "name": "Map assets and trust boundaries",
+      "description": "Establish the system, sensitive assets, actors, data flows, controls, and review limits.",
+      "prompt": "Inspect architecture notes, entry points, deployment and dependency metadata, configuration schemas, authentication and authorization code, persistence, network surfaces, and security tests. Map sensitive assets, actors, privilege levels, trust boundaries, inbound and outbound data flows, third parties, and existing controls. Record only secret names or locations, never values. State scope exclusions and missing evidence explicitly.\n\nObservable handoff: write the completed result to `security/review-scope.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "security architect",
+      "advanceWhen": {
+        "file": "security/review-scope.md",
+        "minBytes": 1000,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "audit"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "security/review-scope.md",
+            "bytes": 1000,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "security/review-scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "security/review-scope.md",
+            "pattern": "^##\\s+System scope",
+            "flags": "im",
+            "label": "System scope section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "security/review-scope.md",
+            "pattern": "^##\\s+Assets",
+            "flags": "im",
+            "label": "Assets section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "security/review-scope.md",
+            "pattern": "^##\\s+Actors and privileges",
+            "flags": "im",
+            "label": "Actors and privileges section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "security/review-scope.md",
+            "pattern": "^##\\s+Trust boundaries",
+            "flags": "im",
+            "label": "Trust boundaries section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "security/review-scope.md",
+            "pattern": "^##\\s+Data flows",
+            "flags": "im",
+            "label": "Data flows section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "security/review-scope.md",
+            "pattern": "^##\\s+Review limits",
+            "flags": "im",
+            "label": "Review limits section",
+            "artifact": true
+          }
+        ],
+        "onReject": "model-system",
+        "maxAttempts": 3
+      },
+      "next": "audit"
+    },
+    {
+      "id": "audit",
+      "name": "Audit controls and prove findings",
+      "description": "Walk the attack surface systematically and maintain an evidence-backed findings register.",
+      "prompt": "Use `security/review-scope.md` to inspect secrets handling, dependency and supply-chain controls, authentication, session management, authorization at every mutation sink, input handling, output encoding, injection boundaries, file and path access, cryptography, logging, privacy, network exposure, update paths, and failure behavior. For every candidate, capture the exact evidence path, attack preconditions, affected asset, impact, confidence, and a safe validation method. Do not claim a vulnerability from a pattern match alone. If external advisory research is unavailable, label dependency status unverified rather than guessing.\n\nObservable handoff: write the completed result to `security/findings-register.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "application security engineer",
+      "advanceWhen": {
+        "file": "security/findings-register.md",
+        "minBytes": 1300,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "report"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "security/findings-register.md",
+            "bytes": 1300,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "security/findings-register.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "security/findings-register.md",
+            "pattern": "^##\\s+Coverage",
+            "flags": "im",
+            "label": "Coverage section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "security/findings-register.md",
+            "pattern": "^##\\s+Confirmed findings",
+            "flags": "im",
+            "label": "Confirmed findings section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "security/findings-register.md",
+            "pattern": "^##\\s+Rejected hypotheses",
+            "flags": "im",
+            "label": "Rejected hypotheses section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "security/findings-register.md",
+            "pattern": "^##\\s+Research gaps",
+            "flags": "im",
+            "label": "Research gaps section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "security/findings-register.md",
+            "pattern": "Severity.*Confidence.*Evidence",
+            "flags": "im",
+            "label": "finding table with severity, confidence, and evidence",
+            "artifact": true
+          }
+        ],
+        "onReject": "audit",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the security architecture review",
+      "description": "Deliver prioritized findings, strengths, remediation, and retest instructions for owners.",
+      "prompt": "Synthesize the scope and findings register into a decision-ready report. Start with an executive risk posture and the strongest controls already working. For each confirmed finding, include severity, confidence, evidence path, causal control gap, realistic attack path, impact, prioritized remediation, owner, verification, and residual risk. Group systemic themes, distinguish quick containment from durable fixes, and state areas not verified. Do not include exploit payloads or sensitive values unless the user explicitly needs a safe proof and policy permits it.\n\nObservable handoff: write the completed result to `security/security-architecture-review.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "security reviewer",
+      "advanceWhen": {
+        "file": "security/security-architecture-review.md",
+        "minBytes": 1600,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "security/security-architecture-review.md",
+            "bytes": 1600,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "security/security-architecture-review.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "security/security-architecture-review.md",
+            "pattern": "^##\\s+Executive risk posture",
+            "flags": "im",
+            "label": "Executive risk posture section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "security/security-architecture-review.md",
+            "pattern": "^##\\s+What is working",
+            "flags": "im",
+            "label": "What is working section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "security/security-architecture-review.md",
+            "pattern": "^##\\s+Prioritized findings",
+            "flags": "im",
+            "label": "Prioritized findings section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "security/security-architecture-review.md",
+            "pattern": "^##\\s+Remediation plan",
+            "flags": "im",
+            "label": "Remediation plan section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "security/security-architecture-review.md",
+            "pattern": "^##\\s+Verification",
+            "flags": "im",
+            "label": "Verification section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "security/security-architecture-review.md",
+            "pattern": "^##\\s+Unverified areas",
+            "flags": "im",
+            "label": "Unverified areas section",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 3
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate the deliverable",
+      "description": "Independently grade the observable deliverable and route it to finish, repair, or user escalation.",
+      "prompt": "Review `security/security-architecture-review.md`, `security/review-scope.md`, `security/findings-register.md` against every criterion below. Inspect the underlying evidence files named by the workflow; do not grade from the author's summary alone.\n\n1. Scope, assets, trust boundaries, actors, data flows, and review limits are explicit.\n2. Coverage includes identity, authorization, secrets, dependencies, inputs, storage, network, logging, updates, and operational failure paths where applicable.\n3. Every confirmed finding has inspectable evidence, realistic preconditions, impact, severity, and confidence; pattern-only suspicions are not promoted.\n4. No secret value or unsafe exploit detail is exposed in the deliverables.\n5. Remediation is prioritized, owned, verifiable, and distinguishes containment from durable control repair.\n6. Positive controls, rejected hypotheses, residual risk, and unverified areas are reported honestly.\n\nOpen every review target with `read_artifact`. Write the evidence-backed review to `reviews/security-architecture-review-evaluation.md` in the artifacts drawer with `write_artifact`. Give each criterion a PASS or FAIL with a concrete path, excerpt, measurement, or observed behavior. End with exactly `Verdict: PASS` or `Verdict: REVISE`. Then use `advance_task_step` for the active task: PASS routes to `finish`; REVISE routes to `repair` for review rounds 1 through 2, and the 3th REVISE routes to `needs-user`. Never route to finish while a criterion is unmet.",
+      "suggestedRole": "independent security reviewer",
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "reviews/security-architecture-review-evaluation.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "reviews/security-architecture-review-evaluation.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit PASS or REVISE verdict",
+            "artifact": true
+          }
+        ],
+        "onReject": "evaluate",
+        "maxAttempts": 3
+      },
+      "next": "repair"
+    },
+    {
+      "id": "repair",
+      "name": "Repair the deliverable",
+      "description": "Fix only the concrete gaps from the latest independent review.",
+      "prompt": "Read `reviews/security-architecture-review-evaluation.md` with `read_artifact` and repair every failed criterion in `security/security-architecture-review.md`, `security/review-scope.md`, `security/findings-register.md`. Make the changes in the actual artifact files with `write_artifact`, not in the workspace, task notes, or a reply. Preserve evidence that already passed. Re-run or re-check anything the reviewer found unproven. Ensure `security/security-architecture-review.md` is genuinely updated this turn so the repair is observable, then hand it back for independent evaluation.",
+      "suggestedRole": "application security engineer",
+      "advanceWhen": {
+        "file": "security/security-architecture-review.md",
+        "minBytes": 1600,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "security/security-architecture-review.md",
+            "bytes": 1600,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "security/security-architecture-review.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "security/security-architecture-review.md",
+            "pattern": "^##\\s+Executive risk posture",
+            "flags": "im",
+            "label": "Executive risk posture section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "security/security-architecture-review.md",
+            "pattern": "^##\\s+What is working",
+            "flags": "im",
+            "label": "What is working section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "security/security-architecture-review.md",
+            "pattern": "^##\\s+Prioritized findings",
+            "flags": "im",
+            "label": "Prioritized findings section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "security/security-architecture-review.md",
+            "pattern": "^##\\s+Remediation plan",
+            "flags": "im",
+            "label": "Remediation plan section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "security/security-architecture-review.md",
+            "pattern": "^##\\s+Verification",
+            "flags": "im",
+            "label": "Verification section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "security/security-architecture-review.md",
+            "pattern": "^##\\s+Unverified areas",
+            "flags": "im",
+            "label": "Unverified areas section",
+            "artifact": true
+          }
+        ],
+        "onReject": "repair",
+        "maxAttempts": 3
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All deterministic and reviewer criteria passed.",
+      "prompt": "The independent review passed. Read `reviews/security-architecture-review-evaluation.md` with `read_artifact`, then use `write_task_note` to record a concise DONE summary with the final deliverable paths (`security/security-architecture-review.md`, `security/review-scope.md`, `security/findings-register.md`) and the evidence that each acceptance criterion passed. Report DONE without starting new work.",
+      "suggestedRole": "project lead",
+      "terminal": true
+    },
+    {
+      "id": "needs-user",
+      "name": "Escalate unresolved concerns",
+      "description": "The bounded repair loop ended without a defensible pass.",
+      "prompt": "The deliverable did not pass after 3 review rounds. Do not claim success. Read `reviews/security-architecture-review-evaluation.md` with `read_artifact`, then use `write_task_note` to record DONE_WITH_CONCERNS: the unmet criteria, what was attempted, the affected paths, and the smallest user decision or missing input needed to continue.",
+      "suggestedRole": "project lead",
+      "terminal": true
+    }
+  ],
+  "version": "2.0.1",
+  "releasedAt": "2026-08-13T00:00:00Z"
+}
