@@ -1,0 +1,179 @@
+{
+  "id": "pull-request-review",
+  "name": "Pull Request Review",
+  "description": "Review a GitHub pull request from a complete, launch-time local mirror rather than a context-sized API response. The runtime resolves the explicit PR number or current-branch PR, materializes an overview, a machine-readable changed-file manifest, one untruncated patch record per changed path, comments, and the full diff. The reviewer processes at most 25 records per activation; a mechanical coverage gate reactivates the scan with a fresh context until every changed path is accounted for. Repository symbol search and GitHub check status ground cross-file and compile/CI claims before the final local verdict.",
+  "basedOn": {
+    "name": "Gezel Code Review",
+    "url": "https://github.com/bendyline/gezel"
+  },
+  "entryStepId": "scope",
+  "triggers": [
+    "review this pr",
+    "review the current pr",
+    "review this pull request",
+    "pr review",
+    "review the github pull request"
+  ],
+  "requirements": [
+    {
+      "kind": "github"
+    }
+  ],
+  "connectors": [
+    {
+      "typeId": "github-pulls",
+      "reason": "materialize the selected pull request as a complete, chunk-readable local corpus"
+    }
+  ],
+  "toolsets": [
+    {
+      "toolsetId": "github",
+      "optional": true,
+      "autoAllow": true,
+      "reason": "read CI/check status and perform targeted PR verification"
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "number": {
+        "type": "number",
+        "title": "Pull request number",
+        "description": "Optional PR number. Leave blank to use the open PR whose head matches the project's checked-out branch."
+      },
+      "focus": {
+        "type": "string",
+        "title": "Review focus",
+        "default": "general correctness",
+        "description": "Optional area to emphasize, e.g. security, performance, or tests."
+      },
+      "intensity": {
+        "type": "string",
+        "title": "Intensity",
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "default": "medium",
+        "squisq": {
+          "control": "segmented"
+        },
+        "description": "How deep to go on each changed-file batch. Coverage remains complete at every intensity."
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Map the pull request corpus",
+      "description": "Read the launch-time PR overview and manifest, record the authoritative changed-file count and review batches, and capture current CI/check evidence.",
+      "prompt": "**You are reviewing PR #{{number}}, not authoring it. Never modify project source in this craftbook.** The runtime already mirrored the selected PR into `{{corpusScope}}`; this corpus, not a single live diff call, is the authoritative review surface.\n\nCall `list_artifacts({ path: \"{{corpusScope}}\", recursive: true })`. Find and read the overview Markdown record and its attached `pr-{{number}}-files.json` manifest. The manifest contains the complete changed-file list and deterministic 25-file batches. Read the overview's PR metadata and existing comments. Call `github_check_status` for the overview's head ref and record whether checks are success, failure, pending, or unknown; this is evidence, not a substitute for reviewing the diff.\n\nWrite ONE task note beginning `## Scope — PR #{{number}}`. Include title, URL, head → base, draft state, exact changed-file count, manifest path, batch count/ranges, CI/check status, existing-review themes, and 3–6 review themes weighted by focus `{{focus}}` and intensity `{{intensity}}`. Do not retype paths from memory: derive them from the manifest. End by calling `advance_task_step`.",
+      "suggestedRole": "reviewer",
+      "gate": {
+        "at": "completion",
+        "scripts": [
+          {
+            "name": "checkTaskNoteContains",
+            "scope": "standard",
+            "inputs": {
+              "pattern": "##\\s*Scope\\s*[—-]\\s*PR\\s*#{{number}}[\\s\\S]*(?:changed.file|files?)"
+            }
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "scan"
+    },
+    {
+      "id": "scan",
+      "name": "Review the next changed-file batch",
+      "description": "Review at most 25 previously unreviewed PR records, persist observations and exact path coverage, then let the runtime reactivate this step with a fresh context until the corpus is complete.",
+      "prompt": "Process exactly ONE bounded batch this activation; do not try to load the whole PR into context.\n\n1. Call `list_artifacts({ path: \"{{corpusScope}}/files\", recursive: true })`. Read `pr-review-coverage.json` if it exists; otherwise start `{ \"pullRequest\": {{number}}, \"reviewedFiles\": [], \"reviewedRecords\": [] }`.\n2. Choose the next at-most-25 artifact record paths not present in `reviewedRecords`. Read every selected record with `read_artifact`; each carries one complete changed-file patch and authoritative `path` frontmatter. Binary/no-patch records still count, but note that limitation.\n3. Review this batch for correctness, security, data loss, error handling, concurrency, compatibility, tests, and clarity, weighted by focus `{{focus}}` and intensity `{{intensity}}`. Append concise batch observations and candidate findings to `pr-review-observations.md`. Include exact `path:new-line` evidence from diff hunks.\n4. Before claiming that a referenced API/type/module does not exist, call `find_symbol`, `search_code`, or `grep_files` against the checkout. Treat successful CI/typecheck evidence from the Scope note as rebuttable evidence that typed APIs resolve; never allege a missing typed API without a failed symbol/search verification. Use `github_pr_file` or paginated `github_pr_diff({ path, offset })` only for targeted live confirmation when the corpus record is ambiguous.\n5. Write `pr-review-coverage.json` after the observations, adding every exact `path` you actually reviewed to `reviewedFiles` and every artifact record path you read to `reviewedRecords`. Preserve prior entries and use valid JSON. Then call `advance_task_step`.\n\nThe completion gate compares `reviewedFiles` with every per-file corpus record. If files remain, rejection is expected: it names missing paths and reactivates this step in a fresh session. Continue with the next batch. Never claim complete coverage until the gate approves.",
+      "suggestedRole": "reviewer",
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "corpusCoverage",
+            "file": "pr-review-coverage.json",
+            "corpusDir": "{{corpusScope}}"
+          }
+        ],
+        "onReject": "scan",
+        "maxAttempts": 6
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Synthesize the review",
+      "description": "Synthesize the complete batch ledger into a cited report, re-verifying cross-file claims and keeping CI status distinct from code-review judgment.",
+      "prompt": "The coverage gate has proved that every changed path in PR #{{number}} was reviewed. Read the Scope note, `pr-review-coverage.json`, and `pr-review-observations.md`. Re-check every critical or major candidate against the relevant workspace source with `find_symbol`, `search_code`, `grep_files`, `read_file`, or `read_files`; call `github_check_status` again if the earlier status was pending. Drop any candidate that is not supported. Do not repeat an existing PR comment unless it still needs action and you explicitly say it was already raised.\n\nCite every finding as `path:line` using a changed path and a new-side diff line. Any critical or major finding requires `request-changes`; otherwise use `approve`. CI success is evidence that the checked revision compiled/tested as configured, but it does not erase logic findings. CI unknown/pending is not itself a code defect.\n\nWrite `pr-review.md` in ONE `write_file` call using exactly this skeleton:\n\n```\n# Pull Request Review — PR #{{number}}: <title>\n\n## Summary\n<2–6 sentences: what changes, overall risk, existing-comment coverage, and CI/check status. Say \"No findings.\" when there are none.>\n\nCoverage: <reviewed count>/<changed-file count> changed files across <batch count> batches.\n\n## Findings\n| # | Severity | File | Line | Finding | Recommendation |\n|---|----------|------|------|---------|----------------|\n<one row per finding; severities: critical, major, minor, nit. Keep the header when there are no findings.>\n\n## Verdict\nVerdict: approve\n<or> Verdict: request-changes\n<one sentence of rationale>\n```\n\nDo not modify source and do not call `github_pr_comment`; the report is local. If the gate rejects, repair the named gap and rewrite the whole report. Then call `advance_task_step`.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "pr-review.md",
+        "minBytes": 500
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "pr-review.md",
+            "bytes": 500
+          },
+          {
+            "kind": "contains",
+            "file": "pr-review.md",
+            "pattern": "#\\s+Pull Request Review\\s+[—-]\\s+PR\\s+#{{number}}",
+            "label": "PR-numbered title"
+          },
+          {
+            "kind": "contains",
+            "file": "pr-review.md",
+            "pattern": "Coverage:\\s*\\d+\\s*/\\s*\\d+\\s+changed files",
+            "label": "coverage summary"
+          },
+          {
+            "kind": "contains",
+            "file": "pr-review.md",
+            "pattern": "##\\s+Summary[\\s\\S]*##\\s+Findings[\\s\\S]*##\\s+Verdict",
+            "label": "required sections"
+          },
+          {
+            "kind": "contains",
+            "file": "pr-review.md",
+            "pattern": "Verdict:\\s*(approve|request-changes)",
+            "label": "verdict line"
+          },
+          {
+            "kind": "tableShape",
+            "file": "pr-review.md",
+            "requiredColumns": [
+              "Severity",
+              "File",
+              "Line",
+              "Finding",
+              "Recommendation"
+            ]
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "done"
+    },
+    {
+      "id": "done",
+      "name": "Deliver the verdict",
+      "description": "The complete-coverage report passed its gates. Summarize the verdict and point the user to the local evidence files.",
+      "prompt": "Read `pr-review.md` and `pr-review-coverage.json`, then write one final task note with `write_task_note`: `PR #{{number}} — Verdict: <approve|request-changes> — N findings (a critical, b major, c minor, d nit) — coverage X/X` plus a one-paragraph summary. Tell the user the full local review is at `pr-review.md`, the coverage ledger is at `pr-review-coverage.json`, and nothing was posted to GitHub. Then call `advance_task_step` to complete the task.",
+      "suggestedRole": "reviewer",
+      "terminal": true
+    }
+  ],
+  "version": "1.4.0",
+  "releasedAt": "2026-08-13T00:00:00Z"
+}
