@@ -14,6 +14,11 @@
         "title": "Download media files (reserved — this version stores captions and links only)",
         "default": false
       },
+      "allowPublish": {
+        "type": "boolean",
+        "title": "Allow this project's gezels to queue posts for publishing (each publish still needs your consent)",
+        "default": false
+      },
       "maxMedia": {
         "type": "integer",
         "title": "Most recent posts to keep synced",
@@ -35,6 +40,11 @@
         "minimum": 0.25,
         "maximum": 720
       },
+      "metricsHistory": {
+        "type": "boolean",
+        "title": "Record daily engagement history records",
+        "default": true
+      },
       "statsIntervalHours": {
         "type": "number",
         "title": "Hours between account-stats snapshots",
@@ -48,12 +58,28 @@
     "kind": "oauth2",
     "authorizeUrl": "https://www.instagram.com/oauth/authorize",
     "tokenUrl": "https://api.instagram.com/oauth/access_token",
-    "scopes": "instagram_business_basic",
+    "scopes": "instagram_business_basic instagram_business_content_publish",
     "clientIdEnv": "GEZEL_INSTAGRAM_CLIENT_ID",
     "clientSecretEnv": "GEZEL_INSTAGRAM_CLIENT_SECRET",
     "longLivedExchange": {
       "exchangeUrl": "https://graph.instagram.com/access_token",
       "refreshUrl": "https://graph.instagram.com/refresh_access_token"
+    },
+    "clientSetup": {
+      "providerLabel": "Instagram (Meta)",
+      "docsUrl": "https://developers.facebook.com/apps/",
+      "secretRequired": true,
+      "appTypeNote": "Create a Meta app with Instagram API (Instagram Login) for a business or creator account. The app secret stays on this machine, in your OS keychain.",
+      "redirectPort": 6242,
+      "redirectNote": "Meta matches redirect URIs exactly and may require an https URI; if it refuses the http form, tell us — https loopback support is planned.",
+      "steps": [
+        "Sign in at developers.facebook.com, choose My Apps, then Create app (the Business type, or the default when not asked).",
+        "On the app dashboard, add the 'Instagram' product and choose 'API setup with Instagram Login'.",
+        "Your Instagram account must be Professional (business or creator) — switch it in the Instagram app under Settings if needed, then connect it as the tester account when prompted.",
+        "In the product's API setup, open 'Set up Instagram business login' and add the redirect URI shown below under OAuth redirect URIs, exactly.",
+        "Copy the Instagram App ID and Instagram App Secret from the same setup page (they also live under App settings, Basic).",
+        "Paste both below — the secret stays in your OS keychain. Your own account works while the Meta app stays in development mode."
+      ]
     }
   },
   "normalize": {
@@ -62,9 +88,9 @@
   "actions": [
     {
       "name": "publish",
-      "consentScope": "manual-export"
+      "consentScope": "social-publish"
     }
   ],
   "completeness": "window",
-  "notes": "Works only with Instagram professional accounts (business or creator) via the Instagram API with Instagram Login — personal accounts cannot link. Requires your own Meta developer app: set GEZEL_INSTAGRAM_CLIENT_ID and GEZEL_INSTAGRAM_CLIENT_SECRET, and note Meta requires app review before accounts other than the app's own testers can link in production. Meta issues no refresh token: linking trades the sign-in for a long-lived (~60 day) token that Gezel refreshes in place whenever a sync runs with under 7 days remaining; if the account sits unsynced past expiry, re-link it. Syncs the account's media (posts, reels, carousels) as caption plus permalink — media files are not downloaded in this version — with like and comment counts on posts from the last metricsWindowDays re-observed roughly every metricsRefreshHours, plus a once-per-day account-stats record (followers, following, total posts). The first sync captures up to maxMedia recent posts; older history is not backfilled. Publishing is manual-export only: gezels can draft posts for review, but Gezel never publishes to Instagram on your behalf."
+  "notes": "Works only with Instagram professional accounts (business or creator) via the Instagram API with Instagram Login — personal accounts cannot link. Requires your own Meta developer app: set GEZEL_INSTAGRAM_CLIENT_ID and GEZEL_INSTAGRAM_CLIENT_SECRET, and note Meta requires app review before accounts other than the app's own testers can link in production. Meta issues no refresh token: linking trades the sign-in for a long-lived (~60 day) token that Gezel refreshes in place whenever a sync runs with under 7 days remaining; if the account sits unsynced past expiry, re-link it. Syncs the account's media (posts, reels, carousels) as caption plus permalink — media files are not downloaded in this version — with like and comment counts on posts from the last metricsWindowDays re-observed roughly every metricsRefreshHours (each observation also appends a per-day metrics-history record per post, the engagement curve over time, unless metricsHistory is turned off), plus a once-per-day account-stats record (followers, following, total posts). The first sync captures up to maxMedia recent posts; older history is not backfilled. Publishing works, with Meta's contract stated honestly: Instagram's publishing API has Meta's servers fetch the image from a public https URL, and Gezel is local-first and does not host your files — so publishing needs an image that is already hosted somewhere public (any CDN or static host will do), caption-only posts do not exist on Instagram, and drafts stay fully usable without any public URL. The caption travels as the draft's post text, so Gezel's draft flow requires one (Instagram itself allows empty captions). Publishing is off by default: a gezel can only draft until allowPublish is enabled on the binding, and every publish is individually consented through the daemon (night shift defers publishes to the outbox for daytime approval). Accounts linked before publishing existed must re-link from the connector's settings to grant the instagram_business_content_publish permission."
 }

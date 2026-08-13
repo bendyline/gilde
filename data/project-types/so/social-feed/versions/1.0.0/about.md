@@ -10,8 +10,8 @@ variant per platform under `variants/`. New posts are staged in
 `posts/_drafting/` and committed with the create_post tool. Open the
 **Output** tab for the live pipeline board.
 
-Where we post — Bluesky: {{blueskyHandle}} · X: {{xHandle}} (blank means
-not connected yet).
+Where we post — Bluesky: {{blueskyHandle}} · X: {{xHandle}} · LinkedIn:
+{{linkedinHandle}} (blank means not connected yet).
 
 The voice, in one line: {{voice}} The full guide lives in `voice-guide.md`
 — read it before drafting anything.

@@ -14,6 +14,11 @@
         "title": "Sync mentions of the account (costs extra paid reads)",
         "default": false
       },
+      "allowPublish": {
+        "type": "boolean",
+        "title": "Allow this project's gezels to queue posts for publishing (each publish still needs your consent)",
+        "default": false
+      },
       "syncIntervalHours": {
         "type": "number",
         "title": "Hours between post syncs (X reads are paid — keep this generous)",
@@ -35,6 +40,11 @@
         "minimum": 0.25,
         "maximum": 720
       },
+      "metricsHistory": {
+        "type": "boolean",
+        "title": "Record daily engagement history records",
+        "default": true
+      },
       "statsIntervalHours": {
         "type": "number",
         "title": "Hours between account-stats snapshots",
@@ -48,9 +58,25 @@
     "kind": "oauth2",
     "authorizeUrl": "https://x.com/i/oauth2/authorize",
     "tokenUrl": "https://api.x.com/2/oauth2/token",
-    "scopes": "tweet.read users.read offline.access",
+    "scopes": "tweet.read users.read offline.access tweet.write",
     "clientIdEnv": "GEZEL_X_CLIENT_ID",
-    "clientSecretEnv": "GEZEL_X_CLIENT_SECRET"
+    "clientSecretEnv": "GEZEL_X_CLIENT_SECRET",
+    "clientSetup": {
+      "providerLabel": "X (Twitter)",
+      "docsUrl": "https://developer.x.com/en/portal/dashboard",
+      "secretRequired": false,
+      "appTypeNote": "Create a free developer app and set its type to a Native/Public client — PKCE needs no client secret. Your API tier and read limits are your own.",
+      "redirectPort": 6241,
+      "redirectNote": "X matches callback URLs exactly. Register the URI shown here character-for-character.",
+      "steps": [
+        "Sign in at developer.x.com and create a project with an app — the free plan works for publishing.",
+        "In the app's settings, open 'User authentication settings' and click Set up.",
+        "Choose the 'Native App' (public client) type and enable OAuth 2.0.",
+        "Paste the redirect URI shown below into Callback URI / Redirect URL, character-for-character.",
+        "Fill the required website URL field with any page of yours and save.",
+        "Copy the OAuth 2.0 Client ID from the app's Keys and tokens page and paste it below — native apps use PKCE, so there is no secret to copy."
+      ]
+    }
   },
   "normalize": {
     "kind": "native"
@@ -58,9 +84,9 @@
   "actions": [
     {
       "name": "publish",
-      "consentScope": "manual-export"
+      "consentScope": "social-publish"
     }
   ],
   "completeness": "window",
-  "notes": "Syncs three things from the linked account: the account's own posts (text with links expanded, language, reply threading, plus like/repost/reply/quote/bookmark/view counts), mentions of the account when enabled, and a once-per-day account-stats record (followers, following, total posts). Be blunt about cost: X charges for API reads on every tier, and the free tier allows roughly 100 reads per month — that fits only the default generous intervals (posts every 4 hours, stats every 6, engagement refresh daily); for real day-to-day use you need the paid Basic tier or higher. Every read scope is interval-gated (syncIntervalHours for posts and mentions, statsIntervalHours for stats) so background syncing can never burn reads faster than configured, and mentions are OFF by default to conserve reads. Engagement counts on posts from the last metricsWindowDays are re-observed roughly every metricsRefreshHours as one extra page per refresh, updating existing files in place. The first sync captures up to 500 recent posts; older history is not backfilled. Publishing is manual-export only in this version: gezels can draft posts for review, but Gezel never posts to X on your behalf — you copy a draft and publish it yourself. Requires your own X developer app: set GEZEL_X_CLIENT_ID (and GEZEL_X_CLIENT_SECRET for confidential apps) to enable linking."
+  "notes": "Syncs three things from the linked account: the account's own posts (text with links expanded, language, reply threading, plus like/repost/reply/quote/bookmark/view counts), mentions of the account when enabled, and a once-per-day account-stats record (followers, following, total posts). Be blunt about cost: X charges for API reads on every tier, and the free tier allows roughly 100 reads per month — that fits only the default generous intervals (posts every 4 hours, stats every 6, engagement refresh daily); for real day-to-day use you need the paid Basic tier or higher. Every read scope is interval-gated (syncIntervalHours for posts and mentions, statsIntervalHours for stats) so background syncing can never burn reads faster than configured, and mentions are OFF by default to conserve reads. Engagement counts on posts from the last metricsWindowDays are re-observed roughly every metricsRefreshHours as one extra page per refresh, updating existing files in place; each observation also appends a per-day metrics-history record per post (the engagement curve over time) unless metricsHistory is turned off. The first sync captures up to 500 recent posts; older history is not backfilled. Publishing works even on the free tier — X budgets writes separately at roughly 500 posts per month — and is off by default: a gezel can only draft posts until allowPublish is enabled on the binding, and every publish is individually consented through the daemon (night shift defers publishes to the outbox for daytime approval). Accounts linked before publishing existed must reconnect from the connector's settings to grant the new tweet.write scope. Requires your own X developer app: set GEZEL_X_CLIENT_ID (and GEZEL_X_CLIENT_SECRET for confidential apps) to enable linking."
 }

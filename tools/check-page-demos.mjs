@@ -9,6 +9,19 @@ import { listItems } from './lib/walk.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dataRoot = resolve(here, '..', 'data');
+const stubBytes = readFileSync(resolve(here, '..', 'authoring', 'page-demo-stub.js'), 'utf8');
+
+// v0 wire-protocol markers that must not survive a page's migration to
+// the Output Pane API (`pages.api: 1`): the postMessage sentinels, the
+// hand-rolled gezelPage bridge, and capability parsing of the page URL.
+const legacyMarkers = [
+  '__gezelPageInvoke',
+  '__gezelPageResult',
+  '__gezelPageRefresh',
+  'gezelPage = (function',
+  "parts.indexOf('type')",
+];
+
 const failures = [];
 let checked = 0;
 
@@ -36,6 +49,19 @@ for (const item of listItems(dataRoot, 'project-type')) {
   }
   if (/Read-only view|Could not resolve this project/.test(html)) {
     failures.push(`${item.id}@${manifest.version}: retains a standalone dead-end message`);
+  }
+
+  if (manifest.pages?.api === 1) {
+    if (!html.includes(stubBytes)) {
+      failures.push(
+        `${item.id}@${manifest.version}: api:1 page must embed authoring/page-demo-stub.js verbatim`,
+      );
+    }
+    for (const marker of legacyMarkers) {
+      if (html.includes(marker)) {
+        failures.push(`${item.id}@${manifest.version}: api:1 page retains legacy wire marker ${marker}`);
+      }
+    }
   }
 
   for (const match of html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)) {
