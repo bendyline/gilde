@@ -21,6 +21,11 @@ behaviors, eval hints, and provider revision pins already evolved in the
 identity; `--reseed` deliberately makes the recipe authoritative for those
 editorial fields.
 
+`maintainer` names the organization or person responsible for the cataloged
+download. When that download is a community conversion or quantization,
+optionally set `maker` to the organization that created the underlying model
+weights; omit it when `maintainer` already names that organization.
+
 The runtime never reads this directory. It consumes only the validated,
 generated manifests in `data/chat-models/`, so a published Gilde patch can add
 a model without a Gezel application release.

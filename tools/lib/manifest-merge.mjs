@@ -392,6 +392,7 @@ function mergeIdentityAndVersion(kind, identity, version, availableVersions) {
       description: identity.description,
       tags: identity.tags,
       maintainer: identity.maintainer,
+      ...(identity.maker !== undefined ? { maker: identity.maker } : {}),
       ...(identity.logo !== undefined ? { logo: identity.logo } : {}),
       ...(identity.license !== undefined ? { license: identity.license } : {}),
       ...(identity.licenseClass !== undefined ? { licenseClass: identity.licenseClass } : {}),

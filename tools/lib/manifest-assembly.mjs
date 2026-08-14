@@ -14,6 +14,7 @@ export const BASE_FIELDS = [
   'tags',
   'category',
   'maintainer',
+  'maker',
   'version',
   'updatedAt',
   'license',

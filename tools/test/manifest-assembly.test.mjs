@@ -21,6 +21,7 @@ const cfg = {
   tags: ['a'],
   category: 'general',
   maintainer: { name: 'x' },
+  maker: { name: 'Core Model Co', url: 'https://example.com/core-model' },
   version: '1.0.0',
   updatedAt: '2026-01-01T00:00:00Z',
   license: 'MIT',
@@ -40,6 +41,7 @@ test('assembleManifest seeds a new identity from its Gilde recipe', () => {
     providerBlocks: { llamaCpp: { ...freshLlama } },
   });
   assert.equal(manifest.name, 'Demo');
+  assert.deepEqual(manifest.maker, cfg.maker);
   assert.deepEqual(manifest.tuning, cfg.tuning);
   assert.deepEqual(manifest.llamaCpp, freshLlama);
 });

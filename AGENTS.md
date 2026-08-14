@@ -29,7 +29,8 @@ authoring/<family>/                                            generator inputs
 
 The identity `manifest.json` holds what is true across versions:
 `schemaVersion`, `kind` (singular, e.g. `chat-model`), `id`, `name`,
-`description`, `tags`, `maintainer`, `license`, plus kind-specific fields
+`description`, `tags`, `maintainer`, optional chat-model `maker` when the
+maintainer is a converter rather than the core-model creator, `license`, plus kind-specific fields
 (models: `parameterSize`, `contextWindow`, `tuning`, `style`; templates:
 `role`; craftbooks: lifecycle `role`). `yankedVersions` (optional) lists
 released versions that must not be installed — entries must name version

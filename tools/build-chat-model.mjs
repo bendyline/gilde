@@ -19,6 +19,7 @@
  *     "tags": ["alibaba", "multimodal", "vision", "tools"],
  *     "category": "general",
  *     "maintainer": { "name": "Alibaba", "url": "..." },
+ *     "maker": { "name": "Alibaba", "url": "..." }, // optional when different from maintainer
  *     "version": "1.0.0",
  *     "updatedAt": "2026-04-26T00:00:00Z",
  *     "license": "Apache-2.0",
