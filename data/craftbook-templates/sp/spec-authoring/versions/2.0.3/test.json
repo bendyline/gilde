@@ -1,0 +1,162 @@
+{
+  "schemaVersion": 1,
+  "title": "Spec Authoring — asynchronous CSV exports",
+  "objective": "Require the Spec Authoring craftbook to reconcile approved intent with current code and produce a backlog-ready, file-specific implementation spec with measurable acceptance and rollback criteria.",
+  "tags": [
+    "workflow",
+    "spec",
+    "planning",
+    "typescript"
+  ],
+  "prompt": "Use the Spec Authoring craftbook to turn `source/approved-intent.md` into an implementation-ready spec grounded in the current files under `src/` and `tests/`. Resolve ambiguities from the supplied evidence without writing production code. Produce the craftbook audit and decision log, then write `specs/implementation-spec.md` with all required sections, exact file references, API/state transitions, authorization and limit behavior, measurable acceptance criteria, a dependency-free testing plan, rollback, and explicit out-of-scope items. Cite every workspace file used.",
+  "setup": {
+    "projectName": "Async export spec",
+    "about": "A hermetic specification exercise for an existing TypeScript service. The source of truth is limited to seeded workspace files.",
+    "missionObjectives": "Produce a spec another engineer can implement without reopening product scope or guessing security, lifecycle, limit, and rollback behavior.",
+    "files": [
+      {
+        "path": "source/approved-intent.md",
+        "content": "# Approved intent: asynchronous CSV exports\n\nReplace the synchronous customer export with an asynchronous job API.\n\n## Locked product decisions\n- `POST /v1/exports` accepts a saved report id and an `Idempotency-Key` header.\n- Roles `analyst` and `admin` may create exports; `viewer` receives 403.\n- Requests above **50,000 rows** receive 422 before a job is queued.\n- Job states are `queued`, `running`, `succeeded`, and `failed`.\n- Reusing an idempotency key for the same actor within **24 hours** returns the original job.\n- Successful download URLs expire after **15 minutes**.\n- Existing synchronous `/v1/reports/:id.csv` remains available behind a feature flag during rollout.\n\n## Out of scope\nNew report builders, additional export formats, recurring schedules, and email delivery.\n"
+      },
+      {
+        "path": "src/export-controller.ts",
+        "content": "import { mayExport } from './policy.js';\n\nexport type Role = 'viewer' | 'analyst' | 'admin';\n\nexport function downloadReportCsv(role: Role, reportId: string): { status: number; body: string } {\n  if (!mayExport(role)) return { status: 403, body: 'forbidden' };\n  return { status: 200, body: `report_id\\n${reportId}\\n` };\n}\n"
+      },
+      {
+        "path": "src/policy.ts",
+        "content": "export function mayExport(role: 'viewer' | 'analyst' | 'admin'): boolean {\n  return role === 'analyst' || role === 'admin';\n}\n"
+      },
+      {
+        "path": "tests/export-contract.test.ts",
+        "content": "import { strict as assert } from 'node:assert';\nimport { downloadReportCsv } from '../src/export-controller.js';\n\nassert.equal(downloadReportCsv('viewer', 'r-1').status, 403);\nassert.equal(downloadReportCsv('analyst', 'r-1').status, 200);\n"
+      }
+    ]
+  },
+  "mocks": [],
+  "success": {
+    "summary": "The named craftbook produces an evidence-grounded, backlog-ready asynchronous-export spec and records a terminal task handoff.",
+    "deliverables": [
+      {
+        "path": "specs/implementation-spec.md",
+        "kind": "markdown-doc",
+        "minBytes": 1700,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "specs/implementation-spec.md",
+            "pattern": "^#{1,3}\\s+Context\\b[\\s\\S]*^#{1,3}\\s+Current state\\b[\\s\\S]*^#{1,3}\\s+Proposed change\\b[\\s\\S]*^#{1,3}\\s+Implementation details\\b[\\s\\S]*^#{1,3}\\s+Acceptance criteria\\b[\\s\\S]*^#{1,3}\\s+Testing plan\\b[\\s\\S]*^#{1,3}\\s+Rollback plan\\b[\\s\\S]*^#{1,3}\\s+Out of scope\\b[\\s\\S]*^#{1,3}\\s+File reference\\b",
+            "flags": "im",
+            "label": "complete implementation-spec structure"
+          },
+          {
+            "kind": "valueGrounding",
+            "file": "specs/implementation-spec.md",
+            "facts": [
+              {
+                "id": "create-api",
+                "required": [
+                  "POST\\s+`?/v1/exports`?"
+                ]
+              },
+              {
+                "id": "role-policy",
+                "required": [
+                  "analyst[\\s\\S]{0,80}admin[\\s\\S]{0,120}(viewer[\\s\\S]{0,40}403|403[\\s\\S]{0,40}viewer)"
+                ]
+              },
+              {
+                "id": "row-limit",
+                "required": [
+                  "50,?000\\s+rows"
+                ]
+              },
+              {
+                "id": "row-limit-status",
+                "required": [
+                  "422"
+                ]
+              },
+              {
+                "id": "lifecycle",
+                "required": [
+                  "queued[\\s\\S]{0,100}running[\\s\\S]{0,100}succeeded[\\s\\S]{0,100}failed"
+                ]
+              },
+              {
+                "id": "idempotency-window",
+                "required": [
+                  "24\\s+hours"
+                ]
+              },
+              {
+                "id": "download-expiry",
+                "required": [
+                  "15\\s+minutes"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "contains",
+            "file": "specs/implementation-spec.md",
+            "pattern": "(Given[\\s\\S]{0,200}When[\\s\\S]{0,200}Then|shall|must)[\\s\\S]*(feature flag|synchronous|reports/:id\\.csv)",
+            "flags": "i",
+            "label": "testable criteria and rollout compatibility"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "specs/implementation-spec.md",
+            "minCitations": 4
+          }
+        ]
+      }
+    ],
+    "taskNotes": {
+      "minBytes": 170,
+      "checks": [
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "\\bDONE\\b[\\s\\S]*specs/implementation-spec\\.md",
+          "label": "terminal craftbook note names the spec"
+        }
+      ],
+      "requireCraftbookTask": true
+    },
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    },
+    "unchangedFixtures": [
+      "source/approved-intent.md",
+      "src/export-controller.ts",
+      "src/policy.ts",
+      "tests/export-contract.test.ts"
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "specs/implementation-spec.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "Codebase grounding",
+        "description": "Current-state claims and file changes trace to the seeded implementation, policy, contract test, and approved intent."
+      },
+      {
+        "name": "Implementation precision",
+        "description": "The API, authorization, state machine, idempotency, limits, expiry, persistence boundaries, and file responsibilities are unambiguous."
+      },
+      {
+        "name": "Backlog readiness",
+        "description": "Acceptance criteria are observable, the testing plan covers failure paths, and rollout and rollback can be executed safely."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "Locked product decisions are conserved exactly",
+    "Current and proposed behavior are clearly separated",
+    "File-level implementation and test responsibilities are specific enough to execute"
+  ]
+}

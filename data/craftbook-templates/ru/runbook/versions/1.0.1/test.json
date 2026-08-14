@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "title": "On-call runbook for webhook backlog",
+  "objective": "Measure whether the runbook craftbook produces a literal, safe, verified operational procedure with rollback and escalation.",
+  "tags": [
+    "external"
+  ],
+  "prompt": "In the `Runbook Eval` project, read `source/incident-brief.md` and write `runbook.md`: an on-call procedure for clearing a webhook retry backlog. Include when to use and when not to use it, prerequisites, pre-flight checks, numbered mitigation steps with expected output and verification, rollback, escalation, warnings for risky actions, and a final resolved checklist.",
+  "setup": {
+    "projectName": "Runbook Eval",
+    "about": "Self-contained eval project for runbook. The operational scenario is seeded in workspace/source/incident-brief.md.",
+    "missionObjectives": "Write a copy-pasteable on-call runbook with safety rails, verification after each stage, rollback, escalation, and no unresolved placeholders.",
+    "files": [
+      {
+        "path": "source/incident-brief.md",
+        "content": "# Webhook retry backlog runbook brief\n\nScenario: use this when the `webhook_retry_backlog` queue exceeds 5,000 jobs for more than 10 minutes and customer invoice webhooks are delayed. Do not use it during an active database outage or while Stripe status is degraded.\nPrerequisites: production Kubernetes access, PagerDuty incident role, `kubectl` context `prod-us`, Datadog dashboard access, and permission to scale worker deployment `webhook-worker`.\nSafe commands: `kubectl -n payments get deploy webhook-worker`, `kubectl -n payments scale deploy webhook-worker --replicas=12`, `kubectl -n payments logs deploy/webhook-worker --tail=200`, `kubectl -n payments scale deploy webhook-worker --replicas=4`.\nSuccess: backlog below 500 jobs, p95 webhook delay below 2 minutes, error rate below 1% for 15 minutes.\nRollback: scale workers back to 4 replicas and pause retries if error rate rises above 3%.\nEscalation: page Payments Primary after 20 minutes without improvement; page Database On-call if DB CPU exceeds 85%.\nRisk: scaling workers too high can overload the database.\n"
+      }
+    ],
+    "worker": {
+      "name": "Sanne",
+      "role": "SRE Writer"
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "workspace/runbook.md has clear use/not-use criteria, prerequisites, numbered verified steps, warnings, rollback, escalation, commands, and no unresolved placeholders.",
+    "deliverables": [
+      {
+        "path": "runbook.md",
+        "kind": "markdown-doc",
+        "minBytes": 2400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "runbook.md",
+            "pattern": "when to use|when not to use|prerequisites|pre-flight|rollback|escalation|resolved",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "runbook.md",
+            "pattern": "kubectl|webhook-worker|replicas=12|replicas=4|webhook_retry_backlog",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "runbook.md",
+            "pattern": "expected output|verify|verification|success signal",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "runbook.md",
+            "pattern": "warning|risk|database|overload",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "runbook.md",
+            "pattern": "Payments Primary|Database On-call|20 minutes|85%",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "runbook.md",
+            "pattern": "^\\s*1\\.",
+            "flags": "m"
+          },
+          {
+            "kind": "notContains",
+            "file": "runbook.md",
+            "pattern": "TBD|TODO|contact the team",
+            "flags": "i"
+          }
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "runbook.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "safety",
+        "description": "Dry-run posture is explicit: no real credentials, clear stop-before-side-effect boundary."
+      },
+      {
+        "name": "mapping",
+        "description": "Fake endpoints/commands are mapped completely to the workflow steps."
+      },
+      {
+        "name": "signals",
+        "description": "Success, failure, retry, and abort conditions are all defined."
+      },
+      {
+        "name": "containment",
+        "description": "The plan cannot accidentally reach a real service from a mock context."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "literal steps",
+    "verification after actions",
+    "rollback and escalation"
+  ],
+  "extensions": {
+    "legacySimulators": [
+      {
+        "id": "runbook-fake-service-fixture",
+        "kind": "data-source",
+        "status": "implemented",
+        "description": "Seeded local fake service contract replacing live CLIs, HTTP APIs, credentials, and side effects."
+      }
+    ]
+  }
+}

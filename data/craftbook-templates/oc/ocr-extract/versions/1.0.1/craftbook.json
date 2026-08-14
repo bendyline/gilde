@@ -1,0 +1,137 @@
+{
+  "id": "ocr-extract",
+  "name": "OCR a Folder of Scans",
+  "description": "Extract the text from a folder of scanned documents or photographed pages into clean, structured text — preserving reading order, paragraph breaks, and per-file provenance — then verify the extraction against the source images. Scope FIRST the languages, output structure (one file per scan vs a combined doc), and how to handle tables/columns/low-confidence regions, because OCR quality is dominated by handling layout and flagging uncertainty; then run extraction and verify a sample reads correctly. Covers OCR, text extraction, scanned documents, digitizing paper, receipt/invoice text, and image-to-text.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the extraction (planner) — languages, output structure, layout & confidence rules → gated on artifact `notes/scope.md` (markdown-notes)\n2. Extract the text (developer) — OCR each scan into structured text → gated on `out` (generic-file)\n3. Verify the extraction (reviewer) — check a sample of outputs against the source images → gated on artifact `notes/verify.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "ocr a folder of scans",
+    "extract text from images",
+    "digitize scanned documents",
+    "image to text",
+    "read text from photos"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the extraction",
+      "description": "languages, output structure, layout & confidence rules",
+      "prompt": "1) List the scan folder and note formats and roughly what the pages are (typed, handwritten, mixed, tables). 2) Decide the language(s) for OCR. 3) Lock the output structure: one .txt/.md per source (named to match) and/or a combined document, with each block tagged by source filename for provenance. 4) Decide layout handling — preserve paragraph breaks and reading order, how to render tables (markdown tables or labeled rows), and how to flag low-confidence or unreadable regions (e.g. [illegible]). 5) Write an acceptance-criteria checklist: 'every scan produces an output', 'reading order and paragraph breaks are preserved', 'tables are not scrambled into a single line', 'low-confidence text is flagged not silently dropped', 'output is plain readable text, not garbled'. 6) Record scope + checklist via write_task_note AND to notes/scope.md.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "extract"
+    },
+    {
+      "id": "extract",
+      "name": "Extract the text",
+      "description": "OCR each scan into structured text",
+      "prompt": "1) Read scope.md. 2) For each scan, run OCR — prefer a real OCR engine (Tesseract) or the vision capability reading the image directly. 3) Preserve reading order and paragraph structure; for multi-column pages, read column-by-column not left-to-right across columns. 4) Render tables as the agreed structure rather than collapsing them. 5) Flag uncertain text with the agreed marker instead of inventing words. 6) Write each output to the agreed path with source provenance, and assemble the combined doc if requested. 7) Keep a running count of scans processed. write_task_note the output location and counts. Good looks like: text a human could read as the original document, with uncertainty honestly flagged.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "out",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "out",
+            "bytes": 80
+          },
+          {
+            "kind": "sniff",
+            "file": "out",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "extract",
+        "maxAttempts": 3
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify the extraction",
+      "description": "check a sample of outputs against the source images",
+      "prompt": "1) Re-read scope.md's checklist. 2) Confirm output count equals scan count (PASS/FAIL). 3) Pick 3-4 scans, open BOTH the image and its extracted text, and compare: is the text accurate, in correct reading order, with paragraphs/tables intact (PASS/FAIL)? 4) Confirm low-confidence regions are flagged, not silently wrong or dropped. 5) Confirm provenance — each block traces to its source file. 6) Write a verification note with PASS/FAIL per criterion and the specific files you checked. On a loop-back the extractor fixes the flagged files. write_task_note the result.\n\nThe deliverable `notes/verify.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "out"
+        }
+      ],
+      "advanceWhen": {
+        "file": "notes/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "out",
+            "bytes": 80
+          },
+          {
+            "kind": "sniff",
+            "file": "out",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "1) Open out/ and confirm every scan has an output (PASS/FAIL). 2) For 3-4 files, open the source image alongside the extracted text and check accuracy, reading order, and that tables/columns are not scrambled (PASS/FAIL). 3) Confirm uncertain text is flagged, not silently dropped or hallucinated. 4) Confirm provenance back to source files. 5) Reconcile verify.md's claims with what you observe. 6) Write PASS/FAIL per criterion. Inaccurate/garbled extraction → loop back to extract.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"extract\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "out"
+        }
+      ],
+      "next": "extract"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

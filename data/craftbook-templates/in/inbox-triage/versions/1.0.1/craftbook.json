@@ -1,0 +1,140 @@
+{
+  "id": "inbox-triage",
+  "name": "Inbox Triage & Reply Drafts",
+  "description": "Triage a batch of incoming emails or messages into priority buckets and draft replies for the ones that need them. Locks the triage rules and bucket taxonomy FIRST (urgent / needs-reply / FYI / archive, plus the criteria for each and a reply policy), then classifies every message deterministically against those rules, then a copywriter drafts on-voice replies only for the messages flagged needs-reply. The rules-before-triage ordering is what stops a small model from inventing ad-hoc categories and gives the reviewer something to grade. Use for inbox zero, support-queue triage, email sorting, message prioritization, and auto-drafting responses.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Rules scope (planner) — lock the bucket taxonomy + triage rules + reply policy → gated on artifact `notes/rules-scope.md` (markdown-notes)\n2. Triage (developer) — classify every message against the locked rules → gated on artifact `notes/triage.md` (markdown-notes)\n3. Draft replies (copywriter) — write on-voice replies for the flagged messages → gated on `drafts.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "rules-scope",
+  "triggers": [
+    "triage my inbox",
+    "sort these emails",
+    "draft replies",
+    "inbox zero",
+    "prioritize my messages"
+  ],
+  "steps": [
+    {
+      "id": "rules-scope",
+      "name": "Rules scope",
+      "description": "lock the bucket taxonomy + triage rules + reply policy",
+      "prompt": "Define the triage system BEFORE touching any message. (1) Lock a small bucket taxonomy — exactly four: Urgent (needs action today), Needs-reply (a response is expected but not urgent), FYI (read-and-keep, no reply), Archive (no action). (2) Write 1-2 plain-language rules per bucket so classification is reproducible (e.g. 'Urgent = sender is a customer AND message contains a deadline within 48h OR the word \"blocked\"'). (3) Set a reply policy: which buckets get drafted (Urgent + Needs-reply), the target length (2-4 sentences), the voice, and any auto-close phrasing. (4) Decide the output schema: a markdown table with columns sender, subject, bucket, one-line reason, reply-needed (Y/N). Good looks like rules a different person could apply and reach the same buckets. Write an acceptance-criteria checklist ('every message lands in exactly one bucket', 'every Urgent/Needs-reply item has a drafted reply', 'no message is dropped', 'each classification cites the rule that fired') and the rules/schema to notes/rules-scope.md via write_task_note AND to the produces path.\n\nThe deliverable `notes/rules-scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/rules-scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/rules-scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/rules-scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "rules-scope",
+        "maxAttempts": 3
+      },
+      "next": "triage"
+    },
+    {
+      "id": "triage",
+      "name": "Triage",
+      "description": "classify every message against the locked rules",
+      "prompt": "Read the message corpus (inbox export, pasted threads, or the connected mail tool). For EACH message, apply the locked rules and record: sender, subject/snippet, the assigned bucket, a one-line reason that names the rule that fired, and reply-needed Y/N. Process every message — do not sample or skip. Keep classification mechanical: when two rules could fire, the highest-severity bucket wins (Urgent > Needs-reply > FYI > Archive). Write the full classification table to notes/triage.md via write_task_note. Stage it incrementally so progress is observable, and end with a count line (N messages, M urgent, K needs-reply).\n\nThe deliverable `notes/triage.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "notes/triage.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/triage.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/triage.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "triage",
+        "maxAttempts": 3
+      },
+      "next": "draft"
+    },
+    {
+      "id": "draft",
+      "name": "Draft replies",
+      "description": "write on-voice replies for the flagged messages",
+      "prompt": "Write a reply for EVERY message flagged reply-needed=Y in the triage table — and only those. Each draft: a clear subject (Re: …), a greeting, 2-4 sentences that directly answer or acknowledge the message and state the next step, and an on-voice sign-off matching the locked reply policy. Do not invent facts, commitments, or dates not present in the source thread; where information is missing, write a placeholder in [brackets] the user can fill. Assemble all drafts into a single drafts.md, one section per message keyed by sender + subject, with the original snippet quoted above each draft for context. On a loop-back, fix only the replies the reviewer flagged. Write the path and a count (drafts written vs replies needed) to notes via write_task_note.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "drafts.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "drafts.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "drafts.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "draft",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "QA the triage and drafts against the locked criteria. (1) Open notes/triage.md and confirm every message in the corpus appears exactly once — count rows vs source messages; FAIL on any drop or duplicate. (2) Spot-check 3-4 classifications against the rules: does the cited rule actually fire for that message? (3) Open drafts.md and confirm there is a draft for every reply-needed=Y row and none for the others. (4) Read 2-3 drafts: do they answer the actual message, stay on-voice, invent no facts/dates, and bracket missing info rather than fabricating it? (5) Confirm bucket precedence was applied (no message double-bucketed). Write PASS/FAIL with the specific failing items per criterion.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"draft\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "drafts.md"
+        }
+      ],
+      "next": "draft"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

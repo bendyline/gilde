@@ -1,0 +1,147 @@
+{
+  "id": "regex-builder",
+  "name": "Build + Test a Tricky Regex",
+  "description": "Build a regular expression that matches exactly the right strings and rejects the wrong ones — specified with concrete should-match and should-NOT-match cases before a single character is written. Specs the cases FIRST — the positive examples, the tricky negative examples, edge cases, and the anchoring/flags — then builds the regex incrementally against those cases, then tests the full matrix including catastrophic-backtracking safety. Covers character classes, quantifiers, anchors, groups/captures, lookahead/behind, escaping, flags, and ReDoS-safe patterns validated by a should-match / should-not-match table.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Spec the cases (planner) — lock should-match / should-NOT-match examples → gated on artifact `notes/spec.md` (markdown-notes)\n2. Build the regex (developer) — construct the pattern against the cases → gated on `src/regex.js` (code-module)\n3. Test the matrix (developer) — test every match/no-match case + ReDoS safety → gated on `src/regex.test.js` (code-with-tests)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "spec",
+  "triggers": [
+    "build a regex",
+    "write a regular expression",
+    "match a pattern",
+    "validate with regex",
+    "tricky regex"
+  ],
+  "steps": [
+    {
+      "id": "spec",
+      "name": "Spec the cases",
+      "description": "lock should-match / should-NOT-match examples",
+      "prompt": "Specify the regex by examples before writing it — a regex is only correct relative to its cases. Step 1: Describe in words exactly what should match and what should not. Step 2: Write a SHOULD-MATCH list of concrete example strings, including edge cases (boundaries, minimum/maximum, unusual-but-valid forms). Step 3: Write a SHOULD-NOT-MATCH list of tricky near-misses that a naive pattern would wrongly accept (this is where most regexes fail). Step 4: Decide anchoring (full-string vs substring), case sensitivity, and any other flags, plus whether captures are needed. Step 5: Write a numbered acceptance-criteria checklist (e.g. 'every should-match string matches', 'every should-NOT-match string is rejected', 'the pattern is anchored as specified', 'no catastrophic backtracking on adversarial input'). `write_task_note` the two case lists + flags + checklist and write the same to the produces path.\n\nThe deliverable `notes/spec.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/spec.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/spec.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/spec.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "spec",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the regex",
+      "description": "construct the pattern against the cases",
+      "prompt": "Construct the regex incrementally against the spec. Step 1: Build the pattern piece by piece (character classes, quantifiers, groups), checking it against the should-match and should-not-match lists as you go rather than writing one big pattern blind. Step 2: Apply the specified anchors and flags, and add capture groups only where needed. Step 3: Escape special characters correctly and prefer specific classes over greedy `.*` to keep it precise. Step 4: Avoid nested/ambiguous quantifiers that cause catastrophic backtracking (ReDoS); prefer atomic/possessive or restructure if the engine supports it. Step 5: Deliver the final pattern plus a brief annotation of what each part does, written to the produces path as a small module exporting the regex and a `test(input)` helper. On a loop-back, fix only the failing cases. `write_task_note` the pattern and which criteria now pass.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/regex.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/regex.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/regex.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/regex.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/regex.js"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "test"
+    },
+    {
+      "id": "test",
+      "name": "Test the matrix",
+      "description": "test every match/no-match case + ReDoS safety",
+      "prompt": "Write tests covering the full case matrix. Step 1: For every should-match string, assert the regex matches. Step 2: For every should-NOT-match string, assert the regex does NOT match — this is the part that catches over-eager patterns. Step 3: Assert anchoring behaves (e.g. a valid substring inside junk is rejected if full-string anchoring was specified). Step 4: Add a ReDoS-safety check: feed an adversarial input (long repeated prefix) and assert matching completes quickly rather than hanging. `write_task_note` the test file path and pass/fail count.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/regex.test.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/regex.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/regex.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/regex.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/regex.js"
+          }
+        ],
+        "onReject": "test",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Run the tests against the full case matrix. For EACH acceptance criterion: confirm every should-match string matches, confirm every should-NOT-match string is rejected, confirm anchoring/flags behave as specified, and confirm no catastrophic backtracking on adversarial input. Write PASS/FAIL per criterion; a single wrongly-accepted should-not-match string is a FAIL.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "src/regex.js"
+        }
+      ],
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

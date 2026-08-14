@@ -537,6 +537,96 @@ function main() {
     }
   }
 
+  // Latest-release authoring convention: task-internal working material
+  // belongs in the artifacts drawer. Historical releases remain immutable,
+  // so this policy intentionally checks only the newest eligible version.
+  // A source deliverable should use a source-oriented path instead of
+  // silently putting notes/reviews/reports into the project workspace.
+  const isAccessoryArtifactPath = (file) =>
+    typeof file === 'string' && /^(?:notes|reviews|reports)\//.test(file.replaceAll('\\\\', '/').replace(/^\.\//, ''));
+  const checkAccessoryStep = (path, step, pointer) => {
+    if (!step || typeof step !== 'object') return;
+    const checkRef = (ref, refPointer) => {
+      if (!ref || !isAccessoryArtifactPath(ref.file) || ref.artifact === true) return;
+      c.error(
+        path,
+        refPointer,
+        'accessory-file-must-be-artifact',
+        `working file "${ref.file}" must set artifact: true (notes/, reviews/, and reports/ never use the project workspace)`,
+      );
+    };
+
+    if (step.advanceWhen) {
+      checkRef(step.advanceWhen, `${pointer}/advanceWhen`);
+      if (
+        isAccessoryArtifactPath(step.advanceWhen.file) &&
+        step.advanceWhen.artifact === true &&
+        !/`write_artifact(?:`|\()/.test(typeof step.prompt === 'string' ? step.prompt : '')
+      ) {
+        c.error(
+          path,
+          `${pointer}/prompt`,
+          'accessory-output-missing-explicit-write',
+          `step "${step.id}" produces artifact "${step.advanceWhen.file}" but its prompt does not explicitly call \`write_artifact\``,
+        );
+      }
+    }
+    for (const [i, input] of (step.consumes ?? []).entries()) {
+      checkRef(input, `${pointer}/consumes/${i}`);
+    }
+    for (const [i, check] of (step.gate?.checks ?? []).entries()) {
+      checkRef(check, `${pointer}/gate/checks/${i}`);
+      if (
+        check?.kind === 'markdownHeadingsMatch' &&
+        isAccessoryArtifactPath(check.outlineFile) &&
+        check.outlineArtifact !== true
+      ) {
+        c.error(
+          path,
+          `${pointer}/gate/checks/${i}/outlineFile`,
+          'accessory-file-must-be-artifact',
+          `working outline "${check.outlineFile}" must set outlineArtifact: true`,
+        );
+      }
+    }
+  };
+
+  for (const tier of tiers) {
+    if (!existsSync(tier.root)) continue;
+    for (const item of listItems(tier.root, 'craftbook-template')) {
+      const identity = loadIdentity(item.itemDir, 'craftbook-template', item.id);
+      if (!identity) continue;
+      const yanked = new Set(identity.yankedVersions ?? []);
+      const eligible = discoverVersionFolders(item.itemDir, 'craftbook-template').filter(
+        ({ version }) =>
+          !yanked.has(version) &&
+          (!identity.minSupportedVersion || safeCompare(version, identity.minSupportedVersion) >= 0),
+      );
+      if (eligible.length === 0) continue;
+      const latest = eligible.reduce((a, b) => (safeCompare(a.version, b.version) >= 0 ? a : b));
+      const path = join(item.itemDir, 'versions', latest.version, 'craftbook.json');
+      const parsed = readJson(path);
+      if (!parsed.ok) continue;
+      if (
+        isAccessoryArtifactPath(parsed.value.spawn?.overFile) &&
+        parsed.value.spawn?.overArtifact !== true
+      ) {
+        c.error(
+          path,
+          '/spawn/overFile',
+          'accessory-file-must-be-artifact',
+          `fanout input "${parsed.value.spawn.overFile}" must set overArtifact: true`,
+        );
+      }
+      for (const [i, step] of (parsed.value.steps ?? []).entries()) {
+        checkAccessoryStep(path, step, `/steps/${i}`);
+      }
+      for (const [i, step] of (parsed.value.spawn?.steps ?? []).entries()) {
+        checkAccessoryStep(path, step, `/spawn/steps/${i}`);
+      }
+    }
+  }
+
   // ── Render + exit ──────────────────────────────────────────────────
   render(c.findings, args.mode);
   const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);

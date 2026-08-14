@@ -1,0 +1,211 @@
+{
+  "id": "branding-website",
+  "name": "Branding Website",
+  "description": "Build a small brand/marketing website where the visual identity leads. Locks a visual language and mockups FIRST, then writes the copy, then builds the HTML to the locked design — the ordering that makes brand sites feel designed rather than templated.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Brand & visual design (visual-designer) — visual language + mock, BEFORE any HTML → gated on artifact `design/brand-system.md` (markdown-notes)\n2. Copywriting (copywriter) — headlines + section copy to the brand voice → gated on artifact `copy/site-copy.md` (markdown-notes)\n3. Build (developer) — implement index.html to the locked design + copy → gated on `index.html` (html-marketing-site)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "brand-design",
+  "triggers": [
+    "branding website",
+    "landing page",
+    "marketing site",
+    "brand site"
+  ],
+  "steps": [
+    {
+      "id": "brand-design",
+      "name": "Brand & visual design",
+      "description": "visual language + mock, BEFORE any HTML",
+      "prompt": "Lock the visual language before a line of HTML exists. Decide: palette (with exact hex values), type pairing using system-safe fonts, spacing/scale, hero treatment, and responsive section order. Produce an ASCII/markdown wireframe of each section (hero, value props, proof or fit, CTA, footer). Write an **acceptance-criteria checklist** that includes the brand rules (\"headings use <font>\", \"palette is exactly <hex list>\", \"hero matches the mock\"). Save the full system, wireframe, and checklist to artifact `design/brand-system.md` with `write_artifact`; note the path in task notes. No HTML yet.",
+      "suggestedRole": "visual-designer",
+      "advanceWhen": {
+        "file": "design/brand-system.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "design/brand-system.md",
+            "bytes": 800,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "design/brand-system.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "design/brand-system.md",
+            "pattern": "#[0-9a-f]{6}",
+            "flags": "i",
+            "label": "exact palette",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "design/brand-system.md",
+            "pattern": "hero[\\s\\S]*(?:value|benefit)[\\s\\S]*(?:CTA|call.to.action)[\\s\\S]*footer",
+            "flags": "i",
+            "label": "section wireframe",
+            "artifact": true
+          }
+        ],
+        "onReject": "brand-design",
+        "maxAttempts": 3
+      },
+      "next": "copy"
+    },
+    {
+      "id": "copy",
+      "name": "Copywriting",
+      "description": "headlines + section copy to the brand voice",
+      "prompt": "Read artifact `design/brand-system.md` with `read_artifact`. Write the approved words: headline, subhead, three value-prop blurbs, proof or fit copy, CTA label, and footer. Match the named brand voice and keep it tight — marketing copy, not paragraphs. Save the complete section-keyed copy to artifact `copy/site-copy.md` with `write_artifact`; note the path in task notes so the build phase can drop it straight in.",
+      "suggestedRole": "copywriter",
+      "consumes": [
+        {
+          "file": "design/brand-system.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "copy/site-copy.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "copy/site-copy.md",
+            "bytes": 450,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "copy/site-copy.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "copy/site-copy.md",
+            "pattern": "headline|hero",
+            "flags": "i",
+            "label": "hero copy",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "copy/site-copy.md",
+            "pattern": "CTA|call.to.action",
+            "flags": "i",
+            "label": "call to action",
+            "artifact": true
+          }
+        ],
+        "onReject": "copy",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build",
+      "description": "implement index.html to the locked design + copy",
+      "prompt": "Read artifacts `design/brand-system.md` and `copy/site-copy.md` with `read_artifact`. Implement workspace `index.html` with `write_file` (inline CSS) to the locked visual language and approved copy — do not redesign in code. Honor the exact palette, type, and section order from the mock; include viewport metadata, semantic sections, a working primary CTA, and a footer. Make it responsive and self-contained with no external assets. On a loop-back, fix only the named gaps. `write_task_note` the workspace path and which criteria now pass.",
+      "suggestedRole": "developer",
+      "consumes": [
+        {
+          "file": "design/brand-system.md",
+          "artifact": true
+        },
+        {
+          "file": "copy/site-copy.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 3200
+          },
+          {
+            "kind": "htmlLint",
+            "file": "index.html"
+          },
+          {
+            "kind": "contains",
+            "file": "index.html",
+            "pattern": "<meta[^>]+name=[\"']viewport[\"']",
+            "flags": "i",
+            "label": "responsive viewport"
+          },
+          {
+            "kind": "contains",
+            "file": "index.html",
+            "pattern": "<footer\\b",
+            "flags": "i",
+            "label": "footer"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          },
+          {
+            "name": "checkCssMinBytes",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html",
+              "minBytes": 600
+            }
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Read workspace `index.html` with `read_file` and compare it with artifacts `design/brand-system.md` and `copy/site-copy.md` via `read_artifact`. Check the brand acceptance criteria specifically: does the palette match the locked hex list, the type match, the responsive section order match the mock, and the copy match what was approved? Render desktop and narrow layouts if you can. A site that works but ignores the locked visual language FAILS — loop back to build.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "index.html"
+        }
+      ],
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.1.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "title": "Spreadsheet / Financial Model smoke eval",
+  "objective": "Measure whether the spreadsheet-model craftbook rolls a seeded record set up CORRECTLY (checked against a harness-owned arithmetic oracle rather than digit-substring matching) and turns the roll-up into a decision-useful read-out.",
+  "tags": [
+    "data"
+  ],
+  "prompt": "I dropped our numbers in `source/records.csv`. Work them up into a small model and a written read-out.\n\n1. `data/model.json` — the computed roll-ups, using EXACTLY this schema. Money is whole US dollars, shares are percentages rounded to 2 decimal places:\n```json\n{\n  \"totals\": { \"orders\": 0, \"revenue_usd\": 0, \"avg_revenue_per_order_usd\": 0 },\n  \"by_region\": { \"North\": { \"orders\": 0, \"revenue_usd\": 0 },\n                 \"South\": { \"orders\": 0, \"revenue_usd\": 0 },\n                 \"West\":  { \"orders\": 0, \"revenue_usd\": 0 } },\n  \"top_customer_by_revenue\": \"\",\n  \"high_risk_revenue_usd\": 0,\n  \"high_risk_revenue_share_pct\": 0.0\n}\n```\n`high_risk_*` covers only rows whose `churn_risk` is `high`.\n\n2. `analysis.md` — a short analysis for operations leads that restates those figures, names the concentration risk, and recommends a next action. Use only the figures in `data/model.json`; do not introduce new numbers.",
+  "setup": {
+    "projectName": "Spreadsheet / Financial Model Eval",
+    "about": "Self-contained eval project for spreadsheet-model. Seeded inputs are under workspace/source or workspace/fixtures; final deliverable is workspace/analysis.md.",
+    "missionObjectives": "Compute data/model.json under the locked schema from source/records.csv, then write analysis.md restating those figures with a concentration-risk finding and a next action.",
+    "files": [
+      {
+        "path": "source/brief.md",
+        "content": "# Spreadsheet / Financial Model Eval Brief\n\nClient: Boreal Desk, a home-office accessories company.\nAudience: operations leads who need an artifact they can use this week.\n\nFixed source facts for grounding:\n- The returns desk pilot covered 18 SKUs.\n- Median first response improved from 18 hours to 6 hours.\n- Preventable refund leakage fell from 14.2% to 8.9%.\n- The top unresolved complaint is status silence after photo submission.\n- Required next actions are automated status emails, barcode-exception training, and a weekly Finance exception export.\n\nUse these facts when the task asks for prose, analysis, copy, UI content, or test data. Do not use live web services, real credentials, or current outside data.\n\nCraftbook under test: spreadsheet-model - Spreadsheet / Financial Model.\n"
+      },
+      {
+        "path": "source/records.csv",
+        "content": "customer,region,orders,revenue_usd,churn_risk\nAster,North,12,1440,low\nBoreal,South,8,720,medium\nCedar,West,15,2100,high\nDune,North,5,500,low\n"
+      }
+    ],
+    "worker": {
+      "name": "Jules",
+      "role": "Data Analyst"
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "data/model.json carries the correct roll-ups under the locked schema and analysis.md restates them with the single-account concentration risk called out.",
+    "deliverables": [
+      {
+        "path": "data/model.json",
+        "kind": "json",
+        "minBytes": 120,
+        "checks": [
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/model.json",
+            "path": "totals.orders",
+            "value": 40,
+            "label": "12 + 8 + 15 + 5 = 40 orders"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/model.json",
+            "path": "totals.revenue_usd",
+            "value": 4760,
+            "label": "1440 + 720 + 2100 + 500 = 4,760"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/model.json",
+            "path": "totals.avg_revenue_per_order_usd",
+            "value": 119,
+            "label": "4,760 / 40 = 119 per order"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/model.json",
+            "path": "by_region.North.orders",
+            "value": 17,
+            "label": "North is Aster (12) + Dune (5)"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/model.json",
+            "path": "by_region.North.revenue_usd",
+            "value": 1940,
+            "label": "North is 1440 + 500 = 1,940"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/model.json",
+            "path": "by_region.West.revenue_usd",
+            "value": 2100,
+            "label": "West is Cedar alone"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/model.json",
+            "path": "top_customer_by_revenue",
+            "value": "Cedar",
+            "label": "Cedar is the largest account by revenue"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/model.json",
+            "path": "high_risk_revenue_usd",
+            "value": 2100,
+            "label": "only Cedar carries churn_risk=high"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/model.json",
+            "path": "high_risk_revenue_share_pct",
+            "value": 44.12,
+            "label": "2100 / 4760 = 44.12% of revenue sits in one high-risk account"
+          }
+        ]
+      },
+      {
+        "path": "analysis.md",
+        "kind": "markdown-report",
+        "minBytes": 900,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "analysis.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "analysis.md",
+            "pattern": "\\$?4,?760\\b",
+            "flags": "i",
+            "label": "restate total revenue of 4,760"
+          },
+          {
+            "kind": "contains",
+            "file": "analysis.md",
+            "pattern": "Cedar",
+            "flags": "i",
+            "label": "name Cedar as the top-revenue, high-churn-risk account"
+          }
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "analysis.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "accuracy",
+        "description": "Computed figures are correct against the seeded records."
+      },
+      {
+        "name": "grounding",
+        "description": "Every claim traces to the seeded data — nothing invented."
+      },
+      {
+        "name": "structure",
+        "description": "Tables and sections make the analysis checkable at a glance."
+      },
+      {
+        "name": "actionability",
+        "description": "Recommendations follow from the findings and are concretely doable."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "seeded data reading",
+    "computed facts",
+    "recommendation grounding"
+  ]
+}

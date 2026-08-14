@@ -1,0 +1,140 @@
+{
+  "id": "weekly-walkthrough",
+  "name": "Weekly Garden Walkthrough",
+  "description": "Walk the beds once a week with a plan instead of a vague worry: what each bed needs this week derived from the plantings and the season, the walkthrough ordered so it actually gets done, and the observations and harvests logged so the almanac accrues. Locks the week's due list FIRST, then plans the route, then logs what happened and seeds next week. Use for weekly garden walkthroughs, 'what does the garden need this week', weekend garden sessions, and garden check-ins.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the week (gardener) — per-bed due list from the plantings and the season → gated on artifact `notes/scope.md` (markdown-notes)\n2. Plan the walkthrough (planner) — ordered route, per-bed tasks, supplies gathered first → gated on artifact `notes/plan.md` (markdown-notes)\n3. Log the walkthrough (gardener) — observations and harvests logged, week written up, next week seeded → gated on artifact `report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "weekly garden walkthrough",
+    "what does the garden need this week",
+    "garden check-in",
+    "walk the beds",
+    "weekend garden session"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the week",
+      "description": "per-bed due list from the plantings and the season",
+      "prompt": "Define the week before walking anywhere. Step 1: read garden.json from the workspace — the beds, what is planted where and since when, and the season parameters — plus the recent entries in journal.json and anything the owner has already reported. Step 2: derive what each bed needs this week from the plantings and the season — watering, feeding, thinning, staking, harvest windows opening or closing — tied to a specific planting, not generic garden advice. Step 3: split the list into this-week-or-it-matters versus can-wait. Step 4: write an acceptance-criteria checklist ('every bed considered, even the ones needing nothing', 'each due task tied to a planting or the season', 'observations and harvests logged so the almanac accrues', 'next week seeded in one line'). Call write_task_note with the due counts + checklist and write notes/scope.md.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "gardener",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "plan"
+    },
+    {
+      "id": "plan",
+      "name": "Plan the walkthrough",
+      "description": "ordered route, per-bed tasks, supplies gathered first",
+      "prompt": "Plan the walkthrough from the locked list. Step 1: order the beds into a sensible route and lay out the per-bed tasks so the owner can walk it without stopping to think. Step 2: for each task, one concrete line — what to do and what to bring. Step 3: batch the supplies into one gather-first line at the top. Step 4: leave room for what the walk itself turns up — the plan is a spine, not a cage. Write the ordered plan to notes/plan.md and call write_task_note with the task count.\n\nThe deliverable `notes/plan.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/plan.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/plan.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/plan.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "plan",
+        "maxAttempts": 3
+      },
+      "next": "log"
+    },
+    {
+      "id": "log",
+      "name": "Log the walkthrough",
+      "description": "observations and harvests logged, week written up, next week seeded",
+      "prompt": "Close the walkthrough once the owner reports what happened. Step 1: log each observation and harvest into the project's garden journal so the almanac accrues — dated and tied to its bed. Step 2: note what was done, what was deferred and why. Step 3: write report.md — the week in a few lines per bed: done, observed, deferred; anything spotted that needs watching; and next week's earliest due task as the closing line. Keep it warm and specific — this is the almanac's weekly page, not a chore-list autopsy. Call write_task_note with the done/observed/deferred counts.\n\nThe deliverable `report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "gardener",
+      "advanceWhen": {
+        "file": "report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.md",
+            "bytes": 1000,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "log",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open report.md, notes/plan.md, and the garden journal and verify every criterion from notes/scope.md: every bed appears in the report, each planned task traces to a planting or the season, every observation and harvest the owner reported was logged with a date (spot-check the journal), deferrals carry reasons, and next week's seed line is present. Write PASS/FAIL per criterion; on any failure, name the gap and loop back to log.\n\nThe deliverable lives in the project's artifacts drawer — open `report.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"log\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "report.md",
+          "artifact": true
+        }
+      ],
+      "next": "log"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

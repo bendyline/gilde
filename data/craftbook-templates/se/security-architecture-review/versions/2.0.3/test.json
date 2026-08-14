@@ -1,0 +1,154 @@
+{
+  "schemaVersion": 1,
+  "title": "Security Architecture Review — admin export surface",
+  "objective": "Exercise the Security Architecture Review craftbook against a self-contained service slice and require a prioritized, evidence-linked report that includes both confirmed vulnerabilities and working controls.",
+  "tags": [
+    "workflow",
+    "security",
+    "architecture-review",
+    "typescript"
+  ],
+  "prompt": "Use the Security Architecture Review craftbook to review the seeded service slice. This is report-only: do not modify source files. Model assets, actors, trust boundaries, and data flows; audit authorization, command/SQL construction, secrets handling, and relevant common vulnerability classes. Produce the scope and findings register, then write `security/security-architecture-review.md`. Every confirmed finding must name severity, confidence, concrete workspace evidence, exploit preconditions, impact, and a specific remediation plus verification. Include working controls and rejected hypotheses. Do not invent CVEs, dependency versions, scans, or tests you did not run, and do not reproduce the example secret value in the report.",
+  "setup": {
+    "projectName": "Admin export security review",
+    "about": "A hermetic source-review fixture. No network or dependency lookup is needed or authorized; conclusions must come from seeded files.",
+    "missionObjectives": "Deliver an actionable risk posture that distinguishes confirmed source defects, positive controls, and unverified areas without changing implementation.",
+    "managedWorkspaceWritePolicy": "deny",
+    "files": [
+      {
+        "path": "docs/architecture.md",
+        "content": "# Service slice\n\nAn authenticated HTTP handler receives an export name and email filter from a browser operated by support staff. The handler calls local process and database adapters. `requireUser` is the shared authentication boundary. Only administrators should reach backup export; ordinary authenticated users may search their own customer records. Deployment injects `SESSION_SECRET` from environment configuration.\n"
+      },
+      {
+        "path": "src/auth.ts",
+        "content": "export interface User { id: string; role: 'member' | 'admin' }\n\nexport function requireUser(value: User | undefined): User {\n  if (!value) throw new Error('unauthorized');\n  return value;\n}\n\nexport function requireAdmin(user: User): void {\n  if (user.role !== 'admin') throw new Error('forbidden');\n}\n"
+      },
+      {
+        "path": "src/admin-export.ts",
+        "content": "import { exec } from 'node:child_process';\nimport type { User } from './auth.js';\nimport { requireAdmin, requireUser } from './auth.js';\n\nexport function exportBackup(currentUser: User | undefined, requestedName: string): void {\n  const user = requireUser(currentUser);\n  requireAdmin(user);\n  exec(`tar -czf backups/${requestedName}.tgz data/`);\n}\n"
+      },
+      {
+        "path": "src/customer-search.ts",
+        "content": "export interface Db { query(sql: string): Promise<unknown[]> }\n\nexport function findCustomerByEmail(db: Db, email: string): Promise<unknown[]> {\n  return db.query(`SELECT id, email FROM customers WHERE email = '${email}'`);\n}\n"
+      },
+      {
+        "path": "src/safe-audit-log.ts",
+        "content": "export interface AuditSink { write(event: { actorId: string; action: string; target: string }): void }\n\nexport function recordExport(sink: AuditSink, actorId: string, target: string): void {\n  sink.write({ actorId, action: 'backup.exported', target });\n}\n"
+      },
+      {
+        "path": "config/example.env",
+        "content": "# Example only; deployment replaces this value\nSESSION_SECRET=local-dev-only-not-a-real-secret\n"
+      }
+    ]
+  },
+  "mocks": [],
+  "success": {
+    "summary": "The named craftbook produces a source-grounded risk posture with prioritized findings, positive controls, remediation, verification, and terminal task evidence.",
+    "deliverables": [
+      {
+        "path": "security/security-architecture-review.md",
+        "kind": "security-report",
+        "artifact": true,
+        "minBytes": 1700,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "security/security-architecture-review.md",
+            "pattern": "^#{1,3}\\s+Executive risk posture\\b[\\s\\S]*^#{1,3}\\s+What is working\\b[\\s\\S]*^#{1,3}\\s+Prioritized findings\\b[\\s\\S]*^#{1,3}\\s+Remediation plan\\b[\\s\\S]*^#{1,3}\\s+Verification\\b[\\s\\S]*^#{1,3}\\s+Unverified areas\\b",
+            "flags": "im",
+            "label": "complete security-review structure"
+          },
+          {
+            "kind": "contains",
+            "file": "security/security-architecture-review.md",
+            "pattern": "(command injection|shell injection)[\\s\\S]{0,500}src/admin-export\\.ts[\\s\\S]*(severity)[\\s\\S]*(confidence)",
+            "flags": "is",
+            "label": "command-injection finding with evidence metadata"
+          },
+          {
+            "kind": "contains",
+            "file": "security/security-architecture-review.md",
+            "pattern": "(SQL injection|parameteri[sz]ed quer)[\\s\\S]{0,500}src/customer-search\\.ts",
+            "flags": "is",
+            "label": "SQL-injection finding and remediation"
+          },
+          {
+            "kind": "contains",
+            "file": "security/security-architecture-review.md",
+            "pattern": "(requireUser|requireAdmin)[\\s\\S]{0,300}(working|control|authorization|authentication)[\\s\\S]*(safe-audit-log|audit)",
+            "flags": "is",
+            "label": "positive auth and audit controls"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "security/security-architecture-review.md",
+            "minCitations": 4
+          },
+          {
+            "kind": "notContains",
+            "file": "security/security-architecture-review.md",
+            "pattern": "CVE-\\d{4}-\\d+",
+            "label": "no invented CVEs"
+          },
+          {
+            "kind": "notContains",
+            "file": "security/security-architecture-review.md",
+            "pattern": "local-dev-only-not-a-real-secret",
+            "label": "example secret value is not reproduced"
+          }
+        ]
+      }
+    ],
+    "taskNotes": {
+      "minBytes": 180,
+      "checks": [
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "\\bDONE\\b[\\s\\S]*security/security-architecture-review\\.md[\\s\\S]*(command|SQL)",
+          "flags": "i",
+          "label": "terminal note records report and principal risks"
+        }
+      ],
+      "requireCraftbookTask": true
+    },
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    },
+    "unchangedFixtures": [
+      "docs/architecture.md",
+      "src/auth.ts",
+      "src/admin-export.ts",
+      "src/customer-search.ts",
+      "src/safe-audit-log.ts",
+      "config/example.env"
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "security/security-architecture-review.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "Threat-model coverage",
+        "description": "The report connects assets, actors, trust boundaries, privileges, and data flows to the reviewed attack surface."
+      },
+      {
+        "name": "Finding rigor",
+        "description": "Confirmed findings cite exact source evidence, state preconditions and impact, and calibrate severity and confidence without overclaiming."
+      },
+      {
+        "name": "Remediation utility",
+        "description": "Recommendations are prioritized, source-specific, verifiable, and preserve or strengthen the controls that already work."
+      }
+    ],
+    "contextNote": "No live dependency or dynamic scan is part of this hermetic source-review scenario; the report should say so."
+  },
+  "qualityFocus": [
+    "Both injection paths are found and tied to exact source",
+    "Working authentication, authorization, and audit controls are recognized",
+    "Unverified areas and evidence limits are explicit"
+  ]
+}

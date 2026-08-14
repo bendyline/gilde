@@ -1,0 +1,140 @@
+{
+  "id": "visit-prep",
+  "name": "Care Visit Prep",
+  "description": "Prepare a one-page brief for a medical or care appointment from the project's care record: compile everything logged since the last visit, the current medication list with doses, the changes and symptoms worth raising, and a prioritized question list — so the ten minutes in the room get spent on what matters. Locks the target appointment and the brief's sections FIRST, then compiles from the record, then writes the brief. Use for doctor visit prep, specialist appointments, care-team check-ins, and 'what do we need to tell the doctor'.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the visit (planner) — target appointment, brief sections, what counts as raise-worthy → gated on artifact `notes/scope.md` (markdown-notes)\n2. Compile the record (data-analyst) — window events, med list, changes, draft questions → gated on artifact `notes/compile.md` (markdown-notes)\n3. Write the brief (copywriter) — one-page visit brief, questions first → gated on artifact `report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "prep for the appointment",
+    "visit prep",
+    "what do we tell the doctor",
+    "prepare for the doctor",
+    "appointment brief"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the visit",
+      "description": "target appointment, brief sections, what counts as raise-worthy",
+      "prompt": "Define the prep before compiling. Step 1: read care.json and meds.json from the workspace and identify the target appointment (the next upcoming one, or the one the owner names) and the last visit before it — the window between them is the compile range. Step 2: fix the brief's sections — current medications with doses; changes since last visit (meds started/stopped, new symptoms, incidents); patterns worth raising (sleep, appetite, mood, falls); the question list; and logistics (who attends, what to bring). Step 3: agree with the owner what counts as raise-worthy versus noise so the brief stays one page. Step 4: write an acceptance-criteria checklist ('every appointment-window event considered', 'med list matches the active roster exactly', 'each raised item cites the logged entry behind it', 'questions ranked, most important first', 'one page'). Call write_task_note with the appointment + window + checklist and write notes/scope.md.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "compile"
+    },
+    {
+      "id": "compile",
+      "name": "Compile the record",
+      "description": "window events, med list, changes, draft questions",
+      "prompt": "Compile the brief's raw material from the record. Step 1: pull every care-log entry in the window and sort it into the agreed sections — changes, symptoms, patterns, noise. Step 2: pull the active medication list with doses from the meds roster and note anything started, stopped, or changed in the window. Step 3: for each raise-worthy item, attach the dates and the logged entries behind it so the clinician gets specifics, not vibes. Step 4: draft the question list from the raised items plus anything the owner adds, and rank it most-important-first. Step 5: write the compiled material to notes/compile.md and call write_task_note with the counts — window events, meds, raised items, questions.\n\nThe deliverable `notes/compile.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "notes/compile.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/compile.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/compile.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "compile",
+        "maxAttempts": 3
+      },
+      "next": "brief"
+    },
+    {
+      "id": "brief",
+      "name": "Write the brief",
+      "description": "one-page visit brief, questions first",
+      "prompt": "Write the one-page visit brief from the compiled material. Step 1: header — who the visit is for, the appointment, who attends. Step 2: the ranked questions, numbered, at the top — the room time goes here first. Step 3: current medications with doses, flagging window changes. Step 4: since-last-visit summary — the raised items with their dates, briefest sufficient wording. Step 5: close with logistics and space for the clinician's answers. One page, printable, calm. Write report.md and call write_task_note with the report path and the top question.\n\nThe deliverable `report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "brief",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open report.md and notes/compile.md and verify every criterion from notes/scope.md: the medication list matches the active meds roster exactly (check every med and dose), every raised item traces to a logged entry with a date, every window event was sorted or consciously set aside, the questions are ranked with the most important first, and the brief fits one page. Write PASS/FAIL per criterion; on any failure, name the gap and loop back to brief.\n\nThe deliverable lives in the project's artifacts drawer — open `report.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"brief\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "report.md",
+          "artifact": true
+        }
+      ],
+      "next": "brief"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

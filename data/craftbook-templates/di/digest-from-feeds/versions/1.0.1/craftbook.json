@@ -1,0 +1,146 @@
+{
+  "id": "digest-from-feeds",
+  "name": "RSS / Feed Digest",
+  "description": "Build a recurring digest from RSS/Atom feeds or news sources: fetch the latest items in the window, dedupe and cluster by topic, then write a scannable digest with one-line takes and source links. Scopes the feed list and digest format FIRST (which feeds, the time window, topic sections, item cap, ranking signal), then a developer fetches and normalizes the feed items into a deduped item list, then a copywriter writes the curated digest from those items only. Scoping sources and the window before fetching is what keeps the digest fresh, deduped, and within length instead of an unranked firehose. Use for RSS digests, news roundups, feed summaries, content curation, and recurring reading digests.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Source scope (planner) — lock the feeds, window, sections, and item cap → gated on artifact `notes/source-scope.md` (markdown-notes)\n2. Gather feed items (developer) — fetch, normalize, dedupe items into an item list → gated on artifact `notes/gather.md` (markdown-notes)\n3. Write the digest (copywriter) — compose the curated digest from gathered items → gated on `digest.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "source-scope",
+  "triggers": [
+    "rss digest",
+    "news roundup",
+    "feed summary",
+    "summarize these feeds",
+    "curated reading digest"
+  ],
+  "steps": [
+    {
+      "id": "source-scope",
+      "name": "Source scope",
+      "description": "lock the feeds, window, sections, and item cap",
+      "prompt": "Define the digest contract before fetching. (1) Lock the feed/source list (the RSS/Atom URLs or named sources). (2) Set the time window (only items published within it) and the topic sections the digest groups into. (3) Set a per-section item cap and an overall cap, plus a ranking signal for which items make the cut (recency, source weight, or keyword relevance to a stated interest). (4) Define the per-item format: a tight one-line take + a source link + publish date. (5) Define the dedupe rule (same story across feeds collapses to one, by URL or title similarity). Write an acceptance-criteria checklist ('only items within the window', 'duplicates across feeds collapsed', 'each item has a working source link + date', 'per-section and overall caps respected', 'every item traces to a fetched feed item — nothing invented', 'scannable in under two minutes') plus the source list + format to notes/source-scope.md via write_task_note AND the produces path.\n\nThe deliverable `notes/source-scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/source-scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/source-scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/source-scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "source-scope",
+        "maxAttempts": 3
+      },
+      "next": "gather"
+    },
+    {
+      "id": "gather",
+      "name": "Gather feed items",
+      "description": "fetch, normalize, dedupe items into an item list",
+      "prompt": "Fetch and normalize the feeds into notes/gather.md. (1) Retrieve each feed (via the fetch/web tool); parse out item title, link, publish date, and a short excerpt. (2) Drop items outside the locked window. (3) Apply the dedupe rule — collapse the same story appearing in multiple feeds to a single entry, keeping the best source link. (4) Tag each surviving item with its target section and a ranking score per the locked signal. (5) Sort within each section by the ranking signal and keep within the caps; record the dropped count. Capture this as a structured, attributed list — title, link, date, section, score — NOT prose, and verify every link is a real URL from the feed. If a feed is unreachable, note it explicitly. Write the item list via write_task_note and end with per-section counts.\n\nThe deliverable `notes/gather.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "notes/gather.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/gather.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/gather.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "gather",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the digest",
+      "description": "compose the curated digest from gathered items",
+      "prompt": "Write digest.md from notes/gather.md only. (1) Open with a one-line 'what mattered' summary of the period. (2) One section per topic in the locked order; under each, the capped items as a one-line take + linked title + date. Each take is a genuine, specific summary of the item — not a restated headline, not invented detail. (3) Respect the per-section and overall caps; if a section has no in-window items, omit it. (4) Keep the whole thing skimmable in under two minutes. Use only items present in the gather file with their real links — invent nothing. On a loop-back fix only the flagged sections. Write the path and item count to notes via write_task_note.\n\nBefore working, open the artifact input `notes/gather.md` with `read_artifact`; do not look for it in the workspace.",
+      "suggestedRole": "copywriter",
+      "consumes": [
+        {
+          "file": "notes/gather.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "digest.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "digest.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "digest.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "QA digest.md against the locked criteria. (1) Confirm every item appears in notes/gather.md with a real source link and an in-window date; FAIL on any invented item or out-of-window entry. (2) Confirm duplicates across feeds were collapsed (no two entries for the same story). (3) Confirm per-section and overall caps are respected. (4) Read 3 one-line takes — are they real summaries of the linked item, not just the headline echoed, and accurate? (5) Confirm it is genuinely scannable. Write PASS/FAIL per criterion with specifics.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "digest.md"
+        }
+      ],
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

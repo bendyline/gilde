@@ -1,0 +1,146 @@
+{
+  "id": "logo-set",
+  "name": "Logo & Variant Set",
+  "description": "Generate a coherent logo and the full set of variants a real brand needs — primary mark, horizontal lockup, stacked lockup, icon-only/favicon, plus light-on-dark and monochrome versions — from a written brief. Lock the brief (concept, geometry, palette, typography, do/don'ts) BEFORE generating pixels so every variant shares one visual DNA instead of looking like five unrelated logos; then assemble them into a delivered folder with a contact sheet. Covers logo design, brand mark, wordmark, logo variations, and brand-asset packs.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Logo brief (visual-designer) — lock concept, geometry, palette, type, and the variant list → gated on artifact `notes/brief.md` (markdown-notes)\n2. Generate the marks (image-generator) — produce every variant to the locked brief → gated on `assets` (image-set)\n3. Assemble the delivery (developer) — contact sheet + usage page tying the set together → gated on `index.html` (html-page)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "brief",
+  "triggers": [
+    "design a logo",
+    "make a logo set",
+    "logo variants",
+    "brand mark",
+    "logo with variations"
+  ],
+  "steps": [
+    {
+      "id": "brief",
+      "name": "Logo brief",
+      "description": "lock concept, geometry, palette, type, and the variant list",
+      "prompt": "1) Capture the brand essence in one sentence (what it is, the feeling). 2) Decide the core concept and geometry of the mark (e.g. 'abstract folded ribbon', 'monoline fox head') — concrete enough to redraw. 3) Lock the palette with exact hex values and the type treatment for any wordmark. 4) Enumerate the EXACT variant list to produce: primary, horizontal lockup, stacked lockup, icon-only, monochrome (black), and reversed (white on dark) — name each output filename. 5) Write do/don't rules (clear-space, what not to recolor). 6) Write an acceptance-criteria checklist: 'all variants share the same core mark', 'palette is exactly <hex list>', 'icon-only is legible at 32px', 'reversed version works on a dark background', 'at least 5 variant files are produced'. 7) Record everything via write_task_note AND to notes/brief.md. No pixels yet — this is the single source of truth all variants must obey.\n\nThe deliverable `notes/brief.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "visual-designer",
+      "advanceWhen": {
+        "file": "notes/brief.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/brief.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/brief.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "brief",
+        "maxAttempts": 3
+      },
+      "next": "generate"
+    },
+    {
+      "id": "generate",
+      "name": "Generate the marks",
+      "description": "produce every variant to the locked brief",
+      "prompt": "1) Read brief.md. 2) Using the image-generation capability (or hand-authored SVG if no image model is available), produce the PRIMARY mark first and treat it as the master. 3) Derive each remaining variant FROM the primary so geometry and proportions stay identical — horizontal lockup, stacked lockup, icon-only crop, monochrome black, reversed white-on-dark. 4) Honor the exact palette hex values; the monochrome and reversed versions are recolors of the same shape, not redesigns. 5) Save each into the assets/ directory with the filenames named in the brief (e.g. primary.svg, horizontal.svg, icon.svg, mono.svg, reversed.svg). 6) Sanity-check the icon at small size — it must read at 32px. Good looks like: 5+ files that are unmistakably the same logo in different configurations.",
+      "suggestedRole": "image-generator",
+      "advanceWhen": {
+        "file": "assets",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "fileCount",
+            "ext": [
+              "png",
+              "jpg",
+              "jpeg",
+              "svg",
+              "webp"
+            ],
+            "min": 3,
+            "dir": "assets"
+          }
+        ],
+        "onReject": "generate",
+        "maxAttempts": 3
+      },
+      "next": "assemble"
+    },
+    {
+      "id": "assemble",
+      "name": "Assemble the delivery",
+      "description": "contact sheet + usage page tying the set together",
+      "prompt": "1) Build a single index.html contact sheet that displays every variant on appropriate backgrounds (light variants on white, the reversed variant on a dark panel) at multiple sizes including a tiny 32px row to prove favicon legibility. 2) Include a short usage section restating the palette hex, clear-space, and the do/don'ts from the brief. 3) Reference the real files in assets/ (relative paths) so the page renders the actual marks. 4) On a loop-back, fix only the named gaps (missing variant, wrong background, broken reference). 5) write_task_note the contact-sheet path and the list of variant files. Good looks like: one page a client could approve from, showing the whole coherent set in context.",
+      "suggestedRole": "developer",
+      "consumes": [
+        {
+          "file": "assets"
+        }
+      ],
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 800
+          },
+          {
+            "kind": "htmlLint",
+            "file": "index.html"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          }
+        ],
+        "onReject": "assemble",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "1) Open assets/ and confirm at least 5 variant files exist matching the brief's filenames (PASS/FAIL). 2) Open index.html and visually verify each variant renders, including the reversed mark on a dark panel and the 32px icon row. 3) Check coherence: do all variants read as the SAME mark (same geometry/concept)? 4) Check the palette matches the brief's exact hex list. 5) Confirm the icon is legible at 32px. 6) Write PASS/FAIL per criterion. Any FAIL → loop back to generate (for missing/wrong marks) or assemble (for presentation issues).\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"assemble\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "index.html"
+        }
+      ],
+      "next": "assemble"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

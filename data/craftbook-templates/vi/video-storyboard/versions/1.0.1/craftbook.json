@@ -1,0 +1,109 @@
+{
+  "id": "video-storyboard",
+  "name": "Video Storyboard from a Script",
+  "description": "Turn a video script into a shot-by-shot storyboard — each scene broken into shots with a framing sketch/description, camera direction, on-screen action, the matching script line, and timing — so a shoot or animation has a clear visual plan. Scopes the script into scenes and shot list FIRST, then designs each storyboard panel visually. The script-scope-then-storyboard ordering ensures every shot maps to a real script beat and the timing adds up to the script's runtime, instead of pretty panels that drift from the words.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Script scope & shot list (planner) — scenes, shot breakdown, timing, panel fields → gated on artifact `notes/script-scope.md` (markdown-notes)\n2. Storyboard the shots (visual-designer) — render panels per shot: sketch/description + directions → gated on `storyboard.html` (html-page)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "script-scope",
+  "triggers": [
+    "storyboard my script",
+    "shot list from a script",
+    "video storyboard",
+    "plan the shots",
+    "visualize a video script"
+  ],
+  "steps": [
+    {
+      "id": "script-scope",
+      "name": "Script scope & shot list",
+      "description": "scenes, shot breakdown, timing, panel fields",
+      "prompt": "Break the script down BEFORE drawing. Step 1: read the script and segment it into scenes; record the script's total target runtime. Step 2: break each scene into shots, each mapped to specific script line(s) and an estimated duration so the shot durations sum to the runtime. Step 3: define the panel fields every storyboard cell must carry: shot number, framing (WS/MS/CU), camera move (static/pan/zoom), on-screen action, the script/VO line, and seconds. Step 4: number shots sequentially across scenes. Write an acceptance-criteria checklist (every script line maps to ≥1 shot, every shot has all panel fields, shot durations sum to ~the runtime, shots numbered sequentially, a clear opening and closing shot) and the shot list to `notes/script-scope.md` via write_task_note AND the produces path.\n\nThe deliverable `notes/script-scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/script-scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/script-scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/script-scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "script-scope",
+        "maxAttempts": 3
+      },
+      "next": "storyboard"
+    },
+    {
+      "id": "storyboard",
+      "name": "Storyboard the shots",
+      "description": "render panels per shot: sketch/description + directions",
+      "prompt": "Produce the storyboard from the shot list as a single viewable `storyboard.html` (inline CSS). Step 1: render one panel per shot in script order, each panel showing a framing visual (an SVG/CSS sketch of the composition, or generate a thumbnail if image tools exist — show subject placement, headroom, rule-of-thirds) plus the shot number. Step 2: under each panel list the fields from scope: framing, camera move, on-screen action, the script/VO line, and the shot's seconds. Step 3: group panels by scene with scene headers, and show a running timecode. Step 4: keep a consistent panel template/aspect ratio across the whole board. Step 5: confirm it opens cleanly with no console error. write_task_note the path and panel count. On a loop-back, fix only the flagged panels (missing fields, wrong framing, timing that doesn't sum).",
+      "suggestedRole": "visual-designer",
+      "advanceWhen": {
+        "file": "storyboard.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "storyboard.html",
+            "bytes": 1500
+          },
+          {
+            "kind": "htmlLint",
+            "file": "storyboard.html"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "storyboard.html"
+            }
+          }
+        ],
+        "onReject": "storyboard",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Review the storyboard like a director. Step 1: open `storyboard.html` — it renders panels in order with no console error (PASS/FAIL). Step 2: confirm EVERY panel carries all fields (framing, camera move, action, script line, seconds) and a framing visual. Step 3: confirm every script line maps to at least one shot and shot durations sum to ~the script runtime. Step 4: confirm shots are numbered sequentially and grouped by scene with a running timecode. Step 5: confirm there is a clear opening and closing shot. Write PASS/FAIL per criterion.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"storyboard\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "storyboard.html"
+        }
+      ],
+      "next": "storyboard"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

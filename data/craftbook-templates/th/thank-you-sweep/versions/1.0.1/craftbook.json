@@ -1,0 +1,143 @@
+{
+  "id": "thank-you-sweep",
+  "name": "Post-Event Thank-You Sweep",
+  "description": "Close the event the way it deserves: every gift-giver and every helper matched to a personal note, drafted in one sitting and tracked to sent — so 'the thank-yous actually go out' becomes a checklist instead of a lingering guilt. Locks the coverage rule FIRST — every giver, every helper, one personal detail each — then drafts the batch, then records each note to sent in the event's books. Use for post-event thank-yous, thanking the helpers after a party, gift thank-you notes, and 'the party's done, sweep the thank yous'.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the sweep (ceremoniemeester) — gift and helper roster, coverage rule, tracking rule → gated on artifact `notes/scope.md` (markdown-notes)\n2. Draft the notes (copywriter) — one personal note per giver and helper → gated on `letters/thank-you.md` (markdown-doc)\n3. Record and report (archivist) — track each note in the books, write the coverage summary → gated on artifact `report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "sweep the thank yous",
+    "post event thank yous",
+    "thank the helpers",
+    "gift thank you notes",
+    "thank you sweep after the party"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the sweep",
+      "description": "gift and helper roster, coverage rule, tracking rule",
+      "prompt": "Define the sweep before drafting. Step 1: read gifts.json from the workspace — who gave what — and guests.json for the people who helped without a gift attached: setup, kitchen, driving, cleanup. Step 2: lock the coverage rule with the owner: every giver AND every helper gets a note, one personal detail each — the actual gift for givers, the actual deed for helpers — and helpers never get a gift-shaped form note. Step 3: settle how notes go out and what 'tracked to sent' means in the event's books. Step 4: write an acceptance-criteria checklist ('every giver and every helper covered or explicitly deferred with a reason', 'each note names the specific gift or deed from the record', 'no two notes interchangeable', 'every note recorded drafted and tracked to sent'). Call write_task_note with the giver + helper counts and the checklist, and write notes/scope.md.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "ceremoniemeester",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "draft"
+    },
+    {
+      "id": "draft",
+      "name": "Draft the notes",
+      "description": "one personal note per giver and helper",
+      "prompt": "Draft the whole batch against the locked coverage rule. Step 1: one section per person in letters/thank-you.md — a heading with their name, then the note. Step 2: givers get the gift named in the first two sentences and a line about how it will be used or where it now lives. Step 3: helpers get the actual deed named — the grill run all afternoon, the chairs stacked at midnight — never a generic 'thanks for your help'. Step 4: vary the shape so no two notes could swap recipients. Step 5: call write_task_note with the note count split by givers and helpers.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "letters/thank-you.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "letters/thank-you.md",
+            "bytes": 1200
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "letters/thank-you.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "draft",
+        "maxAttempts": 3
+      },
+      "next": "record"
+    },
+    {
+      "id": "record",
+      "name": "Record and report",
+      "description": "track each note in the books, write the coverage summary",
+      "prompt": "Close the sweep. Step 1: record each note against the person's entry through the project's event books so every one is tracked drafted and then sent. Step 2: write the run summary — the coverage count stated plainly ('X of Y covered'), who was deferred and why, and what still has to physically happen for the notes to actually go out. Step 3: keep it short and honest. Write report.md and call write_task_note with the coverage count.\n\nThe deliverable `report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "archivist",
+      "advanceWhen": {
+        "file": "report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.md",
+            "bytes": 600,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "record",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open letters/thank-you.md and report.md and verify every criterion from notes/scope.md: every giver in gifts.json and every helper in guests.json is covered or explicitly deferred with a reason — count them, the forgotten setup crew is the classic failure — each note names the specific gift or deed from the record (spot-check each against the stores), no two notes are interchangeable, and the report states the coverage count with each note tracked. Write PASS/FAIL per criterion; on any failure, name the person and the gap and loop back to draft.\n\nThe deliverable lives in the project's artifacts drawer — open `report.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"draft\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "report.md",
+          "artifact": true
+        }
+      ],
+      "next": "draft"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

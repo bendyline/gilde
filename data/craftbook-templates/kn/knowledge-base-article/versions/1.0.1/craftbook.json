@@ -1,0 +1,143 @@
+{
+  "id": "knowledge-base-article",
+  "name": "Knowledge Base Article",
+  "description": "Write a support knowledge-base article that lets a user solve their problem without contacting support: it first scopes the exact user problem, the search terms they would use, prerequisites, and the success outcome, then writes a task-oriented article with a clear title, a short overview, numbered steps with expected results, screenshots/placeholders where needed, and a troubleshooting section, then a review pass verifies accuracy and self-service completeness. Covers help center article, support documentation, how-to article, KB article, self-service docs, and product help. Scoping the precise problem and search terms before writing is the point: a small model that pins the one job-to-be-done writes a findable, followable article instead of a vague overview that leaves the user still stuck.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Article scope (planner) — lock the problem, search terms, prerequisites, and success outcome → gated on artifact `notes/scope.md` (markdown-notes)\n2. Write the article (copywriter) — write the task-oriented, self-service article → gated on `kb-article.md` (markdown-doc)\n3. Accuracy & completeness review (reviewer) — verify the article is accurate and lets a user self-serve → gated on `kb-article.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "write a knowledge base article",
+    "help center article",
+    "support how-to",
+    "kb article",
+    "self-service docs"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Article scope",
+      "description": "lock the problem, search terms, prerequisites, and success outcome",
+      "prompt": "1) State the exact user PROBLEM the article solves, phrased as the user experiences it ('I can't log in after changing my email'). 2) List the search terms/keywords a stuck user would type, so the title and intro can match them. 3) List prerequisites (account type, permissions, plan, things they need before starting). 4) Define the SUCCESS outcome — how the user knows it worked. 5) Identify where a screenshot or example would prevent confusion. 6) Note common failure points for the troubleshooting section. Write an acceptance-criteria checklist (e.g. 'title matches likely search terms'; 'prerequisites stated up front'; 'numbered steps with one action each and expected results'; 'a troubleshooting section covers common failures'; 'ends with how to confirm success'; 'a user could self-serve without contacting support'). Use write_task_note for the scope + checklist, and write the same to the produces path. No article prose yet.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the article",
+      "description": "write the task-oriented, self-service article",
+      "prompt": "Write the KB article from the scope. 1) Title: action- and search-oriented, matching the user's likely query. 2) Short overview (1-2 sentences): what this article helps them do and who it is for. 3) Prerequisites section. 4) Numbered step-by-step instructions: one action per step, in imperative voice, with the expected result after key steps and screenshot placeholders ('![screenshot: settings page](...)') where the scope flagged them. 5) A 'How to confirm it worked' line tied to the success outcome. 6) A 'Troubleshooting' section addressing the common failure points as a short Q&A. 7) Optional 'Related articles' links. Use scannable H2/H3 headings and a plain, reassuring support voice. Output GitHub-flavored markdown. Save to the produces path and note which checklist items pass.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "kb-article.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "kb-article.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "kb-article.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 3
+      },
+      "next": "review"
+    },
+    {
+      "id": "review",
+      "name": "Accuracy & completeness review",
+      "description": "verify the article is accurate and lets a user self-serve",
+      "prompt": "Review and edit the article in place against the checklist. 1) Walk the steps as if you were the stuck user: are they complete, in order, and each a single clear action? Fix gaps and ambiguity. 2) Verify technical accuracy of every instruction and UI reference; flag anything you cannot confirm. 3) Confirm prerequisites are up front and the success check is present. 4) Confirm the troubleshooting section covers the likely failures. 5) Confirm the title matches search intent. The bar: could a real user solve this without contacting support? If not, fix what blocks them. Save the polished article to the produces path and note any criteria still unmet.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "kb-article.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "kb-article.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "kb-article.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "review",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Read kb-article.md against the scope and walk it as a stuck user. Check EACH criterion and write PASS/FAIL: (a) title matches the likely search terms; (b) prerequisites stated up front; (c) numbered steps, one action each, with expected results; (d) a troubleshooting section covers common failures; (e) a clear 'how to confirm success' step; (f) a real user could self-serve end to end without contacting support. An article that is a vague overview or leaves a step missing FAILS — loop back to write.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "kb-article.md"
+        }
+      ],
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

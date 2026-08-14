@@ -1,0 +1,101 @@
+{
+  "id": "data-join-merge",
+  "name": "Join / Merge Two Datasets",
+  "description": "Combine two datasets into one reconciled table on a shared key, correctly handling the join type, key mismatches, and duplicate fan-out. Profiles both sources and locks the join key, join type, and conflict rules FIRST (so the merge doesn't silently drop or duplicate rows), then builds the joined output, then verifies the match rate and that no row count exploded. Use this for joining two tables, merging datasets, a VLOOKUP-style match, enriching one file from another, or reconciling records across two sources.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the join (planner) — lock the join key, join type, and conflict rules → gated on artifact `notes/key-scope.md` (markdown-notes)\n2. Build the merge (developer) — normalize keys, join, and emit the reconciled table → gated on `data/merged.csv` (data-file)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "key-scope",
+  "triggers": [
+    "join two datasets",
+    "merge these tables",
+    "vlookup match",
+    "enrich one file from another",
+    "reconcile two data sources"
+  ],
+  "steps": [
+    {
+      "id": "key-scope",
+      "name": "Scope the join",
+      "description": "lock the join key, join type, and conflict rules",
+      "prompt": "Define the merge contract before joining. Step 1: profile BOTH sources — row counts, the candidate key column(s) in each, and the key's cardinality (is it unique, or one-to-many?). Step 2: assess key compatibility — same type/format? trailing whitespace or case differences? leading-zero or string-vs-number mismatches that must be normalized first? Step 3: choose the join type and justify it (inner = only matches; left = keep all of source A, enrich where matched; full = keep everything). Step 4: define conflict rules for columns present in both (which source wins, or keep both with suffixes) and the expected output column set. Step 5: write an acceptance-criteria checklist ('join key normalized in both', 'join type matches intent', 'output row count is explained by the join type and key cardinality', 'no unintended fan-out duplication', 'unmatched rows handled per the join type', 'expected columns present'). Call write_task_note and write the key analysis + join type + conflict rules + checklist to notes/key-scope.md.\n\nThe deliverable `notes/key-scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/key-scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/key-scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/key-scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "key-scope",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the merge",
+      "description": "normalize keys, join, and emit the reconciled table",
+      "prompt": "Execute the join exactly to the contract. Step 1: load both sources and normalize the join key in each (trim, case-fold, cast, zero-pad) per the scope. Step 2: perform the scoped join type on the normalized key. Step 3: apply conflict rules for overlapping columns (source-wins or suffixed _a/_b) and select the expected output columns. Step 4: track the numbers — rows in A, rows in B, matched rows, unmatched rows kept/dropped, and final row count — and confirm the final count is explained by the join type and key cardinality (not an accidental fan-out). Step 5: write the merged table to data/merged.csv with a header. On a loop-back, fix only the named gaps. Call write_task_note with the path and the match-rate / row-count reconciliation.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "data/merged.csv",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "data/merged.csv",
+            "bytes": 120
+          },
+          {
+            "kind": "sniff",
+            "file": "data/merged.csv",
+            "sniff": "data-table"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open data/merged.csv and verify the merge is correct and lossless-by-intent against notes/key-scope.md. Step 1: confirm it parses and has the expected columns, and that the join key was normalized consistently in both sources. Step 2: reconcile the row count yourself — final must equal matched rows (plus any unmatched-kept for left/full) and must NOT be inflated by duplicate keys creating a cartesian fan-out; compute the match rate and sanity-check it. Step 3: pick 3 keys — one matched, one present only in A, one only in B — and confirm each was handled per the chosen join type. Step 4: confirm overlapping columns followed the conflict rule and no key-normalization error caused false misses. Write PASS/FAIL per criterion; any FAIL loops back to build.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "data/merged.csv"
+        }
+      ],
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

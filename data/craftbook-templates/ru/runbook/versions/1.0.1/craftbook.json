@@ -1,0 +1,145 @@
+{
+  "id": "runbook",
+  "name": "Ops Runbook",
+  "description": "Write an operational runbook or playbook a tired on-call engineer can follow at 3am without thinking — covering when to use it, prerequisites, numbered step-by-step procedures, verification, rollback, and escalation. Scopes the exact scenarios and prerequisites FIRST, writes unambiguous copy-pasteable steps with expected output and verification at each stage, then has a reviewer pressure-test it for gaps and dangerous ambiguity. Use for incident response, deploy/rollback procedures, and recurring ops tasks.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the runbook (planner) — trigger scenarios, prerequisites, success/rollback definition → gated on artifact `notes/scope.md` (markdown-notes)\n2. Write the runbook (copywriter) — numbered, copy-pasteable steps with expected output + verification → gated on `runbook.md` (markdown-doc)\n3. Review for gaps (reviewer) — pressure-test the runbook for ambiguity and missing safety rails → gated on artifact `notes/review.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "write a runbook",
+    "ops playbook",
+    "incident runbook",
+    "on call procedure",
+    "operational procedure doc",
+    "deploy runbook"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the runbook",
+      "description": "trigger scenarios, prerequisites, success/rollback definition",
+      "prompt": "Define what the runbook covers before writing steps. Step 1: state the exact scenario(s) this runbook handles and, just as importantly, when NOT to use it. Step 2: list prerequisites — access/permissions, tools, environment, and any 'before you start' safety checks. Step 3: define what SUCCESS looks like (the verification signal that the procedure worked) and the conditions that should trigger a rollback or escalation. Step 4: outline the procedure as named stages in order (e.g. assess -> mitigate -> verify -> communicate), each to be expanded into numbered steps. Step 5: identify the destructive/irreversible steps that need an explicit warning. Step 6: write an acceptance-criteria checklist ('states when to use AND when not to', 'prerequisites + access listed', 'every stage has a verification step', 'a rollback procedure exists', 'escalation path with who/when', 'destructive steps carry a warning'). Write the scope + checklist via write_task_note AND to notes/scope.md. No detailed steps yet.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the runbook",
+      "description": "numbered, copy-pasteable steps with expected output + verification",
+      "prompt": "Write the runbook as runbook.md so a stressed on-call engineer can follow it literally. Step 1: open with a header block — purpose, when to use / when not to use, severity, and an at-a-glance summary. Step 2: write the prerequisites and a pre-flight checklist. Step 3: write each stage as explicitly NUMBERED steps; commands go in fenced code blocks ready to copy-paste, with placeholders clearly marked (e.g. <SERVICE_NAME>), and EACH step states the expected output and how to verify it before moving on. Step 4: add bold warning callouts before any destructive/irreversible step. Step 5: write a dedicated Rollback section (numbered, also verified) and an Escalation section naming who to contact, when, and how. Step 6: end with a 'how to confirm fully resolved' checklist. Keep sentences short and imperative; no ambiguity about which step to run when. On a loop-back, fix ONLY the named gaps. Write the path + stage/step counts via write_task_note.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "runbook.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "runbook.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "runbook.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 3
+      },
+      "next": "review"
+    },
+    {
+      "id": "review",
+      "name": "Review for gaps",
+      "description": "pressure-test the runbook for ambiguity and missing safety rails",
+      "prompt": "Pressure-test the runbook as if you must execute it half-asleep. Step 1: read every step and flag any that is ambiguous, assumes unstated context, or could be run out of order. Step 2: verify every destructive step has a warning and every stage has a verification signal. Step 3: confirm the rollback and escalation sections are actionable (real commands/contacts, not placeholders like 'contact the team'). Step 4: list concrete gaps with the exact step number and the fix needed. Step 5: write a review-findings note recording each gap as PASS/FAIL against the scope checklist. Write the findings via write_task_note AND to notes/review.md. If gaps remain, they must be fixed in the write phase before this passes.\n\nThe deliverable `notes/review.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/review.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "runbook.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "runbook.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "review",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "QA the runbook against the locked criteria. Step 1: read runbook.md and simulate following it step by step for the primary scenario. Step 2: check EACH acceptance criterion: states when to use and when not to, prerequisites + access listed, every stage has numbered steps with expected output and a verification, destructive steps carry warnings, a working rollback section exists, and an escalation path names who/when/how. Step 3: confirm there are no ambiguous steps or unresolved placeholders in the rollback/escalation sections. Step 4: incorporate the review findings from notes/review.md. Write PASS/FAIL per criterion with the offending step number on any FAIL.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "runbook.md"
+        }
+      ],
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

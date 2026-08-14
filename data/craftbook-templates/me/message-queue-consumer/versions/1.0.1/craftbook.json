@@ -1,0 +1,147 @@
+{
+  "id": "message-queue-consumer",
+  "name": "Message Queue Consumer / Worker",
+  "description": "Build a queue consumer/worker that pulls messages off a queue, processes them reliably, and handles failures with retries and a dead-letter path — at-least-once delivery done right. Scopes the messaging contract FIRST — the message schema, ack/nack semantics, idempotency key, retry/backoff policy, dead-letter rules, and concurrency — then implements the consumer loop with ack-after-success and DLQ routing, then tests success, retry, poison-message, and duplicate-delivery handling. Covers queue consumers, at-least-once vs at-most-once, ack/nack, idempotent processing, retry with backoff, dead-letter queues, and poison-message isolation.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the consumer (planner) — lock message schema, ack/retry/DLQ, idempotency → gated on artifact `notes/scope.md` (markdown-notes)\n2. Build the consumer (developer) — implement the consume loop with retry + DLQ → gated on `src/consumer.js` (code-module)\n3. Test reliability (developer) — test success, retry, poison-message, duplicates → gated on `src/consumer.test.js` (code-with-tests)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "build a queue consumer",
+    "message worker",
+    "process queue messages",
+    "handle a message queue",
+    "dead letter queue worker"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the consumer",
+      "description": "lock message schema, ack/retry/DLQ, idempotency",
+      "prompt": "Scope the queue consumer before coding — reliable messaging lives in the policy details. Step 1: Define the MESSAGE schema and the work each message represents. Step 2: Decide the delivery semantics and ACK strategy: ack only AFTER successful processing (at-least-once) so a crash mid-process redelivers, vs ack-on-receipt. Step 3: Define IDEMPOTENCY — the dedupe key and how processing-once is guaranteed under redelivery. Step 4: Define the failure policy: retry count and BACKOFF, and when a message is poison (route to a DEAD-LETTER queue after N attempts) rather than blocking the queue forever. Step 5: Decide concurrency/prefetch. Step 6: Write a numbered acceptance-criteria checklist of 5-9 items (e.g. 'a successful message is acked and processed once', 'a transient failure is retried with backoff', 'a poison message goes to the DLQ after N attempts', 'a duplicate delivery is processed only once'). `write_task_note` the scope + checklist and write the same to the produces path.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the consumer",
+      "description": "implement the consume loop with retry + DLQ",
+      "prompt": "Implement the consumer to the scope as a runnable worker. Step 1: Pull messages and validate each against the schema. Step 2: Process, then ACK only on success; on failure NACK/requeue so the message is redelivered (at-least-once). Step 3: Make processing IDEMPOTENT — check the dedupe key before applying side-effects so redelivery/duplicates do not double-apply. Step 4: Track attempt count; retry transient failures with BACKOFF, and after the scoped max attempts route the message to the DEAD-LETTER queue instead of looping forever. Step 5: Honor the concurrency/prefetch setting and log per-message outcome. Use an in-memory queue/DLQ if none specified. Write the worker to the produces path. On a loop-back, fix only the named gap. `write_task_note` the file path and which criteria now pass.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/consumer.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/consumer.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/consumer.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/consumer.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/consumer.js"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "test"
+    },
+    {
+      "id": "test",
+      "name": "Test reliability",
+      "description": "test success, retry, poison-message, duplicates",
+      "prompt": "Write tests for the consumer's reliability behavior. Step 1: Assert a good message is processed exactly once and acked. Step 2: Inject a transient failure and assert the message is retried (with backoff) and eventually succeeds. Step 3: Inject a permanently-failing (poison) message and assert it lands in the DLQ after the max attempts and does NOT block the queue. Step 4: Deliver the same message id twice and assert the side-effect is applied only once (idempotency). `write_task_note` the test file path and pass/fail count.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/consumer.test.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/consumer.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/consumer.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/consumer.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/consumer.js"
+          }
+        ],
+        "onReject": "test",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Run the tests and drive the consumer. For EACH acceptance criterion: confirm a successful message is processed once and acked, confirm a transient failure is retried with backoff, confirm a poison message reaches the DLQ after N attempts without blocking, and confirm duplicate delivery is processed only once. Write PASS/FAIL per criterion; a poison message that blocks the queue or a duplicate that double-applies is a FAIL.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "src/consumer.js"
+        }
+      ],
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

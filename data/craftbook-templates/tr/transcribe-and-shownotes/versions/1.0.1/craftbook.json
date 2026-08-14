@@ -1,0 +1,115 @@
+{
+  "id": "transcribe-and-shownotes",
+  "name": "Transcript to Shownotes",
+  "description": "Take a finished recording from raw transcript to publishable shownotes: a clean transcript on file, timestamped chapters, a summary listeners actually read, and the links mentioned — the per-episode ritual that turns audio into an archive. Locks the shownotes checklist FIRST (chapters timestamped, every link captured, names spelled right), then gets the transcript on file, then writes the shownotes from it. Use for episode shownotes, transcribing an episode, chapter timestamps, and 'turn this recording into shownotes'.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the shownotes (planner) — locate the recording or transcript, lock the shownotes checklist → gated on artifact `notes/scope.md` (markdown-notes)\n2. Get the transcript on file (transcriber) — clean, speaker-labeled, timestamped transcript under transcripts/\n3. Write the shownotes (copywriter) — summary, timestamped chapters, links and mentions, pull quotes → gated on artifact `report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "turn the recording into shownotes",
+    "shownotes for the episode",
+    "transcribe the episode",
+    "episode chapters and shownotes",
+    "write the shownotes"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the shownotes",
+      "description": "locate the recording or transcript, lock the shownotes checklist",
+      "prompt": "Define the job before touching the audio. Step 1: find the episode's recording or transcript — check the recordings folder and episodes.json for which episode is being shipped and what already exists on file. Step 2: confirm with the owner anything the transcript alone won't give you — guest name spellings, links they promised listeners, and where the shownotes get published. Step 3: write an acceptance-criteria checklist ('a clean, complete transcript is on file under transcripts/', 'every chapter has a timestamp that exists in the transcript', 'every link mentioned in the episode is captured', 'names spelled right throughout', 'the summary reads like the episode, not a form'). Call write_task_note with the episode + checklist and write notes/scope.md.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "transcript"
+    },
+    {
+      "id": "transcript",
+      "name": "Get the transcript on file",
+      "description": "clean, speaker-labeled, timestamped transcript under transcripts/",
+      "prompt": "Get the transcript on file. Step 1: if a transcript already exists (a provided file in the recordings folder), start from that; otherwise produce one from the recording through the project's transcription capabilities. Step 2: clean it — fix obvious mis-hearings, label the speakers, keep the timestamps. Step 3: save the cleaned transcript in the transcripts/ folder named for the episode (for example transcripts/ep12.md). A real transcript is substantial — never a stub or a summary. Step 4: call write_task_note with the transcript path and an approximate word count.",
+      "suggestedRole": "transcriber",
+      "next": "shownotes"
+    },
+    {
+      "id": "shownotes",
+      "name": "Write the shownotes",
+      "description": "summary, timestamped chapters, links and mentions, pull quotes",
+      "prompt": "Write the shownotes from the transcript. Step 1: a short summary a listener actually reads — what the episode is about and why it's worth their hour, in the show's voice. Step 2: the chapter list — timestamped, one line per chapter, every timestamp taken from the transcript, never invented. Step 3: links and mentions — everything referenced in the episode, with where each one points. Step 4: two or three pull quotes worth sharing, verbatim from the transcript with their speaker. Step 5: write report.md and call write_task_note with the chapter count and the link count.\n\nThe deliverable `report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "shownotes",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open report.md and the transcript under transcripts/ and verify every criterion from notes/scope.md: the transcript on file is complete and speaker-labeled, every chapter timestamp appears in the transcript (spot-check each one — a chapter that points at nothing is fabrication), every link mentioned in the episode is captured, names are spelled the way the owner confirmed, and the pull quotes are verbatim. Write PASS/FAIL per criterion; on any failure, name the gap and loop back to shownotes.\n\nThe deliverable lives in the project's artifacts drawer — open `report.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"shownotes\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "report.md",
+          "artifact": true
+        }
+      ],
+      "next": "shownotes"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

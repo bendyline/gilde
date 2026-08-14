@@ -1,0 +1,140 @@
+{
+  "id": "image-dedup-cluster",
+  "name": "Image Dedup & Cluster",
+  "description": "Find and group near-duplicate images across a folder — exact dupes, resized/re-encoded copies, and visually similar shots from the same burst — using perceptual hashing or visual similarity, then report clusters with a recommended keeper per group. Lock the similarity definition and thresholds FIRST (what counts as a duplicate vs merely similar) because the whole result hinges on that line; then analyze pairwise, cluster, and produce a human-reviewable report. Covers deduplication, near-duplicate detection, perceptual hashing, image clustering, burst grouping, and library cleanup.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the dedup (planner) — define similarity, thresholds, and the keeper rule → gated on artifact `notes/scope.md` (markdown-notes)\n2. Analyze similarity (developer) — hash, compare, and cluster the images → gated on artifact `notes/analyze.md` (markdown-notes)\n3. Write the report (developer) — produce the reviewable dedup report → gated on artifact `report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "find duplicate images",
+    "cluster similar photos",
+    "dedupe my image folder",
+    "near-duplicate detection",
+    "group similar images"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the dedup",
+      "description": "define similarity, thresholds, and the keeper rule",
+      "prompt": "1) List the folder and count the images. 2) Define the similarity method: exact-bytes hash for true dupes PLUS a perceptual hash (aHash/pHash/dHash) or embedding distance for near-dupes, and set the THRESHOLD (e.g. Hamming distance <= N) that separates 'duplicate' from 'merely similar'. 3) Define the KEEPER rule for a cluster (e.g. highest resolution, largest file, earliest timestamp). 4) Decide the report shape: clusters with member filenames, the chosen keeper, and the would-free byte savings. 5) Write an acceptance-criteria checklist: 'every image appears in exactly one cluster (singletons allowed)', 'the threshold is stated and applied consistently', 'each multi-member cluster names a keeper', 'reported savings are computed from real file sizes', 'no false-merge of clearly different images'. 6) Record method + thresholds + checklist via write_task_note AND to notes/scope.md.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "analyze"
+    },
+    {
+      "id": "analyze",
+      "name": "Analyze similarity",
+      "description": "hash, compare, and cluster the images",
+      "prompt": "1) Read scope.md. 2) Compute the exact and perceptual hashes for every image (prefer a small rerunnable script; fall back to visual comparison via the vision capability for small sets). 3) Compare pairwise and group images whose distance is within the threshold into clusters (transitively — if A~B and B~C, they share a cluster). 4) Apply the keeper rule to each multi-member cluster. 5) Spot-verify a couple of clusters by actually looking at the images to catch false merges. 6) Stage the cluster assignments and per-image metadata (hash, size, dimensions) to a working note. write_task_note the cluster count, duplicate count, and any uncertain merges. Good looks like: tight clusters where members truly are the same shot.\n\nThe deliverable `notes/analyze.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "notes/analyze.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/analyze.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/analyze.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "analyze",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the report",
+      "description": "produce the reviewable dedup report",
+      "prompt": "1) Read the cluster assignments. 2) Write report.md: a summary (total images, N clusters, M duplicates found, estimated bytes freed), then one section per multi-member cluster listing its members (filename, dimensions, size), the recommended KEEPER (and why), and the ones to remove. 3) Include a short methodology line (method + threshold used) so the result is auditable. 4) List singletons compactly at the end. 5) Be explicit about any low-confidence clusters the human should eyeball. 6) On a loop-back, fix only the named issues (a bad merge, a wrong keeper). 7) write_task_note the report path. The gated deliverable is report.md.\n\nThe deliverable `report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "1) Open report.md and confirm it states the method + threshold and a summary with cluster/duplicate counts (PASS/FAIL). 2) Verify every image is accounted for in exactly one cluster or as a singleton (PASS/FAIL). 3) Open 2-3 reported clusters' member images — are they genuinely the same/near-same shot (no false merges) and is the keeper choice sensible (PASS/FAIL)? 4) Confirm byte-savings are computed from real sizes. 5) Write PASS/FAIL per criterion. False merges or unaccounted images → loop back to report (or analyze if clustering is wrong).\n\nThe deliverable lives in the project's artifacts drawer — open `report.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "report.md",
+          "artifact": true
+        }
+      ],
+      "next": "report"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

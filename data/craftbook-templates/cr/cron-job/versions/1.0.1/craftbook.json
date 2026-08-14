@@ -1,0 +1,147 @@
+{
+  "id": "cron-job",
+  "name": "Scheduled Batch Job",
+  "description": "Build a scheduled batch job that runs on a cadence, processes a unit of work, is safe to re-run, and reports its outcome. Scopes the job FIRST — trigger cadence, the work it does, batch/chunk size, idempotency, failure/partial-failure handling, and observable output — then implements the runnable job, then tests a clean run, an empty run, a partial-failure run, and re-run safety. Covers cron scheduling semantics, batch processing, idempotent reruns, chunking, structured logging, exit codes, and graceful partial-failure handling.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the job (planner) — lock cadence, work unit, idempotency, failure handling → gated on artifact `notes/scope.md` (markdown-notes)\n2. Build the job (developer) — implement the runnable batch job → gated on `src/job.js` (code-module)\n3. Write job tests (developer) — test clean, empty, partial-failure, and re-run → gated on `src/job.test.js` (code-with-tests)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "build a cron job",
+    "scheduled batch job",
+    "nightly job",
+    "recurring task script",
+    "batch processor"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the job",
+      "description": "lock cadence, work unit, idempotency, failure handling",
+      "prompt": "Scope the batch job before coding. Step 1: State the cadence (e.g. the cron expression) and what one run is responsible for. Step 2: Define the unit of work and how items are fetched and chunked (batch size, ordering). Step 3: Decide idempotency: how a re-run avoids double-processing already-done items, and what happens if a previous run died mid-batch. Step 4: Define failure handling: does one bad item abort the run or get skipped-and-logged, the exit code on full vs partial success, and what gets logged for observability. Step 5: Write a numbered acceptance-criteria checklist of 5-9 items (e.g. 'a clean run processes all items and exits 0', 'an empty input run is a no-op that exits 0', 'a re-run does not reprocess completed items', 'a bad item is logged and skipped without aborting the batch'). `write_task_note` the scope + checklist and write the same to the produces path.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the job",
+      "description": "implement the runnable batch job",
+      "prompt": "Implement the job as a single runnable script with a clear entry point. Step 1: Fetch the work items and process them in chunks of the scoped batch size. Step 2: Make it idempotent — check a done-marker/store before processing each item so re-runs skip completed work. Step 3: Handle failures per the scope (skip-and-log vs abort) and emit structured log lines (start, per-batch progress, per-item errors, summary count). Step 4: Exit 0 on full success, a non-zero code on full failure, and the scoped code on partial. Use an in-memory store/sample data if none specified. On a loop-back, fix only the named gaps. `write_task_note` the file path and which criteria now pass.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/job.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/job.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/job.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/job.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/job.js"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "test"
+    },
+    {
+      "id": "test",
+      "name": "Write job tests",
+      "description": "test clean, empty, partial-failure, and re-run",
+      "prompt": "Write tests that invoke the job's run function with controlled inputs. Step 1: Assert a clean run processes every item and exits 0 with a correct summary count. Step 2: Assert an empty-input run is a no-op exiting 0. Step 3: Inject one failing item and assert it is logged/skipped (or aborts) per the scope, with the right exit code. Step 4: Run twice over the same input and assert the second run skips already-done items. `write_task_note` the test file path and pass/fail count.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/job.test.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/job.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/job.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/job.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/job.js"
+          }
+        ],
+        "onReject": "test",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Run the tests and execute the job. For EACH acceptance criterion: confirm a clean run processes all items and exits 0, confirm an empty run is a safe no-op, confirm a re-run does not reprocess completed items, confirm a bad item is handled per the scope, and confirm exit codes and log output match. Write PASS/FAIL per criterion.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "src/job.js"
+        }
+      ],
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

@@ -1,0 +1,255 @@
+{
+  "schemaVersion": 1,
+  "title": "Plan the Week smoke eval",
+  "objective": "Task-specific eval for the Plan the Week craftbook: the week's eight events come from a live fake calendar service, and report.md shapes the days with the agenda-less meetings flagged for prep, the Tuesday conflict named, and focus blocks defended.",
+  "tags": [
+    "external"
+  ],
+  "prompt": "monday again — can you pull the week from the calender service and lay out a plan in report.md? theres a probe script wired to the fake calendar, and my open followups are in the workspace too",
+  "setup": {
+    "projectName": "Calendar Desk — Week Plan Eval",
+    "about": "Self-contained eval project for week-plan. The calendar is wired as a live fake service — endpoints in mocks/services.md, and the ready-made mock-probe project script fetches the week's events. Open follow-ups are seeded at followups.json; the deliverable is report.md.",
+    "missionObjectives": "Use the Plan the Week craftbook/template, pull the week's events from the fake calendar service through the provided probe, fold in the open follow-ups, and write report.md. No real services, credentials, or live calendars — only the wired mock.",
+    "files": [
+      {
+        "path": "followups.json",
+        "content": "[\n  {\n    \"id\": \"FU-11\",\n    \"what\": \"Send the revised SOW to Harborview before the demo\",\n    \"due\": \"2026-07-15\",\n    \"status\": \"open\"\n  },\n  {\n    \"id\": \"FU-12\",\n    \"what\": \"Chase Northwind for the data-migration timeline\",\n    \"due\": \"2026-07-13\",\n    \"status\": \"open\"\n  },\n  {\n    \"id\": \"FU-13\",\n    \"what\": \"Book the offsite room for August\",\n    \"due\": \"2026-07-17\",\n    \"status\": \"open\"\n  }\n]\n"
+      }
+    ],
+    "worker": {
+      "name": "Meike",
+      "role": "Planner"
+    }
+  },
+  "mocks": [
+    {
+      "kind": "http",
+      "id": "calendar",
+      "description": "Fake calendar service for this eval. GET /api/events returns the current week's events with times, attendees, and agendas (null agenda means nobody wrote one).",
+      "credential": {
+        "name": "mock.calendar"
+      },
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/events",
+          "body": {
+            "week": "2026-07-13",
+            "events": [
+              {
+                "id": "EVT-101",
+                "title": "Team standup",
+                "start": "2026-07-13T09:00",
+                "end": "2026-07-13T09:15",
+                "attendees": [
+                  "you",
+                  "the team"
+                ],
+                "agenda": "standing sync"
+              },
+              {
+                "id": "EVT-102",
+                "title": "Vendor sync - Northwind Systems",
+                "start": "2026-07-13T14:00",
+                "end": "2026-07-13T15:00",
+                "attendees": [
+                  "you",
+                  "Dana Whitfield",
+                  "Priya Raman"
+                ],
+                "agenda": null
+              },
+              {
+                "id": "EVT-103",
+                "title": "Q3 budget review",
+                "start": "2026-07-14T10:00",
+                "end": "2026-07-14T11:00",
+                "attendees": [
+                  "you",
+                  "Marcus Lee",
+                  "Finance"
+                ],
+                "agenda": "walk the Q3 numbers"
+              },
+              {
+                "id": "EVT-104",
+                "title": "1:1 with Priya",
+                "start": "2026-07-14T10:30",
+                "end": "2026-07-14T11:00",
+                "attendees": [
+                  "you",
+                  "Priya Raman"
+                ],
+                "agenda": "weekly 1:1"
+              },
+              {
+                "id": "EVT-105",
+                "title": "Client demo - Harborview",
+                "start": "2026-07-15T13:00",
+                "end": "2026-07-15T14:00",
+                "attendees": [
+                  "you",
+                  "Harborview team"
+                ],
+                "agenda": null
+              },
+              {
+                "id": "EVT-106",
+                "title": "Design review",
+                "start": "2026-07-16T09:30",
+                "end": "2026-07-16T10:30",
+                "attendees": [
+                  "you",
+                  "design"
+                ],
+                "agenda": "review the onboarding flow"
+              },
+              {
+                "id": "EVT-107",
+                "title": "Sprint retro",
+                "start": "2026-07-17T11:00",
+                "end": "2026-07-17T12:00",
+                "attendees": [
+                  "you",
+                  "the team"
+                ],
+                "agenda": "retro board"
+              },
+              {
+                "id": "EVT-108",
+                "title": "All-hands",
+                "start": "2026-07-17T15:00",
+                "end": "2026-07-17T16:00",
+                "attendees": [
+                  "everyone"
+                ],
+                "agenda": "company update"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "kind": "cli",
+      "id": "probe",
+      "description": "Provenance-trusted project script `mock-probe` that fetches the week's events from the fake calendar through http.authed and returns the raw response.",
+      "shim": {
+        "path": "scripts/mock-probe.ts",
+        "content": "import { defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'mock-probe',\n  description:\n    'Probe the live fake calendar service for this eval: fetches the weekly events and returns the raw JSON as evidence for the plan.',\n  inputs: {},\n  outputs: {\n    events: { type: 'string', description: 'Raw JSON body from the week events listing.' },\n  },\n  requires: ['workspace.read', 'network', 'credential:mock.calendar'],\n});\n\nconst services = JSON.parse(await gezel.fs.read('mocks/services.json'));\nconst base = (id) => {\n  const service = services.find((entry) => entry.id === id);\n  if (!service) throw new Error(`mock service \"${id}\" is not listed in mocks/services.json`);\n  return service.baseUrl;\n};\n\nconst events = await gezel.http.authed(`${base('calendar')}/api/events`, {\n  credential: 'mock.calendar',\n});\nif (!events.ok) throw new Error(`events listing failed: ${events.status} ${events.body}`);\n\ngezel.output({ events: events.body });\n"
+      }
+    }
+  ],
+  "success": {
+    "summary": "report.md is a Monday-morning week plan grounded in the live fake calendar: all five weekdays shaped, the agenda-less meetings in the prep queue, the Tuesday overlap named with a proposed fix, and focus blocks placed.",
+    "deliverables": [
+      {
+        "path": "report.md",
+        "kind": "markdown-report",
+        "minBytes": 1200,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "Monday",
+            "flags": "i",
+            "label": "the week is laid out day by day, starting Monday"
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "Friday",
+            "flags": "i",
+            "label": "the plan reaches the end of the week"
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "prep",
+            "flags": "i",
+            "label": "a prep queue exists"
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "conflict|overlap|double[- ]?book|clash",
+            "flags": "i",
+            "label": "the calendar conflict is called out"
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "focus",
+            "flags": "i",
+            "label": "focus blocks are placed and defended"
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "Vendor sync",
+            "flags": "i",
+            "label": "the agenda-less vendor sync from the live calendar is in the plan"
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "Harborview",
+            "flags": "i",
+            "label": "the agenda-less client demo from the live calendar is in the plan"
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "Priya",
+            "flags": "i",
+            "label": "the overlapping 1:1 is seen, not skipped"
+          }
+        ]
+      }
+    ],
+    "mocks": [
+      {
+        "service": "calendar",
+        "minRequests": 1,
+        "requiredPaths": [
+          "^/api/events"
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "report.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "coverage",
+        "description": "Every event from the calendar week appears in the plan; nothing is silently dropped and nothing is invented."
+      },
+      {
+        "name": "prioritization",
+        "description": "Focus blocks land in real gaps, the biggest work gets the biggest gap, and follow-ups sit on days with room."
+      },
+      {
+        "name": "conflict-handling",
+        "description": "The overlapping pair is named with a concrete proposed fix the owner can accept in one decision."
+      },
+      {
+        "name": "realism",
+        "description": "The load picture is honest — heavy days are called heavy, and no day is over-packed to look tidy."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "calendar grounding",
+    "prep flagging",
+    "honest load picture"
+  ]
+}

@@ -1,0 +1,107 @@
+{
+  "id": "oncall-handoff",
+  "name": "On-Call Shift Handoff",
+  "description": "Produce a clean end-of-shift on-call handoff: open incidents and their state, watch-items and known-flapping alerts, deferred actions, and anything the next on-call must do in the first hour. Scopes the handoff template and the carry-over rule FIRST (sections, what counts as an open item, the must-not-drop list), then a developer gathers the shift's signals (active incidents, recent pages, deferred follow-ups) and assembles the handoff so the incoming engineer can pick up cold. Scoping the template and carry-over rule before assembling is what guarantees no live incident or hot watch-item is dropped at the shift boundary. Use for on-call handoffs, shift handover notes, pager handoff, SRE shift change, and end-of-shift summaries.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the handoff (planner) — lock the template and the no-drop carry-over rule → gated on artifact `notes/scope.md` (markdown-notes)\n2. Assemble the handoff (developer) — gather shift signals and build the handoff doc → gated on `handoff.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "on-call handoff",
+    "shift handover",
+    "pager handoff",
+    "end of shift summary",
+    "oncall handover notes"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the handoff",
+      "description": "lock the template and the no-drop carry-over rule",
+      "prompt": "Define the handoff structure before gathering. (1) Lock the section template — Open incidents (state, severity, owner, last action, next step) / Watch items & flapping alerts / Deferred follow-ups / First-hour actions for the next on-call / Quiet-but-noteworthy. (2) Name the inputs (active incident tracker, the shift's page history, deferred TODOs, monitoring dashboard). (3) Lock the carry-over rule: any incident that is not fully resolved AND any alert that fired more than once this shift MUST appear with an explicit state — nothing dropped at the boundary. (4) Define the urgency tag set for first-hour actions. Write an acceptance-criteria checklist ('every unresolved incident listed with state + next step', 'every repeat/flapping alert surfaced', 'first-hour actions are concrete and tagged', 'next on-call can act with zero verbal context', 'nothing live dropped') plus the template + input map to notes/scope.md via write_task_note AND the produces path. No handoff doc yet.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "assemble"
+    },
+    {
+      "id": "assemble",
+      "name": "Assemble the handoff",
+      "description": "gather shift signals and build the handoff doc",
+      "prompt": "Build handoff.md for the shift using the locked template and inputs. (1) Pull active/unresolved incidents; for each write severity, current state, owner, the last action taken, and the explicit next step. (2) Pull this shift's page history; surface any alert that fired more than once as a watch/flapping item with a one-line 'why' and whether it's safe to ignore. (3) List deferred follow-ups that didn't get done. (4) Write the First-hour actions section as concrete, tagged commands ('Check the DB replica lag — it was climbing at end of shift; runbook: <link>'). (5) Apply the carry-over rule strictly — bracket anything you can't confirm rather than omitting it. The next on-call must be able to take the pager cold from this doc alone. On a loop-back fix only the flagged sections. Write the path and counts (open incidents, watch items) to notes via write_task_note.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "handoff.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "handoff.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "handoff.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "assemble",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "QA handoff.md against the locked criteria. (1) Confirm every template section is present. (2) Apply the carry-over check against the inputs: every unresolved incident appears with state + next step, and every alert that fired 2+ times this shift is surfaced — FAIL on any drop. (3) Read the First-hour actions: are they concrete, tagged, and actionable with zero verbal context? (4) Spot-check 2 incident entries for an explicit next step (not just a status). (5) Confirm unconfirmed items are bracketed, not omitted. Write PASS/FAIL per criterion with the specific gaps.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"assemble\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "handoff.md"
+        }
+      ],
+      "next": "assemble"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

@@ -1,0 +1,148 @@
+{
+  "id": "data-pipeline-etl",
+  "name": "ETL / Ingest Pipeline",
+  "description": "Build an extract-transform-load pipeline that ingests source data, reshapes it to a target schema, and loads it with validation at every stage. Locks the schemas FIRST — source shape, target shape, the field-by-field transform/mapping, type coercions, and the data-quality rules — then implements extract→transform→load with row-level error capture, then a reviewer validates output conformance, row counts, and reject handling. Covers ETL stages, schema mapping, type coercion, data validation, idempotent loads, dead-letter/reject rows, and reconciliation counts.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Schema scope (planner) — lock source/target schemas, mapping, quality rules → gated on artifact `notes/schema-scope.md` (markdown-notes)\n2. Build the pipeline (developer) — implement extract → transform → load → gated on `src/pipeline.js` (code-module)\n3. Validate the output (reviewer) — check conformance, counts, and reject handling → gated on artifact `notes/validate.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "schema-scope",
+  "triggers": [
+    "build an etl pipeline",
+    "ingest and transform data",
+    "data pipeline",
+    "load data into a target schema",
+    "etl job"
+  ],
+  "steps": [
+    {
+      "id": "schema-scope",
+      "name": "Schema scope",
+      "description": "lock source/target schemas, mapping, quality rules",
+      "prompt": "Lock the schemas and mapping before writing pipeline code. Step 1: Document the SOURCE schema — fields, types, and any messiness (nulls, formats, encodings). Step 2: Document the TARGET schema the data must conform to. Step 3: Write the field-by-field transform map: which source field(s) feed each target field, the coercion/cleaning applied (trim, parse date, cast number), and the default for missing values. Step 4: Define data-quality rules and reject criteria — which rows are invalid and what happens to them (drop, dead-letter, fail run). Step 5: Write a numbered acceptance-criteria checklist of 5-9 items (e.g. 'every loaded row conforms to the target schema', 'invalid rows go to the reject sink and are counted', 'input count = loaded + rejected', 're-running does not duplicate rows'). `write_task_note` the schemas + mapping + checklist and write the same to the produces path.\n\nThe deliverable `notes/schema-scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/schema-scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/schema-scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/schema-scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "schema-scope",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the pipeline",
+      "description": "implement extract → transform → load",
+      "prompt": "Implement the pipeline as three clear stages in a runnable script. Step 1 (extract): read the source data into records. Step 2 (transform): apply the locked mapping field-by-field with the specified coercions and defaults; validate each row against the quality rules. Step 3 (load): write conforming rows to the target and route failing rows to the reject sink, keeping running counts (read / loaded / rejected). Step 4: make the load idempotent (upsert or skip-seen) so re-runs do not duplicate. Emit a reconciliation summary at the end. Use sample/in-memory sources and sinks if none specified. On a loop-back, fix only the named gaps. `write_task_note` the file path and which criteria now pass.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/pipeline.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/pipeline.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/pipeline.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/pipeline.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/pipeline.js"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "validate"
+    },
+    {
+      "id": "validate",
+      "name": "Validate the output",
+      "description": "check conformance, counts, and reject handling",
+      "prompt": "Validate the pipeline's output against the schema and the quality rules. Step 1: Run the pipeline on representative input including deliberately bad rows. Step 2: Confirm every loaded row conforms to the target schema exactly (fields present, types correct). Step 3: Confirm the reconciliation holds: input count equals loaded plus rejected, and rejected rows are the ones that violate the rules. Step 4: Re-run and confirm no duplicate rows appear. Write a short validation note with the counts and any conformance gaps to the produces path.\n\nThe deliverable `notes/validate.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/validate.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/pipeline.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/pipeline.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/pipeline.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/pipeline.js"
+          }
+        ],
+        "onReject": "validate",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Run the pipeline on input that includes valid and invalid rows. For EACH acceptance criterion: confirm every loaded row conforms to the target schema, confirm invalid rows are rejected and counted, confirm input = loaded + rejected, and confirm a re-run produces no duplicates. Write PASS/FAIL per criterion with the reconciliation counts.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "src/pipeline.js"
+        }
+      ],
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

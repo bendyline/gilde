@@ -1,0 +1,147 @@
+{
+  "id": "state-machine",
+  "name": "Model a Flow as a State Machine",
+  "description": "Model a stateful flow (checkout, order lifecycle, connection, wizard) as an explicit finite state machine with named states, guarded transitions, and rejected illegal moves — making impossible states impossible. Models the machine FIRST — the full state set, the events, the legal transition table, guards, and entry/exit effects — then implements a transition function that rejects illegal events, then tests every legal path and that illegal transitions are refused. Covers states/events/transitions, transition tables, guards, side-effects on entry, illegal-transition rejection, and exhaustive path testing.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Model the machine (planner) — lock states, events, transition table, guards → gated on artifact `notes/model.md` (markdown-notes)\n2. Build the machine (developer) — implement a guarded transition function → gated on `src/machine.js` (code-module)\n3. Test every path (developer) — test legal paths and illegal-transition rejection → gated on `src/machine.test.js` (code-with-tests)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "model",
+  "triggers": [
+    "model a state machine",
+    "build a finite state machine",
+    "order lifecycle states",
+    "implement a workflow as states",
+    "state transitions"
+  ],
+  "steps": [
+    {
+      "id": "model",
+      "name": "Model the machine",
+      "description": "lock states, events, transition table, guards",
+      "prompt": "Model the state machine before coding — making illegal states unrepresentable is the whole value. Step 1: Enumerate the complete, finite set of STATES (including initial and terminal states). Step 2: Enumerate the EVENTS/inputs that can occur. Step 3: Write the full TRANSITION TABLE: for each (state, event) pair, the next state — and explicitly mark the pairs that are ILLEGAL (no transition). Step 4: Note any guards (conditions that must hold for a transition) and entry/exit side-effects per state. Step 5: Write a numbered acceptance-criteria checklist of 5-9 items (e.g. 'the machine starts in the initial state', 'every legal transition produces the table's next state', 'an illegal (state,event) pair is rejected, not silently ignored', 'terminal states accept no further transitions'). `write_task_note` the state diagram/table + checklist and write the same to the produces path.\n\nThe deliverable `notes/model.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/model.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/model.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/model.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "model",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the machine",
+      "description": "implement a guarded transition function",
+      "prompt": "Implement the state machine to the model. Step 1: Represent states and events as a closed set (enum/union) so only modeled values are usable. Step 2: Encode the transition table directly and write a `transition(state, event)` function that returns the next state for legal pairs. Step 3: For illegal (state, event) pairs, REJECT explicitly (throw a typed error or return an explicit rejection) — never silently stay or fall through. Step 4: Evaluate guards before transitioning and run entry/exit effects on the relevant transitions. Step 5: Make the current state observable and start in the initial state. Write the machine to the produces path. On a loop-back, fix only the named gaps. `write_task_note` the file path and which criteria now pass.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/machine.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/machine.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/machine.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/machine.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/machine.js"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "test"
+    },
+    {
+      "id": "test",
+      "name": "Test every path",
+      "description": "test legal paths and illegal-transition rejection",
+      "prompt": "Write tests covering the transition table exhaustively. Step 1: Assert the machine starts in the initial state. Step 2: For every LEGAL (state, event) pair in the table, drive the machine to that state and assert the event produces the table's next state. Step 3: For representative ILLEGAL pairs, assert the machine rejects the event (throws/returns rejection) and does NOT change state. Step 4: Assert terminal states reject all further events, and that guarded transitions are blocked when the guard fails. `write_task_note` the test file path and pass/fail count.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/machine.test.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/machine.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/machine.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/machine.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/machine.js"
+          }
+        ],
+        "onReject": "test",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Run the tests and exercise the machine. For EACH acceptance criterion: confirm it starts in the initial state, confirm every legal transition matches the table, confirm illegal (state,event) pairs are explicitly rejected without changing state, and confirm terminal states and guards behave. Write PASS/FAIL per criterion; an illegal transition that is silently ignored is a FAIL.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "src/machine.js"
+        }
+      ],
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

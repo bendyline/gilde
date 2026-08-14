@@ -1,0 +1,146 @@
+{
+  "id": "due-diligence-brief",
+  "name": "Due-Diligence Brief",
+  "description": "Produce a structured due-diligence brief on an entity (company, vendor, investment, partner): a planner locks the diligence dimensions and red-flag criteria, a researcher gathers verifiable facts and risk signals per dimension with sources, and a copywriter writes a decision-oriented brief with findings, risks, and an overall read. The ordering matters because diligence without locked dimensions misses a category (e.g. legal, financial, reputational) and a brief without a red-flag rubric buries the risks; fixing the dimensions and what counts as a flag first makes the brief decision-ready and defensible. Use this for vendor/partner due diligence, investment diligence, background briefs on a company or person, risk assessments, and 'should we work with / invest in X' questions.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the diligence (planner) — lock diligence dimensions + red-flag criteria → gated on artifact `notes/scope.md` (markdown-notes)\n2. Gather facts & signals (researcher) — verifiable facts + risk signals per dimension, sourced → gated on artifact `notes/findings.md` (markdown-notes)\n3. Write the brief (copywriter) — decision-oriented brief with findings, risks, and a read → gated on artifact `brief.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "due diligence brief",
+    "diligence on this company",
+    "background check on a vendor",
+    "should we partner with",
+    "risk assessment of an entity"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the diligence",
+      "description": "lock diligence dimensions + red-flag criteria",
+      "prompt": "1. Name the entity and the decision the brief informs (invest, partner, buy, hire) in one sentence. 2. Lock the diligence dimensions to cover (e.g. business model & traction, financials/funding, leadership, legal/regulatory, reputation/litigation, security/compliance as relevant) and what each must establish. 3. Define the red-flag rubric: what observations count as a red, amber, or green signal in each dimension. 4. Write an acceptance-criteria checklist (e.g. 'every dimension has a findings section', 'each material fact cites a source', 'risks are rated red/amber/green per the rubric', 'an overall recommendation/read is stated', 'unknowns and information gaps are listed'). 5. Record decisions. Call write_task_note with the dimensions, red-flag rubric, and checklist; write the same to notes/scope.md.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "research"
+    },
+    {
+      "id": "research",
+      "name": "Gather facts & signals",
+      "description": "verifiable facts + risk signals per dimension, sourced",
+      "prompt": "1. For each locked dimension, gather verifiable facts into notes/findings.md: the fact, its source [n] (official filing, registry, reputable reporting), and the date. 2. Apply the red-flag rubric as you go: tag each notable signal red/amber/green with the reason. 3. Prefer primary records (registrations, filings, official statements) over rumor; corroborate any serious negative with a second independent source before flagging it red. 4. Explicitly list what you could NOT find — open questions and information gaps are a diligence output, not a failure. 5. Do not assert unverified rumors as fact; mark them UNVERIFIED. Good looks like a per-dimension findings file with rated signals. Do not write the brief yet.\n\nThe deliverable `notes/findings.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "researcher",
+      "advanceWhen": {
+        "file": "notes/findings.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/findings.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/findings.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "research",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the brief",
+      "description": "decision-oriented brief with findings, risks, and a read",
+      "prompt": "1. Write brief.md: a 1-paragraph bottom-line read up top (overall recommendation + the single biggest risk), then a section per diligence dimension with its findings and rated signals, then a consolidated 'Risks (red/amber/green)' section, then 'Open questions & information gaps'. 2. Every material fact carries its citation [n] and date; never state a serious negative without a corroborating source. 3. Keep it decision-oriented and scannable — a busy reader should get the verdict and risks in 60 seconds. 4. Add a References list from notes/findings.md so every [n] resolves. 5. On a loop-back, fix only the named gaps. 6. Call write_task_note with the brief path and which criteria now pass.\n\nBefore working, open the artifact input `notes/findings.md` with `read_artifact`; do not look for it in the workspace.\n\nThe deliverable `brief.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "consumes": [
+        {
+          "file": "notes/findings.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "brief.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "brief.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "brief.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open brief.md and check EACH criterion PASS/FAIL: (1) every locked dimension has a findings section; (2) each material fact cites a dated source (spot-check 3 against notes/findings.md); (3) risks are rated red/amber/green per the rubric and serious negatives are corroborated by a second source; (4) an explicit bottom-line read/recommendation is stated up top; (5) an open-questions/information-gaps section lists what could not be confirmed; (6) no UNVERIFIED rumor is presented as fact. A brief that buries the risks, omits a dimension, or states an uncorroborated negative as fact FAILS.\n\nThe deliverable lives in the project's artifacts drawer — open `brief.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "brief.md",
+          "artifact": true
+        }
+      ],
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

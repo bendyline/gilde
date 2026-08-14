@@ -1,0 +1,109 @@
+{
+  "id": "sql-analysis",
+  "name": "Answer a Question with SQL",
+  "description": "Answer a specific business question against a database or table set with a correct, readable SQL query and a short written answer. Scopes the question, the tables/columns, and the grain FIRST (so the query measures the right thing at the right level), then writes and runs the query as a data-analyst, then verifies the result with a sanity check and an explanation. Use this for SQL analysis, querying a database, writing a report query, computing a metric in SQL, or answering 'how many / what's the trend' from tables.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the question (planner) — lock the question, tables, grain, and filters → gated on artifact `notes/question-scope.md` (markdown-notes)\n2. Write and run the query (data-analyst) — author a correct, readable query and capture the result → gated on `query.sql` (code-module)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "question-scope",
+  "triggers": [
+    "answer this with sql",
+    "write a sql query",
+    "query the database",
+    "compute a metric in sql",
+    "sql analysis"
+  ],
+  "steps": [
+    {
+      "id": "question-scope",
+      "name": "Scope the question",
+      "description": "lock the question, tables, grain, and filters",
+      "prompt": "Pin down exactly what the query must compute before writing SQL. Step 1: restate the business question as a precise metric ('count of distinct paying users who signed up in Q1', not 'how many users'). Step 2: identify the tables and the columns involved, and the join keys between them. Step 3: state the GRAIN of the answer (one row per user? per day? a single scalar?) and any filters (date range, status, dedup rule). Step 4: define edge cases (nulls, soft-deletes, duplicates, timezone). Step 5: write an acceptance-criteria checklist ('answers the exact restated question', 'joins on the correct keys', 'filters match the stated scope', 'handles nulls/dupes correctly', 'result is at the stated grain'). Call write_task_note and write the restated question + schema map + grain + checklist to notes/question-scope.md.\n\nThe deliverable `notes/question-scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/question-scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/question-scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/question-scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "question-scope",
+        "maxAttempts": 3
+      },
+      "next": "query"
+    },
+    {
+      "id": "query",
+      "name": "Write and run the query",
+      "description": "author a correct, readable query and capture the result",
+      "prompt": "Write the SQL that answers the scoped question and run it if a database capability is available. Step 1: write a readable query — CTEs over deep nesting, explicit column lists, clear aliases, and a comment stating what it returns. Step 2: apply the scoped filters, joins, and dedup rule; pick the correct aggregate (COUNT(DISTINCT ...) vs COUNT(*)) for the grain. Step 3: run it (or, if no DB is reachable, dry-run against the schema and reason about the result), and capture the returned rows/value. Step 4: write the query to query.sql and record the result. Call write_task_note with the query, the result, and the assumptions baked in. On a loop-back, fix only the named correctness gaps.",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "query.sql",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "query.sql",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "query.sql",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "query.sql"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "query.sql"
+          }
+        ],
+        "onReject": "query",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Read query.sql and verify it is correct, not just runnable. Step 1: confirm it answers the exact restated question, the joins use the correct keys, the aggregate matches the stated grain (e.g. COUNT(DISTINCT) where dedup is required), and the filters match scope. Step 2: re-reason about the classic SQL traps yourself — fan-out from a one-to-many join inflating counts, NULLs silently dropping rows in filters, and a missing DISTINCT. Step 3: sanity-check the captured result's magnitude against a back-of-envelope expectation and flag if it's implausible (e.g. more paying users than total users). Step 4: state in one sentence what the number means in business terms. Write PASS/FAIL per criterion; any FAIL loops back to query.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"query\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "query.sql"
+        }
+      ],
+      "next": "query"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

@@ -1,0 +1,116 @@
+{
+  "id": "juice-pass",
+  "name": "Juice Pass",
+  "description": "Make the game feel alive without breaking it: feedback on every player action — hit-flash, screenshake, sound hooks, particles, score pops — added with restraint and verified playable after every change. Locks the juice checklist FIRST — every player action gets visible feedback, effects stay tasteful, nothing regresses — then edits the game in place, re-checking that it still runs and still ends. Use for 'the game feels dead', game feel passes, adding screenshake and particles, polishing an arcade game, and making hits feel like hits.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Write the juice checklist (spellenmaker) — every player action listed with the feedback it deserves → gated on artifact `notes/scope.md` (markdown-notes)\n2. Add the juice (developer) — edit the game in place, one effect at a time, never breaking it → gated on `index.html` (html-game)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "give the game some juice",
+    "the game feels dead",
+    "add screenshake and particles",
+    "game feel pass",
+    "make the hits feel better"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Write the juice checklist",
+      "description": "every player action listed with the feedback it deserves",
+      "prompt": "Read the game before touching it. Step 1: open index.html from the workspace and trace the play loop — every player action (move, shoot, hit, get hit, pick up, score, die, restart) and what feedback each currently gives; a working game with silent, flashless actions is exactly what this pass fixes. Step 2: write the juice checklist — for each action, the visible feedback it will get (flash, shake, particle burst, score pop, easing) and the sound hook where one fits. Step 3: lock the restraint rules — effects are short and purposeful, no strobing or seizure bait, the game's readability never drops, and nothing regresses: the game must still start, play, end, and restart exactly as before. Step 4: write an acceptance-criteria checklist ('every listed action has visible feedback', 'effects restrained and readable', 'the script still parses and the loop still runs', 'game over and restart still work'). Call write_task_note with the action count + checklist and write notes/scope.md.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "spellenmaker",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "implement"
+    },
+    {
+      "id": "implement",
+      "name": "Add the juice",
+      "description": "edit the game in place, one effect at a time, never breaking it",
+      "prompt": "Work through the checklist by editing index.html in place. Step 1: add the effects one action at a time — hit-flash on damage, a brief screenshake on impacts, particles where things break or land, a score pop when points arrive, sound hooks through the page's own audio where the checklist calls for them. Step 2: after each addition, re-read the script for errors — a juicy game that no longer runs is a failed pass, and the gate will send it back. Step 3: keep the restraint rules — short effects, no strobes, the player can always read the field. Step 4: play the loop end to end in your head against the code: start, action feedback, game over, restart — confirm nothing regressed. Call write_task_note with the effects added per action.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 6000
+          },
+          {
+            "kind": "htmlLint",
+            "file": "index.html"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlGame",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          },
+          {
+            "name": "checkJsParses",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          }
+        ],
+        "onReject": "implement",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open index.html beside notes/scope.md and run the feel pass: walk every action on the checklist and confirm its feedback is actually wired in the code — a checklist row with no matching effect is a miss; check the restraint rules — effect durations short, nothing strobing, the field still readable; and verify nothing regressed — the script parses, the loop runs, game over still triggers, restart still resets cleanly including the score. Write PASS/FAIL per checklist row; on any failure, name the action or the regression and loop back to implement.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"implement\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "index.html"
+        }
+      ],
+      "next": "implement"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

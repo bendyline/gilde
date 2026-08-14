@@ -1,0 +1,107 @@
+{
+  "id": "incident-comms-templates",
+  "name": "Incident Communication Templates",
+  "description": "Author a reusable set of incident communication templates: status-page posts and stakeholder update messages for each phase of an incident (Investigating, Identified, Monitoring, Resolved) across severities, with fill-in variables and a cadence guide. Scopes the audiences, phases, and tone rules FIRST (who reads each channel, the phase ladder, what may and may not be said, the variable set), then a copywriter writes the on-brand templates with bracketed placeholders, then a reviewer checks coverage, tone, and that no template over-promises or leaks blame. Scoping audiences and phases before drafting is what produces calm, honest, copy-paste-ready updates instead of ad-hoc panic posts. Use for incident comms, status page templates, customer incident updates, outage communication, and stakeholder messaging during an incident.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the comms (planner) — lock audiences, phases, variables, and tone rules → gated on artifact `notes/scope.md` (markdown-notes)\n2. Write the templates (copywriter) — draft on-brand templates with bracketed variables → gated on `templates.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "incident communication templates",
+    "status page templates",
+    "outage update messages",
+    "customer incident comms",
+    "stakeholder update templates"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the comms",
+      "description": "lock audiences, phases, variables, and tone rules",
+      "prompt": "Define the comms framework before drafting. (1) Lock the audiences/channels (public status page, affected-customer email, internal stakeholders) and what level of detail each receives. (2) Lock the incident phase ladder — Investigating → Identified → Monitoring → Resolved — and which severities trigger external comms. (3) Define the tone rules: calm, factual, no speculation, no premature root-cause, no blame, acknowledge impact and give a next-update time — and a do-not-say list. (4) Define the variable set every template uses ([service], [impact], [start_time], [next_update_eta], [workaround]). (5) Set the update cadence per severity. Write an acceptance-criteria checklist ('a template exists for every (audience × phase) that applies', 'each template uses the locked variables with brackets', 'every external template states impact + a next-update time', 'tone follows the rules and the do-not-say list', 'no template asserts root cause before Identified') plus the matrix + variables + tone rules to notes/scope.md via write_task_note AND the produces path. No templates yet.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the templates",
+      "description": "draft on-brand templates with bracketed variables",
+      "prompt": "Write templates.md covering the locked (audience × phase) matrix — a template for every applicable cell. For each cell write a ready-to-send template: a clear subject/headline, a body in the locked tone using the bracketed variables, an explicit impact statement, and a next-update time (where the phase isn't Resolved). (1) Investigating templates acknowledge the issue and impact WITHOUT asserting cause. (2) Identified templates state what's wrong in plain language and the fix direction. (3) Monitoring templates say a fix is applied and they're watching. (4) Resolved templates confirm resolution, give a brief plain-language summary, and (for stakeholders) point to a forthcoming postmortem. Group by audience, then phase; add a short cadence guide at the top. Keep every template copy-paste-ready — only the [variables] need filling. Obey the do-not-say list and never over-promise a fix time as a guarantee. On a loop-back fix only the flagged templates. Write the path and a coverage count to notes via write_task_note.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "templates.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "templates.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "templates.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Validate templates.md against every locked criterion. (1) Build the (audience × phase) matrix from notes/scope.md and confirm a template exists for every applicable cell — any missing cell is FAIL. (2) Confirm each template uses the locked bracketed variables and that external templates state impact and a next-update time. (3) Read 3 templates for tone — calm, factual, no blame, no speculation — and confirm the do-not-say list isn't violated. (4) Confirm no Investigating template asserts a root cause and no template over-promises a fix time as a guarantee. (5) Confirm Resolved templates include a plain-language summary and (for stakeholders) a postmortem pointer, and that a cadence guide is present. Write PASS/FAIL per criterion with the specific templates at fault.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "templates.md"
+        }
+      ],
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

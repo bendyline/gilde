@@ -1,0 +1,214 @@
+{
+  "id": "release-artifact-sanity-check",
+  "name": "Release Artifact Sanity Check",
+  "description": "Sanity-check a folder of release artifacts without executing them: inventory every package, verify hashes and signatures against trusted evidence, safely inspect every file inside archives and application bundles, scan for suspicious or secret-bearing content, and produce an evidence-backed ship or no-ship report.\n\nThis craftbook treats release artifacts as hostile input. It never executes an installer, application, script, postinstall hook, or extracted binary. It stages any extraction under a disposable workspace directory, rejects path traversal and escaping symlinks, bounds recursive expansion, and reports any item it could not inspect as NOT VERIFIED rather than silently passing it. The result is a file-level inventory plus a go/no-go report whose claims are tied to commands, hashes, signer identities, and exact paths.\n\nWorking files under notes/, reviews/, and reports/ live in the project artifacts drawer; source and user-facing output files remain in the workspace.",
+  "entryStepId": "inventory",
+  "triggers": [
+    "sanity check release artifacts",
+    "audit release packages",
+    "verify installer signatures",
+    "inspect app bundles",
+    "check release artifact integrity",
+    "scan a release folder"
+  ],
+  "toolsets": [
+    {
+      "toolsetId": "builtin.security-intel",
+      "autoAllow": true,
+      "reason": "reuse local secret, dependency, malware, and vulnerability scanner evidence when available"
+    },
+    {
+      "toolsetId": "builtin.code-intel",
+      "autoAllow": true,
+      "reason": "search safely extracted text and package manifests without executing bundled code"
+    }
+  ],
+  "steps": [
+    {
+      "id": "inventory",
+      "name": "Inventory the release set",
+      "description": "identify every release record, artifact, checksum, signature, and package boundary",
+      "prompt": "Treat the entire input folder as hostile and do not execute anything in it. Locate the requested release folder; if it came from the GitHub Releases connector, use the release Markdown records, frontmatter, asset tables, and sibling `attachments/` directories to associate bytes with releases. Enumerate every top-level artifact, checksum manifest, detached signature, certificate/provenance file, and release-notes record. Record exact relative path, byte size, file type identified from magic bytes (not extension alone), release/tag association, and the expected digest/signature evidence available. Define the inspection boundary and a safe staging directory outside the source corpus. Before extraction, list archive entries and flag absolute paths, `..` traversal, device files, escaping links, duplicate paths, case collisions, excessive nesting, or expansion bombs. Never follow a symlink outside the staging root. Write the complete inventory, counts, tool availability, inspection limits, and acceptance checklist to `notes/release-artifact-inventory.md` and task notes. Any artifact omitted by a configured size/name filter must be listed as NOT PRESENT and prevents a full-set pass.\n\nStore `notes/release-artifact-inventory.md` in the artifacts drawer with `write_artifact` and verify them with `read_artifact`; do not write these working files to the workspace.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "notes/release-artifact-inventory.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/release-artifact-inventory.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/release-artifact-inventory.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "inventory",
+        "maxAttempts": 3
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify integrity and signing",
+      "description": "hash every artifact and validate signatures against a trusted identity",
+      "prompt": "Without executing any artifact, compute SHA-256 for every top-level asset and compare it independently against: GitHub's supplied `sha256:` digest when present, checked-in checksum manifests, detached signature payloads, and any release provenance/attestation. A hash written beside the same untrusted artifact is evidence of consistency, not authenticity; name the trust root. Verify signatures with the platform-appropriate verifier when installed (for example `codesign`/`spctl`/`pkgutil` on macOS, `Get-AuthenticodeSignature` or `signtool` on Windows, and `gpgv`, `cosign verify-blob`, `rpm --checksig`, or package-native verification on Linux). Capture the exact command, exit status, signer subject/team/key identity, timestamp/notarization status, certificate chain or trusted key source, and whether the signed object covers the bytes being shipped. Do not call an artifact signed merely because a signature file exists. Use PASS / FAIL / NOT VERIFIED for every artifact and evidence type. A mismatch, invalid signature, unsigned required executable, untrusted key, unavailable verifier, or missing expected artifact is not a pass. Write results to `notes/release-artifact-verification.md` and task notes.\n\nStore `notes/release-artifact-verification.md` in the artifacts drawer with `write_artifact` and verify them with `read_artifact`; do not write these working files to the workspace.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/release-artifact-verification.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/release-artifact-verification.md",
+            "bytes": 600,
+            "artifact": true
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "notes/release-artifact-verification.md",
+              "pattern": "PASS|FAIL|NOT VERIFIED",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 3
+      },
+      "next": "inspect"
+    },
+    {
+      "id": "inspect",
+      "name": "Inspect every package member",
+      "description": "safely unpack app packages and scan every contained file",
+      "prompt": "Work only in the disposable staging directory; never mutate the source corpus and never execute package contents. Safely expand each supported container recursively, including ZIP/TAR archives, DMG/PKG and `.app` bundles where host tooling permits, MSI/EXE packages where a non-executing extractor is available, AppImage/deb/rpm packages, and nested archives. Inventory EVERY regular file and symlink with relative path, magic-byte type, size, SHA-256, executable bit, signing coverage, and parent package. Inspect manifests, entitlements, permissions, dynamic libraries, launch agents/services, updater helpers, install scripts as text, bundled runtimes/dependencies, debug symbols, universal architectures, and unexpected executables. Scan extracted text and metadata for secrets, private keys, credentials, unsafe URLs, suspicious persistence, world-writable paths, and provenance drift; reuse `security_scan`/local malware scanners when available, recording tool name/version/result. Never run an installer, binary, macro, or script and disable postinstall hooks. If a format/tool/limit prevents inspecting even one member, name the exact gap and mark the package coverage INCOMPLETE / NOT VERIFIED. Write the file-count reconciliation, findings, and evidence to `notes/release-package-inspection.md` and task notes.\n\nStore `notes/release-package-inspection.md` in the artifacts drawer with `write_artifact` and verify them with `read_artifact`; do not write these working files to the workspace.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "notes/release-package-inspection.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/release-package-inspection.md",
+            "bytes": 700,
+            "artifact": true
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "notes/release-package-inspection.md",
+              "pattern": "file|path|SHA-256|coverage",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "inspect",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the artifact sanity report",
+      "description": "state a ship decision with complete evidence and blockers",
+      "prompt": "Write `release-artifact-sanity-report.md`. Put one decision at the top: PASS / NO-GO / PASS-WITH-CONDITIONS, with the deciding evidence. Include: scope and release/tag; coverage summary with top-level and contained-file counts reconciled; an artifact matrix with expected/computed digest, integrity result, signature result, signer/trust root, package-inspection coverage, and evidence path/command; findings ranked by severity with exact package/member paths; unsupported or uninspected items; and blockers with concrete remediation/rebuild/re-sign/re-upload actions. Distinguish verified authenticity from checksum consistency and signature presence. A digest mismatch, invalid/untrusted/required-but-missing signature, escaping archive member, secret-bearing shipped file, uninspected package member, or unavailable mandatory verifier prevents an unconditional PASS. Do not minimize an issue because another platform's package passed. Include enough detail for another reviewer to reproduce each claim without running the artifacts. Record the report path, decision, artifact count, contained-file count, and blocker count in task notes.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "release-artifact-sanity-report.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "release-artifact-sanity-report.md",
+            "bytes": 2000
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "release-artifact-sanity-report.md",
+              "pattern": "PASS|NO-GO|PASS-WITH-CONDITIONS",
+              "flags": "i"
+            }
+          },
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "release-artifact-sanity-report.md",
+              "pattern": "integrity|digest|SHA-256",
+              "flags": "i"
+            }
+          },
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "release-artifact-sanity-report.md",
+              "pattern": "signature|signer|notar",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "grade coverage and evidence; pass only when every acceptance criterion is met",
+      "prompt": "Open `release-artifact-sanity-report.md` and the three evidence notes. Grade EACH criterion PASS/FAIL with one-line evidence: (1) every top-level release artifact is inventoried and its SHA-256 computed; (2) expected digests are compared and mismatches are blockers; (3) every required signature is cryptographically verified against a named trusted identity, with presence-only and unavailable checks marked NOT VERIFIED; (4) every supported package is safely expanded without executing content; (5) contained-file counts reconcile and every member has a path/type/hash/security disposition; (6) traversal, escaping links, expansion limits, secrets, persistence, entitlements, permissions, libraries, and nested executables are addressed; (7) all inspection gaps are explicit and prevent an unconditional pass; (8) the final decision follows from the evidence. Then route explicitly: if every criterion passes, call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`. If any criterion fails, write the exact gap to task notes and call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })`. Never route to finish with a silent omission or unsupported package. After three unproductive loops, stop with DONE_WITH_CONCERNS for user review.",
+      "suggestedRole": "reviewer",
+      "next": "report",
+      "consumes": [
+        {
+          "file": "release-artifact-sanity-report.md"
+        }
+      ]
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "stamp the decision and hand off the evidence-backed report",
+      "prompt": "All acceptance criteria passed. Write a concise DONE summary to task notes: the release/tag and folder reviewed, report path, decision, top-level artifact count, contained-file count, blocker count, and any conditions or NOT VERIFIED items. Remind the user that the audit did not execute any artifact. Then report DONE.",
+      "suggestedRole": "reviewer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

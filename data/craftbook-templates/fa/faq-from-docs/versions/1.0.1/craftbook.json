@@ -1,0 +1,107 @@
+{
+  "id": "faq-from-docs",
+  "name": "FAQ from Source Docs",
+  "description": "Build a grounded FAQ page by mining real source documents for the questions users actually ask, then writing tight, accurate answers traced back to the source: it first researches the corpus to extract candidate questions, dedupes and groups them, and ranks by likely frequency, then writes clear question-and-answer pairs where every answer is supported by the docs. Covers FAQ generation, help center questions, support docs, knowledge mining, common questions, and self-service content. Mining the source before writing is the point: a small model that derives questions from the actual docs avoids inventing FAQs nobody asks and answers the docs cannot support.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Mine the questions (researcher) — extract, dedupe, group, and rank candidate questions from the docs → gated on artifact `notes/mine.md` (markdown-notes)\n2. Write the FAQ (copywriter) — write grounded Q&A pairs in scannable sections → gated on `faq.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "mine",
+  "triggers": [
+    "create an faq",
+    "faq from docs",
+    "generate help questions",
+    "common questions page",
+    "support faq"
+  ],
+  "steps": [
+    {
+      "id": "mine",
+      "name": "Mine the questions",
+      "description": "extract, dedupe, group, and rank candidate questions from the docs",
+      "prompt": "1) Read all source documents/files in scope. 2) Extract every implicit and explicit question the docs answer — phrase each as a real user would ask it ('How do I reset my password?'), not as a doc heading. 3) Dedupe near-identical questions and group them into 3-6 topical sections. 4) Rank questions within each section by likely frequency/importance. 5) For each kept question, note the source location (file + section/anchor) that supports the answer, so the writer can ground it. Write an acceptance-criteria checklist (e.g. 'every question is answerable from the docs'; 'questions phrased in user language'; 'grouped into clear sections'; 'no fabricated questions or answers'; 'each Q maps to a source'). Use write_task_note for the question bank with sources + checklist, and write the same to the produces path. No final answers yet.\n\nThe deliverable `notes/mine.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "researcher",
+      "advanceWhen": {
+        "file": "notes/mine.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/mine.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/mine.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "mine",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the FAQ",
+      "description": "write grounded Q&A pairs in scannable sections",
+      "prompt": "Write the FAQ from the mined question bank. 1) Organize into the grouped sections, each with an H2 header. 2) For each question, write it as an H3 (or bold) line, then a concise answer (1-4 sentences) drawn strictly from the source docs — no speculation beyond what the docs support. 3) Where a doc has step-by-step detail, render the answer as a short numbered list. 4) Keep a consistent, plain, reassuring support voice. 5) Add a short intro line at the top and, where useful, a 'see also' link to the source doc. Output GitHub-flavored markdown. Save to the produces path and note total Q&A count and section count.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "faq.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "faq.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "faq.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Read faq.md and cross-check against the mined question bank and the source docs. Check EACH criterion and write PASS/FAIL: (a) every answer is supported by the source docs (spot-check 4-5 against their cited source); (b) questions are phrased in natural user language; (c) Q&As are grouped into clear sections with headers; (d) no fabricated questions or unsupported answers; (e) answers are concise and consistently voiced. An FAQ with invented or unsupported answers FAILS — loop back to write and name the offending entries.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "faq.md"
+        }
+      ],
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

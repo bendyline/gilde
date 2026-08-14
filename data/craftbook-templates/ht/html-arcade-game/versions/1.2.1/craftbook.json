@@ -1,0 +1,218 @@
+{
+  "id": "html-arcade-game",
+  "name": "HTML Arcade Game",
+  "description": "Build a playable single-file HTML/canvas arcade game (shooter, runner, dodger, etc.). Splits design into game-mechanics and visual look, builds, then evaluates against a playability bar and loops until it is actually fun and bug-free.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Game design (game-designer) — mechanics, controls, win/lose, difficulty → gated on artifact `design/game-design.md` (markdown-notes)\n2. Visual design (visual-designer) — palette, shapes/sprites, layout, juice → gated on artifact `design/visual-design.md` (markdown-notes)\n3. Build (developer) — implement the game in one index.html → gated on `index.html` (html-game)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "game-design",
+  "triggers": [
+    "arcade game",
+    "space shooter",
+    "html game",
+    "build a game"
+  ],
+  "steps": [
+    {
+      "id": "game-design",
+      "name": "Game design",
+      "description": "mechanics, controls, win/lose, difficulty",
+      "prompt": "Design the GAME, not the code. Decide: core mechanic (what the player does), controls (keys/mouse/touch), win and lose conditions, scoring, restart behavior, and the difficulty curve. Then write an **acceptance-criteria checklist** (4-8 concrete, checkable items, e.g. \"arrow keys move the ship\", \"colliding with an enemy ends the game\", \"score increments on hit\", \"restart resets the score\", \"game is playable for >30s without a JS error\"). Save the complete mechanics + checklist to artifact `design/game-design.md` with `write_artifact`, and summarize the path in task notes. No code, no visuals yet.",
+      "suggestedRole": "game-designer",
+      "advanceWhen": {
+        "file": "design/game-design.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "design/game-design.md",
+            "bytes": 600,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "design/game-design.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "design/game-design.md",
+            "pattern": "acceptance|criteria|checklist",
+            "flags": "i",
+            "label": "acceptance criteria",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "design/game-design.md",
+            "pattern": "control|input|keyboard|mouse|touch",
+            "flags": "i",
+            "label": "control scheme",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "design/game-design.md",
+            "pattern": "win|lose|game over|victory|defeat",
+            "flags": "i",
+            "label": "end-state rules",
+            "artifact": true
+          }
+        ],
+        "onReject": "game-design",
+        "maxAttempts": 3
+      },
+      "next": "visual-design"
+    },
+    {
+      "id": "visual-design",
+      "name": "Visual design",
+      "description": "palette, shapes/sprites, layout, juice",
+      "prompt": "Read artifact `design/game-design.md` with `read_artifact`, then decide how the game LOOKS. Pick a palette with exact color values, the canvas shapes or sprites for player/enemies/projectiles, the HUD layout (score, lives or timer), and at least one feedback effect (hit flash, screen shake, or particles). Keep it self-contained — canvas drawing or CSS, no external asset downloads. Save the concrete visual target to artifact `design/visual-design.md` with `write_artifact`, and summarize the path in task notes. Still no game code.",
+      "suggestedRole": "visual-designer",
+      "consumes": [
+        {
+          "file": "design/game-design.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "design/visual-design.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "design/visual-design.md",
+            "bytes": 450,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "design/visual-design.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "design/visual-design.md",
+            "pattern": "#[0-9a-f]{3,8}|rgb\\(|hsl\\(",
+            "flags": "i",
+            "label": "concrete palette",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "design/visual-design.md",
+            "pattern": "HUD|score|lives|timer",
+            "flags": "i",
+            "label": "HUD design",
+            "artifact": true
+          }
+        ],
+        "onReject": "visual-design",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build",
+      "description": "implement the game in one index.html",
+      "prompt": "Read artifacts `design/game-design.md` and `design/visual-design.md` with `read_artifact`. Implement the game in workspace `index.html` with `write_file` (inline CSS + JS) so it satisfies the acceptance criteria and matches the visual spec. Include a real game loop, real input handling, score/state, a visible win or lose state, and an in-page restart path. Keep it self-contained with no network assets. On a loop-back, fix only the gaps the reviewer named — do not regress criteria that already passed. `write_task_note` the workspace path and which criteria now pass.",
+      "suggestedRole": "developer",
+      "consumes": [
+        {
+          "file": "design/game-design.md",
+          "artifact": true
+        },
+        {
+          "file": "design/visual-design.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 3200
+          },
+          {
+            "kind": "htmlLint",
+            "file": "index.html"
+          },
+          {
+            "kind": "contains",
+            "file": "index.html",
+            "pattern": "game\\s*-?\\s*over|you\\s+(?:win|won|lose|lost)|victory|defeat",
+            "flags": "i",
+            "label": "visible end state"
+          },
+          {
+            "kind": "contains",
+            "file": "index.html",
+            "pattern": "restart|play\\s*again|new\\s*game|try\\s*again",
+            "flags": "i",
+            "label": "restart path"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlGame",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          },
+          {
+            "name": "checkJsParses",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Read workspace `index.html` with `read_file` and actually exercise the game. If a browser/QA capability is available, load it, play it, test restart, and watch the console for errors; otherwise trace the game loop, input listeners, end-state transition, and reset path in source. Check every criterion from artifact `design/game-design.md` and write PASS/FAIL per criterion.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "index.html"
+        }
+      ],
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.2.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

@@ -1,0 +1,171 @@
+{
+  "id": "transcribe-index",
+  "name": "Transcribe and Index a Tape",
+  "description": "Give one tape the ten-second-findability treatment: transcript on file, then every moment worth finding indexed with its timecode and people tags — so 'the clip of Opa's 80th toast' becomes a query, not an afternoon of scrubbing. Locks the tape's metadata and the indexing rules FIRST (timecoded moments, people tags drawn from the family roster, searchable descriptions), then lands the transcript, then the clip records, then a tape summary with the highlights. Use for indexing a digitized tape, making home videos searchable, cataloging family footage, and 'what is on this tape'.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the tape (filmarchivaris) — tape metadata, the family roster, indexing rules locked → gated on artifact `notes/scope.md` (markdown-notes)\n2. Land the transcript (transcriber) — the tape's transcript on file, timestamped and speaker-marked\n3. Index the moments (archivist) — clip records appended: tape, timecode, people, description → gated on `clips.json` (json)\n4. Write the tape summary (copywriter) — what is on the tape, the highlights, who appears → gated on artifact `report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "index the tape",
+    "transcribe the tape",
+    "what is on this tape",
+    "make the tape searchable",
+    "catalog the footage"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the tape",
+      "description": "tape metadata, the family roster, indexing rules locked",
+      "prompt": "Define the indexing job before touching the tape. Step 1: identify the tape being indexed — its label or number, roughly when it was shot, and where its transcript lands under transcripts/ (when a transcript is already on file there, this run verifies and indexes it rather than re-transcribing). Step 2: read family.md from the workspace — the roster of names is the controlled vocabulary for people tags; a tag that is not on the roster is a typo waiting to break search. Step 3: read clips.json to see how prior tapes were indexed, and lock the indexing rules — every moment worth finding gets a record with the tape, the timecode where it starts, the people in it tagged from the roster, and a description written the way someone would actually search for it ('Opa's toast at the 80th', not 'man speaking'). Step 4: write an acceptance-criteria checklist ('transcript on file under transcripts/', 'every notable moment indexed with its timecode', 'every people tag matches the roster', 'descriptions are searchable phrases', 'existing clip records untouched'). Call write_task_note with the tape id + roster size + checklist and write notes/scope.md.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "filmarchivaris",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "transcript"
+    },
+    {
+      "id": "transcript",
+      "name": "Land the transcript",
+      "description": "the tape's transcript on file, timestamped and speaker-marked",
+      "prompt": "Get the tape's transcript on file. Step 1: produce the transcript through the project's transcription capabilities — or, when a transcript for this tape is already provided under transcripts/, read it end to end and treat it as the source. Step 2: make sure it carries what indexing needs — timestamps through the recording and speaker names where voices are identifiable from the family roster; normalize obvious mis-hearings of family names against family.md. Step 3: save the result under transcripts/ named for the tape, and skim once for the moments that will matter — celebrations, first words, arrivals, the stories people tell — noting rough timecodes as you go. Call write_task_note with the transcript path, its rough duration, and the count of candidate moments spotted.",
+      "suggestedRole": "transcriber",
+      "next": "index"
+    },
+    {
+      "id": "index",
+      "name": "Index the moments",
+      "description": "clip records appended: tape, timecode, people, description",
+      "prompt": "Index every moment worth finding. Step 1: walk the transcript and pick the moments someone will one day search for — the toast, the song, the argument about the recipe, the baby's first steps in the background. Aim for completeness over polish: a missed moment is invisible forever. Step 2: for each moment, append a record to clips.json through the project's archive capabilities — the tape id, the timecode where the moment starts (matching a timestamp in the transcript), the people in it as an array of roster names from family.md, and a searchable description. Step 3: never edit or drop the existing records from prior tapes — this is an append, and the archive's history is the point. Step 4: re-read clips.json once — valid JSON, new records complete, timecodes real. Call write_task_note with the count of new records and the single best moment found.",
+      "suggestedRole": "archivist",
+      "advanceWhen": {
+        "file": "clips.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "clips.json",
+            "bytes": 2
+          },
+          {
+            "kind": "recordSchema",
+            "file": "clips.json",
+            "fields": [
+              {
+                "name": "tape",
+                "type": "nonempty"
+              },
+              {
+                "name": "timecode",
+                "type": "nonempty"
+              },
+              {
+                "name": "people"
+              },
+              {
+                "name": "description",
+                "type": "nonempty"
+              }
+            ],
+            "minRows": 5
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "clips.json"
+            }
+          }
+        ],
+        "onReject": "index",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the tape summary",
+      "description": "what is on the tape, the highlights, who appears",
+      "prompt": "Write the tape summary the family actually reads. Step 1: open with what the tape is — when it was shot, the occasions it covers, roughly how long it runs. Step 2: give the highlights — the five or so best moments with their timecodes, written warmly enough that someone wants to go watch them. Step 3: list who appears on the tape, drawn from the people tags just indexed. Step 4: close with how to find things — a line noting that every indexed moment is searchable in the archive by person or description. Keep it to a page; this is a family document, not a catalog printout. Write report.md and call write_task_note with the report path and the indexed-moment count.\n\nThe deliverable `report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.md",
+            "bytes": 800,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open report.md, clips.json, the transcript under transcripts/, and family.md and verify every criterion from notes/scope.md: the transcript is on file and timestamped, every new clip record carries a timecode that appears in the transcript, every people tag matches a roster name exactly, descriptions read as searchable phrases rather than shrugs, prior tapes' records are untouched, and the summary's highlights point at real indexed moments. Write PASS/FAIL per criterion; on any failure, name the offending record and loop back to index.\n\nThe deliverable lives in the project's artifacts drawer — open `report.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"index\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "report.md",
+          "artifact": true
+        }
+      ],
+      "next": "index"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

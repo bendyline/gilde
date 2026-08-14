@@ -1,0 +1,153 @@
+{
+  "id": "codebase-refactoring-review",
+  "name": "Codebase Refactoring Review",
+  "description": "Review an entire codebase for the least cogent, highest-leverage refactoring opportunities without changing source. Uses the repository map and per-file AI health index to rank weak areas, then verifies each lead in the real code and leaves a file-and-line-cited morning report with sequenced refactor plans, risk, effort, and tests that must protect behavior. Use for a weekly code-health sweep, refactoring review, technical-debt triage, finding code smells, or deciding which files should be refactored first.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Rank weak areas (reviewer) — use the repo map and per-file health index to build a coverage-aware candidate list → gated on artifact `notes/refactoring/candidates.md` (markdown-notes)\n2. Verify refactoring candidates (reviewer) — inspect candidate symbols, responsibilities, callers, and tests in real source → gated on artifact `notes/refactoring/verified.md` (markdown-notes)\n3. Write the refactoring report (reviewer) — prioritized code-health report with safe, sequenced refactor plans → gated on artifact `refactoring-review.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "rank",
+  "triggers": [
+    "codebase refactoring review",
+    "what should we refactor",
+    "find the least cogent code",
+    "weekly code health review",
+    "technical debt sweep",
+    "nightly refactoring review"
+  ],
+  "toolsets": [
+    {
+      "toolsetId": "builtin.code-intel",
+      "autoAllow": true,
+      "reason": "rank indexed file-health leads and inspect only the relevant symbols"
+    },
+    {
+      "toolsetId": "builtin.git",
+      "autoAllow": true,
+      "reason": "read-only history and churn evidence for prioritizing refactors"
+    }
+  ],
+  "steps": [
+    {
+      "id": "rank",
+      "name": "Rank weak areas",
+      "description": "use the repo map and per-file health index to build a coverage-aware candidate list",
+      "prompt": "Start with `map_repo` and record the indexed review coverage (reviewed/eligible), average health, major-issue count, and worst files. Call `list_file_issues` across the repo, then use `search_code` for cross-cutting duplication, oversized orchestration, unclear ownership, error handling, and tightly coupled state. If git history is available, use read-only `run_git` queries to add churn/fix-frequency evidence; missing history is not a failure. Rank candidate files or cohesive areas using explicit factors: low indexed health, confirmed major issues, too many responsibilities, coupling/fan-out, duplication, change frequency, test difficulty, and blast radius. Do not call an indexed lead a finding yet and do not modify source. Write the coverage statement, ranking method, and top candidates to `notes/refactoring/candidates.md`.\n\nThe deliverable `notes/refactoring/candidates.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/refactoring/candidates.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/refactoring/candidates.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/refactoring/candidates.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "rank",
+        "maxAttempts": 3
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify refactoring candidates",
+      "description": "inspect candidate symbols, responsibilities, callers, and tests in real source",
+      "prompt": "Verify every shortlisted candidate in source. Call `file_review` for the indexed rationale, `outline_file` before reading a large file, `read_symbol` for the implicated units, and `find_references` to understand callers and blast radius. Locate tests with `search_code`/`grep_files`. For each confirmed candidate record real file:line evidence, the current responsibilities, the specific cohesion/coupling/duplication/testability problem, why it matters, a bounded refactor seam, dependencies and migration order, behavior-preserving tests required first, effort, risk, and expected payoff. Reject false-positive index leads explicitly. Prefer a smaller ranked list of verified opportunities over a long smell inventory. Write the evidence matrix to `notes/refactoring/verified.md`; do not change code.\n\nThe deliverable `notes/refactoring/verified.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/refactoring/verified.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/refactoring/verified.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/refactoring/verified.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the refactoring report",
+      "description": "prioritized code-health report with safe, sequenced refactor plans",
+      "prompt": "Write `refactoring-review.md` for an admin to read in the morning. Use these exact sections: `## Executive summary`, `## Index coverage`, `## Ranked opportunities`, `## Cross-cutting themes`, `## Defer or leave alone`, and `## Recommended sequence`. Each ranked opportunity must cite real file:line evidence; state why the area is insufficiently cogent; name the proposed seam and steps; list behavior-preserving tests; and include impact, effort, risk, and dependencies. Separate systemic themes from individual files. State index gaps and unreviewed areas so a quiet report is not mistaken for a clean codebase. Do not include style-only churn or recommend rewrites without a migration boundary. On a loop-back, repair only the named report gaps.\n\nThe deliverable `refactoring-review.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "refactoring-review.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "refactoring-review.md",
+            "bytes": 1800,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "refactoring-review.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Grade `refactoring-review.md`: (1) index coverage and limitations are explicit; (2) every ranked item was verified in source and cites a real file:line; (3) ranking uses impact, evidence, effort, risk, and blast radius rather than file size alone; (4) each recommendation names a bounded seam, sequence, and behavior-preserving tests; (5) systemic themes are distinguished from local smells; (6) false positives and areas to leave alone are recorded; (7) no source was changed and no vague rewrite advice remains. PASS every item or loop back with exact gaps.\n\nThe deliverable lives in the project's artifacts drawer — open `refactoring-review.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "refactoring-review.md",
+          "artifact": true
+        }
+      ],
+      "next": "report"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

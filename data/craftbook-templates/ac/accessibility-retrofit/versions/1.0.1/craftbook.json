@@ -1,0 +1,110 @@
+{
+  "id": "accessibility-retrofit",
+  "name": "Accessibility Retrofit (WCAG AA)",
+  "description": "Take an existing HTML page and retrofit it to WCAG 2.1 AA — fixing semantic structure, alt text, color contrast, keyboard operability, focus visibility, form labels, ARIA, and landmarks — without changing the visual design. Audits the page against the AA success criteria first to produce a prioritized findings list, then applies the fixes in place. Accessibility work fails when fixes are guessed rather than measured, so the audit phase enumerates the concrete violations and the target criteria before any edit, and the loop runs back to the FIX phase until every finding is resolved.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Audit (reviewer) — enumerate concrete WCAG-AA violations to fix → gated on artifact `notes/audit.md` (markdown-notes)\n2. Fix (developer) — apply the a11y fixes in place, preserving design → gated on `index.html` (html-page)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "audit",
+  "triggers": [
+    "accessibility fix",
+    "make it accessible",
+    "wcag compliance",
+    "a11y retrofit",
+    "fix accessibility",
+    "screen reader friendly"
+  ],
+  "steps": [
+    {
+      "id": "audit",
+      "name": "Audit",
+      "description": "enumerate concrete WCAG-AA violations to fix",
+      "prompt": "Audit the existing page against WCAG 2.1 AA — do NOT fix yet. (1) Identify the target file and read it. (2) Check the high-yield AA criteria and record each concrete violation: missing/empty alt text on informative images, low text contrast (<4.5:1 normal, <3:1 large — estimate from the hex), missing form <label>s, non-semantic structure (divs where headings/landmarks/lists belong), keyboard traps or non-focusable interactive elements, missing focus indicator, missing lang attribute, missing skip link, improper heading order, and ARIA misuse. (3) For each finding note location, the failing criterion, and the fix. (4) Prioritize (blocker -> minor). (5) Write this as an acceptance-criteria checklist where each item is 'finding X is resolved' so evaluate can verify each. Write the findings + checklist to notes/audit.md and via write_task_note. No edits yet.\n\nThe deliverable `notes/audit.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/audit.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/audit.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/audit.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "audit",
+        "maxAttempts": 3
+      },
+      "next": "fix"
+    },
+    {
+      "id": "fix",
+      "name": "Fix",
+      "description": "apply the a11y fixes in place, preserving design",
+      "prompt": "Apply the fixes to the page (write the corrected file as index.html) resolving every audited finding WITHOUT changing the visual design. (1) Add meaningful alt text (or alt=\"\" for decorative). (2) Adjust colors only as needed to hit AA contrast, staying on-brand. (3) Add <label>s / aria-label and associate them. (4) Use semantic HTML and landmarks (header/nav/main/footer), correct heading order, and lists. (5) Make all interactive elements keyboard-operable with a visible :focus indicator; add a skip link and the lang attribute; fix any ARIA. Change markup/CSS for semantics and a11y, not the look. On a loop-back, fix only the still-open findings. write_task_note the path and which findings are now resolved.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 800
+          },
+          {
+            "kind": "htmlLint",
+            "file": "index.html"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          }
+        ],
+        "onReject": "fix",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Verify the retrofit against the audit. Open/inspect index.html, tab through with the keyboard, and check contrast. Go through EACH finding in notes/audit.md and write PASS/FAIL with a reason: is every image's alt correct, does text meet AA contrast, is every control labeled and keyboard-operable with a visible focus ring, is the structure semantic with landmarks and correct heading order, is there a lang attribute and skip link, and is the original visual design preserved? Any unresolved finding, or a visual regression, is a FAIL — loop back to fix.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"fix\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "index.html"
+        }
+      ],
+      "next": "fix"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

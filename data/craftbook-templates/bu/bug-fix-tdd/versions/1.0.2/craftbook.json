@@ -1,0 +1,164 @@
+{
+  "id": "bug-fix-tdd",
+  "name": "Reproduce-Then-Fix a Bug",
+  "description": "Fix a bug the disciplined way: first write a failing test that reproduces it, then make the smallest change that turns the test green without breaking others, then verify and guard against regression. Reproduces FIRST with a red test that captures the exact wrong behavior — because a bug you cannot reproduce you cannot prove fixed — then applies the minimal fix, then a reviewer confirms the new test passes, root cause is addressed, and the suite is green. Covers test-driven bug fixing, regression tests, minimal diffs, root-cause vs symptom, and red-green verification.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Reproduce with a failing test (developer) — write a red test that captures the wrong behavior → gated on `src/bug.test.js` (code-with-tests)\n2. Apply the minimal fix (developer) — smallest change that turns the test green → gated on `src/bug-fixed.js` (code-module)\n3. Verify the fix (reviewer) — confirm green, root cause fixed, no regressions → gated on artifact `notes/verify.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "reproduce",
+  "triggers": [
+    "fix this bug",
+    "reproduce and fix",
+    "tdd bug fix",
+    "write a regression test",
+    "debug and fix"
+  ],
+  "steps": [
+    {
+      "id": "reproduce",
+      "name": "Reproduce with a failing test",
+      "description": "write a red test that captures the wrong behavior",
+      "prompt": "Reproduce the bug as a failing test before attempting any fix — a bug you cannot reproduce you cannot prove fixed. Step 1: Pin down the exact wrong behavior: the input, the expected output, and the actual (buggy) output. Step 2: Write a focused test that asserts the CORRECT behavior; run it and confirm it FAILS (red) for the right reason — capturing the bug, not a typo in the test. Step 3: Note your hypothesis for the root cause (not just the symptom). Step 4: Write a numbered acceptance-criteria checklist of 4-7 items (e.g. 'the new test fails before the fix and passes after', 'the root cause is addressed, not masked', 'no existing test regresses', 'the input that triggered the bug now produces the expected output'). `write_task_note` the repro + hypothesis + checklist and write the failing test to the produces path.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/bug.test.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/bug.test.js",
+            "bytes": 300
+          },
+          {
+            "kind": "sniff",
+            "file": "src/bug.test.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/bug.test.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/bug.test.js"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "src/bug.test.js",
+              "pattern": "\\b(test|describe|it|assert|expect)\\b",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "reproduce",
+        "maxAttempts": 3
+      },
+      "next": "fix"
+    },
+    {
+      "id": "fix",
+      "name": "Apply the minimal fix",
+      "description": "smallest change that turns the test green",
+      "prompt": "Make the smallest change that turns the failing test green. Step 1: Address the ROOT CAUSE you identified, not just the symptom — do not special-case the one input to silence the test. Step 2: Run the new test and confirm it now passes (green). Step 3: Run the FULL suite and confirm nothing else broke; if something regressed, your fix was too broad — narrow it. Step 4: Keep the diff minimal and focused on the bug. Write the fixed source to the produces path. On a loop-back, address only the reviewer's specific concern. `write_task_note` what the root cause was, the fix, and which criteria now pass.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/bug-fixed.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/bug-fixed.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/bug-fixed.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/bug-fixed.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/bug-fixed.js"
+          }
+        ],
+        "onReject": "fix",
+        "maxAttempts": 3
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify the fix",
+      "description": "confirm green, root cause fixed, no regressions",
+      "prompt": "Verify the bug is genuinely fixed. Step 1: Run the repro test and confirm it now passes. Step 2: Confirm the fix addresses the root cause rather than masking the symptom (would a nearby variant of the input also be correct now?). Step 3: Run the full suite and confirm no regressions. Step 4: Confirm the diff is minimal and scoped to the bug. Write a verification note with the test results and a root-cause-vs-symptom judgment to the produces path.\n\nThe deliverable `notes/verify.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/bug-fixed.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/bug-fixed.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/bug-fixed.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/bug-fixed.js"
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Run the full test suite including the new repro test. For EACH acceptance criterion: confirm the repro test now PASSES (and would have failed before the fix), confirm the root cause is addressed not just masked, confirm no existing test regressed, and confirm the diff is minimal. Write PASS/FAIL per criterion.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"fix\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "src/bug-fixed.js"
+        }
+      ],
+      "next": "fix"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

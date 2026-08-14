@@ -1,0 +1,159 @@
+{
+  "id": "feature-flag-release",
+  "name": "Feature Flag Release Plan",
+  "description": "Plan and document a progressive feature-flag rollout for shipping a change behind a flag — defining the flag and its default-off state, the staged ramp (internal → 1% → 10% → 50% → 100%) with the success and guardrail metrics that gate each step, the automatic rollback/kill-switch criteria, and the cleanup that removes the flag once fully rolled out. A planner scopes the flag, ramp stages, and metrics, a developer writes the rollout runbook with the exact flag changes and the kill-switch procedure, and a reviewer verifies each ramp step has a measurable gate and a safe abort. Use this for gradual rollouts, canary releases, dark launches, percentage-based ramps, and de-risking a risky change behind a toggle.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the rollout (planner) — define the flag, ramp stages, and gating metrics → gated on artifact `notes/scope.md` (markdown-notes)\n2. Write the rollout runbook (developer) — exact flag changes, gates, and kill-switch procedure → gated on `rollout-plan.md` (markdown-doc)\n3. Review the rollout safety (reviewer) — verify each stage has a measurable gate and safe abort → gated on artifact `notes/review.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "feature flag rollout plan",
+    "gradual rollout",
+    "canary release plan",
+    "percentage ramp",
+    "dark launch behind a flag"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the rollout",
+      "description": "define the flag, ramp stages, and gating metrics",
+      "prompt": "1. Define the feature flag: name, what it controls, and its initial state (default OFF in production). 2. Design the ramp stages — typically internal/dogfood → 1% → 10% → 50% → 100% — and the dwell time (or sample size) at each stage before advancing. 3. For each stage define the SUCCESS metric that must improve/hold and the GUARDRAIL metrics that must NOT regress (error rate, latency, conversion) — these gate the advance. 4. Define the kill-switch / automatic rollback criteria: the thresholds that mean 'flip the flag off immediately'. 5. Identify the targeting dimension (user %, account, region) and any segments to exclude. 6. Good looks like: a staged ramp where each step has an entry condition, success + guardrail metrics, and an abort threshold, plus the flag definition and cleanup intent. Write this as an acceptance-criteria checklist ('flag defaults OFF', 'each ramp stage has success + guardrail metrics gating the advance', 'kill-switch thresholds are defined and measurable', 'targeting and exclusions specified', 'flag-cleanup step exists') plus the plan to the notes file via write_task_note AND to notes/scope.md.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the rollout runbook",
+      "description": "exact flag changes, gates, and kill-switch procedure",
+      "prompt": "1. Open notes/scope.md and write the rollout as a numbered runbook an operator can execute stage by stage. 2. For each stage give the EXACT flag change (set flag X to Y% for segment Z), the metrics to watch and where (dashboard/query), the dwell time, and the explicit GO/HOLD/ABORT decision against the success+guardrail thresholds. 3. Document the kill-switch procedure prominently: the exact action to flip the flag fully OFF and the thresholds that trigger it automatically or manually. 4. Include the verification at each step (confirm the flag actually took effect for the intended cohort). 5. End with the cleanup step: after 100% and a soak period, remove the flag and the dead code path, and delete the flag config. 6. Good looks like: a stage-by-stage runbook where every ramp step has a concrete flag change, a measurable gate, and an abort path, plus a kill-switch and a cleanup step. Write the runbook to rollout-plan.md.\n\nBefore working, open the artifact input `notes/scope.md` with `read_artifact`; do not look for it in the workspace.",
+      "suggestedRole": "developer",
+      "consumes": [
+        {
+          "file": "notes/scope.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "rollout-plan.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "rollout-plan.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "rollout-plan.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 3
+      },
+      "next": "review"
+    },
+    {
+      "id": "review",
+      "name": "Review the rollout safety",
+      "description": "verify each stage has a measurable gate and safe abort",
+      "prompt": "1. Open rollout-plan.md and confirm the flag defaults OFF and that every ramp stage from notes/scope.md is present with a concrete flag change. 2. Verify each stage's advance is gated on MEASURABLE success + guardrail metrics with thresholds — a stage that advances on vibes is a FAIL. 3. Scrutinize the kill-switch: is the abort action exact, and are the trigger thresholds defined and reachable mid-rollout? 4. Confirm targeting/exclusions are specified and the cleanup step removes the flag and dead code. 5. Write a PASS/FAIL per acceptance criterion, flagging any ungated advance or missing abort. 6. Any failure routes back to the write phase. Write findings to notes/review.md.\n\nBefore working, open the artifact input `notes/scope.md` with `read_artifact`; do not look for it in the workspace.\n\nThe deliverable `notes/review.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "notes/scope.md",
+          "artifact": true
+        },
+        {
+          "file": "rollout-plan.md"
+        }
+      ],
+      "advanceWhen": {
+        "file": "notes/review.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "rollout-plan.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "rollout-plan.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "review",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open rollout-plan.md and verify it against notes/scope.md, PASS/FAIL each criterion. Confirm: (a) the flag is defined and defaults OFF in production; (b) every ramp stage has a concrete flag change AND a measurable success+guardrail metric gate that controls the advance; (c) a kill-switch with exact abort action and defined trigger thresholds is present and prominent; (d) targeting and exclusions are specified; (e) a cleanup step removes the flag and dead code after full rollout. Any ungated advance or missing abort path routes back to the write phase.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "rollout-plan.md"
+        }
+      ],
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

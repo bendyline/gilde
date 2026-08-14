@@ -1,0 +1,128 @@
+{
+  "id": "subtitle-generator",
+  "name": "Subtitle & Caption Generator",
+  "description": "Generate time-synced subtitles/captions for a video in a standard caption format (SRT or WebVTT), so the video is accessible and watchable without sound. Scopes the caption format and timing/reading-speed rules FIRST, transcribes the audio with precise word timings, then formats those into properly cued, line-length-limited caption cues. The transcribe-then-format split is deliberate: getting accurate text and timings is a different skill from chunking them into readable, on-screen-friendly cues that respect reading speed and never overlap.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the captions (planner) — format (SRT/VTT), timing rules, line limits, language → gated on artifact `notes/scope.md` (markdown-notes)\n2. Transcribe with timings (developer) — STT the audio into word/segment timestamps → gated on artifact `notes/timed-segments.json` (json)\n3. Format the caption file (developer) — chunk timed text into valid SRT/VTT cues → gated on `captions.srt` (generic-file)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "generate subtitles",
+    "make captions for a video",
+    "create an srt file",
+    "add closed captions",
+    "subtitle this video"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the captions",
+      "description": "format (SRT/VTT), timing rules, line limits, language",
+      "prompt": "Lock the caption rules BEFORE generating. Step 1: record the source video (path, duration) and the language. Step 2: pick the format — SRT (`HH:MM:SS,mmm`) or WebVTT (`HH:MM:SS.mmm` with a `WEBVTT` header). Step 3: set readability rules: max ~42 chars per line, max 2 lines per cue, min ~1s and max ~7s per cue, reading speed under ~17 chars/second, and a small gap between cues so none overlap. Step 4: decide how to handle non-speech (e.g. `[music]`, `[applause]`) and speaker IDs if multiple speakers. Write an acceptance-criteria checklist (valid SRT/VTT that a player can load, sequential cue numbering, monotonic non-overlapping timecodes, lines within the char limit, last cue ends near video duration) and decisions to `notes/scope.md` via write_task_note AND to the produces path.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "transcribe"
+    },
+    {
+      "id": "transcribe",
+      "name": "Transcribe with timings",
+      "description": "STT the audio into word/segment timestamps",
+      "prompt": "Produce timed text the formatter can chunk. Step 1: extract/take the audio track and run speech-to-text over the WHOLE recording to get segments with start/end timestamps (word-level if the engine supports it — it makes cue splitting far cleaner). Step 2: keep timestamps monotonic across any chunk boundaries. Step 3: mark non-speech events per the scope rules. Step 4: write the raw timed segments to `notes/timed-segments.json` (each: text, start, end) via write_task_note and the produces path so the format phase has structured input, not prose. Do not chunk into final cues yet — that is the next phase. On a loop-back from format, fix timing/coverage gaps here only if the issue is bad source timings.\n\nThe deliverable `notes/timed-segments.json` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "notes/timed-segments.json",
+        "minBytes": 1,
+        "sniff": "json-valid",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/timed-segments.json",
+            "bytes": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "transcribe",
+        "maxAttempts": 3
+      },
+      "next": "format"
+    },
+    {
+      "id": "format",
+      "name": "Format the caption file",
+      "description": "chunk timed text into valid SRT/VTT cues",
+      "prompt": "Turn timed segments into a valid caption file. Step 1: emit the format header (none for SRT; `WEBVTT` for VTT). Step 2: walk the timed segments and pack words into cues that respect the scope's char/line/duration/reading-speed limits — split a long segment into multiple cues at natural pauses, splitting timecodes proportionally. Step 3: number cues sequentially (SRT) and write each cue's `start --> end` timecode in the EXACT format, then 1-2 text lines. Step 4: ensure no two cues overlap and the last cue ends at/just before the video duration. Step 5: write `captions.srt` (or `.vtt`) and validate it parses (try loading it, or re-parse the structure). write_task_note the caption path and cue count. On a loop-back, fix only the flagged cues (overlap, over-long lines, bad timecode format).",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "captions.srt",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "captions.srt",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "captions.srt",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "format",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Validate the caption file like a player would. Step 1: parse it — valid header (VTT), sequential numbering (SRT), and every timecode in the exact `HH:MM:SS,mmm`/`.mmm` format (PASS/FAIL). Step 2: confirm timecodes are monotonic and NO two cues overlap. Step 3: confirm cue durations and line lengths are within the scoped limits (sample several). Step 4: confirm the final cue ends within a small margin of the video duration (no dropped tail). Step 5: spot-check 3 cues against the audio if possible — text and timing align. Write PASS/FAIL per criterion.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"format\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "captions.srt"
+        }
+      ],
+      "next": "format"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

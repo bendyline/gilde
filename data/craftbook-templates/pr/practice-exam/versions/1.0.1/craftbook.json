@@ -1,0 +1,159 @@
+{
+  "id": "practice-exam",
+  "name": "Practice Exam",
+  "description": "Take the exam before the exam: a timed, self-scoring practice paper blueprinted from the deck — weighted toward what the review record says is weak — with an answer key that explains, not just grades. Locks the blueprint FIRST — topic coverage, weak-spot weighting from the deck's boxes and miss counts, timing, honest scoring — then builds the interactive exam page, then writes the key. Use for practice exams, mock tests, 'test me before the test', timed practice papers, and exam-week dress rehearsals.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Blueprint the exam (studiemaat) — deck picture, weak-spot weighting, timing and scoring rules → gated on artifact `notes/scope.md` (markdown-notes)\n2. Build the exam page (developer) — timed, self-scoring exam.html built from the deck → gated on `exam.html` (html-page)\n3. Write the answer key (copywriter) — per-question explanations that teach, not just grade → gated on artifact `notes/answer-key.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "build me a practice exam",
+    "practice test from the deck",
+    "mock exam before the test",
+    "timed practice paper",
+    "test me before the exam"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Blueprint the exam",
+      "description": "deck picture, weak-spot weighting, timing and scoring rules",
+      "prompt": "Blueprint the exam before writing a single question. Step 1: read deck.json from the workspace — every card with its front, back, box, and got-it/missed stats — and note the exam date or occasion from the owner's ask. Step 2: name the deck's topics (group the cards by theme) and the weak spots with numbers as evidence: cards sitting in box 1, and cards missed as often as they were got. Step 3: lock the blueprint — how many questions, coverage across every topic, weak material weighted roughly double, the time limit, and the scoring rule (points per question, what score means ready). Step 4: write an acceptance-criteria checklist ('every topic represented', 'weak cards get the extra weight the blueprint promises', 'every question comes from a deck card — nothing invented', 'the timer and scoring actually work', 'the key explains every answer'). Call write_task_note with the topic list + weak-spot count + checklist and write notes/scope.md.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "studiemaat",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "author"
+    },
+    {
+      "id": "author",
+      "name": "Build the exam page",
+      "description": "timed, self-scoring exam.html built from the deck",
+      "prompt": "Build the exam as one self-contained page at exam.html. Step 1: write the questions from the blueprint — every question grounded in a deck card (the card's fact, come at from a testing angle), weak cards weighted as the blueprint says, order shuffled so topics interleave. Step 2: make it takeable — a visible countdown timer from the blueprint's limit, one clear control per question, and a submit control that ends the attempt. Step 3: make the scoring honest — on submit, grade against the built-in key, show the score and which questions were missed, and never inflate; an exam that always says full marks is broken. Step 4: keep it one file — inline styles and script, no external requests — and check the script actually parses before completing. Call write_task_note with the question count per topic and the time limit.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "exam.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "exam.html",
+            "bytes": 2500
+          },
+          {
+            "kind": "htmlLint",
+            "file": "exam.html"
+          },
+          {
+            "kind": "cssMinBytes",
+            "bytes": 650,
+            "file": "exam.html"
+          },
+          {
+            "kind": "jsParses",
+            "file": "exam.html"
+          },
+          {
+            "kind": "contains",
+            "file": "exam.html",
+            "pattern": "score|submit",
+            "flags": "i",
+            "label": "self-scoring controls"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "exam.html"
+            }
+          }
+        ],
+        "onReject": "author",
+        "maxAttempts": 3
+      },
+      "next": "key"
+    },
+    {
+      "id": "key",
+      "name": "Write the answer key",
+      "description": "per-question explanations that teach, not just grade",
+      "prompt": "Write the answer key at notes/answer-key.md. Step 1: one entry per exam question — the right answer, then a plain-words explanation of WHY it is right, sized for someone reviewing the night before. Step 2: name which deck card each question leans on, so a missed question points straight back to the card to re-study. Step 3: for the weak-spot questions, add the one memory hook or contrast that makes the fact stick. Step 4: keep the tone encouraging — the key exists to close gaps, not to scold. Call write_task_note with the entry count and the key path.\n\nThe deliverable `notes/answer-key.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "notes/answer-key.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/answer-key.md",
+            "bytes": 800,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/answer-key.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "key",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open exam.html, notes/answer-key.md, and deck.json and verify every criterion from notes/scope.md: count the questions per topic against the blueprint — every topic covered and the weak material actually carrying the promised extra weight; spot-check three questions against the deck — each must trace to a real card, an invented fact is the classic failure; walk the page's logic — the timer counts down from the blueprint's limit and submit grades honestly against the key; and confirm the key explains every answer and points back to its card. Write PASS/FAIL per criterion; on any failure, name the question or topic and loop back to author.\n\nThe deliverable lives in the project's artifacts drawer — open `notes/answer-key.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"author\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "notes/answer-key.md",
+          "artifact": true
+        }
+      ],
+      "next": "author"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

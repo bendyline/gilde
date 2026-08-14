@@ -1,0 +1,74 @@
+{
+  "id": "chapter-weave",
+  "name": "Weave a Chapter",
+  "description": "Weave the banked sessions into one memoir chapter in the teller's voice: every scene traceable to something actually said, gaps marked for a future session instead of invented — the ritual that turns interviews into a book. Locks the chapter's arc and the no-invention rules FIRST, then drafts from session material only, with a faithfulness pass that loops until every detail traces. Use for drafting a memoir chapter, weaving sessions into a story, and 'turn the interviews into a chapter'.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the chapter (editor) — chapter arc from the sessions, no-invention rules, target file → gated on artifact `notes/scope.md` (markdown-notes)\n2. Draft the chapter (writer) — the woven chapter under chapters/, session material only\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "weave the sessions into a chapter",
+    "draft a memoir chapter",
+    "turn the interviews into a chapter",
+    "write the next chapter",
+    "chapter from the sessions"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the chapter",
+      "description": "chapter arc from the sessions, no-invention rules, target file",
+      "prompt": "Choose the chapter before writing a line. Step 1: read every session file under sessions/ (and sessions.json for the index) — what themes recur, which sessions overlap, and where the material is thick enough to hold a chapter. Step 2: pick the chapter's arc with the owner — the span of time or the thread of feeling it covers, and where it opens and closes. Step 3: lock the weaving rules: no invented events — every scene traces to something actually said; the teller's phrasings survive the prose; where sessions contradict each other, the contradiction is surfaced, not silently resolved; where the record has a hole, the gap is marked inline for a future session, never papered over. Step 4: write the acceptance-criteria checklist from those rules, name the chapter file under chapters/ (the path the owner asks for, or chapters/<slug>.md named for the arc), and call write_task_note with the arc + checklist. Write notes/scope.md.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "editor",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "draft"
+    },
+    {
+      "id": "draft",
+      "name": "Draft the chapter",
+      "description": "the woven chapter under chapters/, session material only",
+      "prompt": "Weave the chapter from session material only. Step 1: gather every passage across the sessions that belongs to the locked arc. Step 2: write the chapter in the teller's voice — their rhythms, their words for things — with the narrative connective tissue kept thin and honest. Step 3: where the teller told it two ways, keep both tellings visible ('she remembered it as...; in another telling...'). Step 4: where the arc needs something the sessions never said, mark the gap inline — [gap: ask about ...] — and move on. Step 5: save the chapter under chapters/ at the path locked in scope, make it substantial (a real chapter, not an outline), and call write_task_note with the word count and the gap count.",
+      "suggestedRole": "writer",
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open the chapter under chapters/ beside every session file it draws on, and verify every criterion from notes/scope.md: pick five concrete events or details in the chapter and find each one in a session file — any detail with no source is invented and fails the whole pass; the teller's phrasings survive (spot-check three passages); contradictions between sessions are surfaced in the text, not resolved silently; gaps are marked inline, not smoothed over. Write PASS/FAIL per criterion; on any failure, name the invented detail or missed criterion and loop back to draft.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"draft\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. If you advance without a target, the loop sends you back by design. After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "draft"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

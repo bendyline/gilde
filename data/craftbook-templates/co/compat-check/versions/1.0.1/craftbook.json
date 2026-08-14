@@ -1,0 +1,146 @@
+{
+  "id": "compat-check",
+  "name": "Compatibility Check",
+  "description": "Answer 'does it still work on the new version?' with a matrix, not a shrug: the datapack's files checked against each target version's format rules, every break named with the exact file and the exact fix, and the upgrade path written down in order. Locks the target version list and the compat criteria FIRST (format numbers, renamed folders, changed identifiers), then checks version by version, then writes the matrix and the fixes. Use for version compatibility checks, 'does the mod work on 1.21', update breakage sweeps, and upgrade planning.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the check (modmaker) — target versions, format rules, compat criteria locked → gated on artifact `notes/scope.md` (markdown-notes)\n2. Check each version (developer) — the pack walked against each version's rules, findings recorded → gated on artifact `notes/checks.md` (markdown-notes)\n3. Write the matrix (reviewer) — the compat matrix, the fixes, the ordered upgrade path → gated on artifact `report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "check compatibility",
+    "does it work on the new version",
+    "will the mod break",
+    "version check the datapack",
+    "plan the upgrade"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the check",
+      "description": "target versions, format rules, compat criteria locked",
+      "prompt": "Define the check before judging a single file. Step 1: list the target game versions to check against, and read the version notes in the workspace (the version-to-pack_format table and any renamed-folder or changed-identifier notes) — every claim in the matrix must trace to these notes or to the pack's own files, never to memory. Step 2: inventory the datapack — pack.mcmeta's current pack_format, the folder names in use under data/, and the identifiers the functions and JSON files rely on. Step 3: lock the compat criteria per version — the pack_format the version expects, the folder names it expects, and the identifiers it renamed or removed; anything the notes do not cover gets checked as 'unverified', not guessed. Step 4: write an acceptance-criteria checklist ('every target version gets a verdict', 'every break names the exact file and what breaks', 'every break has a concrete fix', 'verdicts trace to the version notes or the pack files', 'the upgrade path is ordered'). Call write_task_note with the version list + criteria + checklist and write notes/scope.md.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "modmaker",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "check"
+    },
+    {
+      "id": "check",
+      "name": "Check each version",
+      "description": "the pack walked against each version's rules, findings recorded",
+      "prompt": "Walk the datapack against each target version's locked criteria. Step 1: for each version, check pack.mcmeta's pack_format against the version's expected number; a mismatch is a break with a one-line fix. Step 2: check every folder under data/ against the version's expected folder names — renamed folders are the silent killer, the pack loads and the content just never fires. Step 3: sweep the function and JSON files for identifiers the version renamed or removed, listing each occurrence by file. Step 4: record the findings per version in notes/checks.md — works, breaks with the named file and reason, or unverified where the notes ran out — and be honest about the unverified ones; a confident wrong verdict costs an evening of debugging. Call write_task_note with the per-version verdict counts.\n\nThe deliverable `notes/checks.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "notes/checks.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/checks.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/checks.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "check",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the matrix",
+      "description": "the compat matrix, the fixes, the ordered upgrade path",
+      "prompt": "Write the report that answers the question at a glance. Step 1: open with the verdict in one sentence — which versions the pack works on today and which break it. Step 2: build the compatibility matrix as a table — a row per target version with columns for Version and Status at minimum, the status stated plainly (works, breaks, unverified) with the one-line reason. Step 3: list the fixes — every break from notes/checks.md with the exact file and the exact change, grouped by version. Step 4: write the upgrade path — the fixes in the order to apply them, and what to test in-game after each, so the upgrade is an afternoon of steps rather than a weekend of guessing. Write report.md and call write_task_note with the report path and the verdict sentence.\n\nBefore working, open the artifact input `notes/checks.md` with `read_artifact`; do not look for it in the workspace.\n\nThe deliverable `report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "notes/checks.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.md",
+            "bytes": 1000,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open report.md, notes/checks.md, and the version notes and verify every criterion from notes/scope.md: every target version has a row in the matrix with a plain verdict, every break names the exact file and carries a concrete fix, every verdict traces to the version notes or the pack's actual files (spot-check two against the notes), unverified items are marked as such rather than guessed, and the upgrade path is ordered with a test step per fix. Write PASS/FAIL per criterion; on any failure, name the gap and loop back to report.\n\nThe deliverable lives in the project's artifacts drawer — open `report.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "report.md",
+          "artifact": true
+        }
+      ],
+      "next": "report"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

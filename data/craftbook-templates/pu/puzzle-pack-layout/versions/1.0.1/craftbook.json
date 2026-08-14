@@ -1,0 +1,121 @@
+{
+  "id": "puzzle-pack-layout",
+  "name": "Lay Out the Puzzle Pack",
+  "description": "Bind the month's puzzles into one print-ready pack: a cover, a page per puzzle, and the solutions gathered in the back where they belong — the thing that lands on the kitchen table and disappears into pencil marks. Locks the shelf inventory and the page rules FIRST, then lays out the pack, then proofs that every puzzle made it in and no solution leaks next to its puzzle. Use for laying out the puzzle pack, binding the month's puzzles, a printable puzzle booklet, and 'put the puzzles into one pack'.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Inventory the shelf (puzzle-maker) — which puzzles are in, pack order, page rules → gated on artifact `notes/scope.md` (markdown-notes)\n2. Lay out the pack (designer) — cover, page per puzzle, solutions in the back → gated on `pack/pack.html` (html-page)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "lay out the puzzle pack",
+    "bind the puzzles into a pack",
+    "printable puzzle booklet",
+    "puzzle pack for the month",
+    "make the puzzle pack"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Inventory the shelf",
+      "description": "which puzzles are in, pack order, page rules",
+      "prompt": "Inventory before laying anything out. Step 1: read the puzzles/ shelf from the workspace — every puzzle's data and rendered page, its title, and when it was made. Step 2: confirm with the owner which puzzles belong in this pack and the order they should appear. Step 3: lock the page rules — a cover with the pack's title and contents, one puzzle per page with a page break between, solutions gathered as their own section at the back and never beside their puzzle, print styles throughout. Step 4: write an acceptance-criteria checklist ('every chosen shelf puzzle appears in the pack under its own title', 'one puzzle per page with clean breaks', 'all solutions in the back section, none interleaved', 'the cover lists the contents', 'the pack prints cleanly'). Call write_task_note with the puzzle count + order + checklist and write notes/scope.md.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "puzzle-maker",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "layout"
+    },
+    {
+      "id": "layout",
+      "name": "Lay out the pack",
+      "description": "cover, page per puzzle, solutions in the back",
+      "prompt": "Lay out the pack as one print-ready HTML file at pack/pack.html. Step 1: the cover — the pack's title, the month, and the contents list. Step 2: one page per puzzle, re-laid from the shelf's puzzle data — the blank grid and clues set properly for paper, never a screenshot — each starting on a fresh page. Step 3: the solutions section last, one clearly-labeled solution per puzzle, separated from the puzzles by a page break so nobody's eye falls on an answer early. Step 4: print styles throughout — an @page rule and page-break rules so every puzzle starts fresh and the grid squares stay pencil-sized. Call write_task_note with the pack path and the page count.",
+      "suggestedRole": "designer",
+      "advanceWhen": {
+        "file": "pack/pack.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "pack/pack.html",
+            "bytes": 3000
+          },
+          {
+            "kind": "htmlLint",
+            "file": "pack/pack.html"
+          },
+          {
+            "kind": "cssMinBytes",
+            "bytes": 650,
+            "file": "pack/pack.html"
+          },
+          {
+            "kind": "contains",
+            "file": "pack/pack.html",
+            "pattern": "@page|page-break|break-after|break-before",
+            "flags": "i",
+            "label": "page-break CSS"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "pack/pack.html"
+            }
+          }
+        ],
+        "onReject": "layout",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open pack/pack.html against the puzzles/ shelf and verify every criterion from notes/scope.md: every chosen puzzle appears in the pack under its own title — check the shelf listing, a missing puzzle is the classic failure — each puzzle gets its own page with a clean break, every solution sits in the back section and none beside its puzzle, the cover lists the contents, and the page-break styling would print cleanly. Write PASS/FAIL per criterion; on any failure, name the puzzle and the gap and loop back to layout.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"layout\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "pack/pack.html"
+        }
+      ],
+      "next": "layout"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

@@ -1,0 +1,110 @@
+{
+  "id": "form-wizard",
+  "name": "Multi-Step Form Wizard",
+  "description": "Build a single-file multi-step form wizard — a signup, checkout, survey, or onboarding form split across steps with a progress indicator, per-step validation, back/next navigation, and a final review-and-submit. Designs the step flow, fields per step, and validation rules first, then implements stateful navigation that preserves entered data across steps. Wizards break when going back loses data or a step advances with invalid input, so the flow-design phase locks the field-per-step map and validation before any markup.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Flow design (designer) — steps, fields per step, validation, progress → gated on artifact `notes/flow-design.md` (markdown-notes)\n2. Build (developer) — implement index.html with stateful step navigation → gated on `index.html` (html-page)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "flow-design",
+  "triggers": [
+    "multi step form",
+    "form wizard",
+    "checkout flow",
+    "survey form",
+    "step by step form",
+    "onboarding form"
+  ],
+  "steps": [
+    {
+      "id": "flow-design",
+      "name": "Flow design",
+      "description": "steps, fields per step, validation, progress",
+      "prompt": "Design the wizard flow. (1) Enumerate the steps in order and the fields collected on each (with types: text, email, select, radio). (2) Define per-field validation rules and the exact error messages. (3) Specify navigation: Next validates the current step before advancing; Back preserves all entered data; a progress indicator shows current step of N. (4) Define the final review step that summarizes all answers before submit, and the success state. (5) Write an acceptance-criteria checklist of 6-8 items, e.g. 'Next is blocked until the current step is valid', 'Back preserves entered values', 'the progress indicator reflects the current step', 'the review step shows every answer', 'submit shows a success state', 'invalid fields show their error', 'no console errors'. Write to notes/flow-design.md and via write_task_note. No HTML yet.\n\nThe deliverable `notes/flow-design.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "designer",
+      "advanceWhen": {
+        "file": "notes/flow-design.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/flow-design.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/flow-design.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "flow-design",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build",
+      "description": "implement index.html with stateful step navigation",
+      "prompt": "Implement index.html with inline CSS/JS to the flow design. (1) Render all steps but show only the active one; track current step and a form-data object. (2) On Next, validate the current step's fields; block advance and show inline errors if invalid; otherwise save values and advance. (3) On Back, go to the previous step with all values intact (re-populate inputs from the data object). (4) Render a progress indicator (step N of M or a bar). (5) Build the final review step summarizing every answer, and a submit that shows a success message. Style it cleanly and responsively. Vanilla JS, no CDN. On a loop-back, fix only the named gaps without regressing passing criteria. write_task_note the path and passing criteria.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 800
+          },
+          {
+            "kind": "htmlLint",
+            "file": "index.html"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Walk the whole wizard. Open index.html if possible: try to advance with invalid input, fill steps, go Back and forward to confirm data is kept, reach the review, and submit. Check EACH criterion from notes/flow-design.md and write PASS/FAIL with a reason: is Next blocked when invalid, does Back preserve values, does the progress indicator update, does review show every answer, does submit succeed, zero console errors? Going Back and losing entered data is a FAIL — loop back to build.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "index.html"
+        }
+      ],
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

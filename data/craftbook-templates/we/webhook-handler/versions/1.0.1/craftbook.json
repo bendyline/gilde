@@ -1,0 +1,147 @@
+{
+  "id": "webhook-handler",
+  "name": "Inbound Webhook Handler",
+  "description": "Build a handler that receives inbound webhook events, verifies their authenticity, parses the payload, and dispatches by event type — idempotently and resiliently. Locks the webhook contract FIRST — the event types, payload shapes, signature-verification scheme, idempotency key, and required 2xx-fast-ack behavior — then implements verification + routing + handlers, then tests valid/invalid signatures, each event type, replays, and malformed payloads. Covers HMAC signature verification, payload parsing, event-type dispatch, idempotency/dedupe, fast 2xx acknowledgement, and retry-safe processing.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Webhook contract scope (planner) — lock event types, payloads, signature + idempotency rules → gated on artifact `notes/contract-scope.md` (markdown-notes)\n2. Build the handler (developer) — implement verification, dispatch, idempotency → gated on `src/webhook.js` (code-module)\n3. Write handler tests (developer) — test signatures, event types, replays, malformed bodies → gated on `src/webhook.test.js` (code-with-tests)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "contract-scope",
+  "triggers": [
+    "build a webhook handler",
+    "receive webhooks",
+    "process inbound webhooks",
+    "verify webhook signatures",
+    "webhook endpoint"
+  ],
+  "steps": [
+    {
+      "id": "contract-scope",
+      "name": "Webhook contract scope",
+      "description": "lock event types, payloads, signature + idempotency rules",
+      "prompt": "Define the webhook contract before any handler code. Step 1: List the event types you will receive and the payload shape of each. Step 2: Specify the authenticity check: the signature header name, the HMAC algorithm and secret source, and exactly what string is signed (raw body, timestamp, etc.). Step 3: Decide idempotency: which field is the dedupe/idempotency key and how replays are detected and ignored. Step 4: Define the response contract: ack with a fast 2xx on accepted events, the status for an invalid signature (401) and a malformed/unknown event (400), and that slow work happens AFTER the ack. Step 5: Write a numbered acceptance-criteria checklist of 5-9 items (e.g. 'a request with a bad signature is rejected 401 and not processed', 'a duplicate event id is acknowledged but processed once', 'an unknown event type returns 400/204 without crashing'). `write_task_note` the contract + checklist and write the same to the produces path.\n\nThe deliverable `notes/contract-scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/contract-scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/contract-scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/contract-scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "contract-scope",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the handler",
+      "description": "implement verification, dispatch, idempotency",
+      "prompt": "Implement the webhook handler in a single runnable source file. Step 1: Capture the raw body and verify the signature exactly as scoped BEFORE parsing or trusting anything; reject with 401 on mismatch and do not process. Step 2: Parse the payload, then check the idempotency key against a seen-set/store and skip re-processing duplicates while still acking. Step 3: Dispatch by event type to a per-type handler; unknown types return the scoped status without crashing. Step 4: Acknowledge with a fast 2xx, performing any heavy work after acking (or enqueueing it). Use an in-memory dedupe store if none specified. On a loop-back, fix only the named gaps. `write_task_note` the file path and which criteria now pass.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/webhook.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/webhook.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/webhook.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/webhook.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/webhook.js"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "test"
+    },
+    {
+      "id": "test",
+      "name": "Write handler tests",
+      "description": "test signatures, event types, replays, malformed bodies",
+      "prompt": "Write tests that POST events to the handler. Step 1: Assert a correctly-signed event returns 2xx and dispatches to its handler. Step 2: Assert a bad/missing signature returns 401 and the event is NOT processed. Step 3: Assert sending the same event id twice processes it once but acks both. Step 4: Assert an unknown event type and a malformed body return the scoped status without throwing. Build signed payloads with the same HMAC scheme. `write_task_note` the test file path and pass/fail count.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/webhook.test.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/webhook.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/webhook.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/webhook.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/webhook.js"
+          }
+        ],
+        "onReject": "test",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Run the tests and POST sample events. For EACH acceptance criterion: confirm valid signatures are accepted and dispatched, confirm bad signatures are rejected 401 and not processed, confirm duplicate event ids are processed exactly once, confirm unknown/malformed events fail safely, and confirm the handler acks fast. Write PASS/FAIL per criterion.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "src/webhook.js"
+        }
+      ],
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

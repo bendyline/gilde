@@ -1,0 +1,148 @@
+{
+  "id": "doc-intake-pipeline",
+  "name": "Classify and Route Incoming Documents",
+  "description": "Build a document-intake pipeline that classifies each incoming file (invoice, contract, resume, receipt, ID, support ticket, other) into a fixed type set, extracts a few key fields per type, and routes it to the right destination folder with a normalized filename. Locks the document-type taxonomy, per-type extraction fields, and the routing/naming rules FIRST, then builds the classify-extract-route loop, then verifies every input file was handled, classifications are in-set with an 'other' fallback, and routing is deterministic. Taxonomy-and-routing-before-build prevents files from silently vanishing or piling into a misc bucket.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the pipeline (planner) — doc-type taxonomy, per-type fields, routing rules → gated on artifact `notes/scope.md` (markdown-notes)\n2. Build the pipeline (developer) — classify, extract key fields, route + rename, log → gated on `intake.py` (code-module)\n3. Verify the pipeline (reviewer) — coverage, in-set types, deterministic routing → gated on artifact `notes/verify.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "sort incoming documents",
+    "classify and file documents",
+    "auto-route a folder of files",
+    "document intake pipeline",
+    "organize a dump of files"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the pipeline",
+      "description": "doc-type taxonomy, per-type fields, routing rules",
+      "prompt": "Define the intake contract before building. Step 1: identify the inbox/source folder and the file types present (PDF, image, docx, email). Step 2: define the closed document-type taxonomy (e.g. invoice, contract, receipt, resume, id-document, support-ticket, other) — every file lands in exactly one, with 'other' as the explicit fallback. Step 3: for each type, list the few key fields to extract (e.g. invoice → vendor, date, total, invoice_no) and the classification signals (keywords, layout cues). Step 4: define routing and naming: destination folder per type and a normalized filename template (e.g. {type}/{date}_{vendor}_{id}.pdf), plus the dedup rule for name collisions. Step 5: write an acceptance-criteria checklist ('every input file classified into exactly one in-set type', 'an other bucket exists and is used not abused', 'per-type key fields extracted', 'each file routed and renamed deterministically', 'no file lost or overwritten', 'an intake manifest logs every file with source→destination'). Call write_task_note with taxonomy + fields + routing + checklist and write notes/scope.md. No build yet.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the pipeline",
+      "description": "classify, extract key fields, route + rename, log",
+      "prompt": "Implement the intake pipeline to the locked contract. Step 1: enumerate every file in the source folder. Step 2: classify each into exactly one taxonomy type using the agreed signals; when confidence is low, route to 'other' rather than guessing a specific type. Step 3: extract the per-type key fields and capture them in the manifest. Step 4: route the file to its destination folder and rename it per the template, applying the collision/dedup rule so nothing is overwritten. Step 5: append an intake-manifest row per file (source path, type, extracted fields, destination path, status) and write the manifest. Make it a runnable module and write it; confirm the manifest parses. Call write_task_note with the module path, the manifest path, and per-type counts.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "intake.py",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "intake.py",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "intake.py",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "intake.py"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "intake.py"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify the pipeline",
+      "description": "coverage, in-set types, deterministic routing",
+      "prompt": "Verify the pipeline against scope. Step 1: confirm it runs and produces an intake manifest. Step 2: check coverage — the manifest has one row per source file and the count of routed files equals the count of input files (nothing lost). Step 3: confirm every classification is an in-set type and that 'other' is used for genuinely ambiguous files but not as a dumping ground for everything. Step 4: confirm routing is deterministic and collision-safe — re-running classifies the same file identically and no destination file was overwritten. Step 5: spot-check 5 files: correct type, extracted fields match the document, filename matches the template. Write PASS/FAIL per criterion to notes/verify.md and task notes; on failure, name the files and loop back to build.\n\nThe deliverable `notes/verify.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "intake.py",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "intake.py",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "intake.py"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "intake.py"
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Run intake.py (or trace it) and verify every criterion from notes/scope.md against the intake manifest. Confirm: one manifest row per source file with routed count equal to input count (no files lost or overwritten), every classification is in-set with 'other' used appropriately, per-type key fields are extracted, filenames follow the template, and routing is deterministic on re-run. Spot-check 5 files. Write PASS/FAIL per criterion; on any failure, name the files and loop back to build.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "intake.py"
+        }
+      ],
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

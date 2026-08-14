@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "title": "Narrate a Chapter smoke eval",
+  "objective": "Task-specific eval for the Narrate a Chapter craftbook: chapter two (three tricky Irish and Scottish names) is prepped into a marked-up narration script, rendered through the fake narration engine, and listen-checked — with the name missing from the style sheet flagged, not guessed.",
+  "tags": [
+    "external"
+  ],
+  "prompt": "can you narrate chapter 2 with the fake voice engine thats wired up? watch the character names, the pronounciations trip everyone up",
+  "setup": {
+    "projectName": "Audiobook Studio — Chapter Narration Eval",
+    "about": "Self-contained eval project for chapter-narration-run. The manuscript chapter is manuscript/chapter-02.md and the narration style sheet is narration/style.md (markup conventions plus the pronunciations on file). The narration script goes to narration/scripts/chapter-02-script.md; the fake narration engine is the ready-made mock-probe project script — it reads every script under narration/scripts/ and writes audio/chapter-02.wav plus audio/chapter-02-log.json. The listen-check report goes to report.md.",
+    "missionObjectives": "Use the Narrate a Chapter craftbook/template, prep the full chapter into a marked-up narration script per the style sheet, render through the provided mock-probe script, and listen-check coverage and names in report.md. Names not on the style sheet get a proposed pronunciation flagged for the owner, never guessed silently. No real narration engines or services — only the wired fake.",
+    "files": [
+      {
+        "path": "manuscript/chapter-02.md",
+        "content": "# Chapter Two - The Ferry at Dusk\n\nSaoirse counted the coins twice before sliding them across the worn brass\nplate. The ferryman did not look up. Behind her, the harbor lamps were\ncoming on one by one, and the gulls had gone quiet the way they always did\njust before the tide turned.\n\n\"Two for the crossing,\" she said. \"One of us is a dog.\"\n\nThe ferryman looked up then. Tadhg, to his credit, sat very straight and\ntried to look like a dog with a ticket. The wind came off the water smelling\nof iron and kelp, and somewhere out past the breakwater a bell buoy kept its\nslow, patient time.\n\nThey had been walking since the morning of the second day, since the door\nin the sea wall that should not have opened and did. Saoirse had stopped\nasking how Tadhg knew the way. He knew it the way water knows downhill.\n\nEilidh was waiting on the far shore. That was the whole of the plan, and\nsaying it out loud made it sound even thinner than it was. Eilidh, who had\nsent one letter in four years, in handwriting that got smaller with every\nline, as if the words were trying to hide. Eilidh, who signed it only with\nthe old mark they had invented under the school stairs, the one that meant\ncome anyway.\n\nThe ferry moved off with no sound but the water folding along its sides.\nSaoirse kept her eyes on the far shore lights and her hand on the warm\nscruff of Tadhg's neck.\n\n\"When we get there,\" she said quietly, \"let me do the talking.\"\n\nTadhg said nothing, which from Tadhg was a whole opinion.\n\nThe crossing took the length of one slow bell. When the hull touched the\nfar dock, the lamps went out all at once, every one of them, as if the\nshore had drawn a breath. And there, at the end of the dock, stood a small\nfigure with a lantern, handwriting-small against the dark.\n\n\"You came anyway,\" said Eilidh.\n"
+      },
+      {
+        "path": "narration/style.md",
+        "content": "# Narration style sheet\n\nVoice: warm, unhurried, close to the listener. Evening-reading pace,\nabout 150 words a minute. Let the quiet moments stay quiet.\n\nMarkup conventions for narration scripts:\n- Pronunciation: mark a name at its first occurrence as [pron: Name = SOUNDS-like].\n- Pauses: [pause] at scene breaks and wherever the prose needs air.\n- Pace: [slow] ... [/slow] around passages to be read deliberately.\n\nPronunciations on file:\n- [pron: Saoirse = SEER-sha]\n- [pron: Tadhg = TIGE] (rhymes with tiger without the r)\n\nAny name not on this list gets a proposed pronunciation flagged for the\nowner before the render - the engine must never guess.\n"
+      }
+    ],
+    "worker": {
+      "name": "Lot",
+      "role": "Producer"
+    }
+  },
+  "mocks": [
+    {
+      "kind": "cli",
+      "id": "probe",
+      "description": "Provenance-trusted project script `mock-probe` that runs the fake narration engine: reads the narration scripts under narration/scripts/ and writes the stub wav plus a run log per chapter into audio/.",
+      "shim": {
+        "path": "scripts/mock-probe.ts",
+        "content": "import { defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'mock-probe',\n  description:\n    'Fake narration engine for this eval: reads every narration script under narration/scripts/, then writes a stub wav per chapter into audio/ plus a run log with the word count and the pronunciation-mark count.',\n  inputs: {},\n  outputs: {\n    runs: { type: 'string', description: 'JSON array of run logs, one per narration script rendered.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n});\n\nconst entries = await gezel.fs.list('narration/scripts');\nconst scripts = entries.filter((entry) => !entry.isDirectory && entry.name.endsWith('-script.md'));\nif (scripts.length === 0) {\n  throw new Error('no narration script found under narration/scripts, expected <chapter>-script.md');\n}\nconst results = [];\nfor (const entry of scripts) {\n  const path = `narration/scripts/${entry.name}`;\n  const text = await gezel.fs.read(path);\n  const slug = entry.name.replace(/-script\\.md$/, '');\n  const wordCount = text.split(/\\s+/).filter((word) => word.length > 0).length;\n  const pronunciationMarks = (text.match(/\\[pron:/g) ?? []).length;\n  if (wordCount < 50) {\n    throw new Error(`narration script ${path} is too short to be a full chapter (${wordCount} words)`);\n  }\n  const log = { status: 'ok', engine: 'mock-tts', script: path, wordCount, pronunciationMarks };\n  await gezel.fs.write(`audio/${slug}.wav`, `MOCKWAV ${slug} stub\\n${'0'.repeat(2048)}\\n`);\n  await gezel.fs.write(`audio/${slug}-log.json`, `${JSON.stringify(log, null, 2)}\\n`);\n  results.push(log);\n}\ngezel.output({ runs: JSON.stringify(results) });\n"
+      }
+    }
+  ],
+  "success": {
+    "summary": "The narration script covers the full chapter with pronunciation and pause markup, the fake engine produced the wav and a status-ok log, and the report states coverage and flags Eilidh (absent from the style sheet) with a proposal.",
+    "deliverables": [
+      {
+        "path": "narration/scripts/chapter-02-script.md",
+        "kind": "markdown-doc",
+        "minBytes": 1000,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "narration/scripts/chapter-02-script.md",
+            "pattern": "\\[pron:",
+            "label": "pronunciation markup is present"
+          },
+          {
+            "kind": "contains",
+            "file": "narration/scripts/chapter-02-script.md",
+            "pattern": "\\[pause\\]",
+            "label": "pause marks are placed"
+          },
+          {
+            "kind": "valuesSubsetOf",
+            "file": "narration/scripts/chapter-02-script.md",
+            "sourceFiles": [
+              "manuscript/chapter-02.md"
+            ],
+            "pattern": "\\[pron:\\s*([A-Za-z]+)",
+            "label": "every pronunciation mark names a character from the manuscript"
+          }
+        ]
+      },
+      {
+        "path": "audio/chapter-02.wav",
+        "kind": "audio-file",
+        "minBytes": 500
+      },
+      {
+        "path": "audio/chapter-02-log.json",
+        "kind": "json",
+        "checks": [
+          {
+            "kind": "jsonPathEquals",
+            "file": "audio/chapter-02-log.json",
+            "path": "status",
+            "value": "ok",
+            "label": "the narration run log reports status ok"
+          }
+        ]
+      },
+      {
+        "path": "report.md",
+        "kind": "markdown-report",
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "coverage|complete|skipped",
+            "flags": "i",
+            "label": "a coverage claim is made"
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "Eilidh",
+            "label": "the name missing from the style sheet is addressed"
+          },
+          {
+            "kind": "judge",
+            "file": "report.md",
+            "rubric": "The report flags Eilidh as absent from the style sheet with a proposed pronunciation awaiting the owner rather than a silent guess, and its coverage claim is consistent with the run log's word count and the script.",
+            "sourceFiles": [
+              "narration/style.md",
+              "audio/chapter-02-log.json"
+            ],
+            "label": "flagged, never guessed"
+          }
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "report.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "pronunciation-care",
+        "description": "Every tricky name is marked at first occurrence; the unlisted one is flagged with a proposal."
+      },
+      {
+        "name": "pacing-markup",
+        "description": "Pauses and pace marks follow the style sheet where the prose needs air."
+      },
+      {
+        "name": "qa-rigor",
+        "description": "Coverage is verified against the manuscript, not assumed."
+      },
+      {
+        "name": "fidelity",
+        "description": "The script is the full chapter text, nothing summarized away."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "full-text coverage",
+    "pronunciation flagged not guessed",
+    "run-log grounding"
+  ]
+}

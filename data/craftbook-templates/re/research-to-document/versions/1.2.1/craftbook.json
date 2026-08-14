@@ -1,0 +1,216 @@
+{
+  "id": "research-to-document",
+  "name": "Word Document from Content or Research",
+  "description": "Produce a real Word document from supplied notes, existing workspace content, or a research question. The workflow locks the audience and document structure, inventories the provided evidence (and researches only when the user actually asked for new research), writes the complete source as report.md, then uses the pre-authorized DocBlocks toolset to convert directly to DOCX, preview the pages, and save report.docx in the artifacts drawer. PDF can be emitted in the same conversion call when requested.\n\nPlain Markdown is the source of truth. DocBlocks 2.3.x needs no validation preflight: convert_document reports diagnostics and preview_document supplies visual evidence. Never call the removed validate_document tool, hand-assemble OOXML, or substitute HTML for a requested DOCX.\n\nWorking files under notes/, reviews/, and reports/ live in the project artifacts drawer and must be read and written with the artifact tools. User-facing source files remain in the workspace.",
+  "entryStepId": "scope",
+  "triggers": [
+    "create a word document",
+    "make a docx",
+    "export this as docx",
+    "turn this content into a word document",
+    "research and write a document",
+    "research this and put it in word",
+    "write a cited briefing document"
+  ],
+  "toolsets": [
+    {
+      "toolsetId": "docblocks",
+      "sourceId": "bundled",
+      "autoAllow": true,
+      "reason": "convert report.md directly to DOCX or PDF, preview pages, and save the finished document without a prompt per call"
+    }
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the document",
+      "description": "Lock audience, source boundary, structure, requested formats, and acceptance criteria.",
+      "prompt": "Scope the document before writing. 1. State the audience, purpose, and decision/takeaway. 2. Inventory the supplied content and named workspace files. Decide whether the user asked for new research; if not, explicitly prohibit adding outside facts. 3. Lock the section order, citation style when relevant, and whether the durable output is DOCX only or DOCX plus PDF. 4. Identify tables, figures, and existing media assets that must survive conversion. 5. Write acceptance criteria covering source fidelity, section coverage, citations when needed, readable page layout, and real saved binary files in artifacts. Write notes/scope.md and call write_task_note with the source boundary, section count, and target formats.\n\nStore `notes/scope.md` in the artifacts drawer with `write_artifact`, then verify it with `read_artifact`; do not write this working file to the workspace.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 180,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "sources"
+    },
+    {
+      "id": "sources",
+      "name": "Prepare the source log",
+      "description": "Record supplied sources and gather new evidence only when research was requested.",
+      "prompt": "Prepare notes/sources.md to the boundary in notes/scope.md. If the user supplied the content and did not ask for research, list each supplied file or message section and the facts it contributes; do not browse or add outside claims. If new research was requested, gather credible sources, record title/publisher/date/URL or workspace path, extract only the facts relevant to the outline, and cross-check consequential claims. Assign stable citation keys when citations are required. Mark unsupported gaps rather than guessing. Call write_task_note with the source count and unresolved gaps.\n\nOpen `notes/scope.md` from the artifacts drawer with `read_artifact` before working. Store `notes/sources.md` in the artifacts drawer with `write_artifact`, then verify it with `read_artifact`; do not write this working file to the workspace.",
+      "suggestedRole": "researcher",
+      "advanceWhen": {
+        "file": "notes/sources.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/sources.md",
+            "bytes": 160,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/sources.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "sources",
+        "maxAttempts": 3
+      },
+      "next": "write",
+      "consumes": [
+        {
+          "file": "notes/scope.md",
+          "artifact": true
+        }
+      ]
+    },
+    {
+      "id": "write",
+      "name": "Write the Markdown document",
+      "description": "Write the complete report.md source from the locked outline and source log.",
+      "prompt": "Write report.md as the complete document source. 1. Follow notes/scope.md section order exactly, starting with one H1 title and a concise opening summary. 2. Use clear H2/H3 sections and real prose grounded only in notes/sources.md. 3. Use Markdown tables for structured comparisons and existing workspace images only when the scope calls for them; add meaningful alt text, captions, and in-prose references. 4. Cite claims with the locked style and include references when research was requested. 5. End with the requested conclusion, recommendation, or next steps. 6. Check every content criterion before advancing. Do not create DOCX XML, HTML, or base64. Call write_task_note with the path, word count, and section count.\n\nOpen `notes/scope.md`, `notes/sources.md` from the artifacts drawer with `read_artifact` before working.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "report.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.md",
+            "bytes": 1000
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "(?:^|\\n)#\\s+\\S",
+            "label": "an H1 document title"
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "(?:^|\\n)##\\s+\\S",
+            "label": "at least one document section"
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "publish",
+      "consumes": [
+        {
+          "file": "notes/scope.md",
+          "artifact": true
+        },
+        {
+          "file": "notes/sources.md",
+          "artifact": true
+        }
+      ]
+    },
+    {
+      "id": "publish",
+      "name": "Publish the Word document",
+      "description": "Convert report.md with DocBlocks, preview every page, and save report.docx plus optional PDF.",
+      "prompt": "Publish report.md with the pre-authorized DocBlocks tools. 1. Call list_roots first and identify the read-enabled workspace root and write-enabled artifacts root. If no write root exists, report the blocker instead of substituting Markdown or HTML as the finished file. 2. Optionally call get_authoring_context with targetFormat \"docx\" and goal \"content-first\" when target details or templates would help; no preflight is required. 3. Call convert_document once with source `{ \"kind\": \"file\", \"rootId\": <workspace root id>, \"path\": \"report.md\" }`, a DOCX target using editable-native fidelity and the document title, plus a PDF target in the SAME call only when notes/scope.md requests PDF. Use a restrained theme when appropriate and `autoTemplates: true`. 4. Call preview_document on the DOCX artifact URI and inspect all pages (paginate after 20): title and headings present, tables intact, images/captions placed, citations/references readable, no clipped or accidental blank pages. Repair report.md and reconvert on failure. 5. Call save_artifact for the DOCX artifact URI with destination `{ \"rootId\": <artifacts root id>, \"path\": \"report.docx\", \"ifExists\": \"error\" }`; call save_artifact for report.pdf when requested. On loop-back, replace only with the current expectedSha256. 6. Call write_task_note with target paths, page count, theme, and preview result. Do not call validate_document; it is not part of the current DocBlocks MCP.\n\nOpen `notes/scope.md` from the artifacts drawer with `read_artifact` before working.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "report.docx",
+        "minBytes": 1,
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.docx",
+            "bytes": 1000,
+            "artifact": true
+          }
+        ],
+        "onReject": "publish",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "consumes": [
+        {
+          "file": "notes/scope.md",
+          "artifact": true
+        },
+        {
+          "file": "report.md"
+        }
+      ]
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Review the saved Word document against every content and layout criterion.",
+      "prompt": "Review artifacts/report.docx against every criterion in notes/scope.md. Use list_roots to identify the artifacts root and preview_document with source `{ \"kind\": \"file\", \"rootId\": <artifacts root id>, \"path\": \"report.docx\" }`; inspect all pages. Confirm the file is a real DOCX, supplied content is preserved without invention, every section appears in order, citations and references resolve when required, tables/images/captions remain legible, and no content is clipped or stranded on accidental blank pages. Confirm report.pdf exists too when requested. Write PASS/FAIL per criterion and name the page/section for any failure.\n\nThen route:\n\n- Every criterion PASSES → call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- Any criterion FAILS → write the exact gaps to task notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })`.\n\nNever route to finish while any criterion is unmet. After about three unproductive loops, stop with DONE_WITH_CONCERNS.\n\nOpen `notes/scope.md`, `report.docx` from the artifacts drawer with `read_artifact` before working.",
+      "suggestedRole": "reviewer",
+      "next": "write",
+      "consumes": [
+        {
+          "file": "notes/scope.md",
+          "artifact": true
+        },
+        {
+          "file": "report.docx",
+          "artifact": true
+        }
+      ]
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All source, content, and Word-document checks passed.",
+      "prompt": "Every acceptance criterion passed. Call write_task_note with a short DONE summary naming report.md as the source and artifacts/report.docx (plus report.pdf when requested) as the finished deliverable, plus the page count and confirmation that visual preview passed. Then report DONE.\n\nOpen `report.docx` from the artifacts drawer with `read_artifact` before working.",
+      "suggestedRole": "copywriter",
+      "terminal": true,
+      "consumes": [
+        {
+          "file": "report.md"
+        },
+        {
+          "file": "report.docx",
+          "artifact": true
+        }
+      ]
+    }
+  ],
+  "version": "1.2.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

@@ -1,0 +1,106 @@
+{
+  "id": "weekly-pipeline-review",
+  "name": "Weekly Pipeline Review",
+  "description": "The weekly walk of a job-search pipeline — a grounded snapshot of every application (what moved in the last seven days, what went stale, which follow-ups are due), then a review that chases or consciously parks every stalled item and commits to exactly three concrete priorities for next week. Built for the Job Hunt project's weekly cadence; also runs on demand whenever the pipeline feels foggy.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Snapshot the pipeline (Loopbaancoach) — the grounded state: per-stage counts, movement, staleness, follow-ups due → gated on artifact `notes/pipeline-snapshot.md` (markdown-notes)\n2. Write the weekly review (Loopbaancoach) — moved, stalled with unblocking actions, follow-ups, and exactly three priorities → gated on artifact `reports/weekly-pipeline-review.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "snapshot",
+  "triggers": [
+    "weekly pipeline review",
+    "review my job pipeline",
+    "job search weekly review",
+    "where does my search stand"
+  ],
+  "steps": [
+    {
+      "id": "snapshot",
+      "name": "Snapshot the pipeline",
+      "description": "the grounded state: per-stage counts, movement, staleness, follow-ups due",
+      "prompt": "Ground the review in the real record — invent nothing. Step 1: read the live pipeline through the pipeline status capability on your current roster when available; otherwise read the workspace pipeline.json and activity.json records directly. Step 2: snapshot per-stage counts and list every application with its stage and last-touched date. Step 3: mark movement — anything whose stage changed in the last seven days. Step 4: mark staleness — any active application untouched for more than seven days. Step 5: list follow-ups due — logged follow-up events due within the next seven days or overdue. Step 6: note materials debt: serious applications missing a tailored résumé or company brief. Write the snapshot via write_task_note AND to notes/pipeline-snapshot.md.\n\nThe deliverable `notes/pipeline-snapshot.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "Loopbaancoach",
+      "advanceWhen": {
+        "file": "notes/pipeline-snapshot.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/pipeline-snapshot.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/pipeline-snapshot.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "snapshot",
+        "maxAttempts": 3
+      },
+      "next": "review"
+    },
+    {
+      "id": "review",
+      "name": "Write the weekly review",
+      "description": "moved, stalled with unblocking actions, follow-ups, and exactly three priorities",
+      "prompt": "Write reports/weekly-pipeline-review.md from the snapshot. Step 1: '## Moved this week' — each change in one line, celebrated where it deserves it. Step 2: '## Stalled' — every stale item with its unblocking action; the carry-over rule is absolute: each one is explicitly chased, consciously parked with a reason, or closed — nothing is silently dropped. Step 3: '## Follow-ups due' — who, about what, by when. Step 4: '## Materials debt' — tailoring and briefs owed for serious applications. Step 5: '## Next week' — EXACTLY three concrete priorities; three, not ten. Every line must trace to the snapshot. On a loop-back, fix ONLY the named issues.\n\nThe deliverable `reports/weekly-pipeline-review.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "Loopbaancoach",
+      "advanceWhen": {
+        "file": "reports/weekly-pipeline-review.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "reports/weekly-pipeline-review.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "reports/weekly-pipeline-review.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "review",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Audit the review against the snapshot. Step 1: cross-check — every application in the snapshot is accounted for in the review; FAIL any active application that appears in neither Moved, Stalled, nor Follow-ups. Step 2: check the carry-over rule — every stale item has an explicit chase, park-with-reason, or close. Step 3: count the next-week priorities — FAIL unless exactly three, each concrete enough to start tomorrow. Step 4: every follow-up line has a who, a what, and a when. Write PASS/FAIL per criterion.\n\nThe deliverable lives in the project's artifacts drawer — open `reports/weekly-pipeline-review.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"review\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "reports/weekly-pipeline-review.md",
+          "artifact": true
+        }
+      ],
+      "next": "review"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

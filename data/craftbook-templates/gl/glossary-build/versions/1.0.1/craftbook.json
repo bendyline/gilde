@@ -1,0 +1,140 @@
+{
+  "id": "glossary-build",
+  "name": "Domain Glossary",
+  "description": "Build a consistent, accurate glossary for a domain: a planner sets the domain scope, the term-selection criteria, and the entry template, a researcher gathers the canonical definition and usage for each term with sources, and a copywriter writes the alphabetized glossary with cross-references and consistent entries. The ordering matters because terms picked ad hoc leave gaps and inconsistent entries confuse readers; locking the scope, what makes a term in-scope, and a fixed entry template first guarantees coverage and a uniform, cross-linked glossary. Use this for building a domain or product glossary, a terms/definitions reference, an acronym list, onboarding vocabulary, and 'define all the key terms in X' requests.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the glossary (planner) — domain, term-selection criteria, and entry template → gated on artifact `notes/scope.md` (markdown-notes)\n2. Gather definitions (researcher) — canonical definition + usage per term, with sources → gated on artifact `notes/terms.md` (markdown-notes)\n3. Write the glossary (copywriter) — alphabetized, cross-referenced glossary to the template → gated on `glossary.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "build a glossary",
+    "define the key terms",
+    "domain terminology reference",
+    "acronym list",
+    "terms and definitions for"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the glossary",
+      "description": "domain, term-selection criteria, and entry template",
+      "prompt": "1. Define the domain and audience in one sentence (who reads this and at what level). 2. Set term-selection criteria (what makes a term in-scope) and produce the candidate term list (aim for the genuinely core terms, not every word). 3. Lock the entry template every term will follow: term, short definition (1-2 sentences), expanded explanation if needed, example/usage, related terms (cross-references), and source. 4. Decide ordering (alphabetical) and any grouping. 5. Write an acceptance-criteria checklist (e.g. 'every candidate term has an entry following the template', 'definitions are accurate and audience-appropriate', 'cross-referenced related terms exist as their own entries', 'entries are alphabetized', 'acronyms are expanded on first definition'). 6. Record decisions. Call write_task_note with the term list, entry template, and checklist; write the same to notes/scope.md.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "gather"
+    },
+    {
+      "id": "gather",
+      "name": "Gather definitions",
+      "description": "canonical definition + usage per term, with sources",
+      "prompt": "1. For each candidate term, gather the canonical definition into notes/terms.md following the entry template: term, accurate short definition, expanded note if the term is subtle, a real usage example, candidate related terms, and a source [n]. 2. Use authoritative sources (standards, official docs, reputable references) and reconcile conflicting definitions by noting the dominant usage in this domain. 3. Ensure every term named as a 'related term' is itself in the term list — add it if it is missing so cross-references resolve. 4. Expand every acronym and note common synonyms. 5. Flag any term whose meaning is contested or uncertain. Good looks like a complete, sourced entry per term with resolvable cross-references. Do not write the final glossary yet.\n\nThe deliverable `notes/terms.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "researcher",
+      "advanceWhen": {
+        "file": "notes/terms.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/terms.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/terms.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "gather",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the glossary",
+      "description": "alphabetized, cross-referenced glossary to the template",
+      "prompt": "1. Write glossary.md as an alphabetized list of entries, each following the locked template exactly (term as a heading, definition, optional expansion, example, related terms, source). 2. Make cross-references real: every 'related term' links to or names an entry that exists in the glossary. 3. Keep voice and depth uniform across entries — same level of detail and the same audience pitch throughout. 4. Expand acronyms on their defining entry. 5. Carry source references so definitions are traceable. 6. On a loop-back, fix only the named gaps. 7. Call write_task_note with the glossary path and term count.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "glossary.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "glossary.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "glossary.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open glossary.md and check EACH criterion PASS/FAIL: (1) every candidate term from notes/scope.md has an entry following the template; (2) entries are alphabetized; (3) every related-term cross-reference resolves to an actual entry (check 3 at random); (4) definitions are accurate and at the right audience level (spot-check 3 against notes/terms.md); (5) acronyms are expanded on first definition; (6) entry depth and voice are uniform. A glossary with missing terms, dangling cross-references, or inconsistent entry depth FAILS.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "glossary.md"
+        }
+      ],
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

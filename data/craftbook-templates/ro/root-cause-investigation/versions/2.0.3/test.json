@@ -1,0 +1,154 @@
+{
+  "schemaVersion": 1,
+  "title": "Root-Cause Investigation — decimal cart total regression",
+  "objective": "Require the Root-Cause Investigation craftbook to reproduce a deterministic failure, identify the causal mechanism before editing, implement the smallest fix, and prove the regression test passes.",
+  "tags": [
+    "workflow",
+    "debugging",
+    "code-with-tests",
+    "node"
+  ],
+  "prompt": "Use the Root-Cause Investigation craftbook to diagnose the failing decimal cart-total behavior in this workspace. First reproduce it with the existing dependency-free test and preserve concrete evidence; do not edit until a causal hypothesis has been tested. Then make the smallest correct source change, keep the regression coverage, and write the craftbook's artifacts, including `reports/root-cause-investigation.md`. The final report must cite the files inspected, distinguish root cause from symptom, include the exact verification command and result, and describe a safe rollback.",
+  "setup": {
+    "projectName": "Decimal cart total regression",
+    "about": "A tiny dependency-free Node project with one reproducible arithmetic defect. The initial test is expected to fail.",
+    "missionObjectives": "Restore exact cent-based addition for decimal prices without broad refactoring and leave a passing regression test plus an evidence-backed investigation report.",
+    "files": [
+      {
+        "path": "package.json",
+        "content": "{\n  \"name\": \"cart-total-fixture\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n"
+      },
+      {
+        "path": "src/cart-total.js",
+        "content": "/** Sum display-price strings and return a two-decimal total. */\nexport function cartTotal(prices) {\n  const cents = prices.reduce((sum, price) => sum + parseInt(price, 10) * 100, 0);\n  return (cents / 100).toFixed(2);\n}\n"
+      },
+      {
+        "path": "tests/cart-total.test.mjs",
+        "content": "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { cartTotal } from '../src/cart-total.js';\n\ntest('keeps cents when totaling decimal display prices', () => {\n  assert.equal(cartTotal(['19.99', '5.50']), '25.49');\n});\n\ntest('handles a single whole-dollar price', () => {\n  assert.equal(cartTotal(['7.00']), '7.00');\n});\n"
+      },
+      {
+        "path": "source/incident.md",
+        "content": "# Incident note\n\nCheckout preview showed **$24.00** for line items **$19.99** and **$5.50**. The expected total is **$25.49**. The defect appeared after price inputs changed from integer-dollar strings to two-decimal display strings. No production data migration is in scope.\n"
+      },
+      {
+        "path": "tests/verify-cart-total.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { cartTotal } from '../src/cart-total.js';\n\nconst cases = [\n  [['19.99', '5.50'], '25.49'],\n  [['0.10', '0.20'], '0.30'],\n  [['12.34', '0.66'], '13.00'],\n  [['7.00'], '7.00'],\n  [['1.01', '2.02', '3.03'], '6.06'],\n];\nfor (const [prices, expected] of cases) assert.equal(cartTotal(prices), expected, prices.join(' + '));\nconsole.log('CART_TOTAL_ORACLE_OK 5/5');\n",
+        "surface": "harness"
+      }
+    ]
+  },
+  "mocks": [],
+  "success": {
+    "summary": "The decimal regression is fixed by a diagnosed causal change, the existing test passes, and the craftbook report preserves reproducible evidence.",
+    "deliverables": [
+      {
+        "path": "reports/root-cause-investigation.md",
+        "kind": "markdown-report",
+        "artifact": true,
+        "minBytes": 1200,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "reports/root-cause-investigation.md",
+            "pattern": "^#{1,3}\\s+Root cause\\b[\\s\\S]*^#{1,3}\\s+(Fix|Changed files)\\b[\\s\\S]*^#{1,3}\\s+(Regression coverage|Verification)\\b[\\s\\S]*^#{1,3}\\s+Rollback\\b",
+            "flags": "im",
+            "label": "root cause through rollback sections"
+          },
+          {
+            "kind": "contains",
+            "file": "reports/root-cause-investigation.md",
+            "pattern": "parseInt|truncat(?:e|ed|ion)|discard(?:s|ed)?\\s+(?:the\\s+)?(?:decimal|fractional|cent)",
+            "flags": "i",
+            "label": "causal mechanism"
+          },
+          {
+            "kind": "contains",
+            "file": "reports/root-cause-investigation.md",
+            "pattern": "node\\s+--test\\s+tests/cart-total\\.test\\.mjs[\\s\\S]*(pass|2\\s+tests?|exit(?:ed)?\\s+0)",
+            "flags": "i",
+            "label": "verification command and result"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "reports/root-cause-investigation.md",
+            "minCitations": 2
+          }
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "kind": "notContains",
+        "file": "src/cart-total.js",
+        "pattern": "\\bparseInt\\s*\\(",
+        "label": "lossy integer parsing removed"
+      },
+      {
+        "kind": "sourceParses",
+        "file": "src/cart-total.js"
+      },
+      {
+        "kind": "nodeRuns",
+        "file": "tests/cart-total.test.mjs",
+        "timeoutMs": 20000
+      },
+      {
+        "kind": "nodeScriptPasses",
+        "script": "tests/verify-cart-total.mjs",
+        "requiredOutput": [
+          {
+            "pattern": "CART_TOTAL_ORACLE_OK 5/5",
+            "label": "hidden multi-case regression oracle"
+          }
+        ]
+      }
+    ],
+    "taskNotes": {
+      "minBytes": 180,
+      "checks": [
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "\\bDONE\\b[\\s\\S]*(node\\s+--test|tests/cart-total\\.test\\.mjs)[\\s\\S]*reports/root-cause-investigation\\.md",
+          "flags": "i",
+          "label": "terminal note records proof and report"
+        }
+      ],
+      "requireCraftbookTask": true
+    },
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    },
+    "unchangedFixtures": [
+      "package.json",
+      "tests/cart-total.test.mjs",
+      "source/incident.md"
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "reports/root-cause-investigation.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "Causal rigor",
+        "description": "The report explains why the observed inputs fail in this implementation and distinguishes causal evidence from guesses."
+      },
+      {
+        "name": "Fix discipline",
+        "description": "The source change is minimal, directly addresses the diagnosed mechanism, and avoids unrelated refactoring."
+      },
+      {
+        "name": "Verification quality",
+        "description": "Reproduction, regression coverage, final command result, blast radius, and rollback are concrete and auditable."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "Diagnosis precedes source edits",
+    "The fix preserves decimal cents and passes the dependency-free test",
+    "The final report cites real workspace files and includes rollback"
+  ]
+}

@@ -1,0 +1,141 @@
+{
+  "id": "perf-audit",
+  "name": "Performance Audit",
+  "description": "Audit an application or page for performance problems with measurements, then produce a report of the highest-impact optimizations. First scopes the workloads and locks a performance budget and checklist (load time and Core Web Vitals, bundle/asset weight, render and main-thread cost, network waterfall and request count, server/query latency, memory and re-render churn), then MEASURES each against a baseline using real profiling rather than guessing, then writes a report that ranks bottlenecks by impact-vs-effort with a specific fix and the expected gain for each. Use this for a performance audit, speed optimization, finding bottlenecks, a Lighthouse-style review, reducing load time, or profiling slowness — it grounds every recommendation in a measured number and an estimated payoff, not 'it feels slow'.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the perf budget (reviewer) — lock workloads, a budget, and a metrics checklist → gated on artifact `notes/scope.md` (markdown-notes)\n2. Measure the baseline (developer) — profile each workload, locate the real bottlenecks → gated on artifact `notes/measure.md` (markdown-notes)\n3. Write the perf report (reviewer) — rank optimizations by impact vs effort → gated on artifact `perf-report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "performance audit",
+    "why is this slow",
+    "find the bottleneck",
+    "optimize load time",
+    "speed this up",
+    "profile the app"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the perf budget",
+      "description": "lock workloads, a budget, and a metrics checklist",
+      "prompt": "Step 1: Identify the workloads to audit (the slow page/route/endpoint/operation and its typical usage). Step 2: Write a performance acceptance-criteria checklist with concrete budgets, drawn from the relevant metrics: page load and Core Web Vitals (LCP < 2.5s, CLS < 0.1, INP < 200ms), total JS/CSS/image transfer weight, time-to-interactive and main-thread blocking, request count and waterfall serialization, server response and DB query latency (and N+1 detection), and memory growth / excessive re-renders for SPAs. Step 3: For each metric, set the target/budget for THIS app and note the current pain. Step 4: Decide the measurement method and environment (Lighthouse/devtools/profiler/timing logs if available; otherwise read the code and reason about asymptotic and I/O costs). Write the workloads + budgeted checklist + method to `write_task_note` AND `notes/scope.md`. No optimizing yet — define 'fast enough' first.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "measure"
+    },
+    {
+      "id": "measure",
+      "name": "Measure the baseline",
+      "description": "profile each workload, locate the real bottlenecks",
+      "prompt": "Step 1: Establish a baseline by MEASURING each metric in the checklist (run Lighthouse/devtools/a profiler, time the endpoint, inspect the network waterfall and bundle, log query times). If no live env, statically analyze: bundle composition, algorithmic complexity of hot paths, query patterns, and render triggers. Step 2: For each metric over budget, drill into WHY — which asset is heaviest, which function dominates the flame chart, which query is slow or repeated, which component re-renders needlessly. Step 3: Record the actual numbers (e.g. 'LCP 4.1s; main.js is 480KB, 60% is moment.js+lodash'; 'GET /feed: 1.2s, runs 1+N queries, N≈40'). Step 4: For each bottleneck, identify the fix and ESTIMATE the expected gain and the effort. Step 5: Separate confirmed bottlenecks from suspicions you could not measure. Good looks like: every claim has a number behind it. Stage measurements to `write_task_note`. Do not write the report yet.\n\nThe deliverable `notes/measure.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "notes/measure.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/measure.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/measure.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "measure",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the perf report",
+      "description": "rank optimizations by impact vs effort",
+      "prompt": "Step 1: Open `perf-report.md` and write a '## Summary' table of each metric: budget vs measured vs PASS/FAIL. Step 2: Add a '## Recommendations' section ranked by impact-vs-effort; each entry: the bottleneck (with its measured number), the specific fix (e.g. 'code-split the editor route and lazy-load it', 'replace the 1+N with a single JOIN/batch', 'serve images as WebP at 2x and add width/height'), the ESTIMATED gain, and the effort. Step 3: Add a '## Quick wins' callout for the high-impact/low-effort items to do first. Step 4: Add a '## Needs measurement' section for suspicions not yet confirmed. Every recommendation must cite a measured number and an expected payoff — no generic 'optimize images'. On a loop-back, fix only the named gaps. `write_task_note` the report path and the count of failing metrics.\n\nThe deliverable `perf-report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "perf-report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "perf-report.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "perf-report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open `perf-report.md` and grade it against the scope budget checklist. Check EACH criterion and write PASS/FAIL with a one-line reason: (1) every metric in the budget was measured (number present, not estimated by feel); (2) each metric shows budget vs measured vs pass/fail; (3) each recommendation is tied to a measured bottleneck with a specific fix; (4) each recommendation has an estimated gain and effort; (5) recommendations are ranked by impact vs effort with quick-wins called out; (6) no hand-wavy advice without a number. If any criterion fails, name the exact gap and loop back.\n\nThe deliverable lives in the project's artifacts drawer — open `perf-report.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "perf-report.md",
+          "artifact": true
+        }
+      ],
+      "next": "report"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

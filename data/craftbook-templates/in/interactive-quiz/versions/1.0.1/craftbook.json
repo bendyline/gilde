@@ -1,0 +1,143 @@
+{
+  "id": "interactive-quiz",
+  "name": "Interactive Quiz Widget",
+  "description": "Build a single-file interactive quiz or assessment — multiple-choice, true/false, or a scored personality quiz — that asks questions one at a time, tracks the score, gives feedback, and shows a results screen. Authors the question bank, answer keys, and scoring logic first, designs the question and results UI, then implements stateful question flow with correct scoring. Quizzes break when the score is miscounted or the results screen never appears, so the content phase locks the answer key and the score-to-result mapping before any markup.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Content (planner) — question bank, answer keys, scoring + results → gated on artifact `notes/content.md` (markdown-notes)\n2. Design (designer) — question card, option states, results layout → gated on artifact `notes/design.md` (markdown-notes)\n3. Build (developer) — implement index.html with question flow + scoring → gated on `index.html` (html-page)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "content",
+  "triggers": [
+    "quiz app",
+    "make a quiz",
+    "trivia game",
+    "assessment widget",
+    "personality quiz",
+    "multiple choice quiz"
+  ],
+  "steps": [
+    {
+      "id": "content",
+      "name": "Content",
+      "description": "question bank, answer keys, scoring + results",
+      "prompt": "Author the quiz content. (1) Write the questions with their options and mark the correct answer(s) for each (the answer key) — for a scored personality quiz, map options to point buckets instead. (2) Define the scoring rule (one point per correct, or weighted) and the score-to-result mapping (e.g. 0-3 = beginner, 4-7 = ...). (3) Decide flow: one question per screen, whether to show immediate per-question feedback, and progress. (4) Define the results screen content. (5) Write an acceptance-criteria checklist of 5-8 items, e.g. 'each question shows its options', 'selecting an answer advances or enables Next', 'the score counts correct answers accurately', 'a progress indicator updates', 'the results screen shows the final score and the mapped result', 'a restart resets the quiz', 'no console errors'. Write to notes/content.md and via write_task_note. No HTML yet.\n\nThe deliverable `notes/content.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "notes/content.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/content.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/content.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "content",
+        "maxAttempts": 3
+      },
+      "next": "design"
+    },
+    {
+      "id": "design",
+      "name": "Design",
+      "description": "question card, option states, results layout",
+      "prompt": "Design the quiz UI. (1) Pick a friendly palette (hex) and type. (2) Design the question card: question text, option buttons, and selected/correct/incorrect states (if showing feedback). (3) Design the progress indicator and the Next/submit affordance. (4) Design the results screen with the score and mapped outcome and a restart button. (5) Self-contained CSS, responsive. Write the visual spec to notes/design.md and via write_task_note. No HTML yet.\n\nThe deliverable `notes/design.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "designer",
+      "advanceWhen": {
+        "file": "notes/design.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/design.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/design.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "design",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build",
+      "description": "implement index.html with question flow + scoring",
+      "prompt": "Implement index.html with inline CSS/JS to the content and design. (1) Hold the question bank, the current index, and the score in state. (2) Render the current question and options; on selection, record the answer, update the score per the rule, show feedback if specified, and advance (or enable Next). (3) Update the progress indicator each question. (4) After the last question, render the results screen with the accurate final score and the mapped result. (5) Wire a restart that resets index and score. Vanilla JS, no CDN. On a loop-back, fix only the named gaps without regressing passing criteria. write_task_note the path and passing criteria.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 800
+          },
+          {
+            "kind": "htmlLint",
+            "file": "index.html"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Take the quiz twice — once all-correct, once all-wrong. Open index.html if possible, else trace the scoring. Check EACH criterion from notes/content.md and write PASS/FAIL with a reason: do questions show options, does selecting advance, is the score counted ACCURATELY (all-correct = max, all-wrong = min), does progress update, does the results screen show the right score and mapped result, does restart reset, zero console errors? A miscounted score is a FAIL — loop back to build.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "index.html"
+        }
+      ],
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

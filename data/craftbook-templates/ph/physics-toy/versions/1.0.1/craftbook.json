@@ -1,0 +1,110 @@
+{
+  "id": "physics-toy",
+  "name": "Interactive Physics Toy",
+  "description": "Build a single-file interactive canvas physics or particle toy such as a bouncing-ball sandbox, gravity wells, springs, cloth, fluid, or a boids flock that the user can poke with the mouse. Defines the simulation model — forces, integration, collisions, and the interaction verbs — first, then implements a stable per-frame integrator. Physics toys feel magical only when the numerics are stable and the mouse interaction is responsive, so the concept phase pins the forces and integration scheme before any drawing, the ordering that keeps a small model from shipping a jittery or exploding sim.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Concept (designer) — forces, integration, collisions, interaction verbs → gated on artifact `notes/concept.md` (markdown-notes)\n2. Build (developer) — implement the integrator + interaction in index.html → gated on `index.html` (html-page)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "concept",
+  "triggers": [
+    "physics simulation",
+    "particle toy",
+    "bouncing balls",
+    "gravity sandbox",
+    "interactive canvas",
+    "boids"
+  ],
+  "steps": [
+    {
+      "id": "concept",
+      "name": "Concept",
+      "description": "forces, integration, collisions, interaction verbs",
+      "prompt": "Define the SIMULATION and its feel. (1) Name the system (bouncing balls, gravity wells, spring lattice, boids) and the entities with their state (position, velocity, mass/radius). (2) Enumerate the forces and the integration step (explicit Euler or Verlet with a fixed dt) and how you keep it stable (clamp velocities, damping). (3) Define collisions/boundaries (walls bounce with restitution, particle-particle if any). (4) Specify the interaction verbs: what the mouse does (attract, repel, spawn, drag) and any controls (gravity slider, reset). (5) Write an acceptance-criteria checklist of 5-8 items, e.g. 'particles move continuously without exploding off-screen', 'particles bounce off the canvas edges', 'the mouse visibly affects nearby particles', 'reset clears and re-seeds', 'runs smoothly with N particles', 'no console errors'. Write to notes/concept.md and via write_task_note. No code yet.\n\nThe deliverable `notes/concept.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "designer",
+      "advanceWhen": {
+        "file": "notes/concept.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/concept.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/concept.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "concept",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build",
+      "description": "implement the integrator + interaction in index.html",
+      "prompt": "Implement the physics toy in a single index.html (inline CSS + JS) satisfying every criterion. (1) Set up a full-viewport <canvas> 2d context and seed the entities. (2) Run a requestAnimationFrame loop that applies forces, integrates with the chosen scheme and a fixed dt, resolves boundary/collision, then redraws. (3) Wire mouse/touch to the interaction verb (compute distance-based attraction/repulsion or spawn/drag). (4) Add the specified controls (sliders/reset). (5) Keep it numerically stable — clamp or damp so nothing explodes; choose a palette and trails or solid fills. Vanilla JS, no CDN. On a loop-back, fix only the named gaps without regressing passing criteria. write_task_note the path and passing criteria.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 800
+          },
+          {
+            "kind": "htmlLint",
+            "file": "index.html"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Interact with the toy. Open index.html if possible, else trace the integrator and mouse handler. Check EACH criterion from notes/concept.md and write PASS/FAIL with a reason: do particles move without flying off or freezing, do they bounce off edges, does the mouse visibly attract/repel/spawn, does reset re-seed, is it smooth, zero console errors? Let it run 30+ seconds to confirm it stays stable (no NaN explosion). An exploding or frozen sim is a FAIL — loop back.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "index.html"
+        }
+      ],
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

@@ -1,0 +1,141 @@
+{
+  "id": "release-readiness-review",
+  "name": "Release Readiness Review",
+  "description": "Run a go/no-go release readiness review against a structured pre-launch checklist and produce a sign-off report with a clear ship decision. First scopes the release and locks a readiness checklist (acceptance criteria met, tests and CI green, no open blockers, migrations and rollback ready, monitoring and alerts in place, docs and changelog updated, feature flags and config set, and on-call/comms prepared), then verifies each item by inspecting the actual state rather than assuming, then writes a go/no-go report listing every blocker that must clear before ship and the residual risks. Use this for a release readiness review, a go/no-go decision, a pre-launch checklist, a ship-readiness gate, a launch review, or deciding if a change is safe to deploy — it produces an evidence-backed ship decision rather than a gut-feel 'looks good'.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the readiness checklist (reviewer) — lock the release scope + a go/no-go checklist → gated on artifact `notes/scope.md` (markdown-notes)\n2. Verify readiness (developer) — check each item against the real state → gated on artifact `notes/verify.md` (markdown-notes)\n3. Write the go/no-go report (reviewer) — ship decision + blockers + residual risk → gated on artifact `release-readiness.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "release readiness review",
+    "are we ready to ship",
+    "go no go decision",
+    "pre-launch checklist",
+    "is this safe to deploy",
+    "ship readiness review"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the readiness checklist",
+      "description": "lock the release scope + a go/no-go checklist",
+      "prompt": "Step 1: Define the release: what is shipping (features/changes), to whom, and the rollout mechanism (full deploy / staged / flagged). Step 2: Write a readiness acceptance-criteria checklist covering: the feature's own acceptance criteria are met; the test suite and CI are green; there are no open blocking bugs or unresolved review comments; database migrations are reversible and a rollback path exists; monitoring, logging, and alerts cover the new code; user-facing docs, release notes, and changelog are updated; feature flags and config/secrets are set correctly for the target env; and on-call ownership and a comms/rollback plan are ready. Step 3: For each item, state the concrete pass condition and HOW it will be verified (where to look). Step 4: Mark which items are hard blockers vs advisory. Write the release definition + checklist to `write_task_note` AND `notes/scope.md`. No verification yet.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify readiness",
+      "description": "check each item against the real state",
+      "prompt": "Step 1: For EACH checklist item, VERIFY the actual state — do not assume. Run/inspect the tests and CI status; search for open issues/TODOs/blocking review comments; check that the migration has a down path and that a rollback is documented; confirm alerts/dashboards reference the new code paths; open the docs/changelog/release notes to confirm they are updated; check the flag and config/secret values for the target environment; confirm on-call and the rollback/comms plan exist. Step 2: For each item record PASS/FAIL/NA with the EVIDENCE (the command output, the file, the config value, the issue link) — a claim without evidence is not a pass. Step 3: Classify every FAIL as a hard blocker or an accepted risk. Step 4: Note residual risks even where items pass (e.g. 'migration is reversible but locks the table for ~30s'). Good looks like: every item backed by an observation, not 'should be fine'. Stage the verification log to `write_task_note`. Do not write the report yet.\n\nThe deliverable `notes/verify.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "notes/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/verify.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/verify.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the go/no-go report",
+      "description": "ship decision + blockers + residual risk",
+      "prompt": "Step 1: Open `release-readiness.md` and write the DECISION at the top: GO / NO-GO / GO-WITH-CONDITIONS, in one sentence with the deciding factor. Step 2: Add a '## Checklist' table: each item with PASS/FAIL/NA and its evidence. Step 3: Add a '## Blockers' section listing every must-clear item before ship, with the concrete action to clear it and an owner. Step 4: Add a '## Residual risks' section (accepted risks and watch-items for after deploy) and a '## Rollback' note summarizing how to back out. Step 5: If GO-WITH-CONDITIONS, list the exact conditions. The decision must follow from the evidence — no GO with an open hard blocker. On a loop-back, fix only the named gaps. `write_task_note` the report path, the decision, and the count of open blockers.\n\nThe deliverable `release-readiness.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "release-readiness.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "release-readiness.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "release-readiness.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open `release-readiness.md` and grade it against the scope checklist. Check EACH criterion and write PASS/FAIL with a one-line reason: (1) every checklist item has a PASS/FAIL/NA with concrete evidence (not an assumption); (2) tests/CI status was actually checked; (3) migration reversibility and a rollback path are confirmed; (4) monitoring/alerts and docs/changelog were verified; (5) flags/config for the target env were checked; (6) all blockers are listed with an action and owner, and residual risks are stated; (7) the GO/NO-GO decision is consistent with the evidence (no GO with an open hard blocker). If any criterion fails, name the exact gap and loop back.\n\nThe deliverable lives in the project's artifacts drawer — open `release-readiness.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "release-readiness.md",
+          "artifact": true
+        }
+      ],
+      "next": "report"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

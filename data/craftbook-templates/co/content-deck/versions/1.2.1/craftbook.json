@@ -1,0 +1,206 @@
+{
+  "id": "content-deck",
+  "name": "Slide Deck from Content",
+  "description": "Turn a body of source content into a presentation deck. Outlines the narrative first, designs a consistent slide look, then builds the deck (HTML slides), evaluating for narrative flow and visual consistency.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Outline the deck (planner) — narrative arc + per-slide bullets from the source → gated on artifact `deck/outline.md` (markdown-notes)\n2. Slide design (designer) — a consistent slide template + palette → gated on artifact `deck/design-system.md` (markdown-notes)\n3. Build the deck (developer) — generate the slides to the template → gated on `index.html` (slide-deck)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "outline",
+  "triggers": [
+    "slide deck",
+    "powerpoint",
+    "presentation",
+    "build a deck"
+  ],
+  "steps": [
+    {
+      "id": "outline",
+      "name": "Outline the deck",
+      "description": "narrative arc + per-slide bullets from the source",
+      "prompt": "Read every supplied source file with workspace `read_file` before outlining. Build a source-grounded deck plan: a title slide, a clear narrative arc, 5-7 content slides with one idea and 2-4 bullets each, and a takeaways/CTA ending. Attach a source filename or source heading to every factual claim. Write an **acceptance-criteria checklist** (\"opens with a title slide\", \"one idea per slide\", \"ends with takeaways/CTA\", \"every claim traces to the source\"). Save the outline + checklist to artifact `deck/outline.md` with `write_artifact`; note the path in task notes.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "deck/outline.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "deck/outline.md",
+            "bytes": 700,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "deck/outline.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "deck/outline.md",
+            "pattern": "title slide|slide 1",
+            "flags": "i",
+            "label": "title slide",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "deck/outline.md",
+            "pattern": "takeaway|CTA|call.to.action|recommendation",
+            "flags": "i",
+            "label": "closing slide",
+            "artifact": true
+          }
+        ],
+        "onReject": "outline",
+        "maxAttempts": 3
+      },
+      "next": "slide-design"
+    },
+    {
+      "id": "slide-design",
+      "name": "Slide design",
+      "description": "a consistent slide template + palette",
+      "prompt": "Read artifact `deck/outline.md` with `read_artifact`. Design one reusable slide system: title position, body/grid layout, exact palette, type scale, spacing, progress affordance, and focused/inactive slide states. Include desktop and narrow-screen behavior plus keyboard/button navigation treatment. Consistency matters more than flourish. Save the template spec to artifact `deck/design-system.md` with `write_artifact`; note the path in task notes. No slide content yet.",
+      "suggestedRole": "designer",
+      "consumes": [
+        {
+          "file": "deck/outline.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "deck/design-system.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "deck/design-system.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "deck/design-system.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "deck/design-system.md",
+            "pattern": "#[0-9a-f]{3,8}|rgb\\(|hsl\\(",
+            "flags": "i",
+            "label": "concrete palette",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "deck/design-system.md",
+            "pattern": "keyboard|arrow|previous|next|navigation",
+            "flags": "i",
+            "label": "navigation treatment",
+            "artifact": true
+          }
+        ],
+        "onReject": "slide-design",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the deck",
+      "description": "generate the slides to the template",
+      "prompt": "Read artifacts `deck/outline.md` and `deck/design-system.md` with `read_artifact`. Build the deck in workspace `index.html` with `write_file`: one semantic section per slide, inline CSS/JS, visible slide count/progress, previous/next controls, and ArrowLeft/ArrowRight keyboard navigation. Apply the template uniformly and use only claims in the outline/source. Keep it self-contained with no external assets. On a loop-back, fix only the named gaps. `write_task_note` the workspace path and slide count.",
+      "suggestedRole": "developer",
+      "consumes": [
+        {
+          "file": "deck/outline.md",
+          "artifact": true
+        },
+        {
+          "file": "deck/design-system.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 3600
+          },
+          {
+            "kind": "htmlLint",
+            "file": "index.html"
+          },
+          {
+            "kind": "cssMinBytes",
+            "bytes": 700,
+            "file": "index.html"
+          },
+          {
+            "kind": "jsParses",
+            "file": "index.html"
+          },
+          {
+            "kind": "contains",
+            "file": "index.html",
+            "pattern": "ArrowLeft|ArrowRight|keydown",
+            "label": "keyboard navigation"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html",
+              "pattern": "(?:slide|section|^---$)",
+              "flags": "im"
+            }
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Read workspace `index.html` with `read_file` and artifacts `deck/outline.md` and `deck/design-system.md` with `read_artifact`. Check narrative flow (title opening, one idea per slide, takeaways ending), visual consistency, source fidelity, and both button and keyboard navigation. Render and exercise it if browser QA is available; otherwise trace the event handlers. Write PASS/FAIL per criterion.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "index.html"
+        }
+      ],
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.2.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

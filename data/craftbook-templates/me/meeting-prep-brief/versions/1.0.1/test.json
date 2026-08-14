@@ -1,0 +1,184 @@
+{
+  "schemaVersion": 1,
+  "title": "Meeting Prep Brief smoke eval",
+  "objective": "Task-specific eval for the Meeting Prep Brief craftbook: the vendor sync's attendees come from a live fake calendar service, the prior meeting's notes carry three commitments (one silently dropped), and report.md is a one-page brief that surfaces all of it plus ranked questions.",
+  "tags": [
+    "external"
+  ],
+  "prompt": "ive got the vendor sync thursday — can you prep me a brief? last meetings notes are in notes/ and the event details come from the fake calender service, theres a probe script wired for it",
+  "setup": {
+    "projectName": "Calendar Desk — Meeting Prep Eval",
+    "about": "Self-contained eval project for meeting-prep-brief. The calendar is wired as a live fake service — endpoints in mocks/services.md, and the ready-made mock-probe project script fetches the upcoming events and the target event's detail. Prior meeting notes are seeded under notes/; the deliverable is report.md.",
+    "missionObjectives": "Use the Meeting Prep Brief craftbook/template, pull the vendor sync's details (attendees included) from the fake calendar service through the provided probe, ground every claim in the prior notes, and write report.md. No real services, credentials, or live calendars — only the wired mock.",
+    "files": [
+      {
+        "path": "notes/vendor-sync-2026-06.md",
+        "content": "# Vendor sync - Northwind Systems - 2026-06-18\n\nAttending: Dana Whitfield, Marcus Lee (Northwind); Priya Raman, me.\n\n## What happened\n- Walked the integration scope; Northwind demoed the sandbox tenant.\n- Pricing came up again - they hinted the per-seat tier could move if we commit by Q3.\n\n## Commitments\n- We send the revised pricing tiers by July 1. (sent June 30 - done)\n- Dana sends the data-migration timeline by June 25. (never arrived - still open)\n- Both sides name a launch owner. (ours is Priya, theirs is Marcus - done)\n\n## Parking lot\n- Sandbox rate limits looked tight for our nightly sync - nobody owned this.\n"
+      }
+    ],
+    "worker": {
+      "name": "Meike",
+      "role": "Planner"
+    }
+  },
+  "mocks": [
+    {
+      "kind": "http",
+      "id": "calendar",
+      "description": "Fake calendar service for this eval. GET /api/events/upcoming lists the next events; GET /api/events/EVT-204 returns the vendor sync's full detail including attendees.",
+      "credential": {
+        "name": "mock.calendar"
+      },
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/events/upcoming",
+          "body": {
+            "events": [
+              {
+                "id": "EVT-204",
+                "title": "Vendor sync - Northwind Systems",
+                "start": "2026-07-23T14:00",
+                "end": "2026-07-23T15:00",
+                "location": "video"
+              },
+              {
+                "id": "EVT-205",
+                "title": "Design review",
+                "start": "2026-07-24T09:30",
+                "end": "2026-07-24T10:30",
+                "location": "studio"
+              }
+            ]
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/events/EVT-204",
+          "body": {
+            "id": "EVT-204",
+            "title": "Vendor sync - Northwind Systems",
+            "start": "2026-07-23T14:00",
+            "end": "2026-07-23T15:00",
+            "location": "video",
+            "attendees": [
+              "Dana Whitfield (Northwind, account lead)",
+              "Marcus Lee (Northwind, migration engineer)",
+              "Priya Raman (our launch owner)",
+              "you"
+            ],
+            "agenda": null
+          }
+        }
+      ]
+    },
+    {
+      "kind": "cli",
+      "id": "probe",
+      "description": "Provenance-trusted project script `mock-probe` that lists the upcoming events and fetches the vendor sync's detail from the fake calendar through http.authed.",
+      "shim": {
+        "path": "scripts/mock-probe.ts",
+        "content": "import { defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'mock-probe',\n  description:\n    'Probe the live fake calendar service for this eval: lists the upcoming events and fetches the full detail (attendees included) of the first one. Outputs the raw JSON responses as evidence for the brief.',\n  inputs: {},\n  outputs: {\n    upcoming: { type: 'string', description: 'Raw JSON body from the upcoming-events listing.' },\n    detail: { type: 'string', description: 'Raw JSON body of the first upcoming event, attendees included.' },\n  },\n  requires: ['workspace.read', 'network', 'credential:mock.calendar'],\n});\n\nconst services = JSON.parse(await gezel.fs.read('mocks/services.json'));\nconst base = (id) => {\n  const service = services.find((entry) => entry.id === id);\n  if (!service) throw new Error(`mock service \"${id}\" is not listed in mocks/services.json`);\n  return service.baseUrl;\n};\n\nconst upcoming = await gezel.http.authed(`${base('calendar')}/api/events/upcoming`, {\n  credential: 'mock.calendar',\n});\nif (!upcoming.ok) throw new Error(`upcoming listing failed: ${upcoming.status} ${upcoming.body}`);\n\nconst first = JSON.parse(upcoming.body).events[0];\nconst detail = await gezel.http.authed(`${base('calendar')}/api/events/${first.id}`, {\n  credential: 'mock.calendar',\n});\nif (!detail.ok) throw new Error(`event detail failed: ${detail.status} ${detail.body}`);\n\ngezel.output({ upcoming: upcoming.body, detail: detail.body });\n"
+      }
+    }
+  ],
+  "success": {
+    "summary": "report.md is a one-page brief grounded in the live fake calendar and the prior notes: attendees match the calendar record, the never-delivered migration timeline resurfaces with its status, and at least two ranked questions are ready to ask aloud.",
+    "deliverables": [
+      {
+        "path": "report.md",
+        "kind": "markdown-report",
+        "minBytes": 700,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "Dana",
+            "flags": "i",
+            "label": "attendees come from the live calendar record"
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "Marcus",
+            "flags": "i",
+            "label": "the second Northwind attendee is named"
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "commit|promis|agreed|owe",
+            "flags": "i",
+            "label": "last-time commitments appear with status"
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "migration|timeline",
+            "flags": "i",
+            "label": "the silently-dropped migration timeline resurfaces"
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "\\?",
+            "label": "the brief asks real questions"
+          },
+          {
+            "kind": "judge",
+            "file": "report.md",
+            "rubric": "The brief reads in under two minutes, and every claim traces to the prior meeting notes or the calendar detail — nothing invented. The never-delivered data-migration timeline is surfaced as an open item rather than forgotten.",
+            "sourceFiles": [
+              "notes/vendor-sync-2026-06.md"
+            ],
+            "label": "grounded and elevator-readable"
+          }
+        ]
+      }
+    ],
+    "mocks": [
+      {
+        "service": "calendar",
+        "minRequests": 1,
+        "requiredPaths": [
+          "^/api/events"
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "report.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "grounding",
+        "description": "Every attendee, commitment, and claim traces to the calendar record or the prior notes — nothing from memory or imagination."
+      },
+      {
+        "name": "brevity",
+        "description": "One page, elevator-readable; the goal is one sentence near the top."
+      },
+      {
+        "name": "question-quality",
+        "description": "At least two ranked questions, phrased to say out loud, aimed at what actually matters."
+      },
+      {
+        "name": "follow-through",
+        "description": "The dropped commitment (the migration timeline that never arrived) is surfaced as the real business of the meeting."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "calendar grounding",
+    "commitment tracking",
+    "one-page discipline"
+  ]
+}

@@ -1,0 +1,107 @@
+{
+  "id": "doc-rewrite",
+  "name": "Documentation Rewrite",
+  "description": "Rewrite confusing existing documentation into clear, scannable, task-oriented prose without losing any technical fact: it first audits the current doc to catalog every problem — buried steps, undefined jargon, missing prerequisites, broken structure — and locks a clarity checklist, then rewrites the doc to fix exactly those issues while preserving every accurate instruction. Covers documentation rewrite, doc cleanup, clarify docs, improve README, restructure guide, and technical editing. Auditing before rewriting is the point: a small model that first inventories what is wrong rewrites with intent and preserves the facts, instead of producing a prettier doc that quietly drops a critical step.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Audit the doc (reviewer) — catalog every clarity defect and lock the fix checklist → gated on artifact `notes/audit.md` (markdown-notes)\n2. Rewrite the doc (copywriter) — rewrite to the target structure, fixing every audited defect → gated on `rewritten-doc.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "audit",
+  "triggers": [
+    "rewrite this documentation",
+    "clarify the docs",
+    "improve the readme",
+    "clean up this guide",
+    "restructure docs"
+  ],
+  "steps": [
+    {
+      "id": "audit",
+      "name": "Audit the doc",
+      "description": "catalog every clarity defect and lock the fix checklist",
+      "prompt": "1) Read the existing documentation closely as a new reader would. 2) Catalog every defect with its location: undefined jargon/acronyms, missing prerequisites, steps in the wrong order or buried in prose, passive/ambiguous instructions, missing examples, broken or inconsistent structure, and anything factually unclear. 3) Extract and list the technical facts/steps that MUST be preserved verbatim in meaning (the source of truth — these cannot be lost). 4) Propose the target structure (overview → prerequisites → step-by-step → troubleshooting/reference). Write an acceptance-criteria checklist (e.g. 'every preserved fact survives the rewrite'; 'all jargon defined on first use'; 'prerequisites stated up front'; 'instructions are imperative and numbered'; 'has at least one concrete example'; 'scannable headings'). Use write_task_note for the defect list + preserved-facts list + checklist, and write the same to the produces path. No rewrite yet.\n\nThe deliverable `notes/audit.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "notes/audit.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/audit.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/audit.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "audit",
+        "maxAttempts": 3
+      },
+      "next": "rewrite"
+    },
+    {
+      "id": "rewrite",
+      "name": "Rewrite the doc",
+      "description": "rewrite to the target structure, fixing every audited defect",
+      "prompt": "Rewrite the documentation to the target structure, fixing each cataloged defect. 1) Open with a one-paragraph overview of what the doc helps the reader do. 2) State prerequisites/requirements up front. 3) Convert procedures into imperative, numbered steps — one action per step, expected result noted where helpful. 4) Define every acronym/jargon term on first use. 5) Preserve EVERY technical fact and step from the audit's preserved-facts list — verify none is dropped. 6) Add at least one concrete worked example and a short troubleshooting/FAQ section if relevant. 7) Use scannable H2/H3 headings, code blocks for commands, and short paragraphs. Output GitHub-flavored markdown. Save to the produces path and note which audited defects are now fixed.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "rewritten-doc.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "rewritten-doc.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "rewritten-doc.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "rewrite",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Read rewritten-doc.md against the audit notes and grade. Check EACH criterion and write PASS/FAIL: (a) every preserved fact/step from the audit survives (verify NONE was dropped — this is the critical check); (b) all jargon is defined on first use; (c) prerequisites are stated up front; (d) instructions are imperative and numbered; (e) at least one concrete example is present; (f) the structure is scannable with clear headings. A prettier doc that lost a critical step FAILS — loop back to rewrite and name the missing facts.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"rewrite\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "rewritten-doc.md"
+        }
+      ],
+      "next": "rewrite"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

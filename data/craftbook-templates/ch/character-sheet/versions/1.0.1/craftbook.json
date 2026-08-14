@@ -1,0 +1,82 @@
+{
+  "id": "character-sheet",
+  "name": "Character Sheet",
+  "description": "Lock a character before the pages need them: reference images across the poses and expressions the story calls for, the palette and silhouette written down, and every seed and prompt persisted in a manifest — so page twelve's hero is page one's hero. Locks the character brief FIRST — silhouette, palette, expression and pose list — then generates the reference set with its manifest, then lays the contact sheet anyone can draw from. Use for character sheets, locking a character's look, reference sets before more pages, 'keep them looking the same', and building a comic's cast bible.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Write the character brief (tekenaar) — silhouette, palette, expression and pose list from the story → gated on artifact `notes/scope.md` (markdown-notes)\n2. Generate the reference set (image-generator) — pose and expression references, every seed and prompt persisted\n3. Lay the contact sheet (designer) — one page showing the set with palette, silhouette, and usage notes\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "make a character sheet",
+    "lock the character's look",
+    "reference images for the character",
+    "keep them looking the same",
+    "character bible page"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Write the character brief",
+      "description": "silhouette, palette, expression and pose list from the story",
+      "prompt": "Pin the character down in words before a single image. Step 1: read the story notes in the workspace and the owner's ask — who this character is, what they do in the pages, and any look already established. Step 2: write the identity spec — the silhouette in one sentence (the shape you'd know in shadow), the palette as a short list of specific colors, the two or three features that make them THEM, and what they would never look like. Step 3: list the poses and expressions the pages actually need — at least four (a neutral standing turn, an action pose, and the emotional beats the story calls for). Step 4: write an acceptance-criteria checklist ('at least four references covering the pose and expression list', 'every reference recorded in the manifest with its seed and prompt', 'palette and silhouette written on the sheet', 'the manifest lists only files that really exist'). Call write_task_note with the character name + pose list + checklist and write notes/scope.md.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "tekenaar",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "generate"
+    },
+    {
+      "id": "generate",
+      "name": "Generate the reference set",
+      "description": "pose and expression references, every seed and prompt persisted",
+      "prompt": "Build the reference set under characters/<name>/ (lowercase folder named for the character). Step 1: generate each reference through the project's image capabilities — one image per pose or expression on the brief's list, at least four, every one honoring the identity spec (silhouette, palette, signature features), saved as characters/<name>/ref-<pose>.png. Step 2: persist the manifest at characters/<name>/sheet.json as a top-level JSON array with EXACTLY one record per reference and exactly these fields: \"pose\" (which pose or expression it is), \"file\" (the workspace-relative path, e.g. characters/pip/ref-sit.png), \"seed\" (the seed that made it), and \"prompt\" (the full prompt used). The seeds and prompts ARE the character's reproducibility — a reference without them cannot be drawn again. Step 3: re-list the folder and check the manifest against it — every file listed exists, every image generated is listed. Call write_task_note with the reference count and the manifest path.",
+      "suggestedRole": "image-generator",
+      "next": "sheet"
+    },
+    {
+      "id": "sheet",
+      "name": "Lay the contact sheet",
+      "description": "one page showing the set with palette, silhouette, and usage notes",
+      "prompt": "Lay the contact sheet at characters/<name>/sheet.html — the one page a future artist opens before drawing this character. Step 1: show every reference from the manifest with its pose label. Step 2: write the identity spec onto the sheet — the palette as labeled swatches with color values, the silhouette line, the signature features, and the never-looks-like notes. Step 3: add the usage notes — which reference anchors which kind of panel, and where the seeds and prompts live for regenerating. Step 4: keep it one self-contained file with honest styling — this page gets opened for the life of the book. Call write_task_note with the sheet path.",
+      "suggestedRole": "designer",
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open the character's folder under characters/ and verify every criterion from notes/scope.md: at least four references exist covering the brief's pose and expression list; the manifest lists every reference with its pose, file, seed, and prompt — cross-check the file paths against the actual folder listing in both directions, a manifest that lies is the classic failure; the contact sheet shows the set with the palette, silhouette, and usage notes written down; and the whole kit would let a stranger draw this character the same way next month. Write PASS/FAIL per criterion; on any failure, name the reference or the gap and loop back to generate.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"generate\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "generate"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}

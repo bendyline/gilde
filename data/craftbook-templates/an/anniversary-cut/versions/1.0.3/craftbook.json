@@ -1,0 +1,226 @@
+{
+  "id": "anniversary-cut",
+  "name": "Anniversary Cut",
+  "description": "Build the highlight reel for the occasion: the archive queried for the person and the years that matter, clips chosen with stated reasons, assembled through the project's media pipeline with a run log, and delivered with a chapter list and a dedication — the reel that makes the birthday. Locks the occasion and the selection criteria FIRST (era coverage, the famous moments in, a length budget), then selects from the archive with no invented footage, then assembles, then writes the presentation notes. Use for birthday reels, anniversary videos, memorial montages, 'make a highlight reel', and milestone tributes.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the occasion (filmarchivaris) — occasion, person, selection criteria and length budget locked → gated on artifact `notes/scope.md` (markdown-notes)\n2. Select the clips (curator) — the cut list: archive clips chosen with reasons, in reel order → gated on `cutlist.json` (json)\n3. Assemble the reel (developer) — the reel rendered through the media pipeline, log on disk → gated on `renders/assembly-log.json` (json)\n4. Chapters and dedication (copywriter) — the chapter list, the dedication, how to play it on the day → gated on artifact `report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "make a highlight reel",
+    "anniversary video",
+    "birthday montage",
+    "put together a tribute",
+    "clips of grandma over the years"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the occasion",
+      "description": "occasion, person, selection criteria and length budget locked",
+      "prompt": "Define the reel before pulling a single clip. Step 1: name the occasion and the person it honors, and read family.md so names and relationships are right. Step 2: read clips.json — the archive's indexed moments — and survey what exists for this person: which tapes, which years, which of the family-famous moments are on file. Step 3: lock the selection criteria — the reel covers the person's eras rather than clustering in one year, the moments the family always retells make the cut, every selection carries a stated reason, only clips that exist in the archive may be used (no invented footage, ever), and the total sticks to a length budget you set now from the occasion. Step 4: write an acceptance-criteria checklist ('every selected clip exists in clips.json', 'every selection has a reason', 'eras covered per the criteria', 'total within the length budget', 'assembled through the project's pipeline script via run_installed_script with a status-ok log', 'chapter list and dedication delivered'). Call write_task_note with the occasion + archive counts + checklist and write notes/scope.md.\n\nThe deliverable `notes/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "filmarchivaris",
+      "advanceWhen": {
+        "file": "notes/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "notes/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "notes/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "select"
+    },
+    {
+      "id": "select",
+      "name": "Select the clips",
+      "description": "the cut list: archive clips chosen with reasons, in reel order",
+      "prompt": "Choose the reel's clips from the archive against the locked criteria. Step 1: sweep clips.json for every candidate moment featuring the person, across all tapes and years. Step 2: select — the famous moments first, then the quieter ones that show an era the famous ones miss; cut candidates that repeat a beat already covered. Every clip id must come from clips.json exactly as indexed; if a moment the family remembers is not in the archive, note it as missing footage rather than inventing a reference. Step 3: order the selections into the reel's emotional arc — chronology is the default, but a strong opening and a strong close outrank strict order. Step 4: write cutlist.json as a JSON array, each record with the clip id from the archive and the reason it made the cut; keep the running total inside the length budget. Call write_task_note with the selection count, the era coverage in one line, and anything remembered-but-missing.",
+      "suggestedRole": "curator",
+      "advanceWhen": {
+        "file": "cutlist.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "cutlist.json",
+            "bytes": 2
+          },
+          {
+            "kind": "recordSchema",
+            "file": "cutlist.json",
+            "fields": [
+              {
+                "name": "clip",
+                "type": "nonempty"
+              },
+              {
+                "name": "reason",
+                "type": "nonempty"
+              }
+            ],
+            "minRows": 5
+          },
+          {
+            "kind": "valuesSubsetOf",
+            "file": "cutlist.json",
+            "sourceFiles": [
+              "clips.json"
+            ],
+            "pattern": "\"clip\"\\s*:\\s*\"([^\"]+)\""
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "cutlist.json"
+            }
+          }
+        ],
+        "onReject": "select",
+        "maxAttempts": 3
+      },
+      "next": "assemble"
+    },
+    {
+      "id": "assemble",
+      "name": "Assemble the reel",
+      "description": "the reel rendered through the media pipeline, log on disk",
+      "prompt": "Assemble the reel from the cut list. Step 1: the assembly pipeline is a project script — call list_scripts to find it, then run it with run_installed_script({ name: \"<script name>\" }); never run it with run_nodejs_script and never reimplement it. It reads cutlist.json and the archive index, refuses any clip it cannot find, writes the render into renders/, and writes its run log to renders/assembly-log.json with a status field. Step 2: if run_installed_script reports an error, read the error text, fix what it names, and run it again — never write renders/assembly-log.json yourself; a fabricated log on a family keepsake is still a fabricated log. Step 3: once it succeeds, read the log and confirm status ok, the clip list matching the cut list, and the computed duration inside the length budget. Call write_task_note with the run outcome and the reel's duration.",
+      "suggestedRole": "developer",
+      "consumes": [
+        {
+          "file": "cutlist.json"
+        }
+      ],
+      "advanceWhen": {
+        "file": "renders/assembly-log.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "renders/assembly-log.json",
+            "bytes": 2
+          },
+          {
+            "kind": "fileCount",
+            "ext": [
+              "mp4"
+            ],
+            "min": 1,
+            "dir": "renders"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "renders/assembly-log.json",
+            "path": "status",
+            "value": "ok",
+            "label": "the assembly log reports status ok"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "renders/assembly-log.json"
+            }
+          }
+        ],
+        "onReject": "assemble",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Chapters and dedication",
+      "description": "the chapter list, the dedication, how to play it on the day",
+      "prompt": "Write the presentation notes that turn a render into a gift. Step 1: write the chapter list — each selected moment in reel order with its rough position, who is in it, and one warm line about why it is there (the reasons from the cut list, written for the family rather than the archive). Step 2: write the dedication — a short paragraph to open or close the reel, in the family's voice, naming the occasion and the person. Step 3: add the practical notes — the reel's duration, where the render lives, and anything remembered-but-missing from the archive so nobody wonders why a famous moment is absent. Write report.md and call write_task_note with the report path and the chapter count.\n\nThe deliverable `report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.md",
+            "bytes": 800,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "chapter",
+            "flags": "i",
+            "label": "a chapter list for the reel",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open report.md, cutlist.json, renders/assembly-log.json, and clips.json and verify every criterion from notes/scope.md: every selected clip id exists in the archive, every selection carries a real reason, the eras are covered per the criteria, the log reports status ok with a duration inside the length budget, the chapter list matches the assembled order, and the dedication names the occasion and the person warmly and correctly. Write PASS/FAIL per criterion; on any failure, name the gap and loop back to report — or to select if the selection itself is the problem.\n\nThe deliverable lives in the project's artifacts drawer — open `report.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "report.md",
+          "artifact": true
+        }
+      ],
+      "next": "report"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-08-14T00:00:00Z"
+}
