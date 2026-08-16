@@ -28,10 +28,11 @@
  *     "supportsTools": true,
  *     "contextWindow": 256000,
  *     "upstream": "https://...",
+ *     "versionMinGezelVersion": "1.26228", // optional, gates this version only
  *
  *     "ollama":   { "tag": "qwen3.5:9b" },
  *     "llamaCpp": { "huggingfaceRepo": "...-GGUF", "filename": "...gguf", "quantization": "Q4_K_M" },
- *     "mlx":      { "huggingfaceRepo": "mlx-community/...", "quantization": "4bit" }
+ *     "mlx":      { "huggingfaceRepo": "mlx-community/...", "subdir": "6bit", "quantization": "6bit" }
  *   }
  *
  * Any provider block may be omitted. The generator:
@@ -59,6 +60,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { applyJsonMergePatch, assembleManifest } from './lib/manifest-assembly.mjs';
+import { selectMlxFiles } from './lib/mlx-source.mjs';
 
 const HF_HUB_BASE = 'https://huggingface.co';
 
@@ -135,20 +137,6 @@ async function fetchAndHash(repo, path, rev = 'main') {
   }
   const buf = Buffer.from(await res.arrayBuffer());
   return { sha256: createHash('sha256').update(buf).digest('hex'), sizeBytes: buf.length };
-}
-
-const MLX_KEEP = [
-  /\.safetensors(\.index\.json)?$/,
-  /^(?:config|generation_config|preprocessor_config|processor_config|video_preprocessor_config|tokenizer_config|special_tokens_map)\.json$/,
-  /^tokenizer\.json$/,
-  /^tokenizer\.model$/,
-  /^vocab\.json$/,
-  /^merges\.txt$/,
-  /^chat_template\.jinja$/,
-];
-
-function selectMlxFiles(files) {
-  return files.filter((f) => MLX_KEEP.some((re) => re.test(f.path)));
 }
 
 async function buildLlamaCppBlock(cfg, pinCurrent = false, engine = 'llamaCpp') {
@@ -292,19 +280,27 @@ async function buildDs4Block(cfg, pinCurrent = false) {
 }
 
 async function buildMlxBlock(cfg, pinCurrent = false) {
-  const { huggingfaceRepo, quantization, chatTemplate, residentBytes, disabledReason } = cfg;
-  console.log(`[hf] fetching tree for MLX source ${huggingfaceRepo}…`);
+  const {
+    huggingfaceRepo,
+    subdir,
+    quantization,
+    chatTemplate,
+    residentBytes,
+    disabledReason,
+  } = cfg;
+  const sourceLabel = subdir ? `${huggingfaceRepo}/${subdir}` : huggingfaceRepo;
+  console.log(`[hf] fetching tree for MLX source ${sourceLabel}…`);
   const revision = pinCurrent ? await fetchCommit(huggingfaceRepo) : undefined;
   const tree = await fetchTree(huggingfaceRepo, revision);
-  const installFiles = selectMlxFiles(tree);
+  const installFiles = selectMlxFiles(tree, subdir);
   if (installFiles.length === 0) {
-    throw new Error(`no MLX install files found in ${huggingfaceRepo}`);
+    throw new Error(`no MLX install files found in ${sourceLabel}`);
   }
   const nonLfs = installFiles.filter((f) => !f.lfsBacked);
   if (nonLfs.length > 0) {
     console.log(`[hf]   hashing ${nonLfs.length} non-LFS file(s) for SHA-256…`);
     for (const f of nonLfs) {
-      const { sha256, sizeBytes } = await fetchAndHash(huggingfaceRepo, f.path, revision);
+      const { sha256, sizeBytes } = await fetchAndHash(huggingfaceRepo, f.repoPath, revision);
       f.sha256 = sha256;
       f.sizeBytes = sizeBytes;
       f.lfsBacked = true;
@@ -313,6 +309,7 @@ async function buildMlxBlock(cfg, pinCurrent = false) {
   const approxSizeBytes = installFiles.reduce((s, f) => s + f.sizeBytes, 0);
   return {
     huggingfaceRepo,
+    ...(subdir ? { subdir } : {}),
     ...(revision ? { revision } : {}),
     ...(quantization ? { quantization } : {}),
     approxSizeBytes,
@@ -449,6 +446,9 @@ async function main() {
     schemaVersion: 1,
     version: manifest.version,
     releasedAt: manifest.updatedAt,
+    ...(cfg.versionMinGezelVersion
+      ? { minGezelVersion: cfg.versionMinGezelVersion }
+      : {}),
     approxSizeBytes: manifest.approxSizeBytes,
     ...Object.fromEntries(blocks.map((b) => [b, manifest[b]])),
   };

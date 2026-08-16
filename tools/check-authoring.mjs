@@ -6,6 +6,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
+import { isSafeRepoRelativePath } from './lib/mlx-source.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..');
@@ -171,6 +172,17 @@ for (const filename of readdirSync(chatModelAuthoringRoot).filter((name) => name
   if (!/^\d+\.\d+\.\d+$/.test(String(recipe.version ?? ''))) {
     errors.push(`chat-models/${filename}: version must be semver`);
   }
+  if (
+    recipe.versionMinGezelVersion !== undefined &&
+    !/^\d+\.\d+(?:\.\d+)?$/.test(String(recipe.versionMinGezelVersion))
+  ) {
+    errors.push(
+      `chat-models/${filename}: versionMinGezelVersion must be a numeric dotted Gezel version`,
+    );
+  }
+  if (recipe.mlx?.subdir !== undefined && !isSafeRepoRelativePath(recipe.mlx.subdir)) {
+    errors.push(`chat-models/${filename}: mlx.subdir must be a contained POSIX-style path`);
+  }
   if (!recipe.ollama && !recipe.llamaCpp && !recipe.mlx && !recipe.ds4) {
     errors.push(`chat-models/${filename}: requires an ollama, llamaCpp, mlx, or ds4 source`);
   }
@@ -198,6 +210,13 @@ for (const shard of readdirSync(chatModelDataRoot, { withFileTypes: true })) {
     );
     if (!existsSync(versionPath)) {
       errors.push(`${id}: recipe version ${recipe.version} has no generated version manifest`);
+    } else if (recipe.versionMinGezelVersion !== undefined) {
+      const versionManifest = readJson(versionPath, `${id}@${recipe.version} version manifest`);
+      if (versionManifest?.minGezelVersion !== recipe.versionMinGezelVersion) {
+        errors.push(
+          `${id}@${recipe.version}: generated minGezelVersion must match versionMinGezelVersion`,
+        );
+      }
     }
   }
 }
