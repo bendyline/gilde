@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "title": "Complete-corpus pull request review",
+  "objective": "Verify that Pull Request Review fans a chunk-readable PR corpus out to per-batch reviewers, merges their coverage shards into a complete run-wide ledger, verifies an API use against a late definition held by a different batch, finds a late-file defect, reports CI evidence separately, and writes a cited local verdict without modifying source or posting to GitHub.",
+  "tags": [
+    "external",
+    "pull-request",
+    "large-corpus",
+    "coverage",
+    "fanout"
+  ],
+  "prompt": "Review the deterministic large pull-request corpus completely. Publish the review batches, let the crew review them in parallel, merge the coverage shards, verify the early API call against its late definition, find the late-file authorization defect, and write pr-review.md. Do not modify source or post a GitHub comment.",
+  "setup": {
+    "projectName": "Large PR Review Eval",
+    "about": "A deterministic PR-review fixture. The registered hand-authored scenario materializes more than 100 changed-file records and more than 80 KB of patch text in the artifacts corpus.",
+    "missionObjectives": "Account for every changed path, avoid a false missing-API finding, catch the late authorization defect, and deliver a local request-changes report with exact path:line evidence.",
+    "files": [
+      {
+        "path": "src/api/use-assured-api.ts",
+        "content": "import { assuredApi } from './assured-api.js';\n\nexport function loadWidget(id: string): string {\n  return assuredApi(id);\n}\n"
+      },
+      {
+        "path": "src/api/assured-api.ts",
+        "content": "export function assuredApi(id: string): string {\n  return `widget:${id}`;\n}\n"
+      },
+      {
+        "path": "src/security/late-authorization.ts",
+        "content": "export function canDeleteProject(userId: string, ownerId: string): boolean {\n  if (!userId) return false;\n  // Regression: any authenticated user can delete another owner's project.\n  return true;\n}\n"
+      }
+    ],
+    "worker": {
+      "name": "Rina",
+      "role": "Reviewer",
+      "description": "A careful code reviewer who works through large change sets in bounded batches and verifies cross-file claims."
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "The batches are published, every batch shard merges into a 120-file ledger, the report recognizes that assuredApi exists, cites the late authorization defect, requests changes, and leaves the seeded source unchanged.",
+    "deliverables": [
+      {
+        "path": "pr-review.md",
+        "kind": "markdown-report",
+        "minBytes": 500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "pr-review.md",
+            "pattern": "Coverage:\\s*120\\s*/\\s*120\\s+changed files",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "pr-review.md",
+            "pattern": "src/security/late-authorization\\.ts(?::|\\s*\\|\\s*)4",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "pr-review.md",
+            "pattern": "Verdict:\\s*request-changes",
+            "flags": "i"
+          },
+          {
+            "kind": "notContains",
+            "file": "pr-review.md",
+            "pattern": "assuredApi.{0,80}(missing|does not exist|undefined)|(?:missing|does not exist|undefined).{0,80}assuredApi",
+            "flags": "is"
+          }
+        ]
+      },
+      {
+        "path": "pr-review-coverage.json",
+        "kind": "json",
+        "minBytes": 500
+      },
+      {
+        "path": "pr-review/batches.json",
+        "kind": "json",
+        "minBytes": 500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "pr-review/batches.json",
+            "pattern": "\"batchNumber\"[\\s\\S]*\"paths\""
+          }
+        ]
+      }
+    ],
+    "unchangedFixtures": [
+      "src/api/use-assured-api.ts",
+      "src/api/assured-api.ts",
+      "src/security/late-authorization.ts"
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "pr-review.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "coverage",
+        "description": "The review demonstrates complete 120-file coverage across every batch rather than reasoning from an early prefix or from whichever shards happened to land first."
+      },
+      {
+        "name": "cross-file-verification",
+        "description": "The report does not allege that assuredApi is missing. Its definition sits in a different batch than its use, so a batch reviewer must verify against the checkout rather than against the records it was handed."
+      },
+      {
+        "name": "late-defect",
+        "description": "The report finds and cites the authorization defect deliberately placed in the final changed file — the last batch is reviewed as carefully as the first."
+      },
+      {
+        "name": "synthesis",
+        "description": "The final report draws on every per-batch observations shard, merging duplicate findings raised by different reviewers instead of dropping or double-listing them."
+      },
+      {
+        "name": "side-effects",
+        "description": "The review remains local and source fixtures stay unchanged."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "complete large-PR coverage",
+    "per-batch fanout and shard merging",
+    "cross-file API verification",
+    "late-file defect detection",
+    "safe local-only delivery"
+  ],
+  "extensions": {
+    "legacySimulators": [
+      {
+        "id": "large-pr-artifact-corpus",
+        "kind": "data-source",
+        "status": "implemented",
+        "description": "The hand-authored eval scenario seeds 120 per-file PR records totaling more than 80 KB, with an API use early, its valid definition late, and a real authorization defect in the final record."
+      }
+    ]
+  }
+}
