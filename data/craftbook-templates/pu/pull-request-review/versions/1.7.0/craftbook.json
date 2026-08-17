@@ -1,0 +1,273 @@
+{
+  "id": "pull-request-review",
+  "name": "Pull Request Review",
+  "description": "Review a GitHub pull request from a complete, launch-time local mirror rather than a context-sized API response. The runtime resolves the explicit PR number or current-branch PR, materializes an overview, a machine-readable changed-file manifest, one untruncated patch record per changed path, comments, and the full diff. The scope step publishes deterministic 25-file batches and the runtime fans them out to one child reviewer per batch, each in its own session with only its own records in context; a per-batch coverage gate holds every child to its exact slice and a merge gate holds the run to the whole corpus. Repository symbol search and GitHub check status ground cross-file and compile/CI claims before the final local verdict.",
+  "basedOn": {
+    "name": "Gezel Code Review",
+    "url": "https://github.com/bendyline/gezel"
+  },
+  "entryStepId": "scope",
+  "triggers": [
+    "review this pr",
+    "review the current pr",
+    "review this pull request",
+    "pr review",
+    "review the github pull request"
+  ],
+  "requirements": [
+    {
+      "kind": "github"
+    }
+  ],
+  "connectors": [
+    {
+      "typeId": "github-pulls",
+      "reason": "materialize the selected pull request as a complete, chunk-readable local corpus"
+    }
+  ],
+  "toolsets": [
+    {
+      "toolsetId": "github",
+      "optional": true,
+      "autoAllow": true,
+      "reason": "read CI/check status and perform targeted PR verification"
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "number": {
+        "type": "number",
+        "title": "Pull request number",
+        "description": "Optional PR number. Leave blank to use the open PR whose head matches the project's checked-out branch."
+      },
+      "focus": {
+        "type": "string",
+        "title": "Review focus",
+        "default": "general correctness",
+        "description": "Optional area to emphasize, e.g. security, performance, or tests."
+      },
+      "intensity": {
+        "type": "string",
+        "title": "Intensity",
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "default": "medium",
+        "squisq": {
+          "control": "segmented"
+        },
+        "description": "How deep to go on each changed-file batch. Coverage remains complete at every intensity."
+      }
+    }
+  },
+  "spawn": {
+    "overFile": "pr-review/batches.json",
+    "overArtifact": true,
+    "entryStepId": "review-batch",
+    "steps": [
+      {
+        "id": "review-batch",
+        "name": "Review batch {{batchNumber}} of PR #{{number}}",
+        "description": "Review one bounded slice of the pull-request corpus in a session that holds only that slice, then persist the batch's observations and its coverage shard.",
+        "prompt": "You are reviewing batch {{batchNumber}} of PR #{{number}} — records {{start}} through {{end}}. This batch is the whole of your assignment. Other reviewers hold the other batches; do not read, account for, or comment on files outside your slice.\n\nYour batch covers exactly these changed paths:\n\n{{paths}}\n\n1. Call `list_artifacts({ path: \"{{corpusScope}}/files\", recursive: true })`. Each record file is named with its ordinal prefix (`007--…md` is file 7). Select the records for ordinals {{start}}–{{end}} and read every one with `read_artifact`. Each carries one complete changed-file patch and an authoritative `path` frontmatter. Binary/no-patch records still count toward coverage, but say so.\n2. Review this batch for correctness, security, data loss, error handling, concurrency, compatibility, tests, and clarity, weighted by focus `{{focus}}` and intensity `{{intensity}}`. Cite exact `path:new-line` evidence from the diff hunks.\n3. Before claiming that a referenced API/type/module does not exist, call `find_symbol`, `search_code`, or `grep_files` against the checkout — its definition may live in a batch you were not given. Treat successful CI/typecheck evidence as rebuttable evidence that typed APIs resolve; never allege a missing typed API without a failed symbol/search verification. Use `github_pr_file` or paginated `github_pr_diff({ path, offset })` only for targeted live confirmation when the corpus record is ambiguous.\n4. Write the artifact `pr-review/observations-{{batchNumber}}.md` with `write_artifact`. Head it `## Batch {{batchNumber}} — files {{start}}–{{end}}`, then one short section per finding: severity (critical/major/minor/nit), `path:line`, what is wrong, and the fix. Add a `### Verified OK` list naming what you checked and found sound — the synthesizer needs to know what was examined, not only what failed. Number your findings `B{{batchNumber}}-1`, `B{{batchNumber}}-2`, … so they stay unique across batches.\n5. Write the artifact `pr-review/coverage-{{batchNumber}}.json` with `write_artifact` as `{ \"batchNumber\": {{batchNumber}}, \"reviewedFiles\": [...], \"reviewedRecords\": [...] }`, naming every exact `path` you reviewed and every artifact record path you read. Valid JSON, exact strings, this batch only. Then call `advance_task_step`.\n\nThe gate compares your shard against your batch's paths alone. Listing a path from another batch fails it just as surely as omitting one of yours.\n\nThese deliverables live in the project's artifacts drawer — write them with `write_artifact` and read them back with `read_artifact`; the shipped workspace stays untouched. A pull-request review never modifies project source.",
+        "suggestedRole": "reviewer",
+        "advanceWhen": {
+          "file": "pr-review/coverage-{{batchNumber}}.json",
+          "minBytes": 2,
+          "sniff": "json-valid",
+          "artifact": true
+        },
+        "gate": {
+          "at": "completion",
+          "checks": [
+            {
+              "kind": "corpusCoverage",
+              "file": "pr-review/coverage-{{batchNumber}}.json",
+              "corpusDir": "{{corpusScope}}",
+              "expectPaths": "{{paths}}",
+              "artifact": true
+            },
+            {
+              "kind": "minBytes",
+              "file": "pr-review/observations-{{batchNumber}}.md",
+              "bytes": 200,
+              "artifact": true
+            }
+          ],
+          "onReject": "review-batch",
+          "maxAttempts": 4
+        },
+        "terminal": true
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Map the pull request corpus",
+      "description": "Read the launch-time PR overview and manifest, capture CI/check evidence, and publish the deterministic review batches the runtime fans out over.",
+      "prompt": "**You are reviewing PR #{{number}}, not authoring it. Never modify project source in this craftbook.** The runtime already mirrored the selected PR into `{{corpusScope}}`; this corpus, not a single live diff call, is the authoritative review surface.\n\n**The fanout input is already published.** On entering this step the runtime copied the manifest's batch array to the artifact `pr-review/batches.json` byte-for-byte. That file is done — do not write it, and do not \"fix\" it. Retyping 500+ exact paths through a tool call is what this step used to ask for, and it cannot survive a per-turn output cap.\n\nYour job is the evidence and the scope note.\n\n1. Call `list_artifacts({ path: \"{{corpusScope}}\", recursive: true })` to see the corpus. Find and read the overview Markdown record and its attached `pr-{{number}}-files.json` manifest, plus the overview's PR metadata and existing comments.\n2. Call `read_artifact({ path: \"pr-review/batches.json\" })` and note the batch count and ranges from what is actually on disk.\n3. Call `github_check_status` for the overview's head ref and record whether checks are success, failure, pending, or unknown. This is evidence, not a substitute for reviewing the diff.\n\nThen write ONE task note beginning `## Scope — PR #{{number}}`. Include title, URL, head → base, draft state, exact changed-file count, manifest path, batch count/ranges, CI/check status, existing-review themes, and 3–6 review themes weighted by focus `{{focus}}` and intensity `{{intensity}}`. Derive every path and count from the manifest and the published batches — never from memory. End by calling `advance_task_step`.\n\nThese deliverables live in the project's artifacts drawer — read them with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "pr-review/batches.json",
+        "minBytes": 2,
+        "sniff": "json-valid",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "scripts": [
+          {
+            "name": "checkTaskNoteContains",
+            "scope": "standard",
+            "inputs": {
+              "pattern": "##\\s*Scope\\s*[—-]\\s*PR\\s*#{{number}}[\\s\\S]*(?:changed.file|files?)"
+            }
+          }
+        ],
+        "checks": [
+          {
+            "kind": "corpusBatches",
+            "file": "pr-review/batches.json",
+            "corpusDir": "{{corpusScope}}",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "scan",
+      "onEnter": [
+        {
+          "name": "publishCorpusBatches",
+          "scope": "standard",
+          "inputs": {
+            "corpusDir": "{{corpusScope}}",
+            "outFile": "pr-review/batches.json"
+          }
+        }
+      ]
+    },
+    {
+      "id": "scan",
+      "name": "Fan the batches out to the review crew",
+      "description": "Spawn one child reviewer per published batch. The runtime performs the fanout with no model turn; the crew is the work.",
+      "prompt": "The runtime spawns one child reviewer per entry in `pr-review/batches.json`, each in its own session holding only that batch's records. No turn is needed here.",
+      "spawnFanout": true,
+      "advanceWhen": {
+        "file": "pr-review/fanout.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "next": "collect"
+    },
+    {
+      "id": "collect",
+      "name": "Merge the batch ledgers",
+      "description": "Wait for the crew, merge every batch coverage shard into the run-wide ledger, and let the corpus gate prove nothing was dropped.",
+      "prompt": "The batch reviewers work in parallel; your job is to merge what they land. Some shards may not exist yet — that is expected, and the gate will send you back until they do.\n\n1. Call `list_artifacts({ path: \"pr-review\", recursive: true })` to see which `coverage-N.json` shards exist so far, and read each with `read_artifact`.\n2. Merge every shard's `reviewedFiles` and `reviewedRecords` into ONE artifact `pr-review-coverage.json`, written with `write_artifact` as `{ \"pullRequest\": {{number}}, \"reviewedFiles\": [...], \"reviewedRecords\": [...] }`. Union the entries, drop duplicates, and copy every string exactly — never retype a path.\n3. Call `advance_task_step`.\n\nThe gate compares the merged ledger against every per-file record in the corpus. While reviewers are still working it will reject and name what is outstanding; that is the crew still running, not a defect — merge the shards that have landed and advance again. Do not review files yourself to close the gap, and do not add a path to the ledger that no shard reported: a batch that is genuinely stuck belongs in a task note, not papered over here.\n\nThese deliverables live in the project's artifacts drawer — write them with `write_artifact` and read them back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "pr-review-coverage.json",
+        "minBytes": 2,
+        "sniff": "json-valid",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "corpusCoverage",
+            "file": "pr-review-coverage.json",
+            "corpusDir": "{{corpusScope}}",
+            "artifact": true
+          }
+        ],
+        "onReject": "collect",
+        "maxAttempts": 8
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Synthesize the review",
+      "description": "Synthesize every batch's observations into a cited report, re-verifying cross-file claims and keeping CI status distinct from code-review judgment.",
+      "prompt": "The coverage gate has proved that every changed path in PR #{{number}} was reviewed. Read the Scope note and the artifact `pr-review-coverage.json`, then call `list_artifacts({ path: \"pr-review\", recursive: true })` and read EVERY `observations-N.md` shard with `read_artifact`. There is one per batch and each holds findings the others do not — synthesizing from a subset silently drops whole batches of review.\n\nRe-check every critical or major candidate against the relevant workspace source with `find_symbol`, `search_code`, `grep_files`, `read_file`, or `read_files`; call `github_check_status` again if the earlier status was pending. Drop any candidate that is not supported. Reconcile duplicates: separate reviewers can raise the same defect from two batches — merge those into one row. Do not repeat an existing PR comment unless it still needs action and you explicitly say it was already raised.\n\nCite every finding as `path:line` using a changed path and a new-side diff line. Any critical or major finding requires `request-changes`; otherwise use `approve`. CI success is evidence that the checked revision compiled/tested as configured, but it does not erase logic findings. CI unknown/pending is not itself a code defect.\n\nWrite `pr-review.md` in ONE `write_artifact` call using exactly this skeleton:\n\n```\n# Pull Request Review — PR #{{number}}: <title>\n\n## Summary\n<2–6 sentences: what changes, overall risk, existing-comment coverage, and CI/check status. Say \"No findings.\" when there are none.>\n\nCoverage: <reviewed count>/<changed-file count> changed files across <batch count> batches.\n\n## Findings\n| # | Severity | File | Line | Finding | Recommendation |\n|---|----------|------|------|---------|----------------|\n<one row per finding; severities: critical, major, minor, nit. Keep the header when there are no findings.>\n\n## Verdict\nVerdict: approve\n<or> Verdict: request-changes\n<one sentence of rationale>\n```\n\nDo not modify source and do not call `github_pr_comment`; the report is local. If the gate rejects, repair the named gap and rewrite the whole report. Then call `advance_task_step`.\n\nThese deliverables live in the project's artifacts drawer — write them with `write_artifact` and read them back with `read_artifact`; the shipped workspace stays untouched. A pull-request review never modifies project source.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "pr-review.md",
+        "minBytes": 500,
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "pr-review.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "pr-review.md",
+            "pattern": "#\\s+Pull Request Review\\s+[—-]\\s+PR\\s+#{{number}}",
+            "label": "PR-numbered title",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "pr-review.md",
+            "pattern": "Coverage:\\s*\\d+\\s*/\\s*\\d+\\s+changed files",
+            "label": "coverage summary",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "pr-review.md",
+            "pattern": "##\\s+Summary[\\s\\S]*##\\s+Findings[\\s\\S]*##\\s+Verdict",
+            "label": "required sections",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "pr-review.md",
+            "pattern": "Verdict:\\s*(approve|request-changes)",
+            "label": "verdict line",
+            "artifact": true
+          },
+          {
+            "kind": "tableShape",
+            "file": "pr-review.md",
+            "requiredColumns": [
+              "Severity",
+              "File",
+              "Line",
+              "Finding",
+              "Recommendation"
+            ],
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "done"
+    },
+    {
+      "id": "done",
+      "name": "Deliver the verdict",
+      "description": "The complete-coverage report passed its gates. Summarize the verdict and point the user to the local evidence files.",
+      "prompt": "Read the artifacts `pr-review.md` and `pr-review-coverage.json` with `read_artifact`, then write one final task note with `write_task_note`: `PR #{{number}} — Verdict: <approve|request-changes> — N findings (a critical, b major, c minor, d nit) — coverage X/X` plus a one-paragraph summary. Tell the user the full local review is at `pr-review.md` in the project's artifacts drawer, the coverage ledger is beside it at `pr-review-coverage.json`, the per-batch observations are under `pr-review/`, and nothing was posted to GitHub. Then call `advance_task_step` to complete the task.",
+      "suggestedRole": "reviewer",
+      "terminal": true
+    }
+  ],
+  "minGezelVersion": "1.26229",
+  "version": "1.7.0",
+  "releasedAt": "2026-08-17T00:00:00Z"
+}
