@@ -65,6 +65,34 @@ Both source and generated files belong in the same Gilde change. Released
 version directories remain immutable: bump the family version and generate a
 new directory.
 
+## Project-type Output pages
+
+A project type may ship a `versions/<semver>/pages/` tree — the dashboard Gezel
+pins into the project's Output pane. The full manifest contract lives in
+Gezel's `docs/project-types.md`; two rules matter every time you touch a page.
+
+**Follow the reader's theme.** The page renders in a null-origin sandboxed
+iframe, so none of Gezel's own styling reaches it and the page owns its whole
+palette. Gezel pushes the user's Light/Dark/System choice into the browser's
+colour-scheme preference, which makes the ordinary media query the contract:
+
+```css
+:root { color-scheme: light dark; --bg: #faf7f2; --card: #fff; --ink: #2b2620; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #1c1a17; --card: #262320; --ink: #efe9e0; }
+}
+```
+
+Declare `color-scheme: light dark` so form controls and scrollbars come along,
+and route every colour through the variables. A literal `#fff` left in a card
+rule survives the media query, and one hardcoded panel is enough to put a
+glaring white slab down the side of a dark workshop.
+
+**Assume no network and no parent.** Pages are opened in a plain browser too
+("Open in browser"), where there is no parent frame to answer `postMessage`.
+Render a sensible read-only or demo state instead of hanging on a reply, and
+keep assets local to the `pages/` tree — a CDN reference will not load.
+
 ## Updating a model entry
 
 Model manifests split identity (name, description, license) from released

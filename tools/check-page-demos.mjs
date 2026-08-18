@@ -51,6 +51,35 @@ for (const item of listItems(dataRoot, 'project-type')) {
     failures.push(`${item.id}@${manifest.version}: retains a standalone dead-end message`);
   }
 
+  // Theming. A page renders in a null-origin sandboxed iframe, so Gezel's own
+  // styling cannot reach it; the app instead moves the browser's colour-scheme
+  // preference, which makes the media query the contract. A page that ships
+  // only light colours becomes a bright slab down the side of a dark workshop.
+  if (!/@media\s*\(\s*prefers-color-scheme:\s*dark\s*\)/.test(html)) {
+    failures.push(
+      `${item.id}@${manifest.version}: no @media (prefers-color-scheme: dark) — the page must follow the reader's theme`,
+    );
+  }
+  if (!/color-scheme:\s*light\s+dark/.test(html)) {
+    failures.push(
+      `${item.id}@${manifest.version}: missing "color-scheme: light dark" so form controls and scrollbars follow too`,
+    );
+  }
+  // A literal light colour in a component rule survives the media query. Only
+  // look outside the dark block, where such a value can never be overridden.
+  const withoutDarkBlocks = html.replace(
+    /@media\s*\(\s*prefers-color-scheme:\s*dark\s*\)\s*\{[\s\S]*?\n\s*\}/g,
+    '',
+  );
+  const hardcodedLight = withoutDarkBlocks.match(
+    /(?:background(?:-color)?|color)\s*:\s*(?:#fff\b|#ffffff\b|white\b)/i,
+  );
+  if (hardcodedLight) {
+    failures.push(
+      `${item.id}@${manifest.version}: hardcoded ${hardcodedLight[0].trim()} outside the dark override — drive it through a variable`,
+    );
+  }
+
   if (manifest.pages?.api === 1) {
     if (!html.includes(stubBytes)) {
       failures.push(
