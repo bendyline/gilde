@@ -1,7 +1,7 @@
 {
   "id": "powerpoint-deck",
   "name": "PowerPoint from Content",
-  "description": "Turn supplied content or a factual topic into a real, editable, source-grounded PowerPoint. A researcher first reads the exact named source or retrieves authoritative web sources and records a cited fact ledger. A planner locks a numbered slide outline. A copywriter writes a task-specific Markdown deck with exactly one H1 per outline slide, while deterministic gates keep the slide count, titles, and order aligned. A reviewer checks factual traceability before a designer converts the Markdown to PPTX, previews every slide, and saves the requested PPTX in artifacts.\n\nEvery run gets its own workPath by default, so source packets, outlines, Markdown, and reviews cannot collide with an earlier PowerPoint task. Artifact working files must be read and written with the artifact tools; the Markdown deck source and user-facing PowerPoint remain in the workspace.",
+  "description": "Turn supplied content or a factual topic into a real, editable PowerPoint. Supplied sources remain authoritative, and internet research is strongly recommended for factual grounding; topic-only runs may proceed without it when access is unavailable or the deck is explicitly exploratory, provided unsupported facts are not invented. A researcher records the source boundary and fact ledger before a planner locks a numbered slide outline. A copywriter writes a task-specific Markdown deck with exactly one H1 per outline slide, while deterministic gates keep the slide count, titles, and order aligned. A reviewer checks factual traceability before a designer converts the Markdown to PPTX, previews every slide, and saves the requested PPTX in artifacts.\n\nEvery run gets its own workPath by default, so source packets, outlines, Markdown, and reviews cannot collide with an earlier PowerPoint task. Artifact working files must be read and written with the artifact tools; the Markdown deck source and user-facing PowerPoint remain in the workspace.",
   "entryStepId": "research",
   "triggers": [
     "make a powerpoint",
@@ -99,8 +99,8 @@
     {
       "id": "research",
       "name": "Acquire and verify sources",
-      "description": "Read the exact supplied source or retrieve authoritative sources before outlining.",
-      "prompt": "Build the source packet before planning any slides. This run's working namespace is `{{workPath}}`. Files outside it—including an earlier `notes/outline.md`, root `deck.md`, or another PowerPoint task directory—are not inputs and must not be read or reused unless `{{sourcePath}}` names one exactly. Exact source path: `{{sourcePath}}`. Topic: `{{topic}}`. Inline source brief: `{{content}}`. Audience: `{{audience}}`. 0. If source path, topic, and inline content are all empty, call `ask_user_question` for the missing subject or exact source and stop. Do not call `read_task_notes`, inspect the workspace, or reuse an earlier deck while the source boundary is missing. 1. When `{{sourcePath}}` is non-empty, your FIRST source action is `read_file` on that exact path. Never replace a named source with a similarly named file. 2. Otherwise treat non-empty `{{content}}` as supplied source material and `{{topic}}` as the research question, but still perform real external source acquisition for factual grounding: use a registered search tool such as `web_search` or `wikipedia_search`, then use `fetch_url` or browser automation to read the useful result. Prefer primary sources, official statistics, standards bodies, peer-reviewed work, or reputable institutional summaries. Do not treat model memory, the task prompt, an earlier deck, or an invented URL as research. 3. Write `{{workPath}}/sources.md` with: the invocation inputs and their boundary; a source table with title, resolvable URL or exact file path, authority/date, and intended use; a fact ledger where every number, quotation, and externally checkable claim carries `(source: URL-or-path)`; conflicts and uncertainties; and facts that must not be invented. Do not silently overwrite supplied facts with external claims—record conflicts explicitly. 4. Include at least one resolvable citation and call `write_task_note` with the sources used and any uncertainty. Do not draft the outline or deck yet.\n\nStore `{{workPath}}/sources.md` in the artifacts drawer with `write_artifact`, then verify it with `read_artifact`; do not write this working file to the workspace.",
+      "description": "Read the exact supplied source and strongly prefer authoritative research before outlining, while allowing an honest no-research path.",
+      "prompt": "Build the source packet before planning any slides. This run's working namespace is `{{workPath}}`. Files outside it—including an earlier `notes/outline.md`, root `deck.md`, or another PowerPoint task directory—are not inputs and must not be read or reused unless `{{sourcePath}}` names one exactly. Exact source path: `{{sourcePath}}`. Topic: `{{topic}}`. Inline source brief: `{{content}}`. Audience: `{{audience}}`. 0. If source path, topic, and inline content are all empty, call `ask_user_question` for the missing subject or exact source and stop. Do not call `read_task_notes`, inspect the workspace, or reuse an earlier deck while the source boundary is missing. 1. When `{{sourcePath}}` is non-empty, your FIRST source action is `read_file` on that exact path. Never replace a named source with a similarly named file, and never skip a supplied source. 2. Otherwise treat non-empty `{{content}}` as supplied source material and `{{topic}}` as the research question. Strongly prefer real external source acquisition for factual grounding: use `web_search` when registered, otherwise `wikipedia_search`, then use `fetch_url` or browser automation to read the useful result. Prefer primary sources, official statistics, standards bodies, peer-reviewed work, or reputable institutional summaries. You may proceed without external research when external tools are unavailable or when the topic is explicitly exploratory, generative, or proposal-oriented. If you skip it, say so plainly, record why, frame unsourced content as original concepts or reasoning rather than established fact, and do not invent a source, URL, research result, or tool-verification workaround. Do not treat model memory, the task prompt, an earlier deck, or an invented URL as research. 3. Write `{{workPath}}/sources.md` with: the invocation inputs and their boundary; research status (`completed` or `skipped`, with reason); a source table with title, resolvable URL or exact file path, authority/date, and intended use (the table may be empty when research was honestly skipped); a fact ledger where every number, quotation, and externally checkable claim carries `(source: URL-or-path)`; a separate ledger of original proposals or reasoning that makes no factual-source claim; conflicts and uncertainties; and facts that must not be invented. Do not silently overwrite supplied facts with external claims—record conflicts explicitly. 4. When any source was used, include at least one resolvable citation. When none was used, include no citation rather than fabricating one. Call `write_task_note` with the sources used—or that research was skipped—and any uncertainty. Do not draft the outline or deck yet.\n\nStore `{{workPath}}/sources.md` in the artifacts drawer with `write_artifact`, then verify it with `read_artifact`; do not write this working file to the workspace.",
       "suggestedRole": "researcher",
       "advanceWhen": {
         "file": "{{workPath}}/sources.md",
@@ -120,7 +120,7 @@
           {
             "kind": "citationsResolve",
             "file": "{{workPath}}/sources.md",
-            "minCitations": 1,
+            "minCitations": 0,
             "artifact": true
           },
           {
@@ -133,7 +133,8 @@
               "browser_navigate",
               "run_playwright_script"
             ],
-            "minSuccessful": 1
+            "minSuccessful": 1,
+            "externalOptional": true
           }
         ],
         "onReject": "research",
@@ -145,7 +146,7 @@
       "id": "outline",
       "name": "Lock the slide outline",
       "description": "Lock the audience, purpose, sequence, evidence, and one message per slide.",
-      "prompt": "Read `{{workPath}}/sources.md` and plan the deck from its verified fact ledger. If `{{sourcePath}}` is non-empty, also read that exact source. Do not borrow facts, titles, or slide content from an earlier outline or deck outside `{{workPath}}`; a requested similarity is a structural constraint, not permission to mix source packets. 1. State the audience, occasion, and ONE takeaway. 2. Use exactly the slide count the user asked for; only when they gave none, draft 8-15 slides. Format every slide heading exactly as `## Slide N — Title`, numbered consecutively from 1. Under each heading write `Message:`, `Evidence:`, and `Visual:`. Every evidence line must point to a citation already recorded in `{{workPath}}/sources.md`; mark unsupported ideas `UNVERIFIED` rather than filling gaps from memory. 3. Open with context, make the middle a coherent argument, and close with the ask or next step. Include a Sources slide in this locked outline when the audience needs visible references. 4. Write acceptance criteria: every numbered outline slide must become exactly one H1 in {{workPath}}/deck.md, with the same title and order; one idea per slide; no wall of text; claims remain traceable; visual preview passes; an artifact copy is retained; and the exact workspace file `{{outputPath}}` is delivered. Write only `{{workPath}}/outline.md`, then call `write_task_note` with the exact slide count, takeaway, and requested output path. Do not write slide content or presentation code.\n\nOpen `{{workPath}}/sources.md` from the artifacts drawer with `read_artifact` before working. Store `{{workPath}}/outline.md` in the artifacts drawer with `write_artifact`, then verify it with `read_artifact`; do not write this working file to the workspace.",
+      "prompt": "Read `{{workPath}}/sources.md` and plan the deck from its verified fact ledger and original-proposal ledger. If `{{sourcePath}}` is non-empty, also read that exact source. Do not borrow facts, titles, or slide content from an earlier outline or deck outside `{{workPath}}`; a requested similarity is a structural constraint, not permission to mix source packets. 1. State the audience, occasion, and ONE takeaway. 2. Use exactly the slide count the user asked for; only when they gave none, draft 8-15 slides. Format every slide heading exactly as `## Slide N — Title`, numbered consecutively from 1. Under each heading write `Message:`, `Evidence:`, and `Visual:`. Every sourced factual evidence line must point to a citation already recorded in `{{workPath}}/sources.md`. When research was skipped, original concepts and reasoned recommendations may be labeled `PROPOSAL` and need no citation; mark any unsupported externally checkable claim `UNVERIFIED` rather than filling gaps from memory. 3. Open with context, make the middle a coherent argument, and close with the ask or next step. Include a Sources slide in this locked outline when the audience needs visible references and sources actually exist. 4. Write acceptance criteria: every numbered outline slide must become exactly one H1 in {{workPath}}/deck.md, with the same title and order; one idea per slide; no wall of text; factual claims remain traceable; proposals remain clearly framed as proposals; visual preview passes; an artifact copy is retained; and the exact workspace file `{{outputPath}}` is delivered. Write only `{{workPath}}/outline.md`, then call `write_task_note` with the exact slide count, takeaway, and requested output path. Do not write slide content or presentation code.\n\nOpen `{{workPath}}/sources.md` from the artifacts drawer with `read_artifact` before working. Store `{{workPath}}/outline.md` in the artifacts drawer with `write_artifact`, then verify it with `read_artifact`; do not write this working file to the workspace.",
       "suggestedRole": "planner",
       "advanceWhen": {
         "file": "{{workPath}}/outline.md",
@@ -173,7 +174,7 @@
           {
             "kind": "citationsResolve",
             "file": "{{workPath}}/outline.md",
-            "minCitations": 1,
+            "minCitations": 0,
             "artifact": true
           }
         ],
@@ -222,7 +223,7 @@
           {
             "kind": "citationsResolve",
             "file": "{{workPath}}/deck.md",
-            "minCitations": 1
+            "minCitations": 0
           }
         ],
         "onReject": "write",
