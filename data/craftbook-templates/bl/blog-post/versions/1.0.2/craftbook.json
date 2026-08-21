@@ -1,0 +1,155 @@
+{
+  "id": "blog-post",
+  "name": "SEO Blog Post",
+  "description": "Write a complete, SEO-aware blog post that ranks and reads well: it locks the primary keyword, search intent, target reader, and a heading-by-heading outline FIRST, then drafts the full article in a single human voice with the keyword woven naturally into the title, intro, and H2s, and finally runs an editorial pass for clarity, flow, factual accuracy, and on-page SEO. Covers blog article, SEO content, how-to guide, listicle, thought-leadership post, content marketing, and organic-traffic writing. The scope-first ordering is the point: a small model that picks the keyword and outline before drafting avoids the classic failure of a rambling post that buries its topic and never satisfies the searcher's intent.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Keyword & outline scope (planner) — lock the primary keyword, intent, reader, and H2 outline → gated on artifact `{{workPath}}/keyword-scope.md` (markdown-notes)\n2. Draft the article (copywriter) — write the full post to the locked outline and keyword plan → gated on `blog-post.md` (markdown-doc)\n3. Editorial pass (reviewer) — tighten clarity, flow, accuracy, and on-page SEO → gated on `blog-post.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "keyword-scope",
+  "triggers": [
+    "write a blog post",
+    "seo article",
+    "write a how-to guide",
+    "create blog content",
+    "ranking article"
+  ],
+  "steps": [
+    {
+      "id": "keyword-scope",
+      "name": "Keyword & outline scope",
+      "description": "lock the primary keyword, intent, reader, and H2 outline",
+      "prompt": "1) Identify the PRIMARY keyword/phrase the post targets and the matching search intent (informational, comparison, how-to, or commercial). 2) Define the target reader in one sentence (who they are, what they already know, what they want to leave with). 3) List 3-5 secondary keywords/related terms to weave in naturally. 4) Write the working title (must contain the primary keyword, ideally near the front) plus a 1-sentence meta description under 155 characters. 5) Produce a heading-by-heading outline: H1 (title), a hook intro, 4-7 H2 sections each with a one-line summary of what it covers, and a closing/CTA section. 6) Set the target word count (e.g. 1200-1600) and reading level. Write an acceptance-criteria checklist (e.g. 'primary keyword appears in title, first 100 words, and at least 2 H2s'; 'every outlined H2 is covered'; 'single consistent voice, no AI filler phrases like \"in today's fast-paced world\"'; 'ends with a clear CTA'; 'within target word count +/-15%'). Use write_task_note to record the keyword strategy, outline, and checklist, and write the same content to the produces path. No prose drafting yet.\n\nThe deliverable `{{workPath}}/keyword-scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/keyword-scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/keyword-scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/keyword-scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "keyword-scope",
+        "maxAttempts": 3
+      },
+      "next": "draft"
+    },
+    {
+      "id": "draft",
+      "name": "Draft the article",
+      "description": "write the full post to the locked outline and keyword plan",
+      "prompt": "Write the complete article to the locked outline. 1) Open with a hook intro (2-3 sentences) that names the reader's problem and previews the payoff; place the primary keyword in the first 100 words. 2) Write every outlined H2 section in full prose with concrete examples, short paragraphs (2-4 sentences), and lists where they aid scanning. 3) Weave secondary keywords in naturally — never keyword-stuff. 4) Use one consistent, specific voice; cut filler and hedging. 5) Close with the CTA section from the outline. 6) Output GitHub-flavored markdown with the H1 title at top, proper H2/H3 headers, and the meta description as an HTML comment or front-matter line at the top. Write the full post to the produces path and use write_task_note to record word count and which checklist items you believe pass.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "blog-post.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "blog-post.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "blog-post.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "draft",
+        "maxAttempts": 3
+      },
+      "next": "edit"
+    },
+    {
+      "id": "edit",
+      "name": "Editorial pass",
+      "description": "tighten clarity, flow, accuracy, and on-page SEO",
+      "prompt": "Edit the draft in place against the checklist. 1) Read top to bottom for flow: does each section follow logically, are transitions smooth, is the voice consistent? 2) Cut every filler phrase, redundancy, and hedge; tighten long sentences. 3) Verify on-page SEO: primary keyword in title, first 100 words, and >=2 H2s; meta description present and under 155 chars; headings are descriptive. 4) Fact-check any concrete claim and flag/remove anything you cannot stand behind. 5) Confirm word count is within target and the CTA is clear. Rewrite weak passages directly rather than just commenting. Save the polished version back to the produces path and note any criteria still unmet.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "blog-post.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "blog-post.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "blog-post.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "edit",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Read the final blog-post.md end to end and grade against the locked checklist. Check EACH criterion and write PASS/FAIL with a one-line reason: (a) primary keyword in title, first 100 words, and >=2 H2s; (b) every outlined H2 is present and substantive; (c) single consistent voice with no AI-filler phrases; (d) meta description present and under 155 characters; (e) clear CTA at the end; (f) word count within target +/-15%; (g) no unsupported factual claims. A post that is fluent but ignores the keyword plan or drops outlined sections FAILS.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"draft\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "blog-post.md"
+        }
+      ],
+      "next": "draft"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

@@ -1,0 +1,443 @@
+{
+  "id": "design-system-consultation",
+  "name": "Design System Consultation",
+  "description": "Interview for product context and taste, then propose a full design system — type, color, layout, motion — and capture it as a DESIGN.md with live preview pages.",
+  "basedOn": {
+    "name": "gstack",
+    "url": "https://github.com/garrytan/gstack"
+  },
+  "plan": "Build one coherent visual system from product purpose, user needs, existing interface evidence, and a memorable design intent. Make opinionated recommendations with reasons instead of presenting an arbitrary menu. Preserve useful existing conventions, state accessibility constraints, and distinguish observed patterns from outside inspiration. Deliver both a durable DESIGN.md and a self-contained HTML preview that makes the system inspectable before implementation.",
+  "entryStepId": "audit-interface",
+  "triggers": [
+    "design system",
+    "create a brand",
+    "design from scratch"
+  ],
+  "command": "design-system-consultation",
+  "toolsets": [
+    {
+      "toolsetId": "@playwright/mcp",
+      "optional": true,
+      "reason": "render and inspect the generated design-system preview when browser tools are available"
+    }
+  ],
+  "steps": [
+    {
+      "id": "audit-interface",
+      "name": "Audit the current interface",
+      "description": "Map the product, users, existing visual language, implementation constraints, and inconsistencies.",
+      "prompt": "Inspect the project description, interface entry points, components, styles, assets, screenshots, and accessibility conventions with workspace tools. Identify the product type, primary users and jobs, current design tokens and patterns worth preserving, inconsistencies, technical constraints, and missing states. If no interface exists, document that and work from the product brief rather than inventing current-state claims.\n\nObservable handoff: write the completed result to `design/current-state-audit.md` in the workspace with `write_file`. Do not merely describe what the file would contain. Re-read it with `read_file` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "product designer",
+      "advanceWhen": {
+        "file": "design/current-state-audit.md",
+        "minBytes": 900,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "goto": "design-brief"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "design/current-state-audit.md",
+            "bytes": 900
+          },
+          {
+            "kind": "sniff",
+            "file": "design/current-state-audit.md",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "contains",
+            "file": "design/current-state-audit.md",
+            "pattern": "^##\\s+Product and users",
+            "flags": "im",
+            "label": "Product and users section"
+          },
+          {
+            "kind": "contains",
+            "file": "design/current-state-audit.md",
+            "pattern": "^##\\s+Existing language",
+            "flags": "im",
+            "label": "Existing language section"
+          },
+          {
+            "kind": "contains",
+            "file": "design/current-state-audit.md",
+            "pattern": "^##\\s+Inconsistencies",
+            "flags": "im",
+            "label": "Inconsistencies section"
+          },
+          {
+            "kind": "contains",
+            "file": "design/current-state-audit.md",
+            "pattern": "^##\\s+Constraints",
+            "flags": "im",
+            "label": "Constraints section"
+          },
+          {
+            "kind": "contains",
+            "file": "design/current-state-audit.md",
+            "pattern": "^##\\s+Accessibility",
+            "flags": "im",
+            "label": "Accessibility section"
+          }
+        ],
+        "onReject": "audit-interface",
+        "maxAttempts": 3
+      },
+      "next": "design-brief"
+    },
+    {
+      "id": "design-brief",
+      "name": "Lock the design brief",
+      "description": "Define the memorable intent, principles, references, exclusions, and success tests.",
+      "prompt": "Use the audit to pre-fill a concise design brief. Ask the user one high-leverage question at a time with `ask_user_question`: confirm audience and product posture, the one thing the experience should be remembered for, useful references, strong dislikes, brand or accessibility constraints, and the most important workflows. When research tools are available and the user wants it, collect relevant outside patterns with sources; otherwise label proposals as design judgment. Recommend a direction and explain why it fits.\n\nObservable handoff: write the completed result to `design/design-brief.md` in the workspace with `write_file`. Do not merely describe what the file would contain. Re-read it with `read_file` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "design strategist",
+      "advanceWhen": {
+        "file": "design/design-brief.md",
+        "minBytes": 800,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "goto": "propose-system"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "design/design-brief.md",
+            "bytes": 800
+          },
+          {
+            "kind": "sniff",
+            "file": "design/design-brief.md",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "contains",
+            "file": "design/design-brief.md",
+            "pattern": "^##\\s+Memorable intent",
+            "flags": "im",
+            "label": "Memorable intent section"
+          },
+          {
+            "kind": "contains",
+            "file": "design/design-brief.md",
+            "pattern": "^##\\s+Design principles",
+            "flags": "im",
+            "label": "Design principles section"
+          },
+          {
+            "kind": "contains",
+            "file": "design/design-brief.md",
+            "pattern": "^##\\s+References",
+            "flags": "im",
+            "label": "References section"
+          },
+          {
+            "kind": "contains",
+            "file": "design/design-brief.md",
+            "pattern": "^##\\s+Avoid",
+            "flags": "im",
+            "label": "Avoid section"
+          },
+          {
+            "kind": "contains",
+            "file": "design/design-brief.md",
+            "pattern": "^##\\s+Success tests",
+            "flags": "im",
+            "label": "Success tests section"
+          }
+        ],
+        "onReject": "design-brief",
+        "maxAttempts": 3
+      },
+      "next": "propose-system"
+    },
+    {
+      "id": "propose-system",
+      "name": "Propose and render the design system",
+      "description": "Specify the system and render a realistic, accessible preview of its important states.",
+      "prompt": "Create `DESIGN.md` from the audit and brief, covering foundations, type scale, color roles and contrast, spacing, grid, shape, elevation, iconography, motion, components, states, responsive behavior, content voice, accessibility, and adoption sequence. Use exact reusable tokens and explain how every choice serves the memorable intent. Also create `previews/design-system.html`: a self-contained, responsive page that applies the proposed tokens to representative navigation, type, controls, cards, data or content, empty, loading, error, focus, hover, and disabled states. Inspect it with browser tools when available and record what was actually checked.\n\nObservable handoff: write the completed result to `DESIGN.md` in the workspace with `write_file`. Do not merely describe what the file would contain. Re-read it with `read_file` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "design systems lead",
+      "advanceWhen": {
+        "file": "DESIGN.md",
+        "minBytes": 1800,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "DESIGN.md",
+            "bytes": 1800
+          },
+          {
+            "kind": "sniff",
+            "file": "DESIGN.md",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "contains",
+            "file": "DESIGN.md",
+            "pattern": "^##\\s+Design intent",
+            "flags": "im",
+            "label": "Design intent section"
+          },
+          {
+            "kind": "contains",
+            "file": "DESIGN.md",
+            "pattern": "^##\\s+Tokens",
+            "flags": "im",
+            "label": "Tokens section"
+          },
+          {
+            "kind": "contains",
+            "file": "DESIGN.md",
+            "pattern": "^##\\s+Typography",
+            "flags": "im",
+            "label": "Typography section"
+          },
+          {
+            "kind": "contains",
+            "file": "DESIGN.md",
+            "pattern": "^##\\s+Color",
+            "flags": "im",
+            "label": "Color section"
+          },
+          {
+            "kind": "contains",
+            "file": "DESIGN.md",
+            "pattern": "^##\\s+Components and states",
+            "flags": "im",
+            "label": "Components and states section"
+          },
+          {
+            "kind": "contains",
+            "file": "DESIGN.md",
+            "pattern": "^##\\s+Accessibility",
+            "flags": "im",
+            "label": "Accessibility section"
+          },
+          {
+            "kind": "contains",
+            "file": "DESIGN.md",
+            "pattern": "^##\\s+Adoption",
+            "flags": "im",
+            "label": "Adoption section"
+          },
+          {
+            "kind": "minBytes",
+            "file": "previews/design-system.html",
+            "bytes": 1800
+          },
+          {
+            "kind": "htmlLint",
+            "file": "previews/design-system.html"
+          }
+        ],
+        "onReject": "propose-system",
+        "maxAttempts": 3
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate the deliverable",
+      "description": "Independently grade the observable deliverable and route it to finish, repair, or user escalation.",
+      "prompt": "Review `DESIGN.md`, `previews/design-system.html`, `design/current-state-audit.md`, `design/design-brief.md` against every criterion below. Inspect the underlying evidence files named by the workflow; do not grade from the author's summary alone.\n\n1. The system visibly serves the product, users, memorable intent, and real implementation constraints.\n2. Typography, color, spacing, layout, shape, motion, content, and components form a coherent system rather than independent preferences.\n3. Tokens are specific and reusable, with responsive rules and all important interaction states.\n4. Contrast, focus, reduced motion, keyboard use, readability, and error communication have explicit treatment.\n5. The HTML preview is complete, renders without structural errors, and demonstrates representative states rather than a static swatch sheet.\n6. Existing strengths, outside sources, design judgment, and unresolved assumptions are labeled honestly.\n\nOpen `DESIGN.md`, `previews/design-system.html`, `design/current-state-audit.md`, `design/design-brief.md` with `read_file`. Write the evidence-backed review to `{{workPath}}/reviews/design-system-consultation-review.md` in the artifacts drawer with `write_artifact`. Give each criterion a PASS or FAIL with a concrete path, excerpt, measurement, or observed behavior. End with exactly `Verdict: PASS` or `Verdict: REVISE`. Then use `advance_task_step` for the active task: PASS routes to `finish`; REVISE routes to `repair` for review rounds 1 through 2, and the 3th REVISE routes to `needs-user`. Never route to finish while a criterion is unmet.",
+      "suggestedRole": "product design reviewer",
+      "consumes": [
+        {
+          "file": "DESIGN.md"
+        },
+        {
+          "file": "previews/design-system.html"
+        },
+        {
+          "file": "design/current-state-audit.md"
+        },
+        {
+          "file": "design/design-brief.md"
+        }
+      ],
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/reviews/design-system-consultation-review.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reviews/design-system-consultation-review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit PASS or REVISE verdict",
+            "artifact": true
+          }
+        ],
+        "onReject": "evaluate",
+        "maxAttempts": 3
+      },
+      "next": "repair"
+    },
+    {
+      "id": "repair",
+      "name": "Repair the deliverable",
+      "description": "Fix only the concrete gaps from the latest independent review.",
+      "prompt": "Read `{{workPath}}/reviews/design-system-consultation-review.md` with `read_artifact` and repair every failed criterion in `DESIGN.md`, `previews/design-system.html`, `design/current-state-audit.md`, `design/design-brief.md`. Make changes on each file's declared surface (`write_artifact` for artifact inputs, `write_file` for workspace inputs), not in task notes or a reply. Preserve evidence that already passed. Re-run or re-check anything the reviewer found unproven. Ensure `DESIGN.md` is genuinely updated this turn so the repair is observable, then hand it back for independent evaluation.",
+      "suggestedRole": "design systems lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/reviews/design-system-consultation-review.md",
+          "artifact": true
+        },
+        {
+          "file": "DESIGN.md"
+        },
+        {
+          "file": "previews/design-system.html"
+        },
+        {
+          "file": "design/current-state-audit.md"
+        },
+        {
+          "file": "design/design-brief.md"
+        }
+      ],
+      "advanceWhen": {
+        "file": "DESIGN.md",
+        "minBytes": 1800,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "DESIGN.md",
+            "bytes": 1800
+          },
+          {
+            "kind": "sniff",
+            "file": "DESIGN.md",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "contains",
+            "file": "DESIGN.md",
+            "pattern": "^##\\s+Design intent",
+            "flags": "im",
+            "label": "Design intent section"
+          },
+          {
+            "kind": "contains",
+            "file": "DESIGN.md",
+            "pattern": "^##\\s+Tokens",
+            "flags": "im",
+            "label": "Tokens section"
+          },
+          {
+            "kind": "contains",
+            "file": "DESIGN.md",
+            "pattern": "^##\\s+Typography",
+            "flags": "im",
+            "label": "Typography section"
+          },
+          {
+            "kind": "contains",
+            "file": "DESIGN.md",
+            "pattern": "^##\\s+Color",
+            "flags": "im",
+            "label": "Color section"
+          },
+          {
+            "kind": "contains",
+            "file": "DESIGN.md",
+            "pattern": "^##\\s+Components and states",
+            "flags": "im",
+            "label": "Components and states section"
+          },
+          {
+            "kind": "contains",
+            "file": "DESIGN.md",
+            "pattern": "^##\\s+Accessibility",
+            "flags": "im",
+            "label": "Accessibility section"
+          },
+          {
+            "kind": "contains",
+            "file": "DESIGN.md",
+            "pattern": "^##\\s+Adoption",
+            "flags": "im",
+            "label": "Adoption section"
+          },
+          {
+            "kind": "minBytes",
+            "file": "previews/design-system.html",
+            "bytes": 1800
+          },
+          {
+            "kind": "htmlLint",
+            "file": "previews/design-system.html"
+          }
+        ],
+        "onReject": "repair",
+        "maxAttempts": 3
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All deterministic and reviewer criteria passed.",
+      "prompt": "The independent review passed. Read `{{workPath}}/reviews/design-system-consultation-review.md` with `read_artifact`, then use `write_task_note` to record a concise DONE summary with the final deliverable paths (`DESIGN.md`, `previews/design-system.html`, `design/current-state-audit.md`, `design/design-brief.md`) and the evidence that each acceptance criterion passed. Report DONE without starting new work.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/reviews/design-system-consultation-review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true
+    },
+    {
+      "id": "needs-user",
+      "name": "Escalate unresolved concerns",
+      "description": "The bounded repair loop ended without a defensible pass.",
+      "prompt": "The deliverable did not pass after 3 review rounds. Do not claim success. Read `{{workPath}}/reviews/design-system-consultation-review.md` with `read_artifact`, then use `write_task_note` to record DONE_WITH_CONCERNS: the unmet criteria, what was attempted, the affected paths, and the smallest user decision or missing input needed to continue.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/reviews/design-system-consultation-review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true
+    }
+  ],
+  "version": "2.0.4",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

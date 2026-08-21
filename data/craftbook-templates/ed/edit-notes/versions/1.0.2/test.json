@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "title": "Edit Notes Pass smoke eval",
+  "objective": "Task-specific eval for the Edit Notes Pass craftbook: five indexed clips and a raw transcript with a draggy middle (an interview tangent and a repeated demo step) become timestamped edit notes and a machine-readable cutlist that references only real footage within real durations.",
+  "tags": [
+    "data"
+  ],
+  "prompt": "footage for the workshop video is indexed and the trancript is in — can you do an edit pass and give me a cutlist? somethings draggy in the middle",
+  "setup": {
+    "projectName": "Video Workshop — Edit Notes Eval",
+    "about": "Self-contained eval project for edit-notes. The clip index is media/index.json (five clips with durations in seconds), the raw transcript is transcripts/raw.txt (per-clip mm:ss timecodes), and the storyboard is storyboard.md. The edit notes go to tasks/eval/edit-notes.md and the cut list to cutlist.json.",
+    "missionObjectives": "Use the Edit Notes Pass craftbook/template, review the seeded transcript against the media index, and produce timestamped edit notes plus cutlist.json. Every cut decision carries a timecode and a reason; no invented footage. No live services or real media tools — this is the review-and-cutlist half.",
+    "files": [
+      {
+        "path": "media/index.json",
+        "content": "[\n  {\n    \"id\": \"c01-intro\",\n    \"file\": \"media/c01-intro.mp4\",\n    \"durationSeconds\": 48\n  },\n  {\n    \"id\": \"c02-interview\",\n    \"file\": \"media/c02-interview.mp4\",\n    \"durationSeconds\": 184\n  },\n  {\n    \"id\": \"c03-broll-shop\",\n    \"file\": \"media/c03-broll-shop.mp4\",\n    \"durationSeconds\": 62\n  },\n  {\n    \"id\": \"c04-demo\",\n    \"file\": \"media/c04-demo.mp4\",\n    \"durationSeconds\": 141\n  },\n  {\n    \"id\": \"c05-outro\",\n    \"file\": \"media/c05-outro.mp4\",\n    \"durationSeconds\": 39\n  }\n]\n"
+      },
+      {
+        "path": "transcripts/raw.txt",
+        "content": "Workshop video - raw transcript (rough auto pass, per-clip timecodes)\n\n[c01-intro]\n0:00 Welcome back to the workshop. Today we are building the dovetail jig I promised.\n0:19 Quick look at the finished jig so you know where we are headed.\n0:41 (dead air while the camera gets adjusted)\n\n[c02-interview]\n0:00 So the first thing people get wrong with dovetails is the layout, every time.\n0:35 The story of my first jig - it was awful, but it cut straight, and that is the point.\n1:20 ...and that reminds me of the time at the timber yard, there was this dog that guarded the offcuts bin... (long tangent, drifts well away from the jig)\n2:40 Anyway, back to the jig. The key measurement is the pin width at the baseline.\n2:58 If your pins are proud by even a millimeter, the joint telegraphs it.\n\n[c03-broll-shop]\n(no speech - bench shots, clamps closing, shavings falling, glue-up)\n\n[c04-demo]\n0:00 Set the fence to twelve degrees and lock it before anything else.\n0:48 Now we cut the tails first. Watch the offcut side, not the blade.\n1:22 Let me do that cut again from the other angle... (repeats the same step, adds nothing new)\n1:50 (silent repositioning)\n2:21 And the fit test - listen for that squeak. That squeak is the whole video.\n\n[c05-outro]\n0:00 If you build one, send me a photo. I read everything.\n0:24 Next week: the box joint jig, which is somehow more controversial.\n"
+      },
+      {
+        "path": "storyboard.md",
+        "content": "# Workshop video - storyboard\n\nShape: cold open on the finished jig, intro, expert interview for the why,\nshop b-roll to breathe, the demo as the spine, outro with the ask.\nTarget: a tight six minutes. The interview and demo are allowed to flex,\nbut nothing stays in that does not earn its seconds.\n"
+      }
+    ],
+    "worker": {
+      "name": "Teun",
+      "role": "Editor"
+    },
+    "craftbookParams": {
+      "workPath": "tasks/eval"
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "cutlist.json is a machine-readable record of real edit decisions: every row names a clip from media/index.json with in/out points and an action, the notes carry mm:ss timecodes and address the draggy middle, and the b-roll picture is considered.",
+    "deliverables": [
+      {
+        "path": "cutlist.json",
+        "kind": "json",
+        "checks": [
+          {
+            "kind": "recordSchema",
+            "file": "cutlist.json",
+            "fields": [
+              {
+                "name": "clip",
+                "type": "nonempty"
+              },
+              {
+                "name": "in"
+              },
+              {
+                "name": "out"
+              },
+              {
+                "name": "action",
+                "type": "nonempty"
+              },
+              {
+                "name": "note",
+                "required": false
+              }
+            ],
+            "minRows": 3
+          },
+          {
+            "kind": "valuesSubsetOf",
+            "file": "cutlist.json",
+            "sourceFiles": [
+              "media/index.json"
+            ],
+            "pattern": "\"clip\"\\s*:\\s*\"([^\"]+)\"",
+            "label": "every cutlist row references a clip that exists in the media index"
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/edit-notes.md",
+        "kind": "markdown-notes",
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/edit-notes.md",
+            "pattern": "\\d{1,2}:\\d{2}",
+            "label": "the edit notes carry mm:ss timecodes"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/edit-notes.md",
+            "pattern": "tangent|timber|drags|drift",
+            "flags": "i",
+            "label": "the interview tangent in the middle is called out"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/edit-notes.md",
+            "pattern": "repeat|again|redundant|duplicate",
+            "flags": "i",
+            "label": "the repeated demo step is called out"
+          }
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "kind": "judge",
+        "file": "cutlist.json",
+        "rubric": "Every in/out point in the cutlist sits within the referenced clip's duration from media/index.json, and the rows that trim or cut the middle correspond to the transcript's tangent (c02-interview around 1:20-2:40) and repeated demo step (c04-demo around 1:22-1:50) rather than arbitrary stretches.",
+        "sourceFiles": [
+          "media/index.json",
+          "transcripts/raw.txt"
+        ],
+        "label": "timecode precision and grounded cuts"
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "cutlist.json",
+      "kind": "json"
+    },
+    "axes": [
+      {
+        "name": "editorial-judgment",
+        "description": "Cuts and keeps serve the piece; the draggy middle is actually fixed, not just observed."
+      },
+      {
+        "name": "timecode-precision",
+        "description": "In/out points are concrete, inside clip durations, and consistent between notes and cutlist."
+      },
+      {
+        "name": "pacing-analysis",
+        "description": "The notes explain where energy dips and why, clip by clip."
+      },
+      {
+        "name": "actionability",
+        "description": "An assembly step could execute the cutlist top to bottom without asking questions."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "grounded cut decisions",
+    "timecode precision",
+    "no invented footage"
+  ]
+}

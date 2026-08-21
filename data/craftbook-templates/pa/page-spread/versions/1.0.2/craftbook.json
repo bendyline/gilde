@@ -1,0 +1,94 @@
+{
+  "id": "page-spread",
+  "name": "Page Spread",
+  "description": "Produce one page spread from script to panels: beats planned, panel art generated against the character sheets — never freehand from memory — lettered and laid out as the page the reader turns to. Locks the panel plan FIRST — each panel naming the sheet references that anchor it and the caption text it carries — then generates the panels from those anchors, then assembles the lettered spread. Use for producing a comic page, 'let's do page three', panel-and-letter passes, turning a script page into art, and the per-page ritual of a whole book.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Plan the panels (verhalenverteller) — script beats to panels, each anchored to a character sheet → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Generate the panels (image-generator) — panel art from the sheet anchors, never from memory\n3. Assemble the spread (designer) — panels laid in reading order, captions and balloons lettered\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "produce the page spread",
+    "let's do the next page",
+    "panel out the script",
+    "turn the script page into panels",
+    "lay up the spread"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Plan the panels",
+      "description": "script beats to panels, each anchored to a character sheet",
+      "prompt": "Break the page before generating a pixel. Step 1: read the page's script from the story notes and the character kits under characters/ — each character's manifest carries the references, seeds, and prompts that lock their look. Step 2: break the script into beats and assign each beat a panel — the moment, the framing, and who is in frame. Step 3: for every character in every panel, name the exact sheet reference (and its seed and prompt from the manifest) that anchors how they are drawn — a panel drawn from memory instead of the sheet is how page twelve stops matching page one. Step 4: copy the caption and balloon text for each panel verbatim from the script — the letterer changes nothing. Step 5: write an acceptance-criteria checklist ('every script beat has a panel', 'every figure anchored to a named sheet reference', 'captions and balloons verbatim from the script', 'panels read in order on the assembled page'). Call write_task_note with the panel count + checklist and write {{workPath}}/scope.md.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "verhalenverteller",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "panels"
+    },
+    {
+      "id": "panels",
+      "name": "Generate the panels",
+      "description": "panel art from the sheet anchors, never from memory",
+      "prompt": "Generate the page's panels into pages/<number>/ (the folder named for the page). Step 1: for each planned panel, build the generation prompt FROM the anchors — start from the sheet reference's persisted prompt and seed out of the character's manifest, then add the panel's moment and framing; the sheet is the source of truth for how every character looks. Step 2: generate through the project's image capabilities, at least three panels, saved as pages/<number>/panel-1.png, panel-2.png, and so on in reading order. Step 3: after each panel, check it against the plan — right characters, right moment, silhouette and palette matching the sheet; regenerate what drifted before moving on. Call write_task_note with the panel count and which sheet references anchored each.",
+      "suggestedRole": "image-generator",
+      "next": "assemble"
+    },
+    {
+      "id": "assemble",
+      "name": "Assemble the spread",
+      "description": "panels laid in reading order, captions and balloons lettered",
+      "prompt": "Assemble the page at pages/<number>/spread.html. Step 1: lay the panels in reading order with honest gutters — the eye should never wonder which panel is next. Step 2: letter it — the captions and balloon text from the plan, verbatim from the script, placed with the panel they belong to, tails pointing at the speaker. Step 3: style it as a page — panel borders, gutter rhythm, type that reads at page size, all in one self-contained file. Step 4: read the finished page top to bottom once as a reader would and fix anything that stumbles. Call write_task_note with the spread path and the panel order.",
+      "suggestedRole": "designer",
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open the page folder under pages/ beside {{workPath}}/scope.md, the script, and the character manifests, and verify every criterion: every script beat has its panel and the panels sit in reading order; every figure traces to the sheet reference the plan named — check the plan's anchors against the characters/ manifests, continuity is the whole point of this book; the captions and balloons on the spread match the script verbatim — a letterer who paraphrases is rewriting the author; and the assembled page reads clean top to bottom. Write PASS/FAIL per criterion; on any failure, name the panel and the gap and loop back to panels.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"panels\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "panels"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "title": "Prometheus alerts from scoped SLO brief",
+  "objective": "Measure whether the alert-rules craftbook scopes symptom alerts before writing deployable, low-noise alerting YAML.",
+  "tags": [
+    "html-page"
+  ],
+  "prompt": "In the `Alert Rules Eval` project, read `source/slo-brief.md` and write `alerts.yaml` as Prometheus-style alerting rules. Scope the signals and noise budget first, then produce YAML with groups, alert names, expr, for, severity/routing labels, summaries, descriptions, and runbook_url annotations for page alerts.",
+  "setup": {
+    "projectName": "Alert Rules Eval",
+    "about": "Self-contained eval project for alert-rules. The service SLO brief is in workspace/source/slo-brief.md and the deliverable is workspace/alerts.yaml.",
+    "missionObjectives": "Produce low-noise alerting rules from the seeded SLO brief with symptom signals, thresholds, severities, runbook links, and routing labels.",
+    "files": [
+      {
+        "path": "source/slo-brief.md",
+        "content": "# Alert scope brief\n\nService: Harbor Payments checkout-api and webhook-worker.\n\nSLOs:\n- Checkout p99 latency should stay below 800 ms over 10 minutes.\n- Checkout 5xx error rate should stay below 2% over 5 minutes.\n- Webhook retry backlog should stay below 5,000 jobs for more than 10 minutes.\n\nRouting:\n- page severity routes to team=payments, service=checkout-api or webhook-worker.\n- ticket severity routes to team=payments during business hours.\n- Page-level noise budget: no more than two page alerts.\n- Required runbooks: https://runbooks.example/payments/checkout-latency, https://runbooks.example/payments/checkout-errors, https://runbooks.example/payments/webhook-backlog.\n"
+      }
+    ],
+    "worker": {
+      "name": "Aafke",
+      "role": "SRE"
+    },
+    "craftbookParams": {
+      "workPath": "tasks/eval"
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "workspace/alerts.yaml is a Prometheus-style rule file with scoped symptom signals, thresholds, severities, routing, runbook annotations, and noise-budget evidence.",
+    "deliverables": [
+      {
+        "path": "alerts.yaml",
+        "kind": "yaml-spec",
+        "minBytes": 1200,
+        "checks": [
+          {
+            "kind": "prometheusAlerts",
+            "file": "alerts.yaml",
+            "minRules": 3,
+            "maxPageAlerts": 2,
+            "allowedSeverities": [
+              "page",
+              "ticket",
+              "info"
+            ],
+            "requiredServices": [
+              "checkout-api",
+              "webhook-worker"
+            ],
+            "requiredRunbookUrls": [
+              "https://runbooks.example/payments/checkout-latency",
+              "https://runbooks.example/payments/checkout-errors",
+              "https://runbooks.example/payments/webhook-backlog"
+            ]
+          },
+          {
+            "kind": "contains",
+            "file": "alerts.yaml",
+            "pattern": "groups:|rules:|alert:|expr:|for:",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "alerts.yaml",
+            "pattern": "severity:|team:|service:",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "alerts.yaml",
+            "pattern": "runbook_url|runbook",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "alerts.yaml",
+            "pattern": "checkout-api|webhook-worker|latency|error|backlog",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "alerts.yaml",
+            "pattern": "800|0\\.8|2%|0\\.02|5000|5,000|10m|5m",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "alerts.yaml",
+            "pattern": "histogram_quantile|p99|0\\.99",
+            "flags": "i",
+            "label": "checkout latency alert uses a p99 signal"
+          },
+          {
+            "kind": "contains",
+            "file": "alerts.yaml",
+            "pattern": "5xx|5\\.\\.|status",
+            "flags": "i",
+            "label": "checkout error alert targets 5xx rate"
+          },
+          {
+            "kind": "contains",
+            "file": "alerts.yaml",
+            "pattern": "retry|backlog|5000|5,000",
+            "flags": "i",
+            "label": "webhook backlog alert uses retry backlog threshold"
+          },
+          {
+            "kind": "notContains",
+            "file": "alerts.yaml",
+            "pattern": "CPU|memory|disk|node_cpu|node_memory|node_filesystem",
+            "flags": "i",
+            "label": "avoid raw infrastructure cause alerts not present in the SLO brief"
+          }
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "alerts.yaml",
+      "kind": "yaml"
+    },
+    "axes": [
+      {
+        "name": "structure",
+        "description": "Layout and hierarchy fit the content; sections are scannable and coherent."
+      },
+      {
+        "name": "grounding",
+        "description": "Seeded source content is used faithfully — no invented facts or dropped requirements."
+      },
+      {
+        "name": "interactivity",
+        "description": "Controls and states the page claims to offer actually work."
+      },
+      {
+        "name": "polish",
+        "description": "Styling is intentional and responsive rather than unstyled or broken."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "symptom alerts",
+    "noise budget",
+    "runbook annotations",
+    "routing labels"
+  ]
+}

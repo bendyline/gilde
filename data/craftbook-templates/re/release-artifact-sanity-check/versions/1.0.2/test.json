@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "title": "Release Artifact Sanity Check evidence-fixture eval",
+  "objective": "Verify that the craftbook reconciles release integrity, signing, and package-member evidence into a conservative go/no-go report without live services or executable artifacts.",
+  "tags": [
+    "corpus",
+    "release",
+    "security"
+  ],
+  "prompt": "Use the Release Artifact Sanity Check craftbook on the captured dry-run evidence in `source/release-artifacts/`. These fixtures describe artifacts and package contents but are deliberately non-executable; do not use the network or invent new verification results. Write the final report to `release-artifact-sanity-report.md`.",
+  "setup": {
+    "projectName": "Release Artifact Sanity Check Eval",
+    "about": "A self-contained release-artifact audit. The source folder contains captured hashes, signature-tool results, and safe package listings for Boreal Desk v2.4.0.",
+    "missionObjectives": "Use the Release Artifact Sanity Check craftbook, reconcile every supplied item, treat missing trust or coverage as NOT VERIFIED, and produce an evidence-backed release-artifact-sanity-report.md without network calls or executing package contents.",
+    "files": [
+      {
+        "path": "source/release-artifacts/release-v2.4.0.md",
+        "content": "# Boreal Desk v2.4.0\n\nTag: v2.4.0\nRelease URL: https://example.invalid/boreal/releases/v2.4.0\nTop-level uploaded artifacts: 3\n\n| Artifact | GitHub sha256 digest | Bytes |\n| --- | --- | ---: |\n| BorealDesk-2.4.0-macos.zip | aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa | 4100 |\n| BorealDeskSetup-2.4.0.msi | bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb | 5200 |\n| BorealDesk-2.4.0.AppImage | dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd | 6300 |\n"
+      },
+      {
+        "path": "source/release-artifacts/SHA256SUMS",
+        "content": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  BorealDesk-2.4.0-macos.zip\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  BorealDeskSetup-2.4.0.msi\ndddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd  BorealDesk-2.4.0.AppImage\n"
+      },
+      {
+        "path": "source/release-artifacts/computed-hashes.txt",
+        "content": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  BorealDesk-2.4.0-macos.zip\ncccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc  BorealDeskSetup-2.4.0.msi\ndddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd  BorealDesk-2.4.0.AppImage\n"
+      },
+      {
+        "path": "source/release-artifacts/signature-evidence.md",
+        "content": "# Captured signature verifier output\n\n- `BorealDesk-2.4.0-macos.zip` expanded app: `codesign --verify --deep --strict` exit 0; Developer ID Application signer Team ID BDESK12345; `spctl` accepted and reported notarized. Trusted Apple root chain captured.\n- `BorealDeskSetup-2.4.0.msi`: `Get-AuthenticodeSignature` Status = NotSigned.\n- `BorealDesk-2.4.0.AppImage`: detached signature produced `GOODSIG build@boreal.example`, but the fixture contains no trusted fingerprint or key-source record. Treat signer trust as NOT VERIFIED.\n"
+      },
+      {
+        "path": "source/release-artifacts/package-inventory.txt",
+        "content": "SAFE LISTING ONLY — DO NOT EXECUTE\nDeclared contained regular files: 12\n\nmacos/Boreal Desk.app/Contents/MacOS/BorealDesk | Mach-O arm64+x86_64 | executable | signature covered\nmacos/Boreal Desk.app/Contents/Frameworks/Electron Framework.framework/Electron Framework | Mach-O | signature covered\nmacos/Boreal Desk.app/Contents/Resources/app.asar | ASAR | data\nmacos/Boreal Desk.app/Contents/Resources/current -> ../../outside | symlink escapes package root\nwindows/BorealDesk.exe | PE32+ | executable | Authenticode NotSigned\nwindows/updater.exe | PE32+ | executable | Authenticode NotSigned\nwindows/config/defaults.env | text | contains API_TOKEN=demo-hardcoded-token\nwindows/LICENSE.txt | text\nlinux/BorealDesk | ELF x86_64 | executable | covered only by untrusted outer GOODSIG\nlinux/usr/lib/libcrypto.so.3 | ELF shared library\nlinux/resources/app.asar | ASAR | data\nlinux/updater | ELF x86_64 | executable | no inner signature evidence\n\nArchive preflight: no absolute or `..` entry names; one escaping symlink is listed above. Expansion ratio stayed below the supplied limit. Local malware scanner was unavailable in the captured environment.\n"
+      }
+    ],
+    "worker": {
+      "name": "Ada",
+      "role": "Release Security Reviewer"
+    },
+    "craftbookParams": {
+      "workPath": "tasks/eval"
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "The report reconciles all three artifacts and 12 package members, reaches NO-GO from the supplied integrity/signing/package blockers, and does not invent live verification.",
+    "deliverables": [
+      {
+        "path": "release-artifact-sanity-report.md",
+        "kind": "markdown-report",
+        "minBytes": 2000,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "release-artifact-sanity-report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "release-artifact-sanity-report.md",
+            "pattern": "NO-GO|NO GO",
+            "flags": "i",
+            "label": "derive a no-go decision from hard blockers"
+          },
+          {
+            "kind": "contains",
+            "file": "release-artifact-sanity-report.md",
+            "pattern": "BorealDeskSetup-2\\.4\\.0\\.msi[\\s\\S]{0,500}(?:mismatch|cccc|FAIL)|(?:mismatch|cccc|FAIL)[\\s\\S]{0,500}BorealDeskSetup-2\\.4\\.0\\.msi",
+            "flags": "i",
+            "label": "catch the Windows installer digest mismatch"
+          },
+          {
+            "kind": "contains",
+            "file": "release-artifact-sanity-report.md",
+            "pattern": "NotSigned|not signed|unsigned",
+            "flags": "i",
+            "label": "report missing Authenticode signing"
+          },
+          {
+            "kind": "contains",
+            "file": "release-artifact-sanity-report.md",
+            "pattern": "GOODSIG[\\s\\S]{0,300}(?:NOT VERIFIED|untrusted|trust)|(?:NOT VERIFIED|untrusted|trust)[\\s\\S]{0,300}GOODSIG",
+            "flags": "i",
+            "label": "distinguish signature presence from trusted identity"
+          },
+          {
+            "kind": "contains",
+            "file": "release-artifact-sanity-report.md",
+            "pattern": "Resources/current|escaping symlink|symlink escapes",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "release-artifact-sanity-report.md",
+            "pattern": "API_TOKEN|hardcoded-token|credential",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "release-artifact-sanity-report.md",
+            "pattern": "3\\s+(?:top-level\\s+)?artifacts|12\\s+(?:contained\\s+)?(?:regular\\s+)?files",
+            "flags": "i",
+            "label": "reconcile top-level and contained-file counts"
+          }
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "release-artifact-sanity-report.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "coverage",
+        "description": "Every top-level artifact and all 12 supplied package members are reconciled."
+      },
+      {
+        "name": "integrity",
+        "description": "Digest comparisons are explicit and the Windows mismatch drives the decision."
+      },
+      {
+        "name": "authenticity",
+        "description": "Signature presence, cryptographic validity, and trusted signer identity are kept distinct."
+      },
+      {
+        "name": "package safety",
+        "description": "The escaping symlink, unsigned executables, hardcoded token, and unavailable scanner are handled conservatively."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "complete artifact and package-member reconciliation",
+    "trust-aware signature verification",
+    "evidence-backed no-go decision",
+    "non-executing hostile-input inspection"
+  ]
+}

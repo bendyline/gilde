@@ -1,0 +1,153 @@
+{
+  "id": "cohort-analysis",
+  "name": "Cohort / Retention Analysis",
+  "description": "Analyze retention or behavior by cohort to reveal whether the product is getting stickier over time. Defines the cohort key, the activity event, and the retention window FIRST (so 'retained' has one unambiguous meaning), then builds the cohort/retention table and computes retention curves and trends as a data-analyst, then writes a readout on what the cohorts reveal. Use this for retention analysis, cohort tables, churn/stickiness analysis, a retention curve, or 'are newer users retaining better than older ones'.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the cohorts (data-analyst) — lock the cohort key, activity event, and retention window → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Build the cohort table (data-analyst) — compute the retention matrix and curves → gated on `data/cohorts.json` (json)\n3. Write the readout (copywriter) — explain what the cohorts reveal about retention → gated on artifact `{{workPath}}/readout.md` (markdown-report)\n\nData output discipline:\n\n- `data/cohorts.json` must be valid JSON only: no Markdown fences, comments, formulas, or ratio strings.\n- Use stable keys such as `signup_week`, `total_users`, and `retention`.\n- Store retention rates as numeric decimals rounded consistently, for example `0.67`, not `\"2/3\"` or `\"66.7%\"`.\n- Distinguish observed zero retention from incomplete future periods: use `0` when the period is observed and no cohort users were active, and `null` when the period is outside the observed window.\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "cohort analysis",
+    "retention curve",
+    "are newer users retaining better",
+    "churn analysis",
+    "retention table"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the cohorts",
+      "description": "lock the cohort key, activity event, and retention window",
+      "prompt": "Define retention unambiguously before computing anything. Step 1: choose the cohort key — usually signup/first-activity period (weekly or monthly), and state the period. Step 2: define the ACTIVITY that counts as 'retained' (logged in, made a purchase, used core feature) and the unit (a user, an account). Step 3: define the retention window and periods (W0..W8, or M0..M6) and whether it's classic (active in period N) or rolling/unbounded. Step 4: state filters (exclude test accounts, a minimum-tenure cutoff so incomplete recent cohorts are flagged). Step 5: write an acceptance-criteria checklist ('cohort key and activity are precisely defined', 'retention table has cohorts as rows and periods as columns', 'period 0 is 100% by construction', 'incomplete recent cohorts are flagged', 'a trend across cohorts is reported'). Call write_task_note and write the definitions + checklist to {{workPath}}/scope.md.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "analyze"
+    },
+    {
+      "id": "analyze",
+      "name": "Build the cohort table",
+      "description": "compute the retention matrix and curves",
+      "prompt": "Compute the cohort retention matrix from the defined rules. Step 1: assign each user/account to its cohort by the cohort key. Step 2: for each cohort and each retention period, compute the share of the cohort that performed the activity in that period; period 0 is 100% by construction. Step 3: build the triangular retention matrix (cohorts x periods), the cohort sizes, and the average retention curve across cohorts. Step 4: compute the trend — are later cohorts retaining better at the same period age than earlier ones? Step 5: flag cohorts too recent to have full data. Emit data/cohorts.json (matrix, sizes, average curve, trend) and call write_task_note with the headline retention numbers and the trend.",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "data/cohorts.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "data/cohorts.json",
+            "bytes": 2
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "data/cohorts.json"
+            }
+          }
+        ],
+        "onReject": "analyze",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the readout",
+      "description": "explain what the cohorts reveal about retention",
+      "prompt": "Write the retention readout from the computed matrix — no invented figures. Step 1: lead with the headline: the typical W1/M1 retention and where the curve flattens (the 'sticky' floor). Step 2: present the retention table (cohorts as rows, periods as columns) and read it for the reader. Step 3: state the cross-cohort trend in plain language ('M1 retention improved from 22% to 31% over the last 6 cohorts'). Step 4: call out the best and worst cohorts and any inflection. Step 5: caveat the incomplete recent cohorts and suggest one next action. Write the readout to {{workPath}}/readout.md and call write_task_note with the path. On a loop-back, fix only the named gaps.\n\nThe deliverable `{{workPath}}/readout.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "{{workPath}}/readout.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/readout.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/readout.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Read {{workPath}}/readout.md and cross-check against {{workPath}}/scope.md and data/cohorts.json. Verify: the cohort key and activity are precisely defined and used; the retention table has cohorts as rows and periods as columns with period 0 = 100%; incomplete recent cohorts are flagged; and a cross-cohort trend is reported with numbers. Re-check the headline W1/M1 retention and the trend against the cohort data. Confirm no cohort's retention exceeds 100% or rises impossibly. Write PASS/FAIL per criterion; any FAIL loops back to write.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/readout.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/readout.md",
+          "artifact": true
+        }
+      ],
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

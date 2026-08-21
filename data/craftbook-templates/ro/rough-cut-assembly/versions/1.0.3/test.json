@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 1,
+  "title": "Rough Cut Assembly smoke eval",
+  "objective": "Task-specific eval for the Rough Cut Assembly craftbook: a ready cutlist and media index are pre-flighted, executed through the fake assembly pipeline (a provenance-trusted workspace script that refuses unknown clips and bad timecodes), and verified against the expected duration.",
+  "tags": [
+    "external"
+  ],
+  "prompt": "cutlist is ready — can you asemble the rough cut with the fake pipeline thats wired up and check it came out right?",
+  "setup": {
+    "projectName": "Video Workshop — Rough Cut Eval",
+    "about": "Self-contained eval project for rough-cut-assembly. The cut list is cutlist.json and the clip index is media/index.json (durations in seconds). The fake media-assembly pipeline is the ready-made mock-probe project script: it validates the cutlist, writes the stub render to renders/rough-cut.mp4, and writes its run log to renders/assembly-log.json. The run report goes to tasks/eval/report.md.",
+    "missionObjectives": "Use the Rough Cut Assembly craftbook/template, pre-flight cutlist.json against media/index.json, run the assembly through the provided mock-probe script, and verify the log against the expected duration in tasks/eval/report.md. No real media tools, services, or credentials — only the wired fake pipeline.",
+    "files": [
+      {
+        "path": "cutlist.json",
+        "content": "[\n  {\n    \"clip\": \"c01-intro\",\n    \"in\": 0,\n    \"out\": 41,\n    \"action\": \"keep\",\n    \"note\": \"cold open plus intro, trim the dead air\"\n  },\n  {\n    \"clip\": \"c02-interview\",\n    \"in\": 0,\n    \"out\": 80,\n    \"action\": \"keep\",\n    \"note\": \"layout point and the first-jig story\"\n  },\n  {\n    \"clip\": \"c02-interview\",\n    \"in\": 80,\n    \"out\": 160,\n    \"action\": \"cut\",\n    \"note\": \"timber-yard tangent, off topic\"\n  },\n  {\n    \"clip\": \"c02-interview\",\n    \"in\": 160,\n    \"out\": 184,\n    \"action\": \"keep\",\n    \"note\": \"key measurement and the millimeter line\"\n  },\n  {\n    \"clip\": \"c03-broll-shop\",\n    \"in\": 0,\n    \"out\": 20,\n    \"action\": \"trim\",\n    \"note\": \"one breath of b-roll between talk and demo\"\n  },\n  {\n    \"clip\": \"c04-demo\",\n    \"in\": 0,\n    \"out\": 82,\n    \"action\": \"keep\",\n    \"note\": \"fence setting through the tails cut\"\n  },\n  {\n    \"clip\": \"c04-demo\",\n    \"in\": 82,\n    \"out\": 110,\n    \"action\": \"cut\",\n    \"note\": \"repeated cut adds nothing\"\n  },\n  {\n    \"clip\": \"c04-demo\",\n    \"in\": 110,\n    \"out\": 141,\n    \"action\": \"keep\",\n    \"note\": \"the fit test and the squeak\"\n  },\n  {\n    \"clip\": \"c05-outro\",\n    \"in\": 0,\n    \"out\": 30,\n    \"action\": \"keep\",\n    \"note\": \"the ask and the tease\"\n  }\n]\n"
+      },
+      {
+        "path": "media/index.json",
+        "content": "[\n  {\n    \"id\": \"c01-intro\",\n    \"file\": \"media/c01-intro.mp4\",\n    \"durationSeconds\": 48\n  },\n  {\n    \"id\": \"c02-interview\",\n    \"file\": \"media/c02-interview.mp4\",\n    \"durationSeconds\": 184\n  },\n  {\n    \"id\": \"c03-broll-shop\",\n    \"file\": \"media/c03-broll-shop.mp4\",\n    \"durationSeconds\": 62\n  },\n  {\n    \"id\": \"c04-demo\",\n    \"file\": \"media/c04-demo.mp4\",\n    \"durationSeconds\": 141\n  },\n  {\n    \"id\": \"c05-outro\",\n    \"file\": \"media/c05-outro.mp4\",\n    \"durationSeconds\": 39\n  }\n]\n"
+      }
+    ],
+    "worker": {
+      "name": "Daan",
+      "role": "Developer"
+    },
+    "craftbookParams": {
+      "workPath": "tasks/eval"
+    }
+  },
+  "mocks": [
+    {
+      "kind": "cli",
+      "id": "probe",
+      "description": "Provenance-trusted project script `mock-probe` that executes the fake media-assembly pipeline: validates cutlist.json against media/index.json and writes the stub render plus its run log.",
+      "shim": {
+        "path": "scripts/mock-probe.ts",
+        "content": "import { defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'mock-probe',\n  description:\n    'Fake media-assembly pipeline for this eval: validates cutlist.json against media/index.json, refuses unknown clips and out-of-range timecodes, then writes the stub render to renders/rough-cut.mp4 and its run log to renders/assembly-log.json.',\n  inputs: {},\n  outputs: {\n    log: { type: 'string', description: 'The assembly run log JSON written to renders/assembly-log.json.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n});\n\nconst cutlist = JSON.parse(await gezel.fs.read('cutlist.json'));\nconst index = JSON.parse(await gezel.fs.read('media/index.json'));\nif (!Array.isArray(cutlist) || cutlist.length === 0) {\n  throw new Error('cutlist.json must be a non-empty JSON array');\n}\nconst byId = new Map(index.map((clip) => [clip.id, clip]));\nlet total = 0;\nconst assembled = [];\nfor (const row of cutlist) {\n  const clip = byId.get(row.clip);\n  if (!clip) throw new Error(`unknown clip in cutlist: ${row.clip} is not in media/index.json`);\n  if (\n    typeof row.in !== 'number' ||\n    typeof row.out !== 'number' ||\n    row.in < 0 ||\n    row.out <= row.in ||\n    row.out > clip.durationSeconds\n  ) {\n    throw new Error(\n      `timecodes out of range for ${row.clip}: in=${row.in} out=${row.out} duration=${clip.durationSeconds}`,\n    );\n  }\n  if (row.action === 'cut') continue;\n  total += row.out - row.in;\n  assembled.push(row.clip);\n}\nif (assembled.length === 0) throw new Error('every cutlist row was a cut, nothing to assemble');\nconst log = {\n  status: 'ok',\n  engine: 'mock-assemble',\n  segments: assembled.length,\n  clips: assembled,\n  totalDurationSeconds: Math.round(total * 100) / 100,\n};\nawait gezel.fs.write('renders/rough-cut.mp4', `MOCKMP4 rough cut stub\\n${'0'.repeat(2048)}\\n`);\nawait gezel.fs.write('renders/assembly-log.json', `${JSON.stringify(log, null, 2)}\\n`);\ngezel.output({ log: JSON.stringify(log) });\n"
+      }
+    }
+  ],
+  "success": {
+    "summary": "The render and its status-ok log exist because the fake pipeline actually ran, the log's clips all come from the cutlist, and tasks/eval/report.md compares expected versus actual duration with real numbers.",
+    "deliverables": [
+      {
+        "path": "renders/rough-cut.mp4",
+        "kind": "generic-file",
+        "minBytes": 200
+      },
+      {
+        "path": "renders/assembly-log.json",
+        "kind": "json",
+        "checks": [
+          {
+            "kind": "jsonPathEquals",
+            "file": "renders/assembly-log.json",
+            "path": "status",
+            "value": "ok",
+            "label": "the assembly log reports status ok"
+          },
+          {
+            "kind": "valuesSubsetOf",
+            "file": "renders/assembly-log.json",
+            "sourceFiles": [
+              "cutlist.json"
+            ],
+            "pattern": "\"(c\\d{2}-[a-z-]+)\"",
+            "label": "every clip in the log comes from the cutlist"
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/report.md",
+        "kind": "markdown-report",
+        "minBytes": 600,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/report.md",
+            "pattern": "duration",
+            "flags": "i",
+            "label": "the report talks about duration"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/report.md",
+            "pattern": "expected|actual",
+            "flags": "i",
+            "label": "expected versus actual is stated"
+          },
+          {
+            "kind": "judge",
+            "file": "tasks/eval/report.md",
+            "rubric": "The report's segment count and duration figures match renders/assembly-log.json, the expected duration was computed from the cutlist before the run, and any mismatch is stated plainly rather than smoothed over.",
+            "sourceFiles": [
+              "renders/assembly-log.json",
+              "cutlist.json"
+            ],
+            "label": "numbers trace to the log"
+          }
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "tasks/eval/report.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "pipeline-discipline",
+        "description": "The assembly ran through the provided pipeline; the log is evidence of a real run, never hand-written."
+      },
+      {
+        "name": "pre-flight",
+        "description": "The cutlist was validated against the media index before rendering."
+      },
+      {
+        "name": "error-handling",
+        "description": "The run plan names what happens on failure; problems stop the run instead of being papered over."
+      },
+      {
+        "name": "summary-clarity",
+        "description": "The report reads at a glance: what ran, the numbers, what to spot-check."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "run-log grounding",
+    "pre-flight verification",
+    "honest duration comparison"
+  ]
+}

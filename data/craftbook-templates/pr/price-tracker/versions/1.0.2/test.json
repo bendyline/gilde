@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "title": "Offline price tracker with fake product API",
+  "objective": "Use a simulator-backed HTTP/CLI fixture so the price-tracker craftbook can fetch deterministic product prices, update history, and compute lows.",
+  "tags": [
+    "data"
+  ],
+  "prompt": "In the `Price Tracker Eval` project, read `fixtures/product-feed-day1.json` and `fixtures/product-feed-day2.json`, then write `tracker.mjs`, `price-history.json`, and `run-log.md`. The tracker should be offline and deterministic: normalize numeric prices, append history for two days, dedupe repeated same-day runs, compute lowest price per SKU, and log the failing SKU.",
+  "setup": {
+    "projectName": "Price Tracker Eval",
+    "about": "Self-contained eval project for the price-tracker craftbook. Fixture product feeds stand in for a fake HTTP API.",
+    "missionObjectives": "Build an offline tracker script and materialize expected two-day history from the seeded feeds. No internet access or real product pages.",
+    "files": [
+      {
+        "path": "fixtures/product-feed-day1.json",
+        "content": "{\n  \"date\": \"2026-06-27\",\n  \"products\": [\n    {\n      \"sku\": \"COOP-BOX-S\",\n      \"name\": \"Small Produce Box\",\n      \"price\": \"$29.99\",\n      \"available\": true\n    },\n    {\n      \"sku\": \"COOP-BOX-L\",\n      \"name\": \"Large Produce Box\",\n      \"price\": \"$49.99\",\n      \"available\": true\n    },\n    {\n      \"sku\": \"JAM-APRICOT\",\n      \"name\": \"Apricot Jam\",\n      \"price\": \"$8.50\",\n      \"available\": true\n    },\n    {\n      \"sku\": \"ERR-404\",\n      \"error\": \"upstream 404\"\n    }\n  ]\n}"
+      },
+      {
+        "path": "fixtures/product-feed-day2.json",
+        "content": "{\n  \"date\": \"2026-06-28\",\n  \"products\": [\n    {\n      \"sku\": \"COOP-BOX-S\",\n      \"name\": \"Small Produce Box\",\n      \"price\": \"$27.99\",\n      \"available\": true\n    },\n    {\n      \"sku\": \"COOP-BOX-L\",\n      \"name\": \"Large Produce Box\",\n      \"price\": \"$52.49\",\n      \"available\": true\n    },\n    {\n      \"sku\": \"JAM-APRICOT\",\n      \"name\": \"Apricot Jam\",\n      \"price\": \"$8.50\",\n      \"available\": false\n    },\n    {\n      \"sku\": \"ERR-404\",\n      \"error\": \"upstream 404\"\n    }\n  ]\n}"
+      }
+    ],
+    "worker": {
+      "name": "Sanne",
+      "role": "Developer"
+    },
+    "craftbookParams": {
+      "workPath": "tasks/eval"
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "The tracker writes a runnable script, a valid append-only history file, normalized numeric prices, dedupe-per-day behavior, and failure logs.",
+    "deliverables": [
+      {
+        "path": "tracker.mjs",
+        "kind": "code-module",
+        "minBytes": 1200,
+        "checks": [
+          {
+            "kind": "esmImports",
+            "file": "tracker.mjs"
+          },
+          {
+            "kind": "contains",
+            "file": "tracker.mjs",
+            "pattern": "product-feed-day1|product-feed-day2"
+          },
+          {
+            "kind": "contains",
+            "file": "tracker.mjs",
+            "pattern": "Number\\.parseFloat|parseFloat|replace",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "tracker.mjs",
+            "pattern": "dedupe|Map|Set|same-day|date",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "tracker.mjs",
+            "pattern": "lowest|minPrice|low",
+            "flags": "i"
+          }
+        ]
+      },
+      {
+        "path": "price-history.json",
+        "kind": "json",
+        "minBytes": 700,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "price-history.json",
+            "pattern": "COOP-BOX-S|COOP-BOX-L|JAM-APRICOT"
+          },
+          {
+            "kind": "contains",
+            "file": "price-history.json",
+            "pattern": "2026-06-27|2026-06-28"
+          },
+          {
+            "kind": "contains",
+            "file": "price-history.json",
+            "pattern": "29\\.99|27\\.99|49\\.99|52\\.49|8\\.5"
+          },
+          {
+            "kind": "contains",
+            "file": "price-history.json",
+            "pattern": "lowest|minPrice|low",
+            "flags": "i"
+          }
+        ]
+      },
+      {
+        "path": "run-log.md",
+        "kind": "markdown-notes",
+        "minBytes": 500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "run-log.md",
+            "pattern": "ERR-404|upstream 404"
+          },
+          {
+            "kind": "contains",
+            "file": "run-log.md",
+            "pattern": "dedupe|idempotent|same-day",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "run-log.md",
+            "pattern": "normalized|numeric|price",
+            "flags": "i"
+          }
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "tracker.mjs",
+      "kind": "typescript"
+    },
+    "axes": [
+      {
+        "name": "accuracy",
+        "description": "Computed figures are correct against the seeded records."
+      },
+      {
+        "name": "grounding",
+        "description": "Every claim traces to the seeded data — nothing invented."
+      },
+      {
+        "name": "structure",
+        "description": "Tables and sections make the analysis checkable at a glance."
+      },
+      {
+        "name": "actionability",
+        "description": "Recommendations follow from the findings and are concretely doable."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "custom simulator",
+    "script correctness",
+    "idempotency",
+    "error handling"
+  ]
+}

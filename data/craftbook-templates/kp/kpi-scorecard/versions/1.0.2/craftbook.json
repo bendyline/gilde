@@ -1,0 +1,160 @@
+{
+  "id": "kpi-scorecard",
+  "name": "KPI Scorecard Page",
+  "description": "Build a single-page KPI scorecard that rolls a dataset up into the handful of numbers a team tracks, each shown with its current value, target, and period-over-period change. Defines the KPIs and their exact formulas and targets FIRST (so a number is never ambiguous), then computes the rollups, then builds a clean self-contained HTML scorecard with KPI tiles, deltas, and a tiny trend sparkline each. Use this for a KPI dashboard, a metrics scorecard, an executive summary page, a North Star metrics view, or rolling raw data into headline numbers.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the KPIs (planner) — lock each KPI's formula, target, and comparison period → gated on artifact `{{workPath}}/kpi-scope.md` (markdown-notes)\n2. Compute the rollups (data-analyst) — compute each KPI's value, delta, and trend series → gated on `data/kpis.json` (json)\n3. Build the scorecard (developer) — render a self-contained KPI scorecard page → gated on `index.html` (html-page)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "kpi-scope",
+  "triggers": [
+    "build a kpi scorecard",
+    "metrics dashboard page",
+    "executive metrics summary",
+    "north star metrics",
+    "roll data into kpis"
+  ],
+  "steps": [
+    {
+      "id": "kpi-scope",
+      "name": "Scope the KPIs",
+      "description": "lock each KPI's formula, target, and comparison period",
+      "prompt": "Define each KPI precisely before computing anything. Step 1: list the 4-8 KPIs the scorecard shows, ordered by importance. Step 2: for each, write the exact formula (numerator / denominator), the unit and format (count, %, currency), and the time window. Step 3: define the comparison — period-over-period (this month vs last) or vs a target — and the target value where one exists. Step 4: define 'good' direction (up is good vs down is good) so deltas can be colored. Step 5: write an acceptance-criteria checklist ('every KPI has a precise formula and unit', 'each tile shows current value + delta vs comparison', 'targets shown where defined', 'good/bad direction is correct', 'a small trend is shown per KPI'). Call write_task_note and write the KPI definitions + targets + checklist to {{workPath}}/kpi-scope.md.\n\nThe deliverable `{{workPath}}/kpi-scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/kpi-scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/kpi-scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/kpi-scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "kpi-scope",
+        "maxAttempts": 3
+      },
+      "next": "compute"
+    },
+    {
+      "id": "compute",
+      "name": "Compute the rollups",
+      "description": "compute each KPI's value, delta, and trend series",
+      "prompt": "Compute every scoped KPI from the data. Step 1: for each KPI apply its exact formula over the current window and record the value. Step 2: compute the same for the comparison window and derive the absolute and % delta and whether it's an improvement given the good-direction. Step 3: build a short trend series (e.g. last 6-12 periods) per KPI for the sparkline. Step 4: attach the target and the gap to target where defined. Step 5: emit data/kpis.json — per KPI { name, value, unit, delta, delta_pct, improved, target, trend[] }. Double-check a denominator isn't zero and a % isn't mis-scaled. Call write_task_note with the headline KPI values and deltas.",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "data/kpis.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "data/kpis.json",
+            "bytes": 2
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "data/kpis.json"
+            }
+          }
+        ],
+        "onReject": "compute",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the scorecard",
+      "description": "render a self-contained KPI scorecard page",
+      "prompt": "Build a single self-contained index.html scorecard from data/kpis.json. Step 1: render one KPI tile per metric in priority order, each showing the formatted current value, the metric name, and the delta vs comparison with an up/down arrow colored by improvement (green good, red bad per the good-direction). Step 2: show the target and gap where defined. Step 3: draw a tiny inline sparkline (canvas/SVG) of the trend series in each tile — no external chart CDN that could fail offline. Step 4: lay the tiles out in a responsive grid, headline KPIs largest. Step 5: ensure values are real (from the JSON), formatting is correct, and there are no console errors. On a loop-back, fix only the named gaps. Call write_task_note with the path and KPI count.",
+      "suggestedRole": "developer",
+      "consumes": [
+        {
+          "file": "data/kpis.json"
+        }
+      ],
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 800
+          },
+          {
+            "kind": "htmlLint",
+            "file": "index.html"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open index.html (render it if possible, else trace the source) and check against {{workPath}}/kpi-scope.md and data/kpis.json. Verify: every scoped KPI appears as a tile with its formatted current value; each tile shows a delta vs the comparison with the correct good/bad color direction; targets and gaps are shown where defined; a trend sparkline renders per KPI from real data; and there are no console errors. Re-derive one KPI's value and delta from the data. Write PASS/FAIL per criterion; any FAIL loops back to build.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "index.html"
+        }
+      ],
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

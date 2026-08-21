@@ -1,0 +1,158 @@
+{
+  "id": "research-report",
+  "name": "Cited Research Report",
+  "description": "Produce a rigorously cited research report that answers a specific question end to end: a planner first decomposes the question into sub-questions and locks the scope, then a researcher gathers and logs primary and secondary sources with inline citations, then a copywriter writes a structured markdown report (executive summary, findings, evidence, limitations, references). The ordering matters because a small model that writes before scoping rambles and a model that writes without a source log fabricates citations; locking sub-questions and a source table first turns the report into a fill-in-the-evidence exercise. Use this for literature-backed analysis, deep dives, investigative write-ups, background research, and any 'find out and write it up with sources' task where every claim must trace to a citation.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Question scope (planner) — decompose the question into sub-questions + lock scope → gated on artifact `{{workPath}}/question-scope.md` (markdown-notes)\n2. Research & source log (researcher) — gather sources, log each with a citation key + key facts → gated on artifact `{{workPath}}/sources.md` (markdown-notes)\n3. Write the report (copywriter) — write the cited markdown report to the locked structure → gated on artifact `{{workPath}}/report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "question-scope",
+  "triggers": [
+    "write a research report",
+    "research this question with sources",
+    "cited report",
+    "deep dive on a topic",
+    "investigate and write it up"
+  ],
+  "steps": [
+    {
+      "id": "question-scope",
+      "name": "Question scope",
+      "description": "decompose the question into sub-questions + lock scope",
+      "prompt": "1. Restate the research question in one precise sentence; if it is vague, narrow it to something answerable (define the entity, timeframe, geography, and metric). 2. Decompose it into 3-6 sub-questions that, answered together, fully answer the main question. 3. Decide the report structure: executive summary, one section per sub-question, a limitations section, and a references list. 4. Decide source standards: how many independent sources minimum (aim 5+), what counts as authoritative for this topic, and the recency window. 5. Write an acceptance-criteria checklist (e.g. 'every sub-question has a dedicated section', 'every factual claim has an inline citation [n]', 'at least 5 distinct sources in references', 'an explicit limitations/uncertainty section exists', 'executive summary is <=150 words and states the bottom line'). Good looks like a checklist a grader could mechanically apply. 6. Record key decisions (the narrowed question, the sub-questions, the recency window). Call write_task_note with the sub-questions + checklist + decisions, and also write the same content to {{workPath}}/question-scope.md.\n\nThe deliverable `{{workPath}}/question-scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/question-scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/question-scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/question-scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "question-scope",
+        "maxAttempts": 3
+      },
+      "next": "research"
+    },
+    {
+      "id": "research",
+      "name": "Research & source log",
+      "description": "gather sources, log each with a citation key + key facts",
+      "prompt": "1. For each sub-question from the scope, find authoritative sources (prefer primary sources, official data, and reputable secondary sources within the recency window). 2. For every source, append an entry to {{workPath}}/sources.md with: a citation key [n], title, author/publisher, date, URL or locator, and 1-3 bullet facts you extracted with the exact figure or quote. 3. Cross-check any surprising or load-bearing fact against a second independent source and note the agreement or conflict. 4. Flag every claim you could NOT verify as UNVERIFIED so the writer does not state it as fact. 5. Aim to exceed the minimum source count and cover every sub-question; do not pad with low-quality sources. Good looks like a source log dense enough that the writer never needs to invent a fact. Keep {{workPath}}/sources.md as the single source of truth; do not write prose yet.\n\nThe deliverable `{{workPath}}/sources.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "researcher",
+      "advanceWhen": {
+        "file": "{{workPath}}/sources.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/sources.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/sources.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "research",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the report",
+      "description": "write the cited markdown report to the locked structure",
+      "prompt": "1. Write {{workPath}}/report.md following the locked structure exactly: title, an executive summary <=150 words that states the bottom-line answer, one section per sub-question, a limitations section, and a numbered References list. 2. Every factual claim gets an inline citation [n] keyed to the references; do NOT state any UNVERIFIED claim as fact (hedge it or drop it). 3. Build the References list directly from {{workPath}}/sources.md so every [n] resolves and no citation is invented. 4. Lead each section with the answer, then the evidence; keep prose tight and skimmable with subheadings. 5. On a loop-back, fix only the gaps the reviewer named and do not regress sections that already passed. 6. Call write_task_note with the report path and which criteria now pass.\n\nBefore working, open the artifact input `{{workPath}}/sources.md` with `read_artifact`; do not look for it in the workspace.\n\nThe deliverable `{{workPath}}/report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "consumes": [
+        {
+          "file": "{{workPath}}/sources.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/report.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open {{workPath}}/report.md and check EACH acceptance criterion, writing PASS/FAIL per criterion: (1) every sub-question from {{workPath}}/question-scope.md has a dedicated section; (2) every factual claim carries an inline citation [n] and every [n] resolves to a References entry; (3) there are at least the minimum distinct sources and they meet the authority/recency bar; (4) an explicit limitations/uncertainty section exists; (5) the executive summary is <=150 words and states the bottom line; (6) spot-check 3 citations against {{workPath}}/sources.md to confirm the claim matches the logged fact and nothing was fabricated. A report that reads well but invents or mismatches a citation FAILS.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/report.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/report.md",
+          "artifact": true
+        }
+      ],
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

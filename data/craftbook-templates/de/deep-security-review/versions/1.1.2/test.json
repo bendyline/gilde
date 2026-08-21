@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "title": "Deep Security Review systemic eval",
+  "objective": "Measure whether the review confirms seeded source-to-sink vulnerabilities, identifies systemic root causes, and emits valid machine-readable findings.",
+  "tags": [
+    "corpus"
+  ],
+  "prompt": "Use the Deep Security Review craftbook for a whole-codebase security sweep. The fixture is offline and self-contained. Write security-review/REPORT.md and security-review/findings.json; do not modify source.",
+  "setup": {
+    "projectName": "Security Maintenance Eval",
+    "about": "A tiny admin service with deliberate command injection, SQL injection, and inconsistent authorization.",
+    "missionObjectives": "Confirm real source-to-sink paths, cluster root causes, and leave report plus structured findings without inventing files or advisories.",
+    "files": [
+      {
+        "path": "src/admin.ts",
+        "content": "import { exec } from 'node:child_process';\nexport function register(app, db) {\n  app.get('/admin/export', (req, res) => {\n    exec('zip -r /tmp/' + req.query.name + '.zip data', (_e, out) => res.send(out));\n  });\n  app.get('/admin/users', async (req, res) => {\n    const rows = await db.query(`SELECT * FROM users WHERE team = '${req.query.team}'`);\n    res.json(rows);\n  });\n}\n"
+      },
+      {
+        "path": "src/profile.ts",
+        "content": "export function registerProfile(app, db, requireUser) {\n  app.get('/profile', requireUser, async (req, res) => {\n    const row = await db.query('SELECT * FROM users WHERE id = ?', [req.user.id]);\n    res.json(row);\n  });\n}\n"
+      },
+      {
+        "path": "docs/security.md",
+        "content": "# Security model\n\nAll /admin routes must require the requireAdmin middleware before business logic runs. SQL must use placeholders. Shell commands must not include request data.\n"
+      }
+    ],
+    "worker": {
+      "name": "Rae",
+      "role": "Reviewer"
+    },
+    "craftbookParams": {
+      "workPath": "tasks/eval"
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "The report and findings JSON confirm both injection paths and the missing admin boundary with systemic remediation.",
+    "deliverables": [
+      {
+        "path": "security-review/REPORT.md",
+        "kind": "security-report",
+        "minBytes": 1500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "security-review/REPORT.md",
+            "pattern": "src/admin\\.ts:[0-9]+",
+            "flags": "i",
+            "label": "real file and line"
+          },
+          {
+            "kind": "contains",
+            "file": "security-review/REPORT.md",
+            "pattern": "command injection|exec",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "security-review/REPORT.md",
+            "pattern": "SQL injection|parameter",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "security-review/REPORT.md",
+            "pattern": "authorization|requireAdmin|auth",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "security-review/REPORT.md",
+            "pattern": "Systemic Themes|root cause|blast radius",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "security-review/REPORT.md",
+            "pattern": "Verified Safe|Not Statically Verifiable",
+            "flags": "i"
+          }
+        ]
+      },
+      {
+        "path": "security-review/findings.json",
+        "kind": "json",
+        "minBytes": 300,
+        "checks": [
+          {
+            "kind": "sniff",
+            "file": "security-review/findings.json",
+            "sniff": "json-valid"
+          },
+          {
+            "kind": "recordSchema",
+            "file": "security-review/findings.json",
+            "format": "json",
+            "minRows": 3,
+            "fields": [
+              {
+                "name": "file",
+                "type": "nonempty",
+                "required": true
+              },
+              {
+                "name": "line",
+                "type": "integer",
+                "required": true
+              },
+              {
+                "name": "severity",
+                "type": "^(critical|high|medium|low|info)$",
+                "required": true
+              },
+              {
+                "name": "category",
+                "type": "nonempty",
+                "required": true
+              },
+              {
+                "name": "remediation",
+                "type": "nonempty",
+                "required": true
+              },
+              {
+                "name": "theme",
+                "type": "nonempty",
+                "required": true
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "security-review/REPORT.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "verification",
+        "description": "Raw leads are confirmed as real source-to-sink or authorization paths."
+      },
+      {
+        "name": "systemic analysis",
+        "description": "Findings are grouped by root cause and blast radius."
+      },
+      {
+        "name": "remediation",
+        "description": "The report and JSON contain concrete, severity-consistent fixes."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "confirmed vulnerabilities",
+    "systemic themes",
+    "machine-readable findings"
+  ]
+}

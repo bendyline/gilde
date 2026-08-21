@@ -1,0 +1,170 @@
+{
+  "id": "monitor-and-alert",
+  "name": "Watch a Page or API and Alert",
+  "description": "Build a watcher that polls a web page or API endpoint on a schedule, detects a meaningful change or threshold breach, and fires an alert (and only alerts on real changes, not noise). Scopes the watched target, the exact change/threshold condition, and the dedup/cooldown policy FIRST, then builds the poll-diff-notify loop with persisted state, then tests it against simulated change and no-change inputs so it neither misses a real change nor spams on every poll. Condition-and-cooldown-before-build is the wisdom that separates a useful monitor from an alert-fatigue generator.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the monitor (planner) — target, change condition, dedup + cooldown policy → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Build the watcher (developer) — poll, extract, diff vs state, alert on real change → gated on `monitor.py` (code-module)\n3. Test the watcher (developer) — assert it alerts on change, stays silent otherwise → gated on `monitor_test.py` (code-with-tests)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "watch a page for changes",
+    "alert me when this changes",
+    "monitor an API",
+    "notify on a price drop",
+    "uptime watcher"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the monitor",
+      "description": "target, change condition, dedup + cooldown policy",
+      "prompt": "Define what to watch and what counts as alert-worthy before building. Step 1: name the target (URL or API endpoint), the poll interval, and exactly which value to extract (a price, a status code, a count, a specific text region) — not the whole page. Step 2: define the change condition precisely — equality change, threshold crossing (>=, <=), or appearance/disappearance of a substring. Step 3: define the dedup/cooldown policy so you alert once per distinct change, not every poll (persist last-seen value + last-alert time; require a cooldown window). Step 4: define the alert channel and message template (what the alert says, including old→new value). Step 5: write an acceptance-criteria checklist ('extracts only the target value', 'fires exactly once on a real change', 'silent when nothing changed', 'respects the cooldown', 'persists state across runs'). Call write_task_note with the condition + policy + checklist and write it to {{workPath}}/scope.md. No code yet.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the watcher",
+      "description": "poll, extract, diff vs state, alert on real change",
+      "prompt": "Implement the watcher to the locked condition and policy. Step 1: load persisted state (last-seen value, last-alert timestamp) or initialize on first run. Step 2: fetch the target and extract only the scoped value, with error handling so a transient fetch failure does not crash or false-alert. Step 3: evaluate the change condition against the last-seen value; if met AND the cooldown has elapsed, format and send the alert with old→new. Step 4: always persist the new last-seen value (and last-alert time when alerting) so the next run diffs correctly. Step 5: make it runnable on the chosen interval (a script suitable for cron) and write it to a code module. Call write_task_note with the module path and how state is persisted.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "monitor.py",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "monitor.py",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "monitor.py",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "monitor.py"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "monitor.py"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "test"
+    },
+    {
+      "id": "test",
+      "name": "Test the watcher",
+      "description": "assert it alerts on change, stays silent otherwise",
+      "prompt": "Prove the watcher behaves on every case before trusting it. Step 1: write tests that feed a fixed last-seen state plus a new reading. Step 2: assert the no-change case sends NO alert. Step 3: assert a real change (or threshold crossing) sends EXACTLY ONE alert with the correct old→new values. Step 4: assert that a second identical change within the cooldown window does NOT re-alert, and that it does alert again after the window. Step 5: assert a fetch failure is handled (no crash, no false alert) and that state is persisted after each run. Put the watcher and these tests in a single code-with-tests file; run them and confirm green. Call write_task_note with the test file path and the pass count.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "monitor_test.py",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "monitor_test.py",
+            "bytes": 300
+          },
+          {
+            "kind": "sniff",
+            "file": "monitor_test.py",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "monitor_test.py"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "monitor_test.py"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "monitor_test.py",
+              "pattern": "\\b(test|describe|it|assert|expect)\\b",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "test",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Run the tests in monitor_test.py (or trace them) and verify every criterion from {{workPath}}/scope.md: only the target value is extracted, a real change fires exactly one alert with old→new, no-change polls are silent, the cooldown suppresses duplicate alerts and releases after the window, fetch failures do not false-alert, and state persists across runs. Write PASS/FAIL per criterion; on any failure, name it and loop back to test.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"test\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "monitor_test.py"
+        }
+      ],
+      "next": "test"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

@@ -1,0 +1,165 @@
+{
+  "id": "comparison-matrix",
+  "name": "Option Comparison Matrix",
+  "description": "Compare a set of options against weighted criteria and ship an interactive HTML comparison matrix with a recommendation: a planner locks the options, the criteria, and their weights, a researcher fills every cell with an evidence-backed value, and a developer builds a single-file HTML page with a sortable/filterable comparison table and a scored recommendation. The ordering matters because criteria and weights chosen after seeing the data bias the winner, and a static table buries the decision; locking weighted criteria first makes the comparison fair and lets the build compute a transparent score. Use this for option/tool/vendor comparisons, decision matrices, buying guides, 'help me choose between X, Y, Z', and weighted pros/cons tables.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Criteria scope (planner) — lock options, weighted criteria, and the scoring rule → gated on artifact `{{workPath}}/criteria-scope.md` (markdown-notes)\n2. Fill the cells (researcher) — evidence-backed value + rating for every option x criterion → gated on artifact `{{workPath}}/data.md` (markdown-notes)\n3. Build the matrix page (developer) — single-file HTML sortable comparison + scored recommendation → gated on `index.html` (html-page)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "criteria-scope",
+  "triggers": [
+    "comparison matrix",
+    "help me choose between",
+    "compare these options",
+    "decision matrix",
+    "buying guide table"
+  ],
+  "steps": [
+    {
+      "id": "criteria-scope",
+      "name": "Criteria scope",
+      "description": "lock options, weighted criteria, and the scoring rule",
+      "prompt": "1. List the options to compare (3-8 named candidates) and confirm they are genuinely comparable for the stated goal. 2. Choose 5-9 decision criteria, define each precisely, and assign each a weight (e.g. percentages summing to 100, or 1-5 importance) BEFORE looking at any data — justify each weight in one line. 3. Decide how each cell is scored (a 1-5 rating, a raw value, or yes/no) and the rule that turns ratings x weights into a total score. 4. Decide the page features: a comparison table (options x criteria), per-option total score, and a highlighted recommendation. 5. Write an acceptance-criteria checklist (e.g. 'every option x criterion cell is filled with evidence', 'weights are fixed before research and sum correctly', 'the page computes and shows a weighted total per option', 'the table is sortable or filterable', 'the recommended option is highlighted and justified'). 6. Record decisions. Call write_task_note with options, weighted criteria, scoring rule, and checklist; write the same to {{workPath}}/criteria-scope.md.\n\nThe deliverable `{{workPath}}/criteria-scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/criteria-scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/criteria-scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/criteria-scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "criteria-scope",
+        "maxAttempts": 3
+      },
+      "next": "research"
+    },
+    {
+      "id": "research",
+      "name": "Fill the cells",
+      "description": "evidence-backed value + rating for every option x criterion",
+      "prompt": "1. For each option, research every locked criterion and record in {{workPath}}/data.md: the raw value/fact, the rating per the scoring rule, the source [n], and a one-line note. 2. Rate consistently across options so scores are comparable; do not let a known favorite get generous ratings. 3. Cite each value to a real source; mark genuinely unknown cells UNKNOWN with a conservative rating and a note, never a fabricated value. 4. Pre-compute each option's weighted total using the locked rule and show your arithmetic so the developer can reproduce it. 5. Note any decisive strength or dealbreaker per option. Good looks like a complete, cited data file the build can render verbatim. Do not write HTML yet.\n\nThe deliverable `{{workPath}}/data.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "researcher",
+      "advanceWhen": {
+        "file": "{{workPath}}/data.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/data.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/data.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "research",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the matrix page",
+      "description": "single-file HTML sortable comparison + scored recommendation",
+      "prompt": "1. Build index.html (inline CSS + JS, no external assets) rendering the comparison as a table with options as rows (or columns) and criteria as columns, showing each cell's value/rating and the per-option weighted total. 2. Make the table interactive: at minimum sortable by total score and by any criterion, ideally with a filter; clicking a column header re-sorts. 3. Show the weights in the header and compute totals in JS from the locked rule so the math is transparent and verifiable. 4. Highlight the recommended option (highest weighted score) with a short justification drawn from {{workPath}}/data.md, and carry source references. 5. Make it readable and responsive with real inline CSS: table layout, weight badges or header treatments, score/total emphasis, recommendation highlight, hover/focus states, and a mobile layout. Do not ship a bare unstyled table. 6. On a loop-back, fix only the named gaps. 7. Call write_task_note with the page path and which criteria now pass.\n\nBefore working, open the artifact input `{{workPath}}/data.md` with `read_artifact`; do not look for it in the workspace.",
+      "suggestedRole": "developer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/data.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 1800
+          },
+          {
+            "kind": "htmlLint",
+            "file": "index.html"
+          },
+          {
+            "kind": "cssMinBytes",
+            "bytes": 400,
+            "file": "index.html"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open index.html (render it or trace the source) and check EACH criterion PASS/FAIL: (1) every option x criterion cell from {{workPath}}/data.md is present with no blanks; (2) the weights shown match {{workPath}}/criteria-scope.md and the JS-computed totals reproduce the locked scoring rule (recompute one option by hand); (3) the table actually sorts (and filters if specified) without console errors; (4) the recommended option is the highest-scoring one and is highlighted with a justification; (5) cells are evidence-backed with sources (spot-check 3). A static or mis-scored table, or one where weights were clearly tuned to the answer, FAILS.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "index.html"
+        }
+      ],
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

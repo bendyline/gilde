@@ -1,0 +1,160 @@
+{
+  "id": "form-fill-batch",
+  "name": "Batch-Fill Forms from a Dataset",
+  "description": "Automate filling a web or PDF form once per row of an input dataset — registrations, applications, data-entry portals, mail-merge into a form. Scopes the field-to-column mapping and a per-row success signal FIRST, then builds a loop that loads each record, maps it onto the form fields, submits, and records the outcome, then verifies every row was attempted, each submission was confirmed, and failures are logged with the reason. Mapping-before-build is the wisdom: lock the column→field map and the 'submitted OK' signal so the run is idempotent, resumable, and auditable rather than a blind click-through.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the fill job (planner) — map dataset columns to form fields + success signal → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Build the fill automation (developer) — loop records, fill, submit, log each outcome → gated on `form_fill.py` (code-module)\n3. Verify the run (reviewer) — coverage, confirmations, and failure logging → gated on artifact `{{workPath}}/verify.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "fill out forms automatically",
+    "batch form submission",
+    "mail merge into a form",
+    "auto-fill a portal",
+    "submit a form for each row"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the fill job",
+      "description": "map dataset columns to form fields + success signal",
+      "prompt": "Plan the batch fill before automating anything. Step 1: identify the input dataset (path + columns) and the target form (URL or PDF) and list every fillable field with its type (text, select, checkbox, date, file). Step 2: build an explicit mapping from each dataset column to a form field, and note required form fields that have no column (these need a default or must abort the row). Step 3: define the per-row success signal — what proves a submission landed (a confirmation URL, a success banner text, a generated ID, or a saved PDF). Step 4: decide the results log shape (one row per input record with status submitted/failed/skipped and a reason/confirmation). Step 5: write an acceptance-criteria checklist ('every input row is attempted', 'each success is confirmed by the signal', 'failures logged with a reason', 'no row submitted twice', 'run is resumable from the log'). Call write_task_note with the mapping + signal + checklist and write it to {{workPath}}/scope.md. No automation yet.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the fill automation",
+      "description": "loop records, fill, submit, log each outcome",
+      "prompt": "Implement the batch-fill driver to the locked mapping. Step 1: load the dataset and the results log; skip any row already marked submitted so the run is resumable. Step 2: for each remaining row, populate every mapped form field by type (set text, choose selects, toggle checkboxes, attach files), applying defaults for required-but-unmapped fields. Step 3: submit, then assert the success signal from scope before recording success — never assume submission worked. Step 4: append a results-log row with status and the confirmation token or the failure reason; on error, catch it, log failed, and continue to the next row. Step 5: write the automation to a runnable code module and produce/update the results log. Call write_task_note with the module path, the log path, and counts (submitted/failed/skipped).",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "form_fill.py",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "form_fill.py",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "form_fill.py",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "form_fill.py"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "form_fill.py"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify the run",
+      "description": "coverage, confirmations, and failure logging",
+      "prompt": "Verify the batch run did what scope promised. Step 1: confirm the automation runs without throwing and produces a results log. Step 2: check coverage — the log has exactly one entry per input row, none missing. Step 3: confirm every 'submitted' entry carries the success signal (confirmation token / banner / saved file) and is not just assumed. Step 4: confirm every 'failed' entry has a concrete reason and that failures did not abort the rest of the batch. Step 5: confirm idempotency — a re-run skips already-submitted rows and does not double-submit. Write PASS/FAIL per criterion to {{workPath}}/verify.md and task notes; on failure, name the rows and loop back to build.\n\nThe deliverable `{{workPath}}/verify.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "form_fill.py",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "form_fill.py",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "form_fill.py"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "form_fill.py"
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Exercise form_fill.py against the dataset (or trace it if execution is unavailable) and verify every criterion from {{workPath}}/scope.md. Confirm: one log entry per input row, each success carries the defined success signal, each failure has a reason and did not abort the batch, no row is submitted twice, and a re-run resumes from the log. Write PASS/FAIL per criterion; on any failure, name the rows and loop back to build.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "form_fill.py"
+        }
+      ],
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

@@ -1,0 +1,152 @@
+{
+  "id": "month-close",
+  "name": "Close the Month",
+  "description": "Close out a month of household spending against the project's ledger: sweep the month's entries for category strays and surprises, compute the in/out/net totals and category breakdown, compare against the prior month, and write a short honest month summary with one concrete action for next month. Locks the target month and the reconciliation checks FIRST, then reconciles the entries, then writes the summary — so the close is a repeatable ritual with the same shape every month, not an ad-hoc glance at the numbers. Use for monthly budget close, month-end money review, 'how did we do this month', and household spending retrospectives.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the close (data-analyst) — target month, reconciliation checks, comparison baseline → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Reconcile the month (data-analyst) — sweep entries, fix strays, compute totals and deltas → gated on artifact `{{workPath}}/reconcile.md` (markdown-notes)\n3. Write the month summary (copywriter) — honest month summary with one next-month action → gated on artifact `{{workPath}}/report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "close the month",
+    "monthly budget review",
+    "how did we do this month",
+    "month end close",
+    "budget month summary"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the close",
+      "description": "target month, reconciliation checks, comparison baseline",
+      "prompt": "Define the close before touching the numbers. Step 1: read ledger.json from the workspace and identify the target month (default: the most recently ended calendar month) and the prior month as the comparison baseline. Step 2: define the reconciliation checks — entries with a missing or clearly wrong category, amounts that look like typos (an order of magnitude off that category's normal range), and any income expected but not recorded. Step 3: define what the summary must report — in/out/net for the month, the top 3 spending categories, the largest single expense, and the delta versus the prior month per major category. Step 4: write an acceptance-criteria checklist ('every entry in the month has a sensible category', 'totals computed from the ledger, not estimated', 'prior-month comparison per major category', 'one concrete next-month action named', 'no number in the summary that is not in the ledger'). Call write_task_note with the target month + checks + checklist and write {{workPath}}/scope.md. No reconciling yet.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "reconcile"
+    },
+    {
+      "id": "reconcile",
+      "name": "Reconcile the month",
+      "description": "sweep entries, fix strays, compute totals and deltas",
+      "prompt": "Reconcile the target month against the locked checks. Step 1: list every ledger entry in the month and apply the checks — note each category stray or suspect amount, and where the owner's intent is clear, record the correction; where it is not, list the question for the owner instead of guessing. Step 2: compute the month's totals — in, out, net, and the per-category breakdown — directly from the entries. Step 3: compute the prior-month comparison per major category and flag any category that moved by more than a third. Step 4: identify the largest single expense and any new recurring-looking charges worth a look. Step 5: write the structured findings to {{workPath}}/reconcile.md so the summary phase has clean inputs, and call write_task_note with the net figure, the biggest mover, and the number of strays found.\n\nThe deliverable `{{workPath}}/reconcile.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "{{workPath}}/reconcile.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/reconcile.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/reconcile.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "reconcile",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the month summary",
+      "description": "honest month summary with one next-month action",
+      "prompt": "Write the month summary from the reconciliation. Step 1: open with the headline — in, out, net for the month, in one plain sentence. Step 2: give the category picture — the top 3 spending categories with amounts, and the notable movers versus last month with the direction and size of the change. Step 3: name the largest single expense and anything new or surprising, without judgment. Step 4: close with ONE concrete, small action for next month, grounded in the data (a category to watch, a charge to question, a habit that worked). Step 5: keep it under a page, warm and factual — this is a household ritual, not an audit finding. Write {{workPath}}/report.md and call write_task_note with the report path and the headline net.\n\nThe deliverable `{{workPath}}/report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "{{workPath}}/report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/report.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open {{workPath}}/report.md and {{workPath}}/reconcile.md and verify every criterion from {{workPath}}/scope.md: every entry in the month carries a sensible category (or is listed as an owner question), the in/out/net and category totals trace to the ledger entries (re-add one category to check), the prior-month comparison covers the major categories, exactly one concrete next-month action is named, and no number in the summary lacks a ledger source. Write PASS/FAIL per criterion; on any failure, name the gap and loop back to report.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/report.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/report.md",
+          "artifact": true
+        }
+      ],
+      "next": "report"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

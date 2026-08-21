@@ -1,0 +1,153 @@
+{
+  "id": "pr-security-review",
+  "name": "Security Review of a Diff",
+  "description": "Perform a focused security review of a code change or diff and produce a vulnerability report mapped to a threat checklist. First scopes the change's attack surface and locks a security checklist (injection, authn/authz, secrets, deserialization, SSRF, crypto misuse, input validation, dependency risk), then audits the diff against each class while tracing tainted data from untrusted sources to dangerous sinks, then writes a findings report rating each issue by severity and likelihood with a concrete remediation. Use this for a security review, secure code review, vulnerability assessment of a diff, an AppSec pass, or checking a change for injection/auth/secret-leak risks before merge — it surfaces exploitable flaws tied to specific lines rather than generic security platitudes.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the attack surface (reviewer) — map trust boundaries, lock a security checklist → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Audit for vulnerabilities (reviewer) — trace tainted data to sinks, check each threat class → gated on artifact `{{workPath}}/audit.md` (markdown-notes)\n3. Write the security report (reviewer) — findings with severity, exploit, remediation → gated on artifact `{{workPath}}/security-review.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "security review",
+    "is this change secure",
+    "check this diff for vulnerabilities",
+    "secure code review",
+    "appsec review",
+    "review for injection"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the attack surface",
+      "description": "map trust boundaries, lock a security checklist",
+      "prompt": "Step 1: Read the diff and identify the attack surface it touches: new/changed endpoints, inputs from untrusted sources (HTTP params, headers, files, env, third-party data), data sinks (SQL, shell, filesystem, eval, HTML render, outbound requests), and any auth/permission logic. Step 2: Map the trust boundaries — where does untrusted data enter and where could it reach a dangerous operation. Step 3: Write a security acceptance-criteria checklist tuned to this change, drawn from: injection (SQL/command/template/XSS), broken authn/authz (missing checks, IDOR), secrets handling (no hardcoded keys, no secrets logged), unsafe deserialization, SSRF/path traversal, crypto misuse (weak algo, static IV, no salt), missing input validation, and risky new dependencies. Step 4: For each item, state what 'safe' looks like for THIS diff (e.g. 'all SQL uses parameterized queries', 'the user-supplied filename is canonicalized and confined to the upload dir'). Step 5: Record assumptions and out-of-scope areas. Write the surface map + checklist to `write_task_note` AND `{{workPath}}/scope.md`. No findings yet.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "audit"
+    },
+    {
+      "id": "audit",
+      "name": "Audit for vulnerabilities",
+      "description": "trace tainted data to sinks, check each threat class",
+      "prompt": "Step 1: For each untrusted input identified in scope, trace it through the code to every sink it can reach — flag any path where it hits a sink without validation/escaping/parameterization (that is the vulnerability). Step 2: Walk EACH checklist threat class against the diff and the code it calls, looking for concrete violations, not theoretical ones. Step 3: For every finding capture: file:line, the vulnerability class, an exploit sketch (how an attacker triggers it), severity (critical/high/medium/low) and likelihood, and a concrete remediation (parameterize this query, add this authz check, move this secret to env). Step 4: Verify the negatives too — confirm the dangerous-looking spots that are actually safe and note WHY (so the report is trustworthy). Step 5: Note anything requiring dynamic testing you could not perform statically. Good looks like: a finding with a real taint path from source to sink, not 'consider validating inputs'. Stage findings to `write_task_note`. Do not write the report yet.\n\nThe deliverable `{{workPath}}/audit.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/audit.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/audit.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/audit.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "audit",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the security report",
+      "description": "findings with severity, exploit, remediation",
+      "prompt": "Step 1: Open `{{workPath}}/security-review.md` and write a top-line verdict: Safe-to-merge / Merge-after-fixes / Block, with the count of findings by severity. Step 2: Add a '## Findings' section; for each, write `### [SEVERITY] class — file:line` with the exploit sketch, the impact, the likelihood, and the concrete remediation. Order by severity then likelihood. Step 3: Add a '## Verified safe' section noting the threat classes you checked and found clean (so the review's coverage is auditable). Step 4: Add a '## Not statically verifiable' section for anything needing a pentest/runtime check. Every finding must have a concrete taint path or rule violation and a specific fix — no generic advice. On a loop-back, fix only the named gaps without dropping real findings. `write_task_note` the report path and the severity counts.\n\nThe deliverable `{{workPath}}/security-review.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/security-review.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/security-review.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/security-review.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open `{{workPath}}/security-review.md` and grade it against the scope checklist. Check EACH criterion and write PASS/FAIL with a one-line reason: (1) every threat class in the checklist was assessed (found-and-reported or verified-safe); (2) each finding is pinned to file:line with an exploit sketch; (3) each finding has a severity and a concrete remediation; (4) tainted-data paths from untrusted source to sink are traced where applicable; (5) a Verified-safe section makes coverage auditable; (6) the verdict matches the findings (no 'Safe-to-merge' with an open critical). If any criterion fails, name the exact gap and loop back.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/security-review.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/security-review.md",
+          "artifact": true
+        }
+      ],
+      "next": "report"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

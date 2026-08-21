@@ -1,0 +1,153 @@
+{
+  "id": "anomaly-scan",
+  "name": "Anomaly / Outlier Scan",
+  "description": "Scan a dataset for anomalies and outliers and report what is genuinely unusual versus expected noise. Defines the detection criteria and thresholds FIRST (statistical and rule-based, with an explicit definition of 'anomalous') so findings are reproducible, then runs the scan to flag and rank suspect records, then writes a prioritized report a human can triage. Use this for outlier detection, anomaly scanning, finding bad records, fraud/error spotting, or surfacing data points that don't fit.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Define detection criteria (data-analyst) — lock what counts as anomalous and the thresholds → gated on artifact `{{workPath}}/criteria.md` (markdown-notes)\n2. Run the scan (developer) — apply the criteria and emit ranked flagged records → gated on `data/anomalies.json` (json)\n3. Report the findings (copywriter) — write a prioritized, triage-ready anomaly report → gated on artifact `{{workPath}}/report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "criteria",
+  "triggers": [
+    "find anomalies",
+    "detect outliers",
+    "scan for bad records",
+    "spot unusual data",
+    "outlier detection"
+  ],
+  "steps": [
+    {
+      "id": "criteria",
+      "name": "Define detection criteria",
+      "description": "lock what counts as anomalous and the thresholds",
+      "prompt": "Define exactly what 'anomalous' means before scanning, so results are reproducible. Step 1: choose which columns/metrics to scan and the expected normal behavior of each. Step 2: pick detection methods per column — statistical (z-score > 3, IQR fence at 1.5x, percentile cutoffs) for numerics; rule-based (impossible/contradictory values, future dates, out-of-domain categories, broken referential integrity) where rules apply. Step 3: set concrete thresholds and a severity scale (e.g. high = impossible value or z > 4; medium = z 3-4). Step 4: decide how to rank flagged records. Step 5: write an acceptance-criteria checklist ('every method has a stated threshold', 'each flag records the rule it tripped and a severity', 'findings are ranked', 'false-positive rate is considered'). Call write_task_note and write the methods + thresholds + checklist to {{workPath}}/criteria.md. No scanning yet.\n\nThe deliverable `{{workPath}}/criteria.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "{{workPath}}/criteria.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/criteria.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/criteria.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "criteria",
+        "maxAttempts": 3
+      },
+      "next": "scan"
+    },
+    {
+      "id": "scan",
+      "name": "Run the scan",
+      "description": "apply the criteria and emit ranked flagged records",
+      "prompt": "Apply the detection criteria to the full dataset deterministically. Step 1: compute the per-column statistics the thresholds need (mean/stdev, quartiles, value-domain sets). Step 2: evaluate every record against each method and collect the flags it trips, with the measured value and the threshold it breached. Step 3: assign each flagged record a severity and a reason string. Step 4: rank flagged records by severity then magnitude. Step 5: emit data/anomalies.json — a ranked list of { record id/row, column, value, rule, threshold, severity } plus a summary count by severity. Do not flag records that don't breach a stated threshold. Call write_task_note with the counts by severity and the top findings.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "data/anomalies.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "data/anomalies.json",
+            "bytes": 2
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "data/anomalies.json"
+            }
+          }
+        ],
+        "onReject": "scan",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Report the findings",
+      "description": "write a prioritized, triage-ready anomaly report",
+      "prompt": "Turn the flagged records into a report a human can triage — use only what the scan found. Step 1: open with a summary: how many records scanned, how many flagged, and the breakdown by severity. Step 2: list the top findings highest-severity first, each with the record, the value, what's wrong, and why it tripped (the rule + threshold). Step 3: group repeated patterns ('14 rows have a negative price') rather than listing each identically. Step 4: separate likely-real anomalies from probable noise/false-positives and say which deserve action. Step 5: end with recommended next steps. Write the report to {{workPath}}/report.md and call write_task_note with the path. On a loop-back, fix only the named gaps.\n\nThe deliverable `{{workPath}}/report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "{{workPath}}/report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/report.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Read {{workPath}}/report.md and cross-check it against {{workPath}}/criteria.md and data/anomalies.json. Verify: every detection method named a concrete threshold; each reported flag records the rule it tripped, the value, and a severity; findings are ranked highest-severity first; repeated patterns are grouped, not duplicated; and likely false-positives are separated from real anomalies. Re-derive two flagged records from the criteria to confirm they genuinely breach a threshold (no spurious flags). Write PASS/FAIL per criterion; any FAIL loops back to report.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/report.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/report.md",
+          "artifact": true
+        }
+      ],
+      "next": "report"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

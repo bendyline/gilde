@@ -1,0 +1,152 @@
+{
+  "id": "scrape-to-structured",
+  "name": "Scrape a Site to Structured Data",
+  "description": "Turn one or more web pages into a clean, structured dataset (JSON or CSV) with a fixed schema — product listings, directory entries, articles, tables, or job posts. Scopes the exact fields and a sample-row target FIRST so extraction is verifiable, then crawls and parses each page into rows, then validates that every row matches the schema, types are coerced, required fields are non-empty, and there are no duplicates. The scope-before-scrape ordering is the point: a small model that locks the field list and one hand-written sample row extracts consistently instead of inventing keys per page.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the extraction (planner) — lock target URLs, the field schema, and a sample row → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Scrape and parse (developer) — fetch each page and extract rows to the schema → gated on `data.json` (json)\n3. Validate the dataset (reviewer) — schema, types, completeness, and dedup checks → gated on artifact `{{workPath}}/validate.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "scrape a website",
+    "extract data from a site",
+    "turn a page into JSON",
+    "crawl and structure",
+    "pull a table from the web"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the extraction",
+      "description": "lock target URLs, the field schema, and a sample row",
+      "prompt": "Define exactly what to extract before fetching anything. Step 1: list the target URL(s) or the URL pattern to crawl, and note pagination (how to reach page 2..N) if any. Step 2: define the output schema as a flat field list — for each field give a name, a type (string/number/boolean/date/url), and whether it is required. Step 3: hand-write ONE fully-populated sample row in the chosen format so the build phase has a concrete target to match. Step 4: decide output format (JSON array of objects, or CSV) and the file path. Step 5: write an acceptance-criteria checklist (e.g. 'every page in scope is fetched', 'every row has all required fields non-empty', 'numeric/date fields are typed not strings', 'no duplicate rows by the key field', 'row count is within the expected range'). Call write_task_note with the schema, the sample row, and the checklist, and also write that same content to {{workPath}}/scope.md. No scraping yet.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "scrape"
+    },
+    {
+      "id": "scrape",
+      "name": "Scrape and parse",
+      "description": "fetch each page and extract rows to the schema",
+      "prompt": "Fetch each in-scope page (use the available fetch/browser capability) and parse out the fields defined in the schema. Step 1: fetch page 1, locate the repeating record container, and map each schema field to its selector/pattern. Step 2: extract every record on the page into an object keyed exactly by the schema field names — never invent or rename keys. Step 3: follow pagination and repeat until all in-scope pages are done. Step 4: coerce types as you go (parse numbers, normalize dates to ISO, absolutize relative URLs) and trim whitespace. Step 5: write all rows to the scoped output file in the chosen format and confirm it parses. Stage progress so a partial run is observable. Call write_task_note with the output path and the row count.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "data.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "data.json",
+            "bytes": 2
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "data.json"
+            }
+          }
+        ],
+        "onReject": "scrape",
+        "maxAttempts": 3
+      },
+      "next": "validate"
+    },
+    {
+      "id": "validate",
+      "name": "Validate the dataset",
+      "description": "schema, types, completeness, and dedup checks",
+      "prompt": "Validate the produced dataset against the locked schema and checklist. Step 1: confirm the file parses and is the chosen format. Step 2: for every row, confirm all required fields are present and non-empty and that types match (numbers are numbers, dates are ISO, urls are absolute). Step 3: check coverage — the row count is within the expected range and pages were not silently skipped. Step 4: check for duplicate rows by the key field and flag any. Step 5: spot-check 3 rows against the live source to confirm values are correct, not hallucinated. Write a PASS/FAIL line per criterion to {{workPath}}/validate.md and to task notes. If anything fails, list the exact rows/fields and loop back to scrape.\n\nThe deliverable `{{workPath}}/validate.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/validate.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "data.json",
+            "bytes": 2
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "data.json"
+            }
+          }
+        ],
+        "onReject": "validate",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open data.json and verify it against every acceptance criterion from {{workPath}}/scope.md. Confirm it parses as valid JSON. For each row, check required fields are non-empty and types are correct (numbers typed, dates ISO, urls absolute). Verify there are no duplicate rows by the key field and the row count is in range. Spot-check 3 rows against the source. Write PASS/FAIL per criterion; on any failure, name the offending rows/fields and loop back to scrape.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"scrape\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "data.json"
+        }
+      ],
+      "next": "scrape"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

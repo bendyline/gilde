@@ -1,0 +1,176 @@
+{
+  "id": "automation-recipe",
+  "name": "Write an Automation Recipe",
+  "description": "Turn 'I wish the house would...' into an inspectable, versioned automation: triggers and actions that name real devices from the house's own inventory, a dry run through the device tools before anything is armed, and a manual override always written in. Locks the owner's intent and the safety rules FIRST (nothing that heats or locks runs unattended without a failsafe, an override path is mandatory, dry-run before arm), then drafts the recipe, then proves it against the devices — so the house only ever does what was actually asked, and never anything it cannot be talked out of. Use for home automations, 'make the lights do X', schedules and scenes, sensor-triggered routines, and wiring up a new smart-home behavior.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the wish (huisautomaat) — the owner's intent, the real device inventory, and the safety rules locked → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Draft the recipe (developer) — the automation as one inspectable JSON file under automations/\n3. Dry-run the recipe (developer) — every trigger and action exercised against the devices, evidence on file → gated on artifact `{{workPath}}/dry-run.md` (markdown-notes)\n4. Write the install notes (copywriter) — what it does, how to arm it, how to stop it, what the dry run proved → gated on artifact `{{workPath}}/report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "set up an automation",
+    "make the house do",
+    "automate the lights",
+    "write an automation recipe",
+    "when I get home, turn on"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the wish",
+      "description": "the owner's intent, the real device inventory, and the safety rules locked",
+      "prompt": "Understand the wish and the house before writing a single trigger. Step 1: restate the owner's intent in one plain sentence — when should what happen, and when should it NOT — and confirm it with them if anything is ambiguous. Step 2: pull the device inventory through the project's home capabilities and list the devices this automation actually needs: the sensors that will trigger it, the devices it will act on, each with its exact inventory id and current state. If a device the wish assumes does not exist in the inventory, say so now — never plan around an invented device. Step 3: lock the safety rules — nothing that heats, locks, or opens runs unattended without a stated failsafe; every automation carries a manual override the owner can flip without ceremony; and no recipe is armed before a dry run has exercised it against the devices. Step 4: write an acceptance-criteria checklist ('every device in the recipe exists in the inventory, by exact id', 'trigger, conditions, and actions are all present and specific', 'a manual override is written into the recipe', 'the dry run exercised every action with the tool responses recorded', 'the install notes say how to arm it and how to stop it'). Call write_task_note with the intent sentence + the devices involved + the checklist and write {{workPath}}/scope.md.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "huisautomaat",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "draft"
+    },
+    {
+      "id": "draft",
+      "name": "Draft the recipe",
+      "description": "the automation as one inspectable JSON file under automations/",
+      "prompt": "Write the automation down as a file someone can read, diff, and version. Step 1: derive a short lowercase-kebab slug from the automation's name and write the recipe to automations/<slug>.json — one JSON object with a name, a plain-language summary, the trigger (what starts it), the conditions (what must also be true), the actions (what happens, in order), and the override (how a human stops or bypasses it, always present). Step 2: reference every device by its exact inventory id from {{workPath}}/scope.md — the id the house actually answers to, not a nickname. Step 3: keep every field concrete: a trigger names its sensor and the state change, a condition names what it checks, an action names the device and the state it sets. Step 4: re-read the file once as JSON — valid, complete, no placeholder values left. Call write_task_note with the recipe path and a one-line description of trigger, conditions, actions, and override.\n\nBefore working, open the artifact input `{{workPath}}/scope.md` with `read_artifact`; do not look for it in the workspace.",
+      "suggestedRole": "developer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/scope.md",
+          "artifact": true
+        }
+      ],
+      "next": "dryrun"
+    },
+    {
+      "id": "dryrun",
+      "name": "Dry-run the recipe",
+      "description": "every trigger and action exercised against the devices, evidence on file",
+      "prompt": "Prove the recipe against the real device inventory before anyone arms it. Step 1: for every device the recipe references, read its current state through the project's home capabilities and confirm the device answers — a device that does not exist or does not respond sends you back to the draft, not onward. Step 2: exercise each action through the device tools' dry-run path, so the intended state change is checked without actually switching anything in the house. Step 3: record the evidence in {{workPath}}/dry-run.md — for each device: its id, the state you read, the dry-run response you got, verbatim — plus a short verdict per action (would fire as intended, or what was off). Step 4: if any action came back wrong, fix the recipe first and dry-run again; the notes must describe the run that matches the final recipe. Call write_task_note with the device count exercised and the verdict.\n\nThe deliverable `{{workPath}}/dry-run.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "{{workPath}}/dry-run.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/dry-run.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/dry-run.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "dryrun",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the install notes",
+      "description": "what it does, how to arm it, how to stop it, what the dry run proved",
+      "prompt": "Write the install notes the owner will actually read. Step 1: open with one warm paragraph saying what the automation does and when — the intent sentence from {{workPath}}/scope.md, in the owner's language. Step 2: list the devices it touches, each with its friendly name and inventory id, and where the recipe file lives. Step 3: say how to arm it and — just as prominently — how to stop or override it: the manual override path from the recipe, spelled out so it works at 2am. Step 4: summarize what the dry run proved, citing the evidence in {{workPath}}/dry-run.md — which devices answered, which actions were exercised, and that nothing was actually switched. Step 5: close with what to watch the first week and the one or two ways this automation could misbehave (the safety rules from scope, made concrete). Write {{workPath}}/report.md and call write_task_note with a one-line DONE summary.\n\nBefore working, open the artifact inputs `{{workPath}}/scope.md`, `{{workPath}}/dry-run.md` with `read_artifact`; do not look for them in the workspace.\n\nThe deliverable `{{workPath}}/report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "consumes": [
+        {
+          "file": "{{workPath}}/scope.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/dry-run.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/report.md",
+            "bytes": 800,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open automations/, {{workPath}}/dry-run.md, {{workPath}}/report.md, and {{workPath}}/scope.md and verify every criterion from the checklist: the recipe file parses as JSON and carries a trigger, conditions, actions, and a manual override; every device id in the recipe appears in the inventory evidence gathered during scope and dry-run — no invented devices; the dry-run notes show every action exercised with real tool responses recorded, not paraphrased; and the install notes say how to arm the automation, how to stop it, and what the dry run proved. Write PASS/FAIL per criterion; on any failure, name the field or device that is wrong and loop back to draft.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/report.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"draft\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/report.md",
+          "artifact": true
+        }
+      ],
+      "next": "draft"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

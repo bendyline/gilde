@@ -1,0 +1,117 @@
+{
+  "id": "ad-variations",
+  "name": "A/B Ad Copy Variations",
+  "description": "Generate a set of distinct, testable ad-copy variations for one offer across the angles worth A/B testing: it first locks the platform and its constraints (headline/description character limits), the offer, audience, and the distinct messaging angles to test (benefit, pain, social proof, urgency, curiosity), then drafts multiple complete variants per angle so each is a genuine test of a hypothesis rather than a trivial reword. Covers ad copy, A/B testing, Google/Facebook/LinkedIn ads, PPC copy, ad variations, and marketing experiments. Locking the angles and limits before writing is the point: a small model that commits to distinct hypotheses produces variants that actually test something, not ten near-duplicates that teach the advertiser nothing.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Ad brief (planner) — lock platform limits, offer, audience, and test angles → gated on artifact `{{workPath}}/brief.md` (markdown-notes)\n2. Draft the variations (copywriter) — write distinct, limit-respecting variants per angle → gated on `ad-variations.json` (json)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "brief",
+  "triggers": [
+    "write ad copy",
+    "ab test ad variations",
+    "facebook ad copy",
+    "google ads copy",
+    "ad variations"
+  ],
+  "steps": [
+    {
+      "id": "brief",
+      "name": "Ad brief",
+      "description": "lock platform limits, offer, audience, and test angles",
+      "prompt": "1) Pick the platform and its hard limits (e.g. Google RSA headlines <=30 chars and descriptions <=90 chars; Meta primary text, headline, description fields). 2) State the offer and the single primary audience. 3) Define the distinct ANGLES to test as named hypotheses (e.g. benefit-led, pain/problem-led, social-proof, urgency/scarcity, curiosity) — each a different reason the user clicks. 4) Decide how many variants per angle (e.g. 2) and the required fields per ad. 5) Note the CTA options. Write an acceptance-criteria checklist (e.g. 'every variant respects the platform char limits'; 'each angle is genuinely distinct, not a reword'; 'N variants per angle delivered'; 'every field populated'; 'one offer, consistent across variants'; 'CTA present'). Use write_task_note for the brief + angle list + checklist, and write the same to the produces path. No ad copy yet.\n\nThe deliverable `{{workPath}}/brief.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/brief.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/brief.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/brief.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "brief",
+        "maxAttempts": 3
+      },
+      "next": "draft"
+    },
+    {
+      "id": "draft",
+      "name": "Draft the variations",
+      "description": "write distinct, limit-respecting variants per angle",
+      "prompt": "Write the ad variations per the brief. 1) For each named angle, write the specified number of complete variants, each filling every required platform field (e.g. headline, description, primary text, CTA). 2) Make each angle genuinely distinct — a curiosity ad and a social-proof ad should read differently, not swap a synonym. 3) Strictly respect every character limit; count characters and stay under. 4) Keep the offer identical across all variants (only the angle/message changes). 5) Use punchy, concrete, scannable copy. 6) Output a single valid JSON array of objects: {\"angle\", \"variant\", \"headline\", \"description\", \"primaryText\" (if applicable), \"cta\", \"charCounts\"}. Save to the produces path and note total variant count.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "ad-variations.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "ad-variations.json",
+            "bytes": 2
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "ad-variations.json"
+            }
+          }
+        ],
+        "onReject": "draft",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Parse ad-variations.json (must be valid JSON) and grade against the checklist. Check EACH criterion and write PASS/FAIL: (a) every field of every variant respects the platform's character limits (verify charCounts against the limits); (b) each angle is genuinely distinct from the others, not a reword; (c) the specified number of variants per angle is present; (d) every required field is populated; (e) the offer is consistent across all variants; (f) each has a CTA. A set of near-duplicate variants or any that exceeds a limit FAILS — loop back to draft and name the offenders.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"draft\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "ad-variations.json"
+        }
+      ],
+      "next": "draft"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

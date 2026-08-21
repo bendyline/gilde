@@ -1,0 +1,211 @@
+{
+  "id": "invoice-run",
+  "name": "Monthly Invoice Run",
+  "description": "Run the month's invoicing in one calm pass from the office's own books: an invoice per client built from the tracked work in the ledger, numbering that continues the sequence without a skip or a repeat, due dates per each client's terms — plus a one-page summary of what went out. Unlike a one-off invoice generator, this is the standing monthly ritual over the client roster and ledger, ending in print-ready invoices. Use for the monthly invoice run, end-of-month invoicing, 'bill the clients for this month', and closing the billing month.\n\nThis book is a DECLARATIVE FANOUT host. The scope step writes a machine list of the billable clients ({{workPath}}/billables.json); the draft step is a `spawnFanout` step, so the runtime spawns one child task per client — each child drafts that client's invoice as its own print-ready HTML file. The collect step's `fileCount` gate is the barrier that waits for the crew's files before the run summary is accepted; the evaluate step loops back on a miss.\n\nSteps:\n\n1. Scope the run (kantoormeester) — billable clients + numbering + terms → writes {{workPath}}/scope.md and the machine list {{workPath}}/billables.json\n2. Draft the invoices (spawnFanout) — the runtime fans out one child per client; each child writes invoices/{number}.html\n3. Collect and summarize (copywriter) — gated on `fileCount html >= 2` in invoices/; writes report.md\n4. Evaluate (reviewer) — every criterion passes → finish; any miss → loop back to draft\n5. Finish\n\n\nWorking files under {{workPath}}/, reviews/, and reports/ live in the project artifacts drawer; source and user-facing output files remain in the workspace.",
+  "entryStepId": "scope",
+  "triggers": [
+    "run the monthly invoices",
+    "end of month invoicing",
+    "bill the clients for this month",
+    "invoice run",
+    "send this month's invoices"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the run",
+      "description": "billable clients from the books; write the machine billables list",
+      "prompt": "Read the books before any invoice exists. Step 1: read clients.json and ledger.json from the workspace. Step 2: work out which clients have tracked, uninvoiced work this month, and the next invoice number — it continues the last issued number with no skip and no repeat. Step 3: write {{workPath}}/scope.md — an acceptance-criteria checklist: one invoice per billable client (none invented), every amount traces to a ledger entry, numbers continue the sequence, due dates match each client's terms, and any client with no work is skipped on purpose. Step 4: write {{workPath}}/billables.json — a top-level JSON ARRAY (nothing wrapping it) with ONE object per billable client, each object EXACTLY these keys: {\"client\": the client's name, \"number\": the invoice number for this client as a string, \"rate\": the total amount owed this month as a string, \"work\": a short description of the tracked work, \"due\": the due date computed from the client's terms}. Assign each client the next number in the running sequence — no skip, no repeat. The crew reads this file to draft the invoices, so the numbers and amounts must be exact. Call write_task_note with the billable count and the numbers you assigned.\n\nStore `{{workPath}}/billables.json`, `{{workPath}}/scope.md` in the artifacts drawer with `write_artifact` and verify them with `read_artifact`; do not write these working files to the workspace.\n\nBoth `{{workPath}}/scope.md` and `{{workPath}}/billables.json` are artifact outputs; use `write_artifact` for each.",
+      "suggestedRole": "kantoormeester",
+      "advanceWhen": {
+        "file": "{{workPath}}/billables.json",
+        "minBytes": 2,
+        "sniff": "json-valid",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/billables.json",
+            "sniff": "json-valid",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "draft"
+    },
+    {
+      "id": "draft",
+      "name": "Draft the invoices",
+      "description": "fan out one invoice draft per billable client",
+      "prompt": "The crew drafts the invoices — one print-ready HTML file per billable client, each built from {{workPath}}/billables.json. This step fans the work out to the crew automatically; you do not draft the invoices yourself.\n\nOpen `{{workPath}}/billables.json` with `read_artifact` before working. Store `{{workPath}}/draft.md` in the artifacts drawer with `write_artifact` and verify them with `read_artifact`; do not write these working files to the workspace.\n\nThe runtime reads `{{workPath}}/billables.json` with `read_artifact` and records `{{workPath}}/draft.md` with `write_artifact`; do not copy either file into the workspace.",
+      "suggestedRole": "kantoormeester",
+      "spawnFanout": true,
+      "advanceWhen": {
+        "file": "{{workPath}}/draft.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "next": "collect",
+      "consumes": [
+        {
+          "file": "{{workPath}}/billables.json",
+          "artifact": true
+        }
+      ]
+    },
+    {
+      "id": "collect",
+      "name": "Collect and summarize",
+      "description": "verify the invoice files and write the run summary",
+      "prompt": "The crew has drafted one invoice file per billable client under invoices/. Read {{workPath}}/billables.json and the files in invoices/, then write report.md — the month's run summary: Step 1: a headline sentence with how many invoices went out and the total billed. Step 2: one line per invoice — number, client, amount, due date. Step 3: state the sequence issued (from-to) and confirm it continues the books with no gap. Step 4: name any client skipped this month and why. Keep it to one page. Call write_task_note with the report path and the total billed. If fewer invoice files than billable clients exist yet, the crew is still drafting — re-check invoices/ and finish only once every billable client has its file.\n\nOpen `{{workPath}}/billables.json` with `read_artifact` before working.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "report.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.md",
+            "bytes": 800
+          },
+          {
+            "kind": "fileCount",
+            "ext": [
+              "html"
+            ],
+            "min": 2,
+            "dir": "invoices"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "report.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "collect",
+        "maxAttempts": 8
+      },
+      "next": "evaluate",
+      "consumes": [
+        {
+          "file": "{{workPath}}/billables.json",
+          "artifact": true
+        }
+      ]
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the run against every acceptance criterion. All pass -> finish; any fail -> loop back to draft.",
+      "prompt": "Open the invoice files under invoices/, {{workPath}}/billables.json, and report.md, and verify every criterion from {{workPath}}/scope.md: every billable client has exactly one invoice file of its own, every amount traces to the ledger, the numbers continue the sequence with no skip or repeat, due dates match each client's terms, and report.md names any client skipped on purpose. Write PASS/FAIL per criterion.\n\nThen route — this is the whole point of the loop:\n\n- Every criterion PASSES -> call advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" }).\n- Any criterion FAILS -> write the specific gaps to notes, then call advance_task_step({ ref, stepId: \"evaluate\", next: \"draft\" }) to loop back so the missing or wrong invoice is redrafted.\n\nNever route to finish while any criterion is unmet. After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.\n\nOpen `{{workPath}}/billables.json`, `{{workPath}}/scope.md` with `read_artifact` before working.",
+      "suggestedRole": "reviewer",
+      "next": "draft",
+      "consumes": [
+        {
+          "file": "{{workPath}}/billables.json",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/scope.md",
+          "artifact": true
+        },
+        {
+          "file": "report.md"
+        }
+      ]
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via write_task_note: the invoices issued, the sequence range, and the total billed. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "spawn": {
+    "overFile": "{{workPath}}/billables.json",
+    "entryStepId": "draft-invoice",
+    "steps": [
+      {
+        "id": "draft-invoice",
+        "name": "Draft the invoice for {{client}}",
+        "description": "one print-ready HTML invoice for {{client}}",
+        "prompt": "Draft the invoice for {{client}} (invoice number {{number}}) as one print-ready HTML file at invoices/{{number}}.html. Your task notes carry this client's details (read_task_notes). The invoice must show: {{client}} and their contact details; the invoice number {{number}} and the due date {{due}}; a line-items table for the work — {{work}} — with the amount {{rate}}; and a total that re-adds to {{rate}}. Style it for paper: an @page rule with honest margins and a @media print block so it prints cleanly. Write the whole file in one go with write_file to invoices/{{number}}.html. Do not write any other client's invoice — the crew is handling those in parallel.",
+        "suggestedRole": "designer",
+        "advanceWhen": {
+          "file": "invoices/{{number}}.html",
+          "minBytes": 400,
+          "sniff": "html-complete"
+        },
+        "gate": {
+          "at": "completion",
+          "checks": [
+            {
+              "kind": "minBytes",
+              "file": "invoices/{{number}}.html",
+              "bytes": 400
+            },
+            {
+              "kind": "cssMinBytes",
+              "file": "invoices/{{number}}.html",
+              "bytes": 150
+            },
+            {
+              "kind": "contains",
+              "file": "invoices/{{number}}.html",
+              "pattern": "@page|@media\\s+print",
+              "flags": "i",
+              "label": "print CSS"
+            }
+          ],
+          "onReject": "draft-invoice",
+          "maxAttempts": 3
+        }
+      }
+    ],
+    "overArtifact": true
+  },
+  "version": "1.1.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

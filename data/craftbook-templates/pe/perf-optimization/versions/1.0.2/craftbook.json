@@ -1,0 +1,160 @@
+{
+  "id": "perf-optimization",
+  "name": "Targeted Performance Fix",
+  "description": "Make a measured, targeted performance improvement — profile to find the real bottleneck, optimize it, then prove the speedup with before/after numbers while keeping behavior correct. Profiles FIRST and locks a measurable target, because optimizing without measuring is guessing, then applies the focused change, then a reviewer confirms the improvement is real, behavior is unchanged, and the code is not needlessly obfuscated. Covers profiling/benchmarking, hotspot identification, algorithmic vs micro optimization, before/after measurement, and correctness-preserving speedups.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Profile and target (developer) — measure the bottleneck, lock a numeric target → gated on artifact `{{workPath}}/profile.md` (markdown-notes)\n2. Optimize the hotspot (developer) — apply the focused change, re-measure → gated on `src/optimized.js` (code-module)\n3. Verify the speedup (reviewer) — confirm real improvement, unchanged output → gated on artifact `{{workPath}}/verify.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "profile",
+  "triggers": [
+    "optimize performance",
+    "make this faster",
+    "fix a slow function",
+    "profile and optimize",
+    "reduce latency"
+  ],
+  "steps": [
+    {
+      "id": "profile",
+      "name": "Profile and target",
+      "description": "measure the bottleneck, lock a numeric target",
+      "prompt": "Measure before you optimize — optimizing without profiling is guessing. Step 1: Establish a representative workload/benchmark and record the BASELINE numbers (time, memory, or the relevant metric). Step 2: Profile to find where the time actually goes; identify the single biggest hotspot rather than guessing. Step 3: Form a hypothesis for WHY it is slow (algorithmic complexity, repeated work, allocation, IO) and what change should help. Step 4: Lock a measurable target (e.g. 'cut p50 latency by 2x', 'O(n^2) → O(n log n)'). Step 5: Write a numbered acceptance-criteria checklist of 4-7 items (e.g. 'the benchmark improves by the target amount', 'output is identical to baseline on the test inputs', 'the change targets the profiled hotspot', 'no new correctness regressions'). `write_task_note` the baseline numbers + hotspot + target + checklist and write the same to the produces path.\n\nThe deliverable `{{workPath}}/profile.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "{{workPath}}/profile.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/profile.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/profile.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "profile",
+        "maxAttempts": 3
+      },
+      "next": "optimize"
+    },
+    {
+      "id": "optimize",
+      "name": "Optimize the hotspot",
+      "description": "apply the focused change, re-measure",
+      "prompt": "Apply the optimization to the profiled hotspot. Step 1: Make the focused change your hypothesis called for — prefer algorithmic wins (better data structure, removing repeated work, caching) over fragile micro-tweaks. Step 2: Re-run the same benchmark and record the AFTER numbers; confirm the target is hit. Step 3: Confirm output is byte-for-byte identical to baseline on the test inputs — speed that changes results is a bug. Step 4: Keep the code readable; do not obfuscate for marginal gains. Write the optimized source to the produces path. On a loop-back, address only the reviewer's concern. `write_task_note` the before/after numbers and which criteria now pass.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/optimized.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/optimized.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/optimized.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/optimized.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/optimized.js"
+          }
+        ],
+        "onReject": "optimize",
+        "maxAttempts": 3
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify the speedup",
+      "description": "confirm real improvement, unchanged output",
+      "prompt": "Verify the optimization is real and safe. Step 1: Re-run the benchmark and confirm the measured improvement meets the target (and is not noise — run it a few times). Step 2: Confirm output is identical to the baseline on the test inputs (correctness preserved). Step 3: Confirm the change actually addressed the profiled hotspot rather than a different spot. Step 4: Confirm the code remains readable and maintainable. Write a verification note with the before/after numbers and a correctness confirmation to the produces path.\n\nThe deliverable `{{workPath}}/verify.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/optimized.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/optimized.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/optimized.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/optimized.js"
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Run the benchmark and a correctness check. For EACH acceptance criterion: confirm the measured speedup meets the target and is reproducible (not noise), confirm output is identical to baseline on the test inputs, confirm the change targeted the profiled hotspot, and confirm no correctness regression. Write PASS/FAIL per criterion with the before/after numbers; output that changed is an automatic FAIL.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"optimize\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "src/optimized.js"
+        }
+      ],
+      "next": "optimize"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

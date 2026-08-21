@@ -1,0 +1,170 @@
+{
+  "id": "booking-automation",
+  "name": "Automate a Booking or Checkout Flow",
+  "description": "Automate a multi-step booking, reservation, or checkout flow end-to-end — select, fill details, choose options, confirm — with a hard dry-run/confirmation guard so it never accidentally commits a real transaction during development. Maps the step-by-step flow, the success/failure signals, and the safety guard FIRST, then builds the resilient step driver with waits and retries, then tests both the happy path and the failure/abort paths against a stub or dry-run. Mapping-the-flow-and-guard-before-build is what makes booking automation safe and reliable instead of a brittle, money-spending click bot.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the flow (planner) — step map, success/failure signals, safety guard → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Build the flow driver (developer) — drive each step with waits, retries, and the guard → gated on `booking.py` (code-module)\n3. Test the flow (developer) — assert happy path, failure paths, and the guard → gated on `booking_test.py` (code-with-tests)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "automate a booking",
+    "auto-checkout flow",
+    "reserve automatically",
+    "automate a multi-step form",
+    "complete a booking for me"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the flow",
+      "description": "step map, success/failure signals, safety guard",
+      "prompt": "Map the flow and its guardrails before automating. Step 1: write the ordered step map (e.g. open → search/select → enter details → choose options → review → confirm), and for each step the element to act on and the signal that the step advanced. Step 2: define the inputs the flow needs (dates, quantities, traveler/customer details, payment placeholders) and where they come from. Step 3: define the success signal (a confirmation number / page) and the failure signals (sold out, validation error, timeout) and the abort behavior for each. Step 4: define the SAFETY GUARD — a dry-run/confirm flag that, when not explicitly set, stops before the irreversible commit step and never submits a real payment; default to dry-run. Step 5: write an acceptance-criteria checklist ('every step has a verifiable advance signal', 'dry-run stops before commit and asserts readiness', 'happy path reaches confirmation when armed', 'failure signals abort cleanly with a reason', 'no real transaction in dry-run', 'flow is idempotent / re-entrant'). Call write_task_note with the step map + signals + guard + checklist and write {{workPath}}/scope.md. No code yet.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the flow driver",
+      "description": "drive each step with waits, retries, and the guard",
+      "prompt": "Implement the booking driver to the locked step map. Step 1: read the dry-run/confirm flag first and honor it — in dry-run, perform every step up to but NOT including the irreversible commit, then report 'ready to confirm'. Step 2: for each step, perform the action, then wait for and assert the advance signal before proceeding (explicit waits, not fixed sleeps); on a transient failure retry with backoff a bounded number of times. Step 3: on a defined failure signal (sold out / validation), abort cleanly and record the reason rather than blindly proceeding. Step 4: when armed, perform the commit step and capture the confirmation number. Step 5: write a structured run-log of each step's outcome and write the driver as a runnable module. Call write_task_note with the module path, how the guard works, and a sample dry-run log.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "booking.py",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "booking.py",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "booking.py",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "booking.py"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "booking.py"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "test"
+    },
+    {
+      "id": "test",
+      "name": "Test the flow",
+      "description": "assert happy path, failure paths, and the guard",
+      "prompt": "Prove the flow on every branch using a stub/dry-run — never a live commit. Step 1: write tests that drive the flow against a stubbed booking surface so no real transaction occurs. Step 2: assert the happy path advances through every step and reaches the confirmation signal when armed. Step 3: assert each failure signal (sold out, validation error, timeout) causes a clean abort with the right reason and does NOT proceed to commit. Step 4: assert the SAFETY GUARD — in dry-run the flow stops before the commit step and never submits, and that flag defaults to dry-run. Step 5: assert idempotency/retry — a transient failure is retried within the bound and a re-run does not double-book. Put the driver and tests in a code-with-tests file; run them and confirm green. Call write_task_note with the test path and the pass count.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "booking_test.py",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "booking_test.py",
+            "bytes": 300
+          },
+          {
+            "kind": "sniff",
+            "file": "booking_test.py",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "booking_test.py"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "booking_test.py"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "booking_test.py",
+              "pattern": "\\b(test|describe|it|assert|expect)\\b",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "test",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Run booking_test.py (or trace it) and verify every criterion from {{workPath}}/scope.md: every step asserts an advance signal, the happy path reaches confirmation when armed, each failure signal aborts cleanly with a reason and never commits, the safety guard defaults to dry-run and stops before the irreversible step, and retries/idempotency prevent double-booking. Critically confirm NO test performs a real commit. Write PASS/FAIL per criterion; on any failure, name it and loop back to test.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"test\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "booking_test.py"
+        }
+      ],
+      "next": "test"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

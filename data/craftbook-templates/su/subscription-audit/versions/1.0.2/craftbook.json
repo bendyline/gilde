@@ -1,0 +1,152 @@
+{
+  "id": "subscription-audit",
+  "name": "Audit Recurring Subscriptions",
+  "description": "Audit a set of transactions or a vendor list to find every recurring subscription, normalize each to a monthly cost, surface duplicates, price hikes, and zombie/unused services, and produce a prioritized cancel/keep recommendation report. Locks the recurrence-detection rule, the normalization (to monthly), and the recommendation criteria FIRST, then detects and analyzes the recurring charges, then writes a clear report whose every recommendation is backed by the evidence in the data. Defining what counts as 'recurring' and how to rank cancel candidates before analyzing is what makes the audit actionable rather than a list of guesses.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the audit (data-analyst) — recurrence rule, monthly normalization, recommendation criteria → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Detect and analyze (data-analyst) — find recurring charges, normalize, flag, rank → gated on artifact `{{workPath}}/analyze.md` (markdown-notes)\n3. Write the report (copywriter) — evidence-backed cancel/keep recommendation report → gated on artifact `{{workPath}}/report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "audit my subscriptions",
+    "find recurring charges",
+    "cancel unused subscriptions",
+    "subscription spend report",
+    "where is my money going"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the audit",
+      "description": "recurrence rule, monthly normalization, recommendation criteria",
+      "prompt": "Define the audit method before analyzing. Step 1: identify the input (a transactions file, or a list of services with amount + cadence) and its columns. Step 2: define the recurrence-detection rule — what makes a charge a subscription (same/near merchant recurring at a regular interval: monthly/quarterly/annual, within an amount tolerance). Step 3: define normalization to a comparable monthly cost (annual ÷ 12, quarterly ÷ 3) so everything is apples-to-apples, and the total monthly and annual run-rate. Step 4: define the flags and recommendation criteria — duplicate/overlapping services, a price increase vs the prior occurrence, and 'zombie' candidates (high cost and/or low apparent usage) — and how to rank cancel candidates (e.g. by annual cost × redundancy). Step 5: write an acceptance-criteria checklist ('every recurring charge detected and listed', 'each normalized to monthly correctly', 'duplicates and price hikes flagged with evidence', 'a ranked cancel/keep recommendation per subscription', 'monthly and annual totals reported', 'no recommendation without supporting data'). Call write_task_note with the rule + normalization + criteria + checklist and write {{workPath}}/scope.md. No analysis yet.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "analyze"
+    },
+    {
+      "id": "analyze",
+      "name": "Detect and analyze",
+      "description": "find recurring charges, normalize, flag, rank",
+      "prompt": "Analyze the input to the locked rule. Step 1: group transactions by normalized merchant and detect recurring series matching the cadence + amount-tolerance rule. Step 2: for each detected subscription, record name, cadence, last amount, normalized monthly cost, and first/last seen. Step 3: compute flags from the evidence — duplicates/overlaps (two services in the same category), price increases (this amount > prior occurrence), and zombie candidates per the criteria. Step 4: rank cancel candidates by the agreed scoring and compute the total monthly and annual run-rate plus the potential savings if the cancel candidates are dropped. Step 5: write the structured findings (the per-subscription table + totals + flags) to a notes file so the report phase has clean inputs. Call write_task_note with the subscription count, the monthly/annual totals, and the top cancel candidates.\n\nThe deliverable `{{workPath}}/analyze.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "{{workPath}}/analyze.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/analyze.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/analyze.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "analyze",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the report",
+      "description": "evidence-backed cancel/keep recommendation report",
+      "prompt": "Write the subscription audit report from the analysis. Step 1: open with a headline summary — total monthly spend, annual run-rate, and the potential savings. Step 2: include a clear table of every detected subscription: name, cadence, monthly-normalized cost, annual cost, and any flags (duplicate, price hike, zombie). Step 3: give a prioritized recommendations section — cancel/keep/review per subscription, ordered by impact, each with a one-line rationale tied to the evidence (cost, redundancy, price change). Step 4: ensure every recommendation traces to a fact in the analysis — no unsupported claims. Step 5: close with the total savings if the recommended cancels are actioned. Write the report as a markdown report with section headers. Call write_task_note with the report path and the headline savings figure.\n\nThe deliverable `{{workPath}}/report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "{{workPath}}/report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/report.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open {{workPath}}/report.md (and {{workPath}}/analyze.md) and verify every criterion from {{workPath}}/scope.md: every recurring charge is detected and listed, each is normalized to a monthly cost correctly (re-check 2 conversions), duplicates and price hikes are flagged with evidence, every cancel/keep recommendation is ranked by impact and backed by a fact in the data, and monthly + annual totals plus potential savings are reported. Confirm no recommendation lacks supporting evidence. Write PASS/FAIL per criterion; on any failure, name the gap and loop back to report.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/report.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/report.md",
+          "artifact": true
+        }
+      ],
+      "next": "report"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

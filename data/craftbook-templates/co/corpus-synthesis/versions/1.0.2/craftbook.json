@@ -1,0 +1,158 @@
+{
+  "id": "corpus-synthesis",
+  "name": "Corpus Synthesis",
+  "description": "Read a provided corpus of documents and synthesize it into a single coherent overview: a planner sets the synthesis question and the extraction schema, a researcher reads every document and extracts structured notes keyed back to each source, and a copywriter synthesizes the extracts into a unified narrative organized by idea rather than by document. The ordering matters because synthesizing before reading everything privileges the first few documents, and a write-up keyed to documents instead of ideas just summarizes each file; locking a synthesis question and per-document extraction first guarantees full coverage and a real cross-document synthesis. Use this for synthesizing a folder of docs/notes/papers, 'pull together everything we know about X', cross-document summaries, knowledge consolidation, and meeting/research-note synthesis.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the synthesis (planner) — synthesis question + per-document extraction schema → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Read & extract (researcher) — structured extract per document, keyed to the source → gated on artifact `{{workPath}}/extracts.md` (markdown-notes)\n3. Synthesize (copywriter) — unified narrative organized by idea, citing sources → gated on artifact `{{workPath}}/synthesis.md` (markdown-report)\n\nSource discipline:\n\n- Synthesize only claims that appear in the supplied corpus or extraction notes.\n- Preserve source ids such as `[1]`, `[2]`, `[3]`, and `[4]` on synthesized points so readers can trace them.\n- Do not invent systems, timelines, metrics, risks, or implementation details to make the report longer.\n- When the corpus leaves a gap, name it as an open question instead of filling it with plausible detail.\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "synthesize these documents",
+    "pull together everything on",
+    "summarize this corpus",
+    "consolidate these notes",
+    "cross-document summary"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the synthesis",
+      "description": "synthesis question + per-document extraction schema",
+      "prompt": "1. List the corpus (every document/file in scope) and state the synthesis question in one sentence — what unified understanding the output must deliver. 2. Define a per-document extraction schema: for each doc capture source id, key claims/findings, relevant data points, and any stance or contradiction. 3. Decide the output structure: organize by theme/idea (3-6 themes), not by document, plus an open-questions/contradictions section. 4. Write an acceptance-criteria checklist (e.g. 'every document in the corpus is read and extracted', 'output is organized by theme not by file', 'each synthesized point cites the document(s) it came from', 'contradictions across documents are surfaced', 'nothing is asserted that is not in the corpus'). 5. Record decisions. Call write_task_note with the corpus list, schema, themes, and checklist; write the same to {{workPath}}/scope.md.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "read"
+    },
+    {
+      "id": "read",
+      "name": "Read & extract",
+      "description": "structured extract per document, keyed to the source",
+      "prompt": "1. Open and read EVERY document in the corpus — do not skip or sample. 2. For each, append an extract block to {{workPath}}/extracts.md following the schema: source id [n], its key claims/findings, supporting data points (with the figure), and any stance or point where it conflicts with another document. 3. Tag each extract with which output theme(s) it speaks to. 4. As you read, note explicit cross-document agreements and contradictions. 5. Stay faithful to the source — capture what the document says, not your opinion, and quote load-bearing passages. Good looks like an extract file complete enough that the writer never reopens the originals. Do not write the synthesis yet.\n\nThe deliverable `{{workPath}}/extracts.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "researcher",
+      "advanceWhen": {
+        "file": "{{workPath}}/extracts.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/extracts.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/extracts.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "read",
+        "maxAttempts": 3
+      },
+      "next": "synthesize"
+    },
+    {
+      "id": "synthesize",
+      "name": "Synthesize",
+      "description": "unified narrative organized by idea, citing sources",
+      "prompt": "1. Write {{workPath}}/synthesis.md organized by the locked themes (one section each), weaving together what the documents collectively say. 2. Each synthesized point cites the document(s) [n] it draws from so a reader can trace it. 3. Open with a 1-paragraph answer to the synthesis question, then the thematic body, then an 'Open questions & contradictions' section that surfaces where the corpus disagrees or leaves gaps. 4. Synthesize across documents — do NOT produce a per-file summary list. 5. Assert only what the corpus supports (from {{workPath}}/extracts.md). 6. Add a source key so every [n] maps to a document. 7. On a loop-back, fix only the named gaps. 8. Call write_task_note with the synthesis path and which criteria now pass.\n\nBefore working, open the artifact input `{{workPath}}/extracts.md` with `read_artifact`; do not look for it in the workspace.\n\nThe deliverable `{{workPath}}/synthesis.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "consumes": [
+        {
+          "file": "{{workPath}}/extracts.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/synthesis.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/synthesis.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/synthesis.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "synthesize",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open {{workPath}}/synthesis.md and check EACH criterion PASS/FAIL: (1) every document in {{workPath}}/scope.md appears in {{workPath}}/extracts.md (full coverage) and is cited somewhere in the synthesis; (2) the output is organized by theme, not file-by-file; (3) each synthesized point cites its source document(s); (4) an open-questions/contradictions section surfaces real cross-document disagreement; (5) spot-check 3 points against {{workPath}}/extracts.md to confirm nothing was asserted beyond the corpus. A per-file summary list, or a synthesis missing documents, FAILS.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/synthesis.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"synthesize\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/synthesis.md",
+          "artifact": true
+        }
+      ],
+      "next": "synthesize"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

@@ -1,0 +1,153 @@
+{
+  "id": "live-browser-qa",
+  "name": "Live Browser QA Pass",
+  "description": "Run a hands-on quality-assurance pass on a running web app or page by actually exercising it in a browser, then emit a defect report with reproduction steps and severity. First derives a test plan and acceptance criteria from the app's intended behavior (happy paths, edge cases, error states, responsive/console health), then drives the UI step-by-step clicking and typing through each flow while watching the console and network for errors, then writes a bug report where every defect has numbered repro steps, expected vs actual, and severity. Use this for QA, manual testing, smoke testing, exploratory testing, click-testing a build, or verifying a feature works in the real browser before shipping — it finds broken flows, console errors, and visual breakage that unit tests miss.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Plan the QA pass (reviewer) — enumerate flows + acceptance criteria to exercise → gated on artifact `{{workPath}}/plan.md` (markdown-notes)\n2. Exercise the app (reviewer) — drive each flow in a browser, capture defects → gated on artifact `{{workPath}}/exercise.md` (markdown-notes)\n3. Write the QA report (reviewer) — emit a defect report with repro + severity → gated on artifact `{{workPath}}/qa-report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "plan",
+  "triggers": [
+    "qa this",
+    "run a qa pass",
+    "test this in the browser",
+    "smoke test the app",
+    "click through the app",
+    "manual test the feature"
+  ],
+  "steps": [
+    {
+      "id": "plan",
+      "name": "Plan the QA pass",
+      "description": "enumerate flows + acceptance criteria to exercise",
+      "prompt": "Step 1: Identify what the app/page is supposed to do and how to reach it (URL, dev server, or open the file). Step 2: Enumerate the user flows to exercise: each happy path (e.g. 'submit the form with valid data'), the key edge cases (empty input, very long input, invalid data), and the error states (network failure, 404). Step 3: List the cross-cutting checks: no console errors on load or interaction, no broken images/links, responsive at mobile and desktop widths, keyboard operability of primary controls. Step 4: Write an acceptance-criteria checklist of 6-10 concrete, checkable behaviors, e.g. 'submitting valid data shows a success state', 'submitting empty data shows an inline validation error, not a crash', 'no red console errors during any flow'. Step 5: Note test data to use and any setup needed. Write the flow list + checklist to `write_task_note` AND `{{workPath}}/plan.md`. No testing yet.\n\nThe deliverable `{{workPath}}/plan.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/plan.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/plan.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/plan.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "plan",
+        "maxAttempts": 3
+      },
+      "next": "exercise"
+    },
+    {
+      "id": "exercise",
+      "name": "Exercise the app",
+      "description": "drive each flow in a browser, capture defects",
+      "prompt": "Step 1: Open the app (use the browser/automation capability if available — navigate, click, type, screenshot; otherwise trace the rendered DOM and JS by reading the source and reason about each interaction). Step 2: Run each planned flow step-by-step, recording the exact actions taken. Step 3: After every action, check the result against the acceptance criterion AND watch the console/network for errors or failed requests. Step 4: For every defect, capture: the flow, numbered reproduction steps, the EXPECTED result, the ACTUAL result, the severity (critical = blocks the flow / major = wrong but workaroundable / minor = cosmetic), and a screenshot or console excerpt if available. Step 5: Also record what PASSED so the report shows coverage, not just failures. Good looks like: a defect a developer can reproduce on the first try from your steps. Stage findings to `write_task_note` as you go. Do not write the final report yet.\n\nThe deliverable `{{workPath}}/exercise.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/exercise.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/exercise.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/exercise.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "exercise",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the QA report",
+      "description": "emit a defect report with repro + severity",
+      "prompt": "Step 1: Open `{{workPath}}/qa-report.md` and write a top-line verdict: Pass / Pass-with-issues / Fail, plus the count of defects by severity. Step 2: Add a '## Defects' section; for each defect write `### [SEVERITY] short title` followed by numbered repro steps, an Expected line, an Actual line, and any console/screenshot evidence. Order by severity. Step 3: Add a '## Passed' section listing the flows that worked, so coverage is visible. Step 4: Add a '## Not tested' section for anything you could not reach and why. Every defect must have reproducible steps and an expected-vs-actual — no vague 'it seems broken'. On a loop-back, fix only the named gaps without dropping verified defects. `write_task_note` the report path and the defect counts by severity.\n\nThe deliverable `{{workPath}}/qa-report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/qa-report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/qa-report.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/qa-report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open `{{workPath}}/qa-report.md` and grade it against the plan checklist. Check EACH criterion and write PASS/FAIL with a one-line reason: (1) every planned flow is marked tested with a result; (2) each defect has numbered, reproducible steps; (3) each defect states Expected vs Actual; (4) each defect has a severity; (5) console/network health was actually checked, not assumed; (6) a Passed section shows coverage and a Not-tested section is honest; (7) the verdict matches the findings (no 'Pass' with an open critical). If any criterion fails, name the exact gap.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/qa-report.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/qa-report.md",
+          "artifact": true
+        }
+      ],
+      "next": "report"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

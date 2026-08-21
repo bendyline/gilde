@@ -1,0 +1,152 @@
+{
+  "id": "data-to-report",
+  "name": "Dataset to Narrative Report",
+  "description": "Turn a dataset into a written, evidence-backed analytical report that a non-technical reader can act on. Analyzes the data FIRST to surface the real findings (key metrics, segments, trends, surprises) with supporting numbers, then writes a narrative that leads with the takeaway and traces every claim to a figure, then builds the polished report document with sections, a summary table, and an explicit limitations note. Use this for turning raw numbers into an insights report, executive summary, data storytelling, or a findings write-up stakeholders will read.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Analyze the data (data-analyst) — extract the real findings with supporting numbers → gated on artifact `{{workPath}}/analyze.md` (markdown-notes)\n2. Write the narrative (copywriter) — draft a takeaway-led narrative grounded in the figures → gated on artifact `{{workPath}}/write.md` (markdown-notes)\n3. Build the report (developer) — assemble the polished {{workPath}}/report.md with sections and a summary table → gated on artifact `{{workPath}}/report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "analyze",
+  "triggers": [
+    "turn data into a report",
+    "analyze this dataset",
+    "write a findings report",
+    "data insights writeup",
+    "executive summary from data"
+  ],
+  "steps": [
+    {
+      "id": "analyze",
+      "name": "Analyze the data",
+      "description": "extract the real findings with supporting numbers",
+      "prompt": "Interrogate the dataset to find what actually matters — do not write prose yet. Step 1: state the 3-5 questions the report should answer (totals, trends over time, top/bottom segments, notable correlations or anomalies). Step 2: compute the answer to each with concrete numbers (counts, means, %, deltas, top-N) and record the exact figure plus how you derived it. Step 3: identify the single most important takeaway and 2-3 supporting findings, each tied to a number. Step 4: note data caveats (sample size, missing periods, definitions). Step 5: write an acceptance-criteria checklist for the report ('leads with the headline finding', 'every claim cites a number', 'includes a summary table', 'states limitations'). Call write_task_note and write the findings + figures + checklist to {{workPath}}/analyze.md. No narrative prose yet.\n\nThe deliverable `{{workPath}}/analyze.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "{{workPath}}/analyze.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/analyze.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/analyze.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "analyze",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the narrative",
+      "description": "draft a takeaway-led narrative grounded in the figures",
+      "prompt": "Write the report narrative using ONLY the figures from the analysis note — invent no numbers. Step 1: open with a 2-3 sentence executive summary that states the headline finding and its 'so what'. Step 2: write one short section per supporting finding; each paragraph states the insight, then the number that proves it, then the implication. Step 3: keep it scannable — short paragraphs, plain language, no jargon a manager wouldn't use. Step 4: end with a clearly labeled 'Limitations' paragraph from the caveats. Call write_task_note with the draft keyed by section so the build phase drops it straight in.\n\nThe deliverable `{{workPath}}/write.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "{{workPath}}/write.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/write.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/write.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the report",
+      "description": "assemble the polished {{workPath}}/report.md with sections and a summary table",
+      "prompt": "Assemble the final report as {{workPath}}/report.md. Step 1: add a title, a date, and an Executive Summary section from the approved narrative. Step 2: add one ## section per finding with the prose and inline figures. Step 3: include a Markdown summary table of the key metrics (metric, value, change). Step 4: add a Methodology / Data notes section and a Limitations section. Step 5: ensure every numeric claim in the prose matches the analysis note. On a loop-back, fix only the named gaps. Call write_task_note with the report path and section list.\n\nThe deliverable `{{workPath}}/report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "{{workPath}}/report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/report.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Read {{workPath}}/report.md as a stakeholder would. Verify: it opens with a takeaway-led executive summary; every numeric claim matches a figure in the analysis note (re-check at least three); it contains a summary table of key metrics; section headers organize it; and a Limitations section is present and honest. Confirm no fabricated numbers and no claim without a supporting figure. Write PASS/FAIL per acceptance criterion; any FAIL loops back to build.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/report.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/report.md",
+          "artifact": true
+        }
+      ],
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

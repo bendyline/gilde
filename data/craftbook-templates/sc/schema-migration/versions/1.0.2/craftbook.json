@@ -1,0 +1,156 @@
+{
+  "id": "schema-migration",
+  "name": "Schema / Type Migration",
+  "description": "Plan and execute a multi-file schema or type migration safely — changing a data model, type definition, or interface across the codebase while keeping everything compiling and consistent. Plans the migration FIRST — the before/after shape, every call-site and file touched, the ordering that never leaves the tree broken, and the backout — then applies the change file-by-file, then a reviewer verifies the tree still builds and nothing referencing the old shape remains. Covers find-all-references, safe edit ordering, backward-compatibility shims, codemod-style changes, and compile/test-green verification.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Plan the migration (planner) — lock before/after, touched files, ordering, backout → gated on artifact `{{workPath}}/plan.md` (markdown-notes)\n2. Apply the migration (developer) — edit each touched file in the planned order → gated on `MIGRATION.md` (markdown-doc)\n3. Verify the tree (reviewer) — confirm it compiles, tests pass, old shape is gone → gated on artifact `{{workPath}}/verify.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "plan",
+  "triggers": [
+    "migrate a schema",
+    "change a type everywhere",
+    "multi-file migration",
+    "rename a model across the codebase",
+    "type migration"
+  ],
+  "steps": [
+    {
+      "id": "plan",
+      "name": "Plan the migration",
+      "description": "lock before/after, touched files, ordering, backout",
+      "prompt": "Plan the migration before changing a line. Step 1: Document the BEFORE shape and the exact AFTER shape (fields, types, names) of the thing being migrated. Step 2: Find every reference: search the codebase for all call-sites, definitions, and files that touch the old shape, and list them. Step 3: Decide the edit ordering that keeps the tree compiling at each step (e.g. add-new-alongside-old → migrate call-sites → remove-old), and whether a temporary compatibility shim is needed. Step 4: Note the backout/rollback approach. Step 5: Write a numbered acceptance-criteria checklist of 5-9 items (e.g. 'the project compiles after the migration', 'no reference to the old shape remains', 'existing tests still pass', 'behavior is unchanged'). `write_task_note` the plan (with the file list) + checklist and write the same to the produces path.\n\nThe deliverable `{{workPath}}/plan.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/plan.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/plan.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/plan.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "plan",
+        "maxAttempts": 3
+      },
+      "next": "migrate"
+    },
+    {
+      "id": "migrate",
+      "name": "Apply the migration",
+      "description": "edit each touched file in the planned order",
+      "prompt": "Execute the migration following the planned ordering. Step 1: Apply the change file-by-file in the order that keeps the tree compiling, using the file list from the plan as a checklist. Step 2: Update every call-site to the new shape; remove the old shape (and any shim) only once nothing references it. Step 3: After each batch, confirm the project still compiles/type-checks. Step 4: Do a final search to prove no reference to the old shape remains. Capture the migration summary (files changed, references updated) to the produces path. On a loop-back, fix only the files the reviewer flagged. `write_task_note` the summary and which criteria now pass.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "MIGRATION.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "MIGRATION.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "MIGRATION.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "migrate",
+        "maxAttempts": 3
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify the tree",
+      "description": "confirm it compiles, tests pass, old shape is gone",
+      "prompt": "Verify the migration is complete and clean. Step 1: Run the build/type-check and confirm it passes with no errors. Step 2: Run the existing test suite and confirm it is still green (behavior preserved). Step 3: Search the whole codebase for any lingering reference to the old shape/name and confirm there are none. Step 4: Spot-check a couple of migrated call-sites for correctness. Write a verification note with the build/test result and the search result to the produces path.\n\nThe deliverable `{{workPath}}/verify.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "MIGRATION.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "MIGRATION.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Build the project and run the tests. For EACH acceptance criterion: confirm the project compiles/type-checks cleanly, confirm the test suite is green, confirm a codebase search finds NO reference to the old shape, and confirm behavior is unchanged. Write PASS/FAIL per criterion; any lingering old-shape reference or build break is a FAIL.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"migrate\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "MIGRATION.md"
+        }
+      ],
+      "next": "migrate"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

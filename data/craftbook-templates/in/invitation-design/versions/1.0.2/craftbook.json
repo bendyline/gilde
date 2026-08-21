@@ -1,0 +1,140 @@
+{
+  "id": "invitation-design",
+  "name": "Design the Invitations",
+  "description": "Produce the invitation the day deserves and get the facts beyond doubt: the date, time, venue, and RSVP instructions checked letter-for-letter against the event record — because a beautiful card with the wrong date is the classic disaster. Locks the fact checklist and the look brief FIRST, then designs the print-ready invitation, then proofs every fact against the record before anything reaches a printer. Use for party invitations, designing the invites, birthday and anniversary invitations, and 'make the invitation printable'.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Lock the facts (ceremoniemeester) — fact checklist from the event record, look brief → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Design the invitation (designer) — print-ready invitation with every fact copied from the record → gated on `invitations/invitation.html` (html-page)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "design the invitations",
+    "make the party invites",
+    "invitation for the party",
+    "printable invitation",
+    "invites for the celebration"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Lock the facts",
+      "description": "fact checklist from the event record, look brief",
+      "prompt": "Lock the facts before any design. Step 1: read event.json from the workspace — the occasion, date, time, venue, host, and RSVP instructions — and guests.json for who the invitation must speak to. Step 2: confirm the look brief with the owner — the mood of the day, colors or motifs that matter, and anything the honoree would hate. Step 3: write the fact checklist: date, time, venue, and RSVP line exactly as the event record has them, character for character — the invitation may be creative about everything except these. Step 4: write an acceptance-criteria checklist ('every fact matches event.json exactly', 'the RSVP instruction is present and actionable — who to tell, how, by when', 'the file is print-ready — @page setup, honest margins, one sheet', 'the look fits the brief'). Call write_task_note with the occasion + the fact list + checklist and write {{workPath}}/scope.md.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "ceremoniemeester",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "design"
+    },
+    {
+      "id": "design",
+      "name": "Design the invitation",
+      "description": "print-ready invitation with every fact copied from the record",
+      "prompt": "Design the invitation as one print-ready HTML file at invitations/invitation.html. Step 1: lay out the card — the occasion first, then the facts from the locked checklist, copied from event.json, never retyped from memory. Step 2: the RSVP line — who to tell, how, and by when, exactly as the record has it. Step 3: art direction per the brief — set type, color, and ornament with intent; where the look wants imagery, use the project's image capabilities or tasteful drawn ornament. Step 4: make it print-ready — an @page rule with size and margins, print styles, everything on one sheet. Step 5: proof the facts one final time against event.json before completing. Call write_task_note with the file path and the four facts as printed.",
+      "suggestedRole": "designer",
+      "advanceWhen": {
+        "file": "invitations/invitation.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "invitations/invitation.html",
+            "bytes": 800
+          },
+          {
+            "kind": "htmlLint",
+            "file": "invitations/invitation.html"
+          },
+          {
+            "kind": "cssMinBytes",
+            "bytes": 650,
+            "file": "invitations/invitation.html"
+          },
+          {
+            "kind": "contains",
+            "file": "invitations/invitation.html",
+            "pattern": "RSVP",
+            "flags": "i",
+            "label": "RSVP line"
+          },
+          {
+            "kind": "contains",
+            "file": "invitations/invitation.html",
+            "pattern": "@page|@media\\s+print",
+            "flags": "i",
+            "label": "print CSS"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "invitations/invitation.html"
+            }
+          }
+        ],
+        "onReject": "design",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open invitations/invitation.html and event.json side by side and verify every criterion from {{workPath}}/scope.md: the date, the time, the venue, and the RSVP instruction each match the event record exactly — read them character by character, this is the check the whole book exists for — the RSVP line is actionable, the file is print-ready with proper page setup on one sheet, and the look honors the brief. Write PASS/FAIL per fact and per criterion; on any mismatch, quote both versions and loop back to design.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"design\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "invitations/invitation.html"
+        }
+      ],
+      "next": "design"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

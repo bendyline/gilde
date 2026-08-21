@@ -1,0 +1,119 @@
+{
+  "id": "tone-rewrite",
+  "name": "Brand Tone Rewrite",
+  "description": "Re-voice existing content to a specific brand tone while preserving every fact and the original structure: it first codifies the target voice into a concrete style guide — adjectives, do's and don'ts, banned and preferred words, sentence-length feel, point of view — then rewrites the content line by line to that voice without changing what it says. Covers tone of voice rewrite, rebranding copy, voice and tone, brand voice, re-voice content, and style adaptation. Codifying the voice into checkable rules before rewriting is the point: a small model that has explicit do/don't rules applies the tone consistently, instead of a vague 'make it friendlier' that drifts paragraph to paragraph.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Voice scope (planner) — codify the target tone into a concrete, checkable style guide → gated on artifact `{{workPath}}/voice-scope.md` (markdown-notes)\n2. Rewrite to voice (copywriter) — re-voice the content to the style guide, preserving meaning → gated on `tone-rewrite.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "voice-scope",
+  "triggers": [
+    "rewrite in our brand tone",
+    "change the voice",
+    "re-voice this content",
+    "match brand voice",
+    "tone of voice"
+  ],
+  "steps": [
+    {
+      "id": "voice-scope",
+      "name": "Voice scope",
+      "description": "codify the target tone into a concrete, checkable style guide",
+      "prompt": "1) Define the target voice in 3-5 adjectives (e.g. 'confident, warm, plain-spoken'). 2) Translate each adjective into 1-2 concrete rules (e.g. 'confident → no hedging words like maybe/perhaps'; 'plain-spoken → grade-8 reading level, no jargon'). 3) List banned words/phrases and preferred replacements. 4) Set point of view (first/second person), contraction policy, sentence-length feel, and how to handle CTAs. 5) Write or pick one before/after example sentence showing the transformation. Crucially, note what must NOT change: facts, claims, structure, and meaning. Write an acceptance-criteria checklist (e.g. 'every banned word removed'; 'POV/contractions consistent'; 'reading level on target'; 'no fact or section changed'; 'reads as one consistent voice'). Use write_task_note for the style guide + checklist, and write the same to the produces path. No rewrite yet.\n\nThe deliverable `{{workPath}}/voice-scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/voice-scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/voice-scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/voice-scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "voice-scope",
+        "maxAttempts": 3
+      },
+      "next": "rewrite"
+    },
+    {
+      "id": "rewrite",
+      "name": "Rewrite to voice",
+      "description": "re-voice the content to the style guide, preserving meaning",
+      "prompt": "Rewrite the content to the locked style guide. 1) Go section by section, preserving the original structure and headings exactly. 2) Apply every voice rule: remove banned words, use the specified POV and contraction policy, hit the target sentence feel and reading level. 3) Change HOW it reads, never WHAT it says — every fact, number, claim, and instruction must survive unchanged. 4) Keep the voice identical across the whole piece; no drift. 5) Output the rewritten content in the same format/markdown as the source. Save to the produces path and note which style rules you applied and confirm no facts changed.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "tone-rewrite.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "tone-rewrite.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "tone-rewrite.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "rewrite",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Compare tone-rewrite.md to the source and the style guide. Check EACH criterion and write PASS/FAIL: (a) every banned word/phrase is gone and preferred terms used; (b) POV, contraction policy, and reading level match the guide; (c) NO fact, number, claim, or section was changed or dropped (diff the meaning carefully — this is critical); (d) structure/headings preserved; (e) reads as one consistent voice with no drift. A rewrite that nails the tone but altered a fact FAILS — loop back to rewrite.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"rewrite\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "tone-rewrite.md"
+        }
+      ],
+      "next": "rewrite"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

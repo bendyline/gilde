@@ -1,0 +1,153 @@
+{
+  "id": "dependency-audit",
+  "name": "Dependency Audit",
+  "description": "Audit a project's dependencies for security, staleness, license, and maintenance risk, then produce a prioritized remediation report. First scans the manifest and lockfile to inventory every dependency with its installed vs latest version, known CVEs, license, and maintenance signals, then assesses each into a risk tier weighing severity, exploitability, breaking-change cost, and removability, then writes a report with a concrete upgrade/replace/remove action and order for each risky dependency. Use this for a dependency audit, supply-chain review, checking for vulnerable or outdated packages, license compliance, npm/pip audit triage, or reducing dependency risk — it turns a raw audit dump into a prioritized, justified action plan rather than a wall of warnings.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scan the dependency tree (developer) — inventory deps with versions, CVEs, licenses → gated on artifact `{{workPath}}/scan.md` (markdown-notes)\n2. Assess risk (reviewer) — tier each dep by risk and remediation cost → gated on artifact `{{workPath}}/assess.md` (markdown-notes)\n3. Write the audit report (reviewer) — prioritized upgrade/replace/remove plan → gated on artifact `{{workPath}}/dependency-audit.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n\nEvidence discipline:\n\n- Treat supplied manifests, lockfiles, audit JSON, and dependency notes as the source of truth. Do not invent CVEs, licenses, package age, or network-audit results that are not in the evidence.\n- If evidence says no patched version exists, do not recommend a patch upgrade; recommend replacement, containment, or a human decision.\n- If evidence names a copyleft or incompatible license, the License flags section must name the package and license. Do not write that no license flags were found.\n- Dependencies with no seeded CVE, license issue, or maintenance issue should be explicitly deferred, not inflated into security or replacement work.\n- Recommended order is risk-first: critical no-patch security items come before unused cleanup and low-effort maintenance upgrades, even when the cleanup is easier.\n- Maintenance-only upgrades can still be recommended, but label them maintenance-only; do not describe them as security posture work unless the evidence names a vulnerability.\n- Copy exact license identifiers and exact target versions from the evidence, such as `GPL-3.0-only` or `4.18.3`; do not replace them with vague family labels or \"monitor later\" language.\n- Copy named replacement alternatives from the evidence, such as `chart.js 4.x`; do not replace them with vague \"find an alternative\" language.\n- If a dependency has no seeded CVE, avoid words like security, advisory, vulnerability, patch, or posture in that dependency's action unless the evidence explicitly supports them.\n- Do not infer missing licenses. If the evidence does not state a license for a dependency, say the license was not provided rather than guessing MIT or writing \"assumed.\"\n",
+  "entryStepId": "scan",
+  "triggers": [
+    "dependency audit",
+    "are my dependencies safe",
+    "check for outdated packages",
+    "supply chain review",
+    "npm audit triage",
+    "license compliance check"
+  ],
+  "steps": [
+    {
+      "id": "scan",
+      "name": "Scan the dependency tree",
+      "description": "inventory deps with versions, CVEs, licenses",
+      "prompt": "Step 1: Read the manifest and lockfile (package.json/lock, requirements/poetry, go.mod, Cargo.toml, etc.) to inventory direct and notable transitive dependencies. Step 2: For each, gather: installed version vs latest, the semver gap (patch/minor/major behind), known vulnerabilities (run the ecosystem audit tool if available — `npm audit`, `pip-audit`, `cargo audit` — and capture CVE id + severity), license, and maintenance signals (last release date, archived/deprecated, single-maintainer). If the task already provides audit output or dependency notes, treat those files as authoritative evidence and do not replace them with fresh network assumptions. Step 3: Flag duplicates/multiple versions of the same package and obviously unused or trivially-replaceable dependencies. Step 4: Write the acceptance-criteria checklist for the audit, e.g. 'every direct dependency is inventoried', 'all CVEs at high+ are captured with an id', 'each license is recorded and flagged if copyleft/incompatible', 'staleness is measured by both semver gap and release recency'. Step 5: Save the inventory table to `write_task_note` AND `{{workPath}}/scan.md`. No prioritization yet — this phase is the raw inventory.\n\nThe deliverable `{{workPath}}/scan.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "{{workPath}}/scan.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scan.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scan.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scan",
+        "maxAttempts": 3
+      },
+      "next": "assess"
+    },
+    {
+      "id": "assess",
+      "name": "Assess risk",
+      "description": "tier each dep by risk and remediation cost",
+      "prompt": "Step 1: For each dependency in the inventory, assign a risk tier (Critical / High / Medium / Low) weighing: CVE severity AND whether the vulnerable code path is actually used, how far behind it is, whether the upgrade is a breaking major (and the migration cost), license incompatibility, and abandonment/maintenance risk. Step 2: Decide the remediation per dep: patch-upgrade (safe), minor/major upgrade (note breaking changes to handle), replace (name the alternative), remove (if unused), or defer (if no seeded issue is present). If the evidence says no patched version exists, do not recommend an update-to-patch; recommend replacement, containment, or a human decision instead. Step 3: Determine a sensible ORDER — critical/no-patch security items first, then other high CVEs, then cleanup and low-effort maintenance; do not put unused cleanup or low-risk maintenance ahead of a critical no-patch replacement just because it is easy. Step 4: Distinguish real exposure from theoretical (a CVE in an unreachable code path is lower risk — say so), and distinguish maintenance-only upgrades from security fixes. Step 5: Note anything needing human judgment (license/legal, a major framework bump). Good looks like: a tier justified by both severity and actual exposure, not just the audit tool's color. Stage the tiered list to `write_task_note`. Do not write the report yet.\n\nThe deliverable `{{workPath}}/assess.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/assess.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/assess.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/assess.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "assess",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the audit report",
+      "description": "prioritized upgrade/replace/remove plan",
+      "prompt": "Step 1: Open `{{workPath}}/dependency-audit.md` and write a '## Summary' line: total deps, count by risk tier, and the headline risk. Step 2: Add an '## Action plan' ordered by priority; each entry: `package@installed → action (target version / replacement / remove / defer)` with the reason (CVE id + severity, semver gap, license, abandonment, or no seeded issue), the breaking-change note if any, and the migration effort. Keep exact target versions and named replacement alternatives from the evidence; do not downgrade a named maintenance upgrade to vague monitoring or replace a named alternative with generic wording. Step 3: Add a '## License flags' section for any copyleft/incompatible licenses; if the source names GPL/copyleft, the section must name that package and exact license identifier, not say no flags were found. Do not infer missing licenses; say license not provided when the evidence does not name one. Step 4: Add a '## Needs human decision' section for legal/major-bump/no-patch calls. Step 5: Add a one-paragraph '## Recommended order' (what to do this week vs later), keeping critical no-patch CVEs ahead of unused cleanup and low-effort maintenance upgrades. Every action must name a concrete target and a justification — no 'update your packages'. On a loop-back, fix only the named gaps. `write_task_note` the report path and the counts by tier.\n\nThe deliverable `{{workPath}}/dependency-audit.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/dependency-audit.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/dependency-audit.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/dependency-audit.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open `{{workPath}}/dependency-audit.md` and grade it against the scan checklist. Check EACH criterion and write PASS/FAIL with a one-line reason: (1) every direct dependency is inventoried with installed vs latest; (2) all high+ CVEs are captured with an id and severity; (3) each risky dep has a concrete action (upgrade target / replacement / remove / defer) and a justification; (4) breaking-change/migration cost is noted for major upgrades; (5) licenses are recorded and incompatibilities flagged, especially any GPL/copyleft source note; (6) the plan is prioritized with a recommended order that puts critical/no-patch security items before unused cleanup and maintenance-only upgrades; (7) risk tiers reflect actual exposure, not just the tool's raw severity; (8) no dependency with no seeded issue is inflated into a security/replacement recommendation; (9) no dependency with no patched version is described as patch-upgradeable. If any criterion fails, name the exact gap and loop back.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/dependency-audit.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/dependency-audit.md",
+          "artifact": true
+        }
+      ],
+      "next": "report"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.1.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

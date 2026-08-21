@@ -1,0 +1,210 @@
+{
+  "schemaVersion": 1,
+  "title": "CRM import CSV from call notes",
+  "objective": "Measure whether the crm-update-batch craftbook locks schema/picklists and maps every note into evidence-backed import rows.",
+  "tags": [
+    "data"
+  ],
+  "prompt": "In the `CRM Update Batch Eval` project, read `source/schema.md` and `source/call-notes.md`, then write `updates.csv`. The CSV must use the exact 10-column header from the schema, with exactly 10 cells in every row. Keep empty placeholders as adjacent commas; do not create extra columns such as first_name, last_name, title, old_value, or new_value. The CSV must include Contact rows plus Activity or Task rows with exact object_type values, allowed picklist values only, source_quote evidence on every field update, and UNMATCHED status instead of fabricated IDs. Use the account_name column for account context; do not create separate Account rows unless the seeded notes explicitly request an account field update. Do not add people, accounts, emails, issues, tasks, or source_quote text that are not in the seeded call notes. If you need more rows, split the seeded notes into supported Contact, Activity, and Task rows rather than inventing new contacts.",
+  "setup": {
+    "projectName": "CRM Update Batch Eval",
+    "about": "Self-contained eval project for crm-update-batch. Schema and call notes are seeded under workspace/source.",
+    "missionObjectives": "Produce a parseable CRM update CSV with schema-conformant rows, picklists, source quotes, activities/tasks, and unmatched-contact handling.",
+    "files": [
+      {
+        "path": "source/schema.md",
+        "content": "# CRM schema\n\nMatch Contact by email. Required columns, in this exact order: object_type,match_key,email,account_name,field_name,field_value,activity_type,next_task,status,source_quote.\n\nEvery data row must have exactly 10 cells. If a value is blank, keep the comma placeholder; do not add extra columns. Allowed object_type values are case-sensitive: Contact, Activity, Task. Allowed field_name values: status, activity_type, next_task. Allowed status values: Active, Renewal Risk, Expansion, UNMATCHED. Activity types: call, email, meeting. Do not create unlisted fields such as first_name, last_name, title, old_value, new_value, account_name update rows, or account ID.\n\nRow shapes, not data to copy:\n- Contact: Contact,<email-or-UNMATCHED>,<email-or-blank>,<account>,status,<status>,call,<task-or-blank>,<status>,\"<source words>\"\n- Activity: Activity,<email-or-UNMATCHED>,<email-or-blank>,<account>,activity_type,call,call,,<status>,\"<source words>\"\n- Task: Task,<email-or-UNMATCHED>,<email-or-blank>,<account>,next_task,<task text>,call,<task text>,<status>,\"<source words>\"\n"
+      },
+      {
+        "path": "source/call-notes.md",
+        "content": "# Call notes\n\n1. Priya Shah, priya@northstar.example, Northstar Studio: asked for West warehouse expansion pricing and said budget opens July 15. Status should become Expansion. Create next task: send pricing sheet Friday.\n2. Marcus Lee, marcus@acme.example, Acme Studio: complained about missed photo status emails and may delay renewal. Status should become Renewal Risk. Activity type call.\n3. Unknown caller from Harbor Design, no email captured: asked for a demo and should be flagged UNMATCHED rather than created blindly.\n"
+      }
+    ],
+    "worker": {
+      "name": "Niels",
+      "role": "Operations Analyst"
+    },
+    "craftbookParams": {
+      "workPath": "tasks/eval"
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "workspace/updates.csv has schema-conformant CRM rows with allowed statuses, source quotes, activity/task rows, and unmatched handling.",
+    "deliverables": [
+      {
+        "path": "updates.csv",
+        "kind": "generic-file",
+        "minBytes": 500,
+        "checks": [
+          {
+            "kind": "csvShape",
+            "file": "updates.csv",
+            "exactColumns": [
+              "object_type",
+              "match_key",
+              "email",
+              "account_name",
+              "field_name",
+              "field_value",
+              "activity_type",
+              "next_task",
+              "status",
+              "source_quote"
+            ],
+            "minRows": 4,
+            "allowedValues": {
+              "object_type": [
+                "Contact",
+                "Activity",
+                "Task"
+              ],
+              "match_key": [
+                "priya@northstar.example",
+                "marcus@acme.example",
+                "N/A",
+                "UNMATCHED"
+              ],
+              "email": [
+                "priya@northstar.example",
+                "marcus@acme.example"
+              ],
+              "account_name": [
+                "Northstar Studio",
+                "Acme Studio",
+                "Harbor Design"
+              ],
+              "field_name": [
+                "status",
+                "activity_type",
+                "next_task"
+              ],
+              "field_value": [
+                "Expansion",
+                "Renewal Risk",
+                "UNMATCHED",
+                "call",
+                "email",
+                "meeting",
+                "send pricing sheet Friday",
+                "demo"
+              ],
+              "activity_type": [
+                "call",
+                "email",
+                "meeting"
+              ],
+              "status": [
+                "Active",
+                "Renewal Risk",
+                "Expansion",
+                "UNMATCHED"
+              ]
+            }
+          },
+          {
+            "kind": "contains",
+            "file": "updates.csv",
+            "pattern": "object_type,match_key,email,account_name,field_name,field_value,activity_type,next_task,status,source_quote",
+            "flags": ""
+          },
+          {
+            "kind": "contains",
+            "file": "updates.csv",
+            "pattern": "priya@northstar\\.example|marcus@acme\\.example",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "updates.csv",
+            "pattern": "(?:^|\\n)(?:Activity|Task),",
+            "flags": "m",
+            "label": "include activity or task rows"
+          },
+          {
+            "kind": "contains",
+            "file": "updates.csv",
+            "pattern": "Expansion|Renewal Risk|UNMATCHED",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "updates.csv",
+            "pattern": "send pricing sheet",
+            "flags": "i",
+            "label": "include Priya pricing task"
+          },
+          {
+            "kind": "contains",
+            "file": "updates.csv",
+            "pattern": "missed photo status",
+            "flags": "i",
+            "label": "include Marcus renewal-risk note"
+          },
+          {
+            "kind": "contains",
+            "file": "updates.csv",
+            "pattern": "demo",
+            "flags": "i",
+            "label": "include unknown caller demo request"
+          },
+          {
+            "kind": "contains",
+            "file": "updates.csv",
+            "pattern": "Harbor Design[\\s\\S]{0,250}UNMATCHED|UNMATCHED[\\s\\S]{0,250}Harbor Design",
+            "flags": "i",
+            "label": "flag Harbor Design caller as UNMATCHED"
+          },
+          {
+            "kind": "contains",
+            "file": "updates.csv",
+            "pattern": "source_quote|asked for|complained",
+            "flags": "i"
+          },
+          {
+            "kind": "notContains",
+            "file": "updates.csv",
+            "pattern": "\\b(?!(?:priya@northstar|marcus@acme)\\.example\\b)[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.example\\b|Stellar|Innovate|Acme Corp|Acme Solutions|NorthStar Inc\\.|Northstar Corp|Senior Manager|Director|Smith|first_name|last_name|title|old_value|new_value|premium package|billing issue|initial inquiry|website form|Upsell Opportunity|New Lead Qualification|CRM update requirements|Q3 review|Completed|Pending",
+            "flags": "i",
+            "label": "do not invent contacts, accounts, issues, tasks, or source quotes outside the seeded call notes"
+          },
+          {
+            "kind": "notContains",
+            "file": "updates.csv",
+            "pattern": "fake-id|unknown@example|Harbor Design,.*Active",
+            "flags": "i"
+          }
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "updates.csv",
+      "kind": "text"
+    },
+    "axes": [
+      {
+        "name": "accuracy",
+        "description": "Computed figures are correct against the seeded records."
+      },
+      {
+        "name": "grounding",
+        "description": "Every claim traces to the seeded data — nothing invented."
+      },
+      {
+        "name": "structure",
+        "description": "Tables and sections make the analysis checkable at a glance."
+      },
+      {
+        "name": "actionability",
+        "description": "Recommendations follow from the findings and are concretely doable."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "schema lock",
+    "source-quote evidence",
+    "unmatched handling"
+  ]
+}

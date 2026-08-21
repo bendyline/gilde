@@ -1,0 +1,155 @@
+{
+  "id": "spec-doc",
+  "name": "Technical Design Doc",
+  "description": "Write a technical design document (RFC / engineering design doc) that gets a system change reviewed and approved — covering context and problem, goals and non-goals, the proposed design, alternatives considered, trade-offs, risks, and a rollout plan. Scopes the problem, goals, and explicit non-goals FIRST (non-goals prevent reviewer scope-creep), writes the detailed design with diagrams and alternatives, then has a reviewer check it for completeness and unjustified decisions. Use for RFCs, architecture proposals, and pre-implementation design reviews.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the design (planner) — problem, goals, explicit non-goals, constraints, success metrics → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Write the design (developer) — detailed proposed design, alternatives, trade-offs, rollout plan → gated on artifact `{{workPath}}/spec.md` (markdown-report)\n3. Review the design (reviewer) — check completeness, justified decisions, and risk coverage → gated on artifact `{{workPath}}/review.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "technical design doc",
+    "write an rfc",
+    "engineering design document",
+    "architecture proposal",
+    "system design doc",
+    "design spec"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the design",
+      "description": "problem, goals, explicit non-goals, constraints, success metrics",
+      "prompt": "Frame the problem before proposing a solution. Step 1: write the context and problem statement — what is broken or needed and why now. Step 2: list the GOALS (what the design must achieve) and, explicitly, the NON-GOALS (what it deliberately will not address) — the non-goals keep the review focused. Step 3: capture the constraints (compatibility, performance, deadline, team, existing systems) the design must respect. Step 4: define success metrics — how you will know the change worked. Step 5: note at least one alternative direction worth documenting so the doc shows the decision was considered. Step 6: write an acceptance-criteria checklist ('problem + context stated', 'goals AND non-goals listed', 'constraints captured', 'success metrics defined', 'at least one alternative to document', 'a rollout/migration consideration noted'). Write the framing + checklist via write_task_note AND to {{workPath}}/scope.md. No detailed design yet.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the design",
+      "description": "detailed proposed design, alternatives, trade-offs, rollout plan",
+      "prompt": "Write the design document as {{workPath}}/spec.md. Step 1: open with the context/problem, then the goals and non-goals exactly as scoped. Step 2: write the Proposed Design in depth — components and responsibilities, data model/schema changes, APIs/interfaces, and the key flows; include at least one diagram (an ASCII/mermaid block is fine) of the architecture or sequence. Step 3: write an Alternatives Considered section covering each documented alternative with its pros/cons and WHY it was rejected — every significant decision must be justified, not asserted. Step 4: write a Trade-offs and Risks section (what this design gives up, failure modes, mitigations). Step 5: write a Rollout/Migration plan (phasing, flags, backfill, backward compatibility) and a Testing/validation plan tied to the success metrics. Step 6: list open questions. Use numbered headings and keep it concrete with real names. On a loop-back, fix ONLY the named gaps. Write the path + section count via write_task_note.\n\nThe deliverable `{{workPath}}/spec.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "{{workPath}}/spec.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/spec.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/spec.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 3
+      },
+      "next": "review"
+    },
+    {
+      "id": "review",
+      "name": "Review the design",
+      "description": "check completeness, justified decisions, and risk coverage",
+      "prompt": "Review the design as a staff engineer would in an RFC review. Step 1: confirm the proposed design actually satisfies every stated goal and respects every non-goal and constraint. Step 2: check that each significant decision is justified against the documented alternatives — flag any choice asserted without reasoning. Step 3: verify the risks/trade-offs section is honest (not just 'no risks') and the rollout plan addresses backward compatibility and a way to back out. Step 4: confirm a testing/validation plan ties back to the success metrics. Step 5: list concrete gaps with the section and the fix needed, recorded as PASS/FAIL against the scope checklist. Write the findings via write_task_note AND to {{workPath}}/review.md. Remaining gaps must be fixed in the write phase before this passes.\n\nThe deliverable `{{workPath}}/review.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/review.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/spec.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/spec.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "review",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "QA the design doc against the locked criteria. Step 1: read {{workPath}}/spec.md end to end. Step 2: check EACH acceptance criterion: problem + context stated, goals AND non-goals present, constraints captured, the proposed design includes a diagram and concrete interfaces/data model, alternatives are documented with reasons for rejection, risks/trade-offs are honest, a rollout/migration plan with a back-out path exists, and a validation plan ties to the success metrics. Step 3: confirm decisions are justified rather than asserted, folding in {{workPath}}/review.md findings. Write PASS/FAIL per criterion with the offending section on any FAIL.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/spec.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/spec.md",
+          "artifact": true
+        }
+      ],
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

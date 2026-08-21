@@ -1,0 +1,171 @@
+{
+  "id": "release-announcement",
+  "name": "Release Announcement",
+  "description": "Write a public-facing release announcement that turns a shipped version into a compelling story for users — a blog-post / email-style piece that leads with the headline value, shows the marquee features with concrete before/after benefits, links to the full release notes and upgrade path, and ends with a clear call to action. A planner picks the 2-4 things actually worth announcing and the audience/channel, a copywriter writes the benefit-led announcement in the brand voice, and a reviewer checks it is accurate, on-message, and that every claim traces to a real shipped change. Use this for product launch posts, 'what's new' announcements, version launch emails, and changelog-to-marketing translations.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the announcement (planner) — pick the marquee items, audience, and channel → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Write the announcement (copywriter) — benefit-led launch story in the brand voice → gated on `announcement.md` (markdown-doc)\n3. Review for accuracy and message (reviewer) — verify claims trace to shipped changes and tone is on-brand → gated on artifact `{{workPath}}/review.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "announce the release",
+    "what's new post",
+    "launch announcement",
+    "blog post for the new version",
+    "release marketing copy"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the announcement",
+      "description": "pick the marquee items, audience, and channel",
+      "prompt": "1. Review the release contents (changelog/release notes) and pick the 2-4 changes genuinely worth announcing — the ones users will care about, not an exhaustive list. 2. Identify the audience and channel (blog, email, in-app) and the single headline benefit of the release. 3. For each marquee item, capture the concrete user benefit and a before/after framing ('used to take X, now Y'). 4. Decide the call to action (upgrade, try it, read the docs) and the link to the full release notes. 5. Set the tone to the brand voice and a target length appropriate to the channel. 6. Good looks like: a short brief listing the headline, the 2-4 marquee items each with a user benefit, the audience/channel, the CTA, and the release-notes link. Write this as an acceptance-criteria checklist ('leads with the headline benefit', 'each marquee item states a user benefit not a feature spec', 'every claim traces to a real shipped change', 'has a clear CTA and a link to full notes', 'matches the brand voice and channel length') plus the brief to the notes file via write_task_note AND to {{workPath}}/scope.md.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the announcement",
+      "description": "benefit-led launch story in the brand voice",
+      "prompt": "1. Open {{workPath}}/scope.md and write the announcement leading with the headline benefit in the title and opening line — hook first, not 'We are pleased to announce version X'. 2. Give each marquee item its own short section with a benefit-led subhead and the before/after framing, written for users not engineers. 3. Keep the voice consistent with the brand and the length appropriate to the channel; scannable subheads and short paragraphs. 4. Include the call to action prominently and link out to the full release notes / upgrade guide. 5. Do not over-claim or mention anything not actually shipped. 6. Good looks like: a tight, benefit-led announcement a non-technical reader enjoys, every marquee item from scope.md covered with its benefit, a clear CTA, and a notes link. Write the announcement to announcement.md.\n\nBefore working, open the artifact input `{{workPath}}/scope.md` with `read_artifact`; do not look for it in the workspace.",
+      "suggestedRole": "copywriter",
+      "consumes": [
+        {
+          "file": "{{workPath}}/scope.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "announcement.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "announcement.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "announcement.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 3
+      },
+      "next": "review"
+    },
+    {
+      "id": "review",
+      "name": "Review for accuracy and message",
+      "description": "verify claims trace to shipped changes and tone is on-brand",
+      "prompt": "1. Open announcement.md and cross-check every feature/benefit claim against {{workPath}}/scope.md and the actual release — flag anything over-claimed, vague, or not actually shipped. 2. Confirm it leads with the headline benefit and that each marquee item is framed as a user benefit, not a raw feature spec. 3. Verify the CTA is present and the link to full release notes resolves. 4. Check the voice is on-brand and the length fits the channel; flag engineer-speak that leaked into a user-facing piece. 5. Write a PASS/FAIL per acceptance criterion with specifics; any failure routes back to the write phase. Write findings to {{workPath}}/review.md.\n\nBefore working, open the artifact input `{{workPath}}/scope.md` with `read_artifact`; do not look for it in the workspace.\n\nThe deliverable `{{workPath}}/review.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/scope.md",
+          "artifact": true
+        },
+        {
+          "file": "announcement.md"
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/review.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "announcement.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "announcement.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "review",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open announcement.md and verify it against {{workPath}}/scope.md, PASS/FAIL each criterion. Confirm: (a) the title and opening lead with the headline benefit; (b) each marquee item from scope.md has a benefit-led section, not a raw feature spec; (c) every claim traces to a real shipped change with no over-claiming; (d) a clear CTA and a link to the full release notes are present; (e) the voice matches the brand and the length fits the channel. Any FAIL routes back to the write phase.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "announcement.md"
+        }
+      ],
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "title": "Playtest Report — repros, ranks, and the score-loop verdict",
+  "objective": "Measure whether the playtest-report craftbook finds the seeded flaws in a small arcade game (score not resetting between rounds; input handler stacking across restarts) and writes them up with repro steps in a ranked issue table.",
+  "tags": [
+    "corpus"
+  ],
+  "prompt": "can you playtest the arcade game properly before i send it to my freinds? write up whatever you find",
+  "setup": {
+    "projectName": "Star Catcher Arcade",
+    "about": "Web arcade project. The game under test is workspace/index.html; the playtest plan and notes go under workspace/notes and the findings to workspace/report.md.",
+    "missionObjectives": "A structured playtest with evidence: every finding carries repro steps, findings are ranked by player impact, and the score loop across game over and restart gets an explicit verdict. No live services, no real credentials.",
+    "files": [
+      {
+        "path": "index.html",
+        "content": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Star Catcher</title>\n<style>\n  body { margin: 0; background: #101020; color: #eee; font-family: monospace;\n         display: flex; flex-direction: column; align-items: center; }\n  h1 { font-size: 18px; margin: 12px 0 4px; }\n  canvas { border: 1px solid #334; background: #181830; }\n  p { font-size: 12px; color: #99a; }\n</style>\n</head>\n<body>\n<h1>Star Catcher</h1>\n<canvas id=\"game\" width=\"480\" height=\"560\"></canvas>\n<p>Arrow keys to move the basket. Catch stars, miss three and it's over. Enter to restart.</p>\n<script>\nvar canvas = document.getElementById('game');\nvar ctx = canvas.getContext('2d');\nvar W = canvas.width, H = canvas.height;\n\nvar basket, stars, score = 0, missed, over, spawnTimer;\n\nfunction onKey(e) {\n  if (over) {\n    if (e.key === 'Enter') startGame();\n    return;\n  }\n  if (e.key === 'ArrowLeft') basket.x -= 24;\n  if (e.key === 'ArrowRight') basket.x += 24;\n  basket.x = Math.max(basket.w / 2, Math.min(W - basket.w / 2, basket.x));\n}\n\nfunction startGame() {\n  basket = { x: W / 2, y: H - 40, w: 64, h: 16 };\n  stars = [];\n  missed = 0;\n  over = false;\n  spawnTimer = 0;\n  document.addEventListener('keydown', onKey);\n}\n\nfunction spawnStar() {\n  stars.push({ x: 16 + Math.random() * (W - 32), y: -10, vy: 1.4 + Math.random() * 1.8 });\n}\n\nfunction update() {\n  if (over) return;\n  spawnTimer -= 1;\n  if (spawnTimer <= 0) {\n    spawnStar();\n    spawnTimer = 50;\n  }\n  for (var i = stars.length - 1; i >= 0; i--) {\n    var s = stars[i];\n    s.y += s.vy;\n    if (s.y > basket.y - 6 && s.y < basket.y + basket.h &&\n        Math.abs(s.x - basket.x) < basket.w / 2 + 6) {\n      stars.splice(i, 1);\n      score += 10;\n      continue;\n    }\n    if (s.y > H + 10) {\n      stars.splice(i, 1);\n      missed += 1;\n      if (missed >= 3) over = true;\n    }\n  }\n}\n\nfunction draw() {\n  ctx.clearRect(0, 0, W, H);\n  ctx.fillStyle = '#ffd75e';\n  for (var i = 0; i < stars.length; i++) {\n    var s = stars[i];\n    ctx.beginPath();\n    ctx.arc(s.x, s.y, 6, 0, Math.PI * 2);\n    ctx.fill();\n  }\n  ctx.fillStyle = '#7ec8ff';\n  ctx.fillRect(basket.x - basket.w / 2, basket.y, basket.w, basket.h);\n  ctx.fillStyle = '#eee';\n  ctx.font = '16px monospace';\n  ctx.fillText('Score: ' + score, 12, 24);\n  ctx.fillText('Missed: ' + missed + '/3', 12, 44);\n  if (over) {\n    ctx.font = '26px monospace';\n    ctx.fillText('GAME OVER', W / 2 - 70, H / 2 - 10);\n    ctx.font = '14px monospace';\n    ctx.fillText('Press Enter to play again', W / 2 - 96, H / 2 + 16);\n  }\n}\n\nfunction loop() {\n  update();\n  draw();\n  requestAnimationFrame(loop);\n}\n\nstartGame();\nloop();\n</script>\n</body>\n</html>\n"
+      }
+    ],
+    "worker": {
+      "name": "Roos",
+      "role": "Reviewer"
+    },
+    "craftbookParams": {
+      "workPath": "tasks/eval"
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "tasks/eval/report.md is a ranked, repro-backed playtest report that catches the restart flaws — the score carrying over between rounds and the stacking input handler.",
+    "deliverables": [
+      {
+        "path": "tasks/eval/report.md",
+        "kind": "markdown-report",
+        "minBytes": 1200,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i"
+          },
+          {
+            "kind": "tableShape",
+            "file": "tasks/eval/report.md",
+            "requiredColumns": [
+              "Issue",
+              "Severity"
+            ],
+            "minRows": 1
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/report.md",
+            "pattern": "repro|steps",
+            "flags": "i",
+            "label": "repros attached"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/report.md",
+            "pattern": "score",
+            "flags": "i",
+            "label": "score loop covered"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/report.md",
+            "pattern": "restart|play again|enter",
+            "flags": "i",
+            "label": "the restart path was exercised"
+          },
+          {
+            "kind": "judge",
+            "file": "tasks/eval/report.md",
+            "rubric": "Findings are specific and reproducible — concrete steps a stranger could follow — and ranked by player impact; the report catches that restarting does not reset the score and that input handling degrades across restarts.",
+            "sourceFiles": [
+              "index.html"
+            ],
+            "label": "finding quality"
+          }
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "tasks/eval/report.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "rigor",
+        "description": "The plan's mechanics and edge inputs were actually exercised — passes recorded alongside failures."
+      },
+      {
+        "name": "repro quality",
+        "description": "Each finding's steps reproduce it exactly; observed and expected behavior are both stated."
+      },
+      {
+        "name": "prioritization",
+        "description": "The table ranks by what ruins a play session, not by discovery order."
+      },
+      {
+        "name": "player empathy",
+        "description": "The report reads like someone who played the game, and says what is already good."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "seeded-flaw detection",
+    "repro discipline",
+    "ranked issue table"
+  ]
+}

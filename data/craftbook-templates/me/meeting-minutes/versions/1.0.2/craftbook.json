@@ -1,0 +1,120 @@
+{
+  "id": "meeting-minutes",
+  "name": "Meeting Minutes & Actions",
+  "description": "Turn a meeting transcript, recording notes, or rough scratch into clean, distributable meeting minutes — attendees, agenda topics discussed, decisions made, and (most importantly) action items with owners and due dates. Scopes the minutes structure and what counts as a decision vs an action FIRST, then writes accurate, neutral minutes where every decision is recorded and every action has an owner and a date — the action table is the part people actually use. Use for board/team meeting minutes, project status meetings, and decision logs.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the minutes (planner) — structure, what counts as a decision vs action, owner/date rule → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Write the minutes (copywriter) — neutral minutes with a decisions log and an owner/date action table → gated on `minutes.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "meeting minutes",
+    "write up meeting notes",
+    "minutes from a meeting",
+    "decisions and action items",
+    "meeting recap doc",
+    "action items list"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the minutes",
+      "description": "structure, what counts as a decision vs action, owner/date rule",
+      "prompt": "Decide the structure and the rules before writing. Step 1: capture the meeting metadata to record — title, date/time, attendees (present + absent), and the agenda/topics. Step 2: define the crucial distinction the minutes must enforce: a DECISION is a settled outcome (record what was decided and by whom), whereas an ACTION is a future task that MUST have an owner and a due date. Step 3: decide the section order: header/metadata, agenda, discussion-by-topic, decisions log, and an action-items table (Action | Owner | Due | Status). Step 4: set the neutrality rule — minutes record what happened factually, not opinion or editorializing. Step 5: write an acceptance-criteria checklist ('header with date + attendees', 'each agenda topic summarized neutrally', 'a decisions section listing every decision', 'an action table where EVERY action has an owner and a due date', 'no editorializing'). Write the structure + rules + checklist via write_task_note AND to {{workPath}}/scope.md. No minutes prose yet.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the minutes",
+      "description": "neutral minutes with a decisions log and an owner/date action table",
+      "prompt": "Write the minutes as minutes.md from the source material. Step 1: open with the header block — meeting title, date/time, attendees present and absent. Step 2: list the agenda, then write a neutral, concise summary per topic discussed (what was raised and the gist of the discussion) without editorializing or attributing motives. Step 3: write a Decisions section that records every decision reached, each as a clear statement of what was decided. Step 4: write the Action Items as a markdown TABLE with columns Action | Owner | Due Date | Status, and ensure EVERY action row has a named owner and a concrete due date — flag any item missing an owner/date as [OWNER?]/[DATE?] rather than leaving it blank. Step 5: note the next meeting / follow-up if mentioned. Pull only from the source; do not invent decisions or actions that were not discussed. On a loop-back, fix ONLY the named gaps. Write the path + counts of decisions and actions via write_task_note.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "minutes.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "minutes.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "minutes.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "QA the minutes against the locked criteria. Step 1: read minutes.md alongside the source. Step 2: check EACH acceptance criterion: header includes date + attendees, each agenda topic has a neutral summary, a decisions section captures every decision from the source, and an action-items TABLE exists where EVERY row has a named owner and a concrete due date (any [OWNER?]/[DATE?] placeholder or blank is a FAIL on that criterion). Step 3: confirm the tone is factual with no editorializing and that no decision or action was invented beyond the source. Write PASS/FAIL per criterion; on a missing owner/date, name the offending action row and loop back.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "minutes.md"
+        }
+      ],
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

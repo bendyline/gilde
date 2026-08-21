@@ -1,0 +1,122 @@
+{
+  "id": "invoice-generator",
+  "name": "Invoice Generator",
+  "description": "Generate a clean, professional, print-ready invoice from billing details — sender/recipient, line items with quantity and rate, subtotal, tax, total, invoice number, dates, and payment instructions. Scopes the required fields and the tax/total math FIRST (a wrong total is the one unforgivable invoice bug), then builds a polished single-file HTML invoice with an itemized table and correctly computed totals. Use for freelancer/contractor billing, one-off invoices, and invoice templates.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the invoice (planner) — required fields, line items, and the tax/total math rules → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Build the invoice (developer) — render invoice.html with an itemized table and correct totals → gated on `invoice.html` (html-page)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "generate an invoice",
+    "make an invoice",
+    "create a bill",
+    "freelance invoice",
+    "invoice template",
+    "billing document"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the invoice",
+      "description": "required fields, line items, and the tax/total math rules",
+      "prompt": "Nail down the data and the math before formatting. Step 1: list the required fields — sender (name, address, contact), recipient (bill-to), invoice number, issue date, due date, and payment terms. Step 2: enumerate the line items, each with description, quantity, unit rate, and line amount (quantity x rate). Step 3: define the money math EXACTLY: subtotal = sum of line amounts; tax = subtotal x tax rate (or none); discount if any; total = subtotal - discount + tax. State the currency and rounding (2 decimals). Step 4: capture payment instructions (bank/transfer/links) and any notes. Step 5: write an acceptance-criteria checklist ('all required header fields present', 'every line item has qty, rate, and qty x rate amount', 'subtotal equals the sum of line amounts', 'tax computed from the stated rate', 'total = subtotal - discount + tax and is arithmetically correct', 'currency + dates + invoice number shown', 'payment instructions present'). Write the field list + math rules + checklist via write_task_note AND to {{workPath}}/scope.md. No HTML yet.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the invoice",
+      "description": "render invoice.html with an itemized table and correct totals",
+      "prompt": "Build the invoice as a single self-contained invoice.html (inline CSS with print @page rules). Step 1: render a header with the sender block, a bill-to block, and an invoice-meta block (invoice number, issue date, due date, terms). Step 2: render the line items as a bordered table with columns Description | Qty | Rate | Amount, computing each Amount as qty x rate. Step 3: render a totals block beneath the table: Subtotal (sum of amounts), Discount (if any), Tax (subtotal x rate, with the rate shown), and a visually emphasized Total = subtotal - discount + tax. COMPUTE the arithmetic correctly and format all money to 2 decimals in the stated currency. Step 4: add a payment-instructions section and any notes, plus a clean, professional visual style that prints to one page. Step 5: double-check the totals add up before finishing. On a loop-back, fix ONLY the named gaps (most commonly an arithmetic error). Write the path + the computed total via write_task_note.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "invoice.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "invoice.html",
+            "bytes": 800
+          },
+          {
+            "kind": "htmlLint",
+            "file": "invoice.html"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "invoice.html"
+            }
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "QA the invoice against the locked criteria — and RE-DO THE MATH yourself. Step 1: open/render invoice.html. Step 2: independently recompute each line Amount (qty x rate), the Subtotal (sum of amounts), the Tax (subtotal x stated rate), and the Total (subtotal - discount + tax); compare to what the invoice shows — any mismatch is an automatic FAIL. Step 3: check EACH remaining criterion: all header fields present (sender, bill-to, invoice number, issue + due dates, terms), itemized table with qty/rate/amount columns, currency and 2-decimal formatting, payment instructions present, prints cleanly to one page. Step 4: write PASS/FAIL per criterion; on any arithmetic mismatch, state the correct figure and loop back to fix.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "invoice.html"
+        }
+      ],
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

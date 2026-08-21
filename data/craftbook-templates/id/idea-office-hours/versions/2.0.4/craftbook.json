@@ -1,0 +1,409 @@
+{
+  "id": "idea-office-hours",
+  "name": "Idea Office Hours",
+  "description": "Pressure-test a product idea with forcing questions before jumping to solutions, then capture the decision in a short design doc — a structured 'office hours' diagnostic.",
+  "basedOn": {
+    "name": "gstack",
+    "url": "https://github.com/garrytan/gstack"
+  },
+  "plan": "Use this workflow before committing implementation effort. Ground the conversation in the user's actual problem and available project evidence, ask one decision question at a time with `ask_user_question`, and distinguish facts from assumptions. In unattended runs, make the smallest reversible assumptions and label them. The output is a decision record, not brainstorming theater: it must end with a chosen wedge and a real next action.",
+  "entryStepId": "frame",
+  "triggers": [
+    "brainstorm this",
+    "is this worth building",
+    "help me think through",
+    "office hours"
+  ],
+  "command": "idea-office-hours",
+  "steps": [
+    {
+      "id": "frame",
+      "name": "Frame the opportunity",
+      "description": "Turn the rough idea into a specific problem, audience, outcome, and assumption set.",
+      "prompt": "Inspect the project brief and relevant workspace material before asking anything already answered there. Establish who has the problem, what they do today, why that is inadequate, the desired outcome, constraints, and evidence already available. Ask one high-leverage question at a time. Separate verified facts from assumptions and record what evidence would falsify the idea.\n\nObservable handoff: write the completed result to `{{workPath}}/idea-brief.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "product strategist",
+      "advanceWhen": {
+        "file": "{{workPath}}/idea-brief.md",
+        "minBytes": 600,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "pressure-test"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/idea-brief.md",
+            "bytes": 600,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/idea-brief.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/idea-brief.md",
+            "pattern": "^##\\s+Problem",
+            "flags": "im",
+            "label": "Problem section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/idea-brief.md",
+            "pattern": "^##\\s+Audience",
+            "flags": "im",
+            "label": "Audience section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/idea-brief.md",
+            "pattern": "^##\\s+Success criteria",
+            "flags": "im",
+            "label": "measurable Success criteria section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/idea-brief.md",
+            "pattern": "^##\\s+Assumptions",
+            "flags": "im",
+            "label": "Assumptions section",
+            "artifact": true
+          }
+        ],
+        "onReject": "frame",
+        "maxAttempts": 3
+      },
+      "next": "pressure-test"
+    },
+    {
+      "id": "pressure-test",
+      "name": "Pressure-test the options",
+      "description": "Challenge the premise and compare meaningful alternatives before choosing a solution.",
+      "prompt": "Read `{{workPath}}/idea-brief.md`. Test the strongest assumptions against workspace evidence and, when available and appropriate, research tools. Develop at least three materially different options, including a no-build or manual option. For each, compare user value, evidence, effort, reversibility, key risk, and the cheapest falsification test. Recommend one narrow wedge and explain what evidence would change that recommendation. Before working, open `{{workPath}}/idea-brief.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/idea-options.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "product researcher",
+      "consumes": [
+        {
+          "file": "{{workPath}}/idea-brief.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/idea-options.md",
+        "minBytes": 900,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "decide"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/idea-options.md",
+            "bytes": 900,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/idea-options.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/idea-options.md",
+            "pattern": "^##\\s+Evidence",
+            "flags": "im",
+            "label": "Evidence section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/idea-options.md",
+            "pattern": "^##\\s+Alternatives",
+            "flags": "im",
+            "label": "Alternatives section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/idea-options.md",
+            "pattern": "^##\\s+Risks",
+            "flags": "im",
+            "label": "Risks section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/idea-options.md",
+            "pattern": "^##\\s+Recommendation",
+            "flags": "im",
+            "label": "Recommendation section",
+            "artifact": true
+          }
+        ],
+        "onReject": "pressure-test",
+        "maxAttempts": 3
+      },
+      "next": "decide"
+    },
+    {
+      "id": "decide",
+      "name": "Write the decision record",
+      "description": "Capture a defensible decision and the smallest useful real-world action.",
+      "prompt": "Synthesize the brief and options into a concise decision record. Preserve uncertainty instead of manufacturing confidence. State the chosen wedge, why it beats the alternatives now, boundaries that prevent scope creep, leading and lagging success measures, the next experiment or delivery action, its owner, and a decision date or trigger for revisiting the choice.\n\nObservable handoff: write the completed result to `decisions/idea-office-hours.md` in the workspace with `write_file`. Do not merely describe what the file would contain. Re-read it with `read_file` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "product writer",
+      "advanceWhen": {
+        "file": "decisions/idea-office-hours.md",
+        "minBytes": 1100,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "decisions/idea-office-hours.md",
+            "bytes": 1100
+          },
+          {
+            "kind": "sniff",
+            "file": "decisions/idea-office-hours.md",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "contains",
+            "file": "decisions/idea-office-hours.md",
+            "pattern": "^##\\s+Problem",
+            "flags": "im",
+            "label": "Problem section"
+          },
+          {
+            "kind": "contains",
+            "file": "decisions/idea-office-hours.md",
+            "pattern": "^##\\s+Evidence heard from the user",
+            "flags": "im",
+            "label": "user evidence section"
+          },
+          {
+            "kind": "contains",
+            "file": "decisions/idea-office-hours.md",
+            "pattern": "^##\\s+Chosen wedge",
+            "flags": "im",
+            "label": "Chosen wedge section"
+          },
+          {
+            "kind": "contains",
+            "file": "decisions/idea-office-hours.md",
+            "pattern": "^##\\s+Alternatives considered",
+            "flags": "im",
+            "label": "Alternatives considered section"
+          },
+          {
+            "kind": "contains",
+            "file": "decisions/idea-office-hours.md",
+            "pattern": "^##\\s+Decision",
+            "flags": "im",
+            "label": "Decision section"
+          },
+          {
+            "kind": "contains",
+            "file": "decisions/idea-office-hours.md",
+            "pattern": "^##\\s+Next real-world action",
+            "flags": "im",
+            "label": "Next real-world action section"
+          }
+        ],
+        "onReject": "decide",
+        "maxAttempts": 3
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate the deliverable",
+      "description": "Independently grade the observable deliverable and route it to finish, repair, or user escalation.",
+      "prompt": "Review `decisions/idea-office-hours.md`, `{{workPath}}/idea-brief.md`, `{{workPath}}/idea-options.md` against every criterion below. Inspect the underlying evidence files named by the workflow; do not grade from the author's summary alone.\n\n1. The problem, audience, and success measures are specific enough to falsify.\n2. Verified evidence and assumptions are clearly distinguished.\n3. At least three meaningfully different alternatives, including no-build or manual work, were compared fairly.\n4. The chosen wedge follows from the evidence and has explicit scope boundaries.\n5. The next action has an owner, a measurable outcome, and a revisit trigger.\n\nOpen `{{workPath}}/idea-brief.md`, `{{workPath}}/idea-options.md` with `read_artifact`. Open `decisions/idea-office-hours.md` with `read_file`. Write the evidence-backed review to `{{workPath}}/reviews/idea-office-hours-review.md` in the artifacts drawer with `write_artifact`. Give each criterion a PASS or FAIL with a concrete path, excerpt, measurement, or observed behavior. End with exactly `Verdict: PASS` or `Verdict: REVISE`. Then use `advance_task_step` for the active task: PASS routes to `finish`; REVISE routes to `repair` for review rounds 1 through 2, and the 3th REVISE routes to `needs-user`. Never route to finish while a criterion is unmet.",
+      "suggestedRole": "product reviewer",
+      "consumes": [
+        {
+          "file": "decisions/idea-office-hours.md"
+        },
+        {
+          "file": "{{workPath}}/idea-brief.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/idea-options.md",
+          "artifact": true
+        }
+      ],
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/reviews/idea-office-hours-review.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reviews/idea-office-hours-review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit PASS or REVISE verdict",
+            "artifact": true
+          }
+        ],
+        "onReject": "evaluate",
+        "maxAttempts": 3
+      },
+      "next": "repair"
+    },
+    {
+      "id": "repair",
+      "name": "Repair the deliverable",
+      "description": "Fix only the concrete gaps from the latest independent review.",
+      "prompt": "Read `{{workPath}}/reviews/idea-office-hours-review.md` with `read_artifact` and repair every failed criterion in `decisions/idea-office-hours.md`, `{{workPath}}/idea-brief.md`, `{{workPath}}/idea-options.md`. Make changes on each file's declared surface (`write_artifact` for artifact inputs, `write_file` for workspace inputs), not in task notes or a reply. Preserve evidence that already passed. Re-run or re-check anything the reviewer found unproven. Ensure `decisions/idea-office-hours.md` is genuinely updated this turn so the repair is observable, then hand it back for independent evaluation.",
+      "suggestedRole": "product strategist",
+      "consumes": [
+        {
+          "file": "{{workPath}}/reviews/idea-office-hours-review.md",
+          "artifact": true
+        },
+        {
+          "file": "decisions/idea-office-hours.md"
+        },
+        {
+          "file": "{{workPath}}/idea-brief.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/idea-options.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "decisions/idea-office-hours.md",
+        "minBytes": 1100,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "decisions/idea-office-hours.md",
+            "bytes": 1100
+          },
+          {
+            "kind": "sniff",
+            "file": "decisions/idea-office-hours.md",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "contains",
+            "file": "decisions/idea-office-hours.md",
+            "pattern": "^##\\s+Problem",
+            "flags": "im",
+            "label": "Problem section"
+          },
+          {
+            "kind": "contains",
+            "file": "decisions/idea-office-hours.md",
+            "pattern": "^##\\s+Evidence heard from the user",
+            "flags": "im",
+            "label": "user evidence section"
+          },
+          {
+            "kind": "contains",
+            "file": "decisions/idea-office-hours.md",
+            "pattern": "^##\\s+Chosen wedge",
+            "flags": "im",
+            "label": "Chosen wedge section"
+          },
+          {
+            "kind": "contains",
+            "file": "decisions/idea-office-hours.md",
+            "pattern": "^##\\s+Alternatives considered",
+            "flags": "im",
+            "label": "Alternatives considered section"
+          },
+          {
+            "kind": "contains",
+            "file": "decisions/idea-office-hours.md",
+            "pattern": "^##\\s+Decision",
+            "flags": "im",
+            "label": "Decision section"
+          },
+          {
+            "kind": "contains",
+            "file": "decisions/idea-office-hours.md",
+            "pattern": "^##\\s+Next real-world action",
+            "flags": "im",
+            "label": "Next real-world action section"
+          }
+        ],
+        "onReject": "repair",
+        "maxAttempts": 3
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All deterministic and reviewer criteria passed.",
+      "prompt": "The independent review passed. Read `{{workPath}}/reviews/idea-office-hours-review.md` with `read_artifact`, then use `write_task_note` to record a concise DONE summary with the final deliverable paths (`decisions/idea-office-hours.md`, `{{workPath}}/idea-brief.md`, `{{workPath}}/idea-options.md`) and the evidence that each acceptance criterion passed. Report DONE without starting new work.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/reviews/idea-office-hours-review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true
+    },
+    {
+      "id": "needs-user",
+      "name": "Escalate unresolved concerns",
+      "description": "The bounded repair loop ended without a defensible pass.",
+      "prompt": "The deliverable did not pass after 3 review rounds. Do not claim success. Read `{{workPath}}/reviews/idea-office-hours-review.md` with `read_artifact`, then use `write_task_note` to record DONE_WITH_CONCERNS: the unmet criteria, what was attempted, the affected paths, and the smallest user decision or missing input needed to continue.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/reviews/idea-office-hours-review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true
+    }
+  ],
+  "version": "2.0.4",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

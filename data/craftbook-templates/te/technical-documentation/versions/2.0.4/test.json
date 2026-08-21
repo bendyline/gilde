@@ -1,0 +1,177 @@
+{
+  "schemaVersion": 1,
+  "title": "Technical Documentation — rate limiter Diataxis set",
+  "objective": "Exercise the Technical Documentation craftbook on a small real code surface and require a coherent, cross-linked Diataxis documentation set grounded in source behavior.",
+  "tags": [
+    "workflow",
+    "documentation",
+    "diataxis",
+    "typescript"
+  ],
+  "prompt": "Use the Technical Documentation craftbook to document the dependency-free rate limiter in this workspace. Inspect the source and test rather than guessing. Produce the craftbook inventory and plan plus a coherent set under `docs/`: `documentation-index.md`, `tutorial-rate-limit.md`, `how-to-configure-rate-limit.md`, `reference-rate-limit.md`, and `explanation-fixed-window.md`. The index must clearly organize tutorials, how-to, reference, and explanation, link to every page, cite the implementation/test where claims come from, and state how the documented examples were verified.",
+  "setup": {
+    "projectName": "Rate limiter documentation",
+    "about": "A hermetic TypeScript library documentation exercise. There are no external APIs or package dependencies.",
+    "missionObjectives": "Create accurate, navigable documentation that helps a first-time adopter use `createFixedWindowLimiter` and understand its tradeoffs without reading all source code.",
+    "files": [
+      {
+        "path": "README.md",
+        "content": "# tiny-limit\n\nA dependency-free fixed-window request limiter. Public behavior is defined by `src/rate-limit.ts` and its test. Documentation is intentionally incomplete.\n"
+      },
+      {
+        "path": "src/rate-limit.ts",
+        "content": "export interface RateLimitOptions {\n  windowMs: number;\n  max: number;\n}\n\nexport interface RateLimitDecision {\n  allowed: boolean;\n  remaining: number;\n  resetAt: number;\n}\n\nexport function createFixedWindowLimiter(options: RateLimitOptions) {\n  if (!Number.isInteger(options.max) || options.max < 1) throw new RangeError('max must be a positive integer');\n  if (!Number.isFinite(options.windowMs) || options.windowMs <= 0) throw new RangeError('windowMs must be positive');\n  const buckets = new Map<string, { count: number; resetAt: number }>();\n\n  return function check(key: string, now = Date.now()): RateLimitDecision {\n    const current = buckets.get(key);\n    const bucket = !current || now >= current.resetAt\n      ? { count: 0, resetAt: now + options.windowMs }\n      : current;\n    bucket.count += 1;\n    buckets.set(key, bucket);\n    return {\n      allowed: bucket.count <= options.max,\n      remaining: Math.max(0, options.max - bucket.count),\n      resetAt: bucket.resetAt,\n    };\n  };\n}\n"
+      },
+      {
+        "path": "test/rate-limit.test.ts",
+        "content": "import { strict as assert } from 'node:assert';\nimport { createFixedWindowLimiter } from '../src/rate-limit.js';\n\nconst check = createFixedWindowLimiter({ windowMs: 1000, max: 2 });\nassert.deepEqual(check('ada', 100), { allowed: true, remaining: 1, resetAt: 1100 });\nassert.deepEqual(check('ada', 200), { allowed: true, remaining: 0, resetAt: 1100 });\nassert.deepEqual(check('ada', 300), { allowed: false, remaining: 0, resetAt: 1100 });\nassert.deepEqual(check('ada', 1100), { allowed: true, remaining: 1, resetAt: 2100 });\n"
+      }
+    ],
+    "craftbookParams": {
+      "workPath": "tasks/eval"
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "The craftbook produces a complete, grounded five-page Diataxis set with a navigable index and terminal task evidence.",
+    "deliverables": [
+      {
+        "path": "docs/documentation-index.md",
+        "kind": "markdown-doc",
+        "minBytes": 850,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "docs/documentation-index.md",
+            "pattern": "^#{1,3}\\s+Tutorials?\\b[\\s\\S]*^#{1,3}\\s+How-to guides?\\b[\\s\\S]*^#{1,3}\\s+Reference\\b[\\s\\S]*^#{1,3}\\s+Explanation\\b[\\s\\S]*^#{1,3}\\s+Verification\\b",
+            "flags": "im",
+            "label": "Diataxis map and verification"
+          },
+          {
+            "kind": "contains",
+            "file": "docs/documentation-index.md",
+            "pattern": "tutorial-rate-limit\\.md[\\s\\S]*how-to-configure-rate-limit\\.md[\\s\\S]*reference-rate-limit\\.md[\\s\\S]*explanation-fixed-window\\.md",
+            "flags": "i",
+            "label": "all requested pages linked"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "docs/documentation-index.md",
+            "minCitations": 4
+          }
+        ]
+      },
+      {
+        "path": "docs/tutorial-rate-limit.md",
+        "kind": "markdown-doc",
+        "minBytes": 650,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "docs/tutorial-rate-limit.md",
+            "pattern": "createFixedWindowLimiter[\\s\\S]*windowMs[\\s\\S]*max[\\s\\S]*(allowed|remaining|resetAt)",
+            "label": "runnable API walkthrough"
+          }
+        ]
+      },
+      {
+        "path": "docs/how-to-configure-rate-limit.md",
+        "kind": "markdown-doc",
+        "minBytes": 550,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "docs/how-to-configure-rate-limit.md",
+            "pattern": "windowMs[\\s\\S]*max[\\s\\S]*(positive|greater than|at least)[\\s\\S]*(integer|finite)",
+            "flags": "i",
+            "label": "configuration constraints"
+          }
+        ]
+      },
+      {
+        "path": "docs/reference-rate-limit.md",
+        "kind": "markdown-doc",
+        "minBytes": 650,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "docs/reference-rate-limit.md",
+            "pattern": "RateLimitOptions[\\s\\S]*RateLimitDecision[\\s\\S]*allowed[\\s\\S]*remaining[\\s\\S]*resetAt",
+            "label": "public type reference"
+          }
+        ]
+      },
+      {
+        "path": "docs/explanation-fixed-window.md",
+        "kind": "markdown-doc",
+        "minBytes": 600,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "docs/explanation-fixed-window.md",
+            "pattern": "fixed[- ]window[\\s\\S]*(boundary|burst|trade[- ]?off)[\\s\\S]*(memory|Map|process)",
+            "flags": "i",
+            "label": "mechanism and tradeoffs"
+          }
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "kind": "fileCount",
+        "ext": [
+          ".md"
+        ],
+        "min": 5,
+        "dir": "docs"
+      }
+    ],
+    "taskNotes": {
+      "minBytes": 180,
+      "checks": [
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "\\bDONE\\b[\\s\\S]*docs/documentation-index\\.md[\\s\\S]*(5|five)\\s+(pages|documents)",
+          "flags": "i",
+          "label": "terminal note records the documentation set"
+        }
+      ],
+      "requireCraftbookTask": true
+    },
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    },
+    "unchangedFixtures": [
+      "README.md",
+      "src/rate-limit.ts",
+      "test/rate-limit.test.ts"
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "docs/documentation-index.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "Source fidelity",
+        "description": "Claims, examples, inputs, outputs, and edge cases agree with the supplied implementation and test."
+      },
+      {
+        "name": "Diataxis separation",
+        "description": "Tutorial, how-to, reference, and explanation pages each serve their distinct reader need without becoming duplicate summaries."
+      },
+      {
+        "name": "Navigation and verification",
+        "description": "The set is cross-linked, easy to scan, and transparent about how examples and factual claims were checked."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "Every public option and result field matches the source",
+    "Each Diataxis page has a distinct job",
+    "The index links the complete set and explains verification"
+  ]
+}

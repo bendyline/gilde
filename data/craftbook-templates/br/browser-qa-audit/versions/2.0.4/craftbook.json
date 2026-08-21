@@ -1,0 +1,429 @@
+{
+  "id": "browser-qa-audit",
+  "name": "Browser QA Audit",
+  "description": "Exercise a running app in a real browser, triage what breaks, and produce a report-only QA findings list with a health score — no code changes.",
+  "basedOn": {
+    "name": "gstack",
+    "url": "https://github.com/garrytan/gstack"
+  },
+  "plan": "Perform black-box, report-only browser QA. Do not read implementation code and do not fix defects. Test the supplied running target as a real user across core journeys, navigation, forms, validation, state changes, console health, responsive layouts, and accessibility basics. Capture evidence at the time of observation, retry suspected defects once, redact credentials, and distinguish tested, blocked, and out-of-scope surfaces. A health score is only valid when its evidence and arithmetic are inspectable.",
+  "entryStepId": "plan-coverage",
+  "triggers": [
+    "qa report only",
+    "just report bugs",
+    "test but dont fix"
+  ],
+  "command": "browser-qa-audit",
+  "toolsets": [
+    {
+      "toolsetId": "@playwright/mcp",
+      "optional": false,
+      "reason": "exercise the target through a real browser and capture reproducible evidence"
+    }
+  ],
+  "steps": [
+    {
+      "id": "plan-coverage",
+      "name": "Plan observable coverage",
+      "description": "Confirm the target and turn user intent into bounded journeys, states, and evidence requirements.",
+      "prompt": "Confirm the target URL, requested scope, authentication constraints, viewport requirements, destructive-action limits, and expected behavior from the task context. Ask only for missing information that blocks browser use, and never store credentials in output. Open the target with the configured browser toolset to verify reachability. Map the visible navigation and prioritize core journeys. Define happy, empty, invalid, error, loading, permission, and responsive states to exercise, plus a clear tested versus excluded boundary.\n\nObservable handoff: write the completed result to `qa/test-plan.md` in the workspace with `write_file`. Do not merely describe what the file would contain. Re-read it with `read_file` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "QA analyst",
+      "advanceWhen": {
+        "file": "qa/test-plan.md",
+        "minBytes": 700,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "goto": "exercise"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "qa/test-plan.md",
+            "bytes": 700
+          },
+          {
+            "kind": "sniff",
+            "file": "qa/test-plan.md",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/test-plan.md",
+            "pattern": "^##\\s+Target",
+            "flags": "im",
+            "label": "Target section"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/test-plan.md",
+            "pattern": "^##\\s+Core journeys",
+            "flags": "im",
+            "label": "Core journeys section"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/test-plan.md",
+            "pattern": "^##\\s+State matrix",
+            "flags": "im",
+            "label": "State matrix section"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/test-plan.md",
+            "pattern": "^##\\s+Viewports",
+            "flags": "im",
+            "label": "Viewports section"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/test-plan.md",
+            "pattern": "^##\\s+Scope boundaries",
+            "flags": "im",
+            "label": "Scope boundaries section"
+          }
+        ],
+        "onReject": "plan-coverage",
+        "maxAttempts": 3
+      },
+      "next": "exercise"
+    },
+    {
+      "id": "exercise",
+      "name": "Exercise the application",
+      "description": "Run the planned journeys in a real browser and capture reproducible, redacted evidence.",
+      "prompt": "Execute `qa/test-plan.md` with the configured browser tools, using `run_playwright_script` for repeatable multi-step journeys when useful. At every journey, record URL, viewport, input state, actions, visible result, console errors, and screenshot path. Test keyboard focus and basic accessible naming, realistic invalid input, browser back and forward behavior, and at least one narrow viewport. Retry each suspected issue once. Save screenshots beneath `qa/screenshots/` and a machine-readable issue summary to `qa/baseline.json`. Redact secrets and never submit destructive or externally visible actions without explicit permission.\n\nObservable handoff: write the completed result to `qa/browser-evidence.md` in the workspace with `write_file`. Do not merely describe what the file would contain. Re-read it with `read_file` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "browser QA engineer",
+      "consumes": [
+        {
+          "file": "qa/test-plan.md"
+        }
+      ],
+      "advanceWhen": {
+        "file": "qa/browser-evidence.md",
+        "minBytes": 1200,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "goto": "report-findings"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "qa/browser-evidence.md",
+            "bytes": 1200
+          },
+          {
+            "kind": "sniff",
+            "file": "qa/browser-evidence.md",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/browser-evidence.md",
+            "pattern": "^##\\s+Run metadata",
+            "flags": "im",
+            "label": "Run metadata section"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/browser-evidence.md",
+            "pattern": "^##\\s+Journey results",
+            "flags": "im",
+            "label": "Journey results section"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/browser-evidence.md",
+            "pattern": "^##\\s+Console",
+            "flags": "im",
+            "label": "Console section"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/browser-evidence.md",
+            "pattern": "^##\\s+Responsive and accessibility",
+            "flags": "im",
+            "label": "responsive and accessibility section"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/browser-evidence.md",
+            "pattern": "^##\\s+Evidence index",
+            "flags": "im",
+            "label": "Evidence index section"
+          },
+          {
+            "kind": "sniff",
+            "file": "qa/baseline.json",
+            "sniff": "json-valid"
+          }
+        ],
+        "onReject": "exercise",
+        "maxAttempts": 3
+      },
+      "next": "report-findings"
+    },
+    {
+      "id": "report-findings",
+      "name": "Write the QA report",
+      "description": "Triage observed defects, compute the health score, and provide owners with exact reproduction evidence.",
+      "prompt": "Write the report only from `qa/test-plan.md`, `qa/browser-evidence.md`, screenshots, and baseline data. For every issue include severity, confidence, category, affected journey, exact reproduction steps, expected versus actual behavior, screenshot or console evidence, frequency, and user impact. Keep blocked checks separate from passes. Compute category scores and the weighted health score with visible arithmetic. End with the top three fixes by user impact, but do not edit code or prescribe speculative implementation details.\n\nObservable handoff: write the completed result to `qa/browser-qa-report.md` in the workspace with `write_file`. Do not merely describe what the file would contain. Re-read it with `read_file` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "QA reporter",
+      "consumes": [
+        {
+          "file": "qa/test-plan.md"
+        },
+        {
+          "file": "qa/browser-evidence.md"
+        }
+      ],
+      "advanceWhen": {
+        "file": "qa/browser-qa-report.md",
+        "minBytes": 1500,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "qa/browser-qa-report.md",
+            "bytes": 1500
+          },
+          {
+            "kind": "sniff",
+            "file": "qa/browser-qa-report.md",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/browser-qa-report.md",
+            "pattern": "^##\\s+Executive summary",
+            "flags": "im",
+            "label": "Executive summary section"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/browser-qa-report.md",
+            "pattern": "^##\\s+Coverage",
+            "flags": "im",
+            "label": "Coverage section"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/browser-qa-report.md",
+            "pattern": "^##\\s+Findings",
+            "flags": "im",
+            "label": "Findings section"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/browser-qa-report.md",
+            "pattern": "^##\\s+Console health",
+            "flags": "im",
+            "label": "Console health section"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/browser-qa-report.md",
+            "pattern": "^##\\s+Health score",
+            "flags": "im",
+            "label": "Health score section"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/browser-qa-report.md",
+            "pattern": "^##\\s+Top three fixes",
+            "flags": "im",
+            "label": "Top three fixes section"
+          }
+        ],
+        "onReject": "report-findings",
+        "maxAttempts": 3
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate the deliverable",
+      "description": "Independently grade the observable deliverable and route it to finish, repair, or user escalation.",
+      "prompt": "Review `qa/browser-qa-report.md`, `qa/test-plan.md`, `qa/browser-evidence.md`, `qa/baseline.json` against every criterion below. Inspect the underlying evidence files named by the workflow; do not grade from the author's summary alone.\n\n1. Every claimed pass, fail, and blocked check traces to an actual browser journey in the evidence log.\n2. Each defect was reproduced twice or its confidence was reduced, and includes expected versus actual behavior plus screenshot or console evidence.\n3. Core journeys cover meaningful state changes, invalid input, navigation, console health, responsive layout, and accessibility basics in proportion to scope.\n4. Credentials and sensitive data are redacted, and no destructive or externally visible action was taken without permission.\n5. Severity reflects user impact and reach, while untested surfaces are never counted as passing.\n6. The category and overall health-score arithmetic is reproducible from the report.\n\nOpen `qa/browser-qa-report.md`, `qa/test-plan.md`, `qa/browser-evidence.md`, `qa/baseline.json` with `read_file`. Write the evidence-backed review to `{{workPath}}/reviews/browser-qa-audit-review.md` in the artifacts drawer with `write_artifact`. Give each criterion a PASS or FAIL with a concrete path, excerpt, measurement, or observed behavior. End with exactly `Verdict: PASS` or `Verdict: REVISE`. Then use `advance_task_step` for the active task: PASS routes to `finish`; REVISE routes to `repair` for review rounds 1 through 2, and the 3th REVISE routes to `needs-user`. Never route to finish while a criterion is unmet.",
+      "suggestedRole": "QA reviewer",
+      "consumes": [
+        {
+          "file": "qa/browser-qa-report.md"
+        },
+        {
+          "file": "qa/test-plan.md"
+        },
+        {
+          "file": "qa/browser-evidence.md"
+        },
+        {
+          "file": "qa/baseline.json"
+        }
+      ],
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/reviews/browser-qa-audit-review.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reviews/browser-qa-audit-review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit PASS or REVISE verdict",
+            "artifact": true
+          }
+        ],
+        "onReject": "evaluate",
+        "maxAttempts": 3
+      },
+      "next": "repair"
+    },
+    {
+      "id": "repair",
+      "name": "Repair the deliverable",
+      "description": "Fix only the concrete gaps from the latest independent review.",
+      "prompt": "Read `{{workPath}}/reviews/browser-qa-audit-review.md` with `read_artifact` and repair every failed criterion in `qa/browser-qa-report.md`, `qa/test-plan.md`, `qa/browser-evidence.md`, `qa/baseline.json`. Make changes on each file's declared surface (`write_artifact` for artifact inputs, `write_file` for workspace inputs), not in task notes or a reply. Preserve evidence that already passed. Re-run or re-check anything the reviewer found unproven. Ensure `qa/browser-qa-report.md` is genuinely updated this turn so the repair is observable, then hand it back for independent evaluation.",
+      "suggestedRole": "QA reporter",
+      "consumes": [
+        {
+          "file": "{{workPath}}/reviews/browser-qa-audit-review.md",
+          "artifact": true
+        },
+        {
+          "file": "qa/browser-qa-report.md"
+        },
+        {
+          "file": "qa/test-plan.md"
+        },
+        {
+          "file": "qa/browser-evidence.md"
+        },
+        {
+          "file": "qa/baseline.json"
+        }
+      ],
+      "advanceWhen": {
+        "file": "qa/browser-qa-report.md",
+        "minBytes": 1500,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "qa/browser-qa-report.md",
+            "bytes": 1500
+          },
+          {
+            "kind": "sniff",
+            "file": "qa/browser-qa-report.md",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/browser-qa-report.md",
+            "pattern": "^##\\s+Executive summary",
+            "flags": "im",
+            "label": "Executive summary section"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/browser-qa-report.md",
+            "pattern": "^##\\s+Coverage",
+            "flags": "im",
+            "label": "Coverage section"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/browser-qa-report.md",
+            "pattern": "^##\\s+Findings",
+            "flags": "im",
+            "label": "Findings section"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/browser-qa-report.md",
+            "pattern": "^##\\s+Console health",
+            "flags": "im",
+            "label": "Console health section"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/browser-qa-report.md",
+            "pattern": "^##\\s+Health score",
+            "flags": "im",
+            "label": "Health score section"
+          },
+          {
+            "kind": "contains",
+            "file": "qa/browser-qa-report.md",
+            "pattern": "^##\\s+Top three fixes",
+            "flags": "im",
+            "label": "Top three fixes section"
+          }
+        ],
+        "onReject": "repair",
+        "maxAttempts": 3
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All deterministic and reviewer criteria passed.",
+      "prompt": "The independent review passed. Read `{{workPath}}/reviews/browser-qa-audit-review.md` with `read_artifact`, then use `write_task_note` to record a concise DONE summary with the final deliverable paths (`qa/browser-qa-report.md`, `qa/test-plan.md`, `qa/browser-evidence.md`, `qa/baseline.json`) and the evidence that each acceptance criterion passed. Report DONE without starting new work.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/reviews/browser-qa-audit-review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true
+    },
+    {
+      "id": "needs-user",
+      "name": "Escalate unresolved concerns",
+      "description": "The bounded repair loop ended without a defensible pass.",
+      "prompt": "The deliverable did not pass after 3 review rounds. Do not claim success. Read `{{workPath}}/reviews/browser-qa-audit-review.md` with `read_artifact`, then use `write_task_note` to record DONE_WITH_CONCERNS: the unmet criteria, what was attempted, the affected paths, and the smallest user decision or missing input needed to continue.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/reviews/browser-qa-audit-review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true
+    }
+  ],
+  "version": "2.0.4",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

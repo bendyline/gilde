@@ -1,0 +1,158 @@
+{
+  "id": "fact-check",
+  "name": "Fact-Check a Set of Claims",
+  "description": "Verify a set of claims one by one and produce a verdict report: a planner extracts and itemizes every checkable claim and locks the rating scale, a researcher independently verifies each claim against primary sources and logs the evidence, and a reviewer compiles a per-claim verdict report with ratings and corrections. The ordering matters because verifying before itemizing lets claims slip through unchecked, and a report without a fixed rating scale gives inconsistent verdicts; isolating each atomic claim and locking the scale first makes the check exhaustive and auditable. Use this for fact-checking articles or statements, verifying claims, debunking, accuracy passes, and 'is this true' / 'check these facts' requests.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Claim scope (planner) — itemize every checkable claim + lock the rating scale → gated on artifact `{{workPath}}/claim-scope.md` (markdown-notes)\n2. Verify each claim (researcher) — independently check each claim against primary sources → gated on artifact `{{workPath}}/evidence.md` (markdown-notes)\n3. Compile the verdict report (reviewer) — per-claim ratings, evidence, and corrections → gated on artifact `{{workPath}}/factcheck.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "claim-scope",
+  "triggers": [
+    "fact-check this",
+    "verify these claims",
+    "is this true",
+    "check these facts",
+    "debunk or confirm"
+  ],
+  "steps": [
+    {
+      "id": "claim-scope",
+      "name": "Claim scope",
+      "description": "itemize every checkable claim + lock the rating scale",
+      "prompt": "1. Read the source material and extract EVERY discrete, checkable factual claim into {{workPath}}/claim-scope.md, each as one atomic statement with an id (C1, C2, ...) — split compound sentences into separate claims and quote the original wording. 2. Mark each claim's type (statistic, attribution, event, causal, definitional) since that drives how it is verified. 3. Lock the rating scale exactly (e.g. True / Mostly True / Mixed / Mostly False / False / Unverifiable) and define each rating. 4. Write an acceptance-criteria checklist (e.g. 'every claim from the source is itemized with an id', 'each claim gets exactly one rating from the locked scale', 'each rating cites at least one independent source', 'false/mixed claims include a correction'). 5. Record decisions. Call write_task_note with the claim list + scale + checklist; write the same to {{workPath}}/claim-scope.md.\n\nThe deliverable `{{workPath}}/claim-scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/claim-scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/claim-scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/claim-scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "claim-scope",
+        "maxAttempts": 3
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify each claim",
+      "description": "independently check each claim against primary sources",
+      "prompt": "1. For each claim id, independently verify it against authoritative, primary sources — do NOT trust the source being checked. 2. Log to {{workPath}}/evidence.md per claim: the id, the source(s) [n] you checked, the exact figure/quote/fact found, whether it confirms, contradicts, or partially supports the claim, and a proposed rating from the locked scale. 3. For numeric or attribution claims, find the original record (the dataset, the filing, the transcript), not a secondary report. 4. If a claim cannot be verified after a genuine search, rate it Unverifiable and say what evidence would settle it. 5. Where a claim is false or mixed, capture the correct fact so the report can state the correction. Good looks like an evidence log where each claim's rating is already justified. Do not write the final report yet.\n\nThe deliverable `{{workPath}}/evidence.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "researcher",
+      "advanceWhen": {
+        "file": "{{workPath}}/evidence.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/evidence.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/evidence.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Compile the verdict report",
+      "description": "per-claim ratings, evidence, and corrections",
+      "prompt": "1. Write {{workPath}}/factcheck.md with a short summary (counts per rating) then one entry per claim id, in order: the quoted claim, its rating from the locked scale, a one-to-three-sentence justification, the supporting source(s) [n], and — for any False/Mixed claim — the correct statement. 2. Use ONLY ratings from the locked scale and base each strictly on {{workPath}}/evidence.md; do not introduce new claims or change wordings. 3. Add a References list so every [n] resolves to a real, independent source. 4. Keep verdicts dispassionate and evidence-first. 5. On a loop-back, fix only the named gaps. 6. Call write_task_note with the report path and which criteria now pass.\n\nBefore working, open the artifact input `{{workPath}}/evidence.md` with `read_artifact`; do not look for it in the workspace.\n\nThe deliverable `{{workPath}}/factcheck.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/evidence.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/factcheck.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/factcheck.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/factcheck.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open {{workPath}}/factcheck.md and check EACH criterion PASS/FAIL: (1) every claim id from {{workPath}}/claim-scope.md has an entry — none dropped; (2) each entry has exactly one rating drawn from the locked scale; (3) each rating cites at least one independent source that is NOT the material being checked; (4) every False/Mixed claim includes a correction; (5) spot-check 3 verdicts against {{workPath}}/evidence.md to confirm the rating matches the logged evidence; (6) the summary counts match the entries. A report that rates a claim against the source it came from, or skips a claim, FAILS.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/factcheck.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/factcheck.md",
+          "artifact": true
+        }
+      ],
+      "next": "report"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

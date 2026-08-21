@@ -541,27 +541,90 @@ function main() {
   // belongs in the artifacts drawer. Historical releases remain immutable,
   // so this policy intentionally checks only the newest eligible version.
   // A source deliverable should use a source-oriented path instead of
-  // silently putting notes/reviews/reports into the project workspace.
-  const isAccessoryArtifactPath = (file) =>
-    typeof file === 'string' && /^(?:notes|reviews|reports)\//.test(file.replaceAll('\\\\', '/').replace(/^\.\//, ''));
-  const checkAccessoryStep = (path, step, pointer) => {
+  // silently putting notes/reviews/reports/tasks into the project workspace.
+  //
+  // Paths are checked AFTER resolving the book's own param defaults plus
+  // the runtime tokens gezel provides ({{task.dir}} et al.): the standard
+  // per-task-folder pattern is a `workPath` param whose default is
+  // `{{task.dir}}`, so a `{{workPath}}/scope.md` deliverable must resolve
+  // to `tasks/0/scope.md` here or 400+ migrated deliverables silently
+  // drop out of the accessory rules. Mirrors gezel's
+  // packages/catalog/src/artifact-surface.ts — keep the two in sync.
+  const RUNTIME_TEMPLATE_SENTINELS = {
+    'task.num': '0',
+    'task.ref': 'p/0',
+    'task.projectId': 'p',
+    'task.dir': 'tasks/0',
+  };
+  const paramDefaultsOf = (doc) =>
+    Object.fromEntries(
+      Object.entries(doc?.paramSchema?.properties ?? {})
+        .filter(([, v]) => typeof v?.default === 'string')
+        .map(([k, v]) => [k, v.default]),
+    );
+  const resolveTemplatePath = (file, defaults) => {
+    if (typeof file !== 'string') return file;
+    let out = file;
+    for (let pass = 0; pass < 8; pass += 1) {
+      const next = out.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (whole, key) =>
+        Object.hasOwn(RUNTIME_TEMPLATE_SENTINELS, key)
+          ? RUNTIME_TEMPLATE_SENTINELS[key]
+          : Object.hasOwn(defaults, key)
+            ? defaults[key]
+            : whole,
+      );
+      if (next === out) break;
+      out = next;
+    }
+    return out;
+  };
+  const isAccessoryArtifactPath = (file, defaults = {}) =>
+    typeof file === 'string' &&
+    /^(?:notes|reviews|reports|tasks)\//.test(
+      resolveTemplatePath(file.replaceAll('\\\\', '/').replace(/^\.\//, ''), defaults),
+    );
+  // {{task.ref}} is `<projectId>/<num>` — a slash. In a file field it nests
+  // a project-named directory inside the drawer; the per-task token is
+  // {{task.dir}}.
+  const hasTaskRefToken = (file) =>
+    typeof file === 'string' && /\{\{\s*task\.ref\s*\}\}/.test(file);
+  const checkAccessoryStep = (path, step, pointer, defaults) => {
     if (!step || typeof step !== 'object') return;
     const checkRef = (ref, refPointer) => {
-      if (!ref || !isAccessoryArtifactPath(ref.file) || ref.artifact === true) return;
+      if (!ref) return;
+      if (hasTaskRefToken(ref.file)) {
+        c.error(
+          path,
+          refPointer,
+          'task-ref-in-path',
+          `path "${ref.file}" embeds {{task.ref}}, which contains a slash — use {{task.dir}} (or a workPath param defaulting to it) for per-task paths`,
+        );
+      }
+      if (!isAccessoryArtifactPath(ref.file, defaults) || ref.artifact === true) return;
       c.error(
         path,
         refPointer,
         'accessory-file-must-be-artifact',
-        `working file "${ref.file}" must set artifact: true (notes/, reviews/, and reports/ never use the project workspace)`,
+        `working file "${ref.file}" must set artifact: true (notes/, reviews/, reports/, and tasks/ never use the project workspace)`,
       );
     };
 
     if (step.advanceWhen) {
       checkRef(step.advanceWhen, `${pointer}/advanceWhen`);
+      // The model needs to be told how to land an artifact deliverable —
+      // unless it never writes it at all: an onEnter script or the fanout
+      // machinery produces the file runtime-side, and DocBlocks-style
+      // binary deliverables land through `save_artifact`, not
+      // `write_artifact`.
+      const producedWithoutModelWrite =
+        (Array.isArray(step.onEnter) && step.onEnter.length > 0) || step.spawnFanout === true;
       if (
-        isAccessoryArtifactPath(step.advanceWhen.file) &&
+        isAccessoryArtifactPath(step.advanceWhen.file, defaults) &&
         step.advanceWhen.artifact === true &&
-        !/`write_artifact(?:`|\()/.test(typeof step.prompt === 'string' ? step.prompt : '')
+        !producedWithoutModelWrite &&
+        !/`write_artifact(?:`|\()|\bsave_artifact\b/.test(
+          typeof step.prompt === 'string' ? step.prompt : '',
+        )
       ) {
         c.error(
           path,
@@ -576,9 +639,17 @@ function main() {
     }
     for (const [i, check] of (step.gate?.checks ?? []).entries()) {
       checkRef(check, `${pointer}/gate/checks/${i}`);
+      if (check?.kind === 'markdownHeadingsMatch' && hasTaskRefToken(check.outlineFile)) {
+        c.error(
+          path,
+          `${pointer}/gate/checks/${i}/outlineFile`,
+          'task-ref-in-path',
+          `path "${check.outlineFile}" embeds {{task.ref}}, which contains a slash — use {{task.dir}} for per-task paths`,
+        );
+      }
       if (
         check?.kind === 'markdownHeadingsMatch' &&
-        isAccessoryArtifactPath(check.outlineFile) &&
+        isAccessoryArtifactPath(check.outlineFile, defaults) &&
         check.outlineArtifact !== true
       ) {
         c.error(
@@ -607,8 +678,17 @@ function main() {
       const path = join(item.itemDir, 'versions', latest.version, 'craftbook.json');
       const parsed = readJson(path);
       if (!parsed.ok) continue;
+      const defaults = paramDefaultsOf(parsed.value);
+      if (hasTaskRefToken(parsed.value.spawn?.overFile)) {
+        c.error(
+          path,
+          '/spawn/overFile',
+          'task-ref-in-path',
+          `path "${parsed.value.spawn.overFile}" embeds {{task.ref}}, which contains a slash — use {{task.dir}} for per-task paths`,
+        );
+      }
       if (
-        isAccessoryArtifactPath(parsed.value.spawn?.overFile) &&
+        isAccessoryArtifactPath(parsed.value.spawn?.overFile, defaults) &&
         parsed.value.spawn?.overArtifact !== true
       ) {
         c.error(
@@ -619,10 +699,10 @@ function main() {
         );
       }
       for (const [i, step] of (parsed.value.steps ?? []).entries()) {
-        checkAccessoryStep(path, step, `/steps/${i}`);
+        checkAccessoryStep(path, step, `/steps/${i}`, defaults);
       }
       for (const [i, step] of (parsed.value.spawn?.steps ?? []).entries()) {
-        checkAccessoryStep(path, step, `/spawn/steps/${i}`);
+        checkAccessoryStep(path, step, `/spawn/steps/${i}`, defaults);
       }
     }
   }

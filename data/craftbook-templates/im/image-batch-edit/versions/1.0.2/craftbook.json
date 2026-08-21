@@ -1,0 +1,153 @@
+{
+  "id": "image-batch-edit",
+  "name": "Batch Image Transform",
+  "description": "Apply a consistent transform across a whole folder of images — resize, crop to a ratio, convert format, compress, watermark, or recolor — and verify every file came out correct. Scope the exact transform and a verification rule FIRST (target dimensions, format, quality, naming) so the batch is deterministic and reproducible, then process every file and prove the output count, dimensions, and format match the spec. Covers bulk image processing, resizing, format conversion, compression, watermarking, and folder-wide edits.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the transform (planner) — lock the exact transform, output spec, and verify rule → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Process the folder (developer) — apply the transform to every file → gated on `out` (image-set)\n3. Verify the batch (reviewer) — confirm count, dimensions, and format per file → gated on artifact `{{workPath}}/verify.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "batch edit images",
+    "resize a folder of images",
+    "convert image formats",
+    "compress images",
+    "bulk image transform"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the transform",
+      "description": "lock the exact transform, output spec, and verify rule",
+      "prompt": "1) List the source folder and count/inventory the files and their current formats and sizes. 2) Lock the EXACT transform: target dimensions or max-edge, crop/fit behavior (cover vs contain vs pad), output format and quality, color/orientation handling (respect EXIF rotation), and any watermark. 3) Decide the output location and naming (in-place vs an out/ folder; suffix vs same name). 4) Write an acceptance-criteria checklist: 'every source image has exactly one output', 'all outputs are <format>', 'all outputs are <= target dimensions / exactly <ratio>', 'no output is larger in bytes than its source when compressing', 'originals are preserved if requested'. 5) Record transform + checklist via write_task_note AND to {{workPath}}/scope.md. Good looks like: a spec precise enough to script.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "process"
+    },
+    {
+      "id": "process",
+      "name": "Process the folder",
+      "description": "apply the transform to every file",
+      "prompt": "1) Read scope.md. 2) Prefer writing a small reproducible script (e.g. using ImageMagick/sharp/Pillow if available) over manual one-offs, so the batch is repeatable and nothing is missed. 3) Iterate every source file deterministically; apply the exact transform, honoring fit behavior and EXIF orientation. 4) Write outputs to the agreed location with the agreed names; preserve originals if requested. 5) Skip or log (never silently drop) any file that fails to decode, and report it. 6) Keep a running output count. 7) write_task_note the output folder and the in/out counts. Good looks like: one correctly-transformed output per input, produced by a rerunnable command.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "out",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "fileCount",
+            "ext": [
+              "png",
+              "jpg",
+              "jpeg",
+              "svg",
+              "webp"
+            ],
+            "min": 3,
+            "dir": "out"
+          }
+        ],
+        "onReject": "process",
+        "maxAttempts": 3
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify the batch",
+      "description": "confirm count, dimensions, and format per file",
+      "prompt": "1) Re-read scope.md's checklist. 2) Count outputs vs inputs — they must match (or match minus any explicitly-logged failures). 3) Sample 4-5 outputs and inspect actual dimensions and format against the spec (use an identify/probe tool or open them). 4) When compressing, confirm output bytes <= source bytes. 5) Confirm originals are intact if preservation was required. 6) Write a verification note: PASS/FAIL per criterion with the measured numbers. On a loop-back the processor fixes only the failing files. write_task_note the verification result.\n\nThe deliverable `{{workPath}}/verify.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "out"
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "fileCount",
+            "ext": [
+              "png",
+              "jpg",
+              "jpeg",
+              "svg",
+              "webp"
+            ],
+            "min": 3,
+            "dir": "out"
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "1) Open out/ and count files vs the source inventory in scope.md — must match (PASS/FAIL). 2) Probe 4-5 outputs: are dimensions and format exactly per spec (PASS/FAIL)? 3) For compression jobs, confirm outputs are smaller than sources. 4) Confirm originals preserved if required. 5) Read verify.md and reconcile its claims with what you actually observe. 6) Write PASS/FAIL per criterion. Any mismatch → loop back to process to fix the offending files.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"process\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "out"
+        }
+      ],
+      "next": "process"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

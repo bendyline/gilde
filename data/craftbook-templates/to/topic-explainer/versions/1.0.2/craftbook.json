@@ -1,0 +1,152 @@
+{
+  "id": "topic-explainer",
+  "name": "Topic Explainer",
+  "description": "Explain a complex topic clearly for a defined audience: a planner pins the audience, their assumed prior knowledge, and the concepts that must be taught, a researcher gathers accurate facts and good analogies with sources, and a copywriter writes a progressively-structured explainer that builds from fundamentals to the full picture. The ordering matters because an explainer written without a fixed audience either condescends or loses people, and one written without a concept map skips a prerequisite; locking the audience and a concept dependency order first guarantees the explanation actually lands. Use this for 'explain X like I'm a beginner/expert', concept explainers, how-it-works guides, ELI5/ELI-expert pieces, and turning a hard topic into an accessible read.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the explainer (planner) — audience, assumed knowledge, and concept dependency order → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Gather facts & analogies (researcher) — accurate facts, examples, and analogies with sources → gated on artifact `{{workPath}}/facts.md` (markdown-notes)\n3. Write the explainer (copywriter) — progressive explainer from fundamentals to full picture → gated on `explainer.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "explain this topic",
+    "how does X work",
+    "explain like I'm a beginner",
+    "make this concept accessible",
+    "write an explainer on"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the explainer",
+      "description": "audience, assumed knowledge, and concept dependency order",
+      "prompt": "1. Pin the target audience and their assumed prior knowledge in one sentence (e.g. 'curious non-technical adult, no math'), and the target length. 2. List the concepts that MUST be understood, then order them by dependency (what must be taught before what) — this is the explainer's spine. 3. Decide the structure: a one-line 'what it is', then fundamentals, then the mechanism, then implications/examples, then a recap; flag where an analogy or a worked example is needed. 4. Write an acceptance-criteria checklist (e.g. 'no concept is used before it is introduced', 'jargon is defined on first use', 'at least 2 concrete examples or analogies', 'a reader at the assumed level could follow it', 'every factual claim is accurate and cited where non-obvious'). 5. Record decisions. Call write_task_note with the audience, concept order, structure, and checklist; write the same to {{workPath}}/scope.md.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "research"
+    },
+    {
+      "id": "research",
+      "name": "Gather facts & analogies",
+      "description": "accurate facts, examples, and analogies with sources",
+      "prompt": "1. For each concept in the dependency order, gather accurate facts into {{workPath}}/facts.md with sources [n] for any non-obvious or quantitative claim, prioritizing authoritative explanations. 2. Find or craft at least two concrete examples and one strong analogy per hard concept, and sanity-check that each analogy does not mislead (note where it breaks down). 3. Note common misconceptions about the topic so the explainer can pre-empt them. 4. Verify any figure or mechanism against a reliable source; mark uncertain points UNVERIFIED. Good looks like a fact file where every concept has accurate grounding plus a teaching device. Do not write the explainer yet.\n\nThe deliverable `{{workPath}}/facts.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "researcher",
+      "advanceWhen": {
+        "file": "{{workPath}}/facts.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/facts.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/facts.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "research",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the explainer",
+      "description": "progressive explainer from fundamentals to full picture",
+      "prompt": "1. Write explainer.md following the locked concept order: a crisp one-line 'what it is', then build up concept by concept so nothing is referenced before it is introduced. 2. Define every term on first use, and use the gathered examples/analogies to make hard concepts concrete (note where an analogy breaks down). 3. Pre-empt the common misconceptions. 4. Match the assumed-knowledge level exactly — neither condescend nor assume away prerequisites. 5. Cite non-obvious facts [n] and end with a short recap of the key takeaways. 6. On a loop-back, fix only the named gaps. 7. Call write_task_note with the explainer path and which criteria now pass.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "explainer.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "explainer.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "explainer.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open explainer.md and check EACH criterion PASS/FAIL: (1) no concept is used before it is introduced (trace the dependency order from {{workPath}}/scope.md); (2) every jargon term is defined on first use; (3) at least two concrete examples or analogies appear and any analogy notes where it breaks down; (4) it matches the assumed-knowledge level — readable by the target audience without condescension; (5) non-obvious facts are cited and accurate (spot-check 2 against {{workPath}}/facts.md); (6) a recap of takeaways closes it. An explainer that drops a prerequisite, leaves jargon undefined, or misstates a fact FAILS.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "explainer.md"
+        }
+      ],
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

@@ -1,0 +1,157 @@
+{
+  "id": "contract-template",
+  "name": "Contract Template (Non-Legal-Advice)",
+  "description": "Draft a reusable, plain-language agreement template — service agreement, NDA, freelance contract, or terms — with clearly marked fill-in fields, structured numbered clauses, and a prominent non-legal-advice disclaimer. Scopes the parties, obligations, and risk allocation FIRST, drafts clear enforceable-style clauses with placeholders for the variable terms, then has a reviewer check completeness and flag anything that genuinely needs a lawyer. NOT legal advice — every output must say so. Use for templated agreements you will adapt and have counsel review.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the agreement (planner) — parties, obligations, term, payment, risk allocation, fill-in fields → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Draft the clauses (copywriter) — clear numbered clauses with marked placeholders + disclaimer → gated on `contract.md` (markdown-doc)\n3. Review the template (reviewer) — check clause completeness, placeholders, and lawyer-needed flags → gated on artifact `{{workPath}}/review.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "contract template",
+    "draft an nda",
+    "service agreement template",
+    "freelance contract",
+    "terms template",
+    "agreement document"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the agreement",
+      "description": "parties, obligations, term, payment, risk allocation, fill-in fields",
+      "prompt": "Map the deal structure before drafting clauses. Step 1: identify the agreement type and the parties and their roles. Step 2: list each party's core obligations and what each receives. Step 3: define the variable terms that must become FILL-IN FIELDS (names, dates, amounts, term length, jurisdiction) and mark them as placeholders like [PARTY_A_NAME]. Step 4: decide the risk-allocation clauses the template needs (confidentiality, IP ownership, liability limits, termination, dispute resolution, governing law) appropriate to the type. Step 5: note that this is a TEMPLATE and not legal advice — a disclaimer is mandatory in the output. Step 6: write an acceptance-criteria checklist ('all parties + roles defined', 'every variable is a marked fill-in field', 'standard protective clauses present for this type', 'termination + governing-law clauses included', 'a prominent non-legal-advice disclaimer is required'). Write the structure + field list + checklist via write_task_note AND to {{workPath}}/scope.md. No clause prose yet.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "draft"
+    },
+    {
+      "id": "draft",
+      "name": "Draft the clauses",
+      "description": "clear numbered clauses with marked placeholders + disclaimer",
+      "prompt": "Draft the agreement as contract.md in clear, plain language. Step 1: lead with a bold, unmissable disclaimer: this is a template for informational purposes, NOT legal advice, and should be reviewed by a qualified attorney before use. Step 2: write a preamble identifying the parties using the [PLACEHOLDER] fields and the effective date. Step 3: write the body as NUMBERED clauses (1, 1.1, 2 ...) — one obligation/topic per clause — covering scope of work/subject, payment terms, term and termination, confidentiality, IP ownership, liability/indemnity, dispute resolution, and governing law, each appropriate to the agreement type. Step 4: keep every variable as a clearly marked fill-in field so the user adapts it safely; add brief [GUIDANCE: ...] notes where a choice must be made. Step 5: end with a signature block (party, name, title, date lines). Use precise but readable language; avoid ambiguity in obligations. On a loop-back, fix ONLY the named gaps. Write the path + clause count via write_task_note.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "contract.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "contract.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "contract.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "draft",
+        "maxAttempts": 3
+      },
+      "next": "review"
+    },
+    {
+      "id": "review",
+      "name": "Review the template",
+      "description": "check clause completeness, placeholders, and lawyer-needed flags",
+      "prompt": "Review the template for completeness and honesty about its limits. Step 1: confirm the non-legal-advice disclaimer is present and prominent. Step 2: verify every scoped clause type is present and every variable term is a clearly marked fill-in field (no hard-coded names/amounts leaked in). Step 3: check the signature block and that termination + governing-law clauses exist. Step 4: flag any clause that genuinely requires a lawyer's judgment (e.g. liability caps, jurisdiction-specific enforceability) with a [LAWYER REVIEW] note rather than overstating certainty. Step 5: list concrete gaps with the clause number and fix, recorded as PASS/FAIL against the scope checklist. Write the findings via write_task_note AND to {{workPath}}/review.md. Gaps must be fixed in the draft phase before this passes.\n\nThe deliverable `{{workPath}}/review.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/review.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "contract.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "contract.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "review",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "QA the contract template against the locked criteria. Step 1: read contract.md. Step 2: confirm FIRST that a prominent non-legal-advice disclaimer is present — if missing, FAIL immediately and loop back. Step 3: check EACH remaining criterion: parties + roles defined via placeholders, every variable is a clearly marked fill-in field, standard protective clauses for this type are present, termination + governing-law clauses included, clauses are numbered and unambiguous, and a signature block exists. Step 4: confirm lawyer-judgment items carry a [LAWYER REVIEW] flag rather than false certainty, folding in {{workPath}}/review.md. Write PASS/FAIL per criterion with the offending clause on any FAIL.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"draft\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "contract.md"
+        }
+      ],
+      "next": "draft"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

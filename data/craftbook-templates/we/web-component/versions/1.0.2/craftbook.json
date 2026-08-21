@@ -1,0 +1,122 @@
+{
+  "id": "web-component",
+  "name": "Reusable Web Component",
+  "description": "Build a reusable custom element as a standards-based Web Component — a rating widget, toggle, accordion, modal, or color-picker — using the Custom Elements API and Shadow DOM with encapsulated styles, attributes, properties, and custom events. Designs the component's public API (tag name, observed attributes, properties, events, slots) first, then implements the class with a demo page proving it works. Components fail when the API is inconsistent or styles leak, so the api-design phase locks the contract before any code, the ordering that yields a genuinely reusable element rather than a one-off.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. API design (developer) — tag, attributes, properties, events, slots → gated on artifact `{{workPath}}/api-design.md` (markdown-notes)\n2. Build (developer) — implement the element + a demo in index.html → gated on `index.html` (html-page)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "api-design",
+  "triggers": [
+    "web component",
+    "custom element",
+    "reusable widget",
+    "shadow dom component",
+    "build a component",
+    "custom html element"
+  ],
+  "steps": [
+    {
+      "id": "api-design",
+      "name": "API design",
+      "description": "tag, attributes, properties, events, slots",
+      "prompt": "Design the component's PUBLIC API before any implementation. (1) Choose the custom-element tag name (must contain a hyphen, e.g. <star-rating>). (2) List the observed attributes (reflected to/from properties) and their types/defaults. (3) List the JS properties and methods consumers use. (4) Define the custom events it dispatches (name + detail payload). (5) Decide slots for projected content and the encapsulated style approach (Shadow DOM). (6) Write an acceptance-criteria checklist of 5-8 items, e.g. 'the element upgrades when added to the DOM', 'setting the observed attribute updates the rendering (attributeChangedCallback)', 'interacting dispatches the documented event with the right detail', 'styles are encapsulated in shadow DOM (no leakage)', 'a slot projects content', 'the demo shows it working', 'no console errors'. Write to {{workPath}}/api-design.md and via write_task_note. No implementation yet.\n\nThe deliverable `{{workPath}}/api-design.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "{{workPath}}/api-design.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/api-design.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/api-design.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "api-design",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build",
+      "description": "implement the element + a demo in index.html",
+      "prompt": "Implement the component and a demo in index.html (inline). (1) Define a class extending HTMLElement; attachShadow({mode:'open'}) and render template + encapsulated <style> in the constructor/connectedCallback. (2) Declare static observedAttributes and implement attributeChangedCallback to re-render on change; reflect attributes<->properties per the API. (3) Wire interaction to dispatch the documented CustomEvent(detail). (4) customElements.define the tag. (5) Add a demo section that uses the element, sets attributes, listens for its event, and shows the result. Vanilla JS, no CDN. On a loop-back, fix only the named gaps without regressing passing criteria. write_task_note the path and passing criteria.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 800
+          },
+          {
+            "kind": "htmlLint",
+            "file": "index.html"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Evaluate the component against its API. Open index.html if possible and interact via the demo; else read the class. Check EACH criterion from {{workPath}}/api-design.md and write PASS/FAIL with a reason: does the element upgrade and render, does changing the observed attribute update it (attributeChangedCallback fires), does interacting dispatch the documented event with the right detail, are styles encapsulated in Shadow DOM (no global leakage), does a slot project content, does the demo work, zero console errors? An attribute that does not re-render, or leaked styles, is a FAIL — loop back to build.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "index.html"
+        }
+      ],
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

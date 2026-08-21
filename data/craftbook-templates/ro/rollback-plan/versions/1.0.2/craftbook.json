@@ -1,0 +1,171 @@
+{
+  "id": "rollback-plan",
+  "name": "Rollback Plan",
+  "description": "Author a concrete, tested rollback plan for a release so that when a deploy goes wrong the team can revert FAST and safely without improvising under pressure — covering the trigger conditions that mean 'roll back', the exact reversal steps (redeploy previous artifact, down-migrations, flag flips, cache/CDN invalidation), data-safety and forward/backward-compatibility considerations, the recovery-time estimate, and a post-rollback verification. A planner scopes the failure modes and triggers, a developer writes the precise step-by-step runbook with real commands, and a reviewer dry-runs it for correctness and irreversible-data hazards. Use this alongside any risky deploy, migration, or feature launch where 'how do we undo this' must be answered before, not during, an incident.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope failure modes and triggers (planner) — define what 'roll back' means and when to pull the trigger → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Write the rollback runbook (developer) — produce precise, ordered reversal steps with real commands → gated on `rollback-plan.md` (markdown-doc)\n3. Dry-run and review (reviewer) — trace the steps for correctness and data hazards → gated on artifact `{{workPath}}/review.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "write a rollback plan",
+    "how do we roll back this release",
+    "revert plan for deploy",
+    "rollback runbook",
+    "undo the deploy safely"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope failure modes and triggers",
+      "description": "define what 'roll back' means and when to pull the trigger",
+      "prompt": "1. Identify the change being deployed (service, version, what it touches) and enumerate the realistic failure modes: error-rate spike, latency regression, broken migration, data corruption, dependency outage, bad feature flag. 2. For each failure mode define the TRIGGER — the objective signal and threshold that means 'roll back now' (e.g. '5xx > 2% for 5 min', 'p99 latency doubles', 'data-integrity check fails'). 3. Decide the rollback STRATEGY per failure mode: redeploy previous artifact, flip a feature flag, run a down-migration, restore from backup — and flag which changes are NOT cleanly reversible (irreversible migrations, deleted data, externally-visible side effects). 4. Identify who decides and who executes, and the target recovery-time objective. 5. Good looks like: a list of failure modes each with a measurable trigger and a chosen reversal strategy, with irreversible hazards called out explicitly. Write this as an acceptance-criteria checklist ('every failure mode has a measurable trigger', 'every reversible change has a reversal step', 'irreversible hazards are flagged with mitigation', 'RTO and decision owner stated') plus the analysis to the notes file via write_task_note AND to {{workPath}}/scope.md.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "write"
+    },
+    {
+      "id": "write",
+      "name": "Write the rollback runbook",
+      "description": "produce precise, ordered reversal steps with real commands",
+      "prompt": "1. Open {{workPath}}/scope.md and write the rollback runbook as a numbered, copy-pasteable procedure an on-call engineer can follow at 3am under stress. 2. Structure it: Trigger conditions (from scope) → Pre-rollback safety checks (snapshot/backup, announce, freeze) → Reversal steps in exact order with the real command or action for each → Data-handling steps (down-migrations, and explicit handling for any irreversible change) → Post-rollback verification (the checks that confirm the system is healthy again) → Communication/escalation. 3. For each reversal step give the concrete command/UI action and the expected result, so there is zero improvisation. 4. Call out every irreversible step with its mitigation (e.g. 'this migration drops a column — take a backup first; restoring requires X'). 5. State the expected recovery time. 6. Good looks like: a self-contained runbook where every reversible change from scope.md has an ordered step with a real command, every irreversible hazard has a mitigation, and a verification step confirms recovery. Write the runbook to rollback-plan.md.\n\nBefore working, open the artifact input `{{workPath}}/scope.md` with `read_artifact`; do not look for it in the workspace.",
+      "suggestedRole": "developer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/scope.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "rollback-plan.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "rollback-plan.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "rollback-plan.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 3
+      },
+      "next": "review"
+    },
+    {
+      "id": "review",
+      "name": "Dry-run and review",
+      "description": "trace the steps for correctness and data hazards",
+      "prompt": "1. Open rollback-plan.md and mentally (or actually, in a safe environment) dry-run each reversal step in order — does it run, is it in the right sequence, does it actually undo the change? 2. Confirm every failure mode and trigger from {{workPath}}/scope.md is covered and that each reversible change has a working reversal step. 3. Scrutinize the irreversible/data-loss steps hardest: is the hazard flagged, is the mitigation real and ordered BEFORE the destructive action? 4. Verify the post-rollback verification genuinely proves health, not just that a command exited 0. 5. Write a PASS/FAIL per acceptance criterion and list any gap, wrong ordering, or unguarded destructive step. 6. Any failure routes back to the write phase. Write findings to {{workPath}}/review.md.\n\nBefore working, open the artifact input `{{workPath}}/scope.md` with `read_artifact`; do not look for it in the workspace.\n\nThe deliverable `{{workPath}}/review.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/scope.md",
+          "artifact": true
+        },
+        {
+          "file": "rollback-plan.md"
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/review.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "rollback-plan.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "rollback-plan.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "review",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open rollback-plan.md and verify it against {{workPath}}/scope.md, PASS/FAIL each criterion. Confirm: (a) every failure mode has a measurable trigger condition; (b) every reversible change has an ordered, concrete reversal step with a real command; (c) every irreversible/data-loss hazard is flagged with a mitigation that happens BEFORE the destructive action; (d) pre-rollback safety checks and a post-rollback verification that proves health are present; (e) an RTO and a decision owner/escalation path are stated; (f) the steps read as a runbook executable under pressure with no improvisation. Any FAIL routes back to the write phase.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "rollback-plan.md"
+        }
+      ],
+      "next": "write"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

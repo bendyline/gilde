@@ -1,0 +1,159 @@
+{
+  "id": "grpc-service",
+  "name": "gRPC Service",
+  "description": "Build a gRPC service from a Protocol Buffers contract — define the .proto service and messages, implement the server handlers, and verify with client calls including streaming and status codes. Designs the proto contract FIRST — the service, RPC methods, request/response messages, field numbers, and the streaming kinds — because the .proto is the binding contract across languages, then implements the handlers, then tests unary/streaming calls and gRPC status codes. Covers protobuf service/message definitions, field numbering, unary vs server/client/bidi streaming, gRPC status codes, deadlines, and a client-driven test.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Proto contract design (planner) — lock the service, methods, messages, streaming kinds → gated on artifact `{{workPath}}/proto-design.md` (markdown-notes)\n2. Build the service (developer) — write the .proto + implement the server handlers → gated on `src/server.js` (code-module)\n3. Test with a client (developer) — test unary/streaming calls and status codes → gated on `src/server.test.js` (code-with-tests)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "proto-design",
+  "triggers": [
+    "build a grpc service",
+    "protobuf service and server",
+    "implement grpc handlers",
+    "create a .proto and server",
+    "rpc service"
+  ],
+  "steps": [
+    {
+      "id": "proto-design",
+      "name": "Proto contract design",
+      "description": "lock the service, methods, messages, streaming kinds",
+      "prompt": "Design the Protocol Buffers contract before any server code — the .proto is the binding cross-language contract. Step 1: Define the service and its RPC METHODS, choosing the streaming kind for each (unary, server-streaming, client-streaming, bidi). Step 2: Define the request and response MESSAGE types with explicit, stable FIELD NUMBERS and correct scalar/enum/repeated types. Step 3: Decide the gRPC STATUS-CODE map: which conditions return OK, INVALID_ARGUMENT, NOT_FOUND, ALREADY_EXISTS, etc., and how errors carry detail. Step 4: Note deadlines/timeouts expectations. Step 5: Write a numbered acceptance-criteria checklist of 5-9 items (e.g. 'each RPC has the documented signature and streaming kind', 'invalid input returns INVALID_ARGUMENT not OK', 'a missing entity returns NOT_FOUND', 'field numbers are stable and unique'). `write_task_note` the proto draft + status map + checklist and write the same to the produces path.\n\nThe deliverable `{{workPath}}/proto-design.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/proto-design.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/proto-design.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/proto-design.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "proto-design",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the service",
+      "description": "write the .proto + implement the server handlers",
+      "prompt": "Implement the gRPC service to the contract. Step 1: Write the `.proto` file exactly as designed — service, methods with their streaming kinds, and messages with their field numbers. Step 2: Implement a server handler for every RPC; honor the streaming kind (stream responses for server-streaming, consume the stream for client-streaming). Step 3: Validate requests and return the correct gRPC STATUS CODE on each error condition (INVALID_ARGUMENT, NOT_FOUND, ...), never a generic UNKNOWN for an expected error. Step 4: Respect deadlines and use an in-memory store if none specified. Write the server source to the produces path (and the .proto alongside it). On a loop-back, fix only the named gaps. `write_task_note` the file paths and which criteria now pass.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/server.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/server.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/server.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/server.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/server.js"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "test"
+    },
+    {
+      "id": "test",
+      "name": "Test with a client",
+      "description": "test unary/streaming calls and status codes",
+      "prompt": "Write client-driven tests against the running service. Step 1: For each unary RPC, call it and assert the response message matches the proto and the status is OK. Step 2: For streaming RPCs, drive the stream and assert the sequence of messages is correct. Step 3: Trigger each error condition and assert the correct gRPC STATUS CODE comes back (INVALID_ARGUMENT on bad input, NOT_FOUND on missing), not OK or UNKNOWN. Step 4: Add a round-trip (create then fetch) to prove state wiring. `write_task_note` the test file path and pass/fail count.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/server.test.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/server.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/server.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/server.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/server.js"
+          }
+        ],
+        "onReject": "test",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Run the tests with a gRPC client. For EACH acceptance criterion: confirm each RPC's signature/streaming kind works and unary responses match the proto, confirm streaming RPCs yield the right message sequence, confirm error conditions return the correct gRPC status code (not OK/UNKNOWN), and confirm a round-trip works. Write PASS/FAIL per criterion.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "src/server.js"
+        }
+      ],
+      "next": "build"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

@@ -1,0 +1,115 @@
+{
+  "id": "folder-to-audio",
+  "name": "Text-to-Speech a Folder",
+  "description": "Turn a folder of text files (articles, chapters, notes, markdown) into a set of spoken audio files using text-to-speech, so a reading list becomes a listening list. Scopes the voice, file mapping, and chunking rules FIRST so long inputs do not get truncated or mispronounced, then synthesizes one audio artifact per source file with a consistent voice, then verifies every file was rendered and is audible. The scope-before-synthesize ordering is the point: deciding chunk size, file naming, and a manifest up front is what keeps a batch TTS run complete and re-runnable instead of half-finished.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the synthesis run (planner) — voice, file mapping, chunking, output manifest → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Synthesize the audio (developer) — render one audio file per source file with the locked voice → gated on `audio` (image-set)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "convert text to audio",
+    "text to speech a folder",
+    "narrate my articles",
+    "make audio from text files",
+    "tts batch"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the synthesis run",
+      "description": "voice, file mapping, chunking, output manifest",
+      "prompt": "Plan the batch BEFORE synthesizing anything. Step 1: list the source folder and record every text file (path, byte size). Step 2: pick ONE voice/engine (record the exact voice id and language) so all outputs sound consistent. Step 3: decide the input->output mapping (e.g. `article-01.md` -> `audio/article-01.mp3`) and the audio format/sample rate. Step 4: decide a chunking rule for long files (split on paragraph/sentence boundaries under the engine's character limit, then concatenate) so nothing is truncated. Step 5: decide pronunciation/normalization rules (expand numbers, abbreviations, URLs spoken-or-skipped). Write an acceptance-criteria checklist (one audio file per source file, all use the same voice, none is silent/zero-length, a manifest maps source->output->duration, long files are fully spoken not truncated) and the decisions to `{{workPath}}/scope.md` via write_task_note AND to the produces path.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "synthesize"
+    },
+    {
+      "id": "synthesize",
+      "name": "Synthesize the audio",
+      "description": "render one audio file per source file with the locked voice",
+      "prompt": "Render the audio to satisfy the scope. Step 1: for each source file, read its text and apply the normalization rules from scope. Step 2: split into chunks under the engine's limit on sentence boundaries, synthesize each chunk with the locked voice, and concatenate into the single mapped output file under `audio/`. Step 3: write outputs incrementally (one finished file at a time) so progress is observable and a crash is resumable. Step 4: as you go, append a row to `audio/manifest.json` or a manifest table: source path, output path, voice id, approximate duration, byte size. Do not skip files; do not change voice mid-batch. On a loop-back, re-render only the files the reviewer flagged (missing, silent, truncated) and leave passing files untouched. write_task_note the audio directory path and a coverage count (rendered vs source files).",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "audio",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "fileCount",
+            "ext": [
+              "png",
+              "jpg",
+              "jpeg",
+              "svg",
+              "webp"
+            ],
+            "min": 3,
+            "dir": "audio"
+          }
+        ],
+        "onReject": "synthesize",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Verify the batch is complete and audible. Step 1: count audio files in `audio/` vs source text files — every source must have an output (PASS/FAIL coverage). Step 2: confirm none is zero-length/silent (check byte size > a sane floor; sample-listen if an audio capability exists). Step 3: confirm the manifest maps each source->output with a plausible duration. Step 4: spot-check that the LONGEST source produced audio whose duration is consistent with its length (not truncated). Step 5: confirm all files share the locked voice/format. Write PASS/FAIL per criterion.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"synthesize\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "audio"
+        }
+      ],
+      "next": "synthesize"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

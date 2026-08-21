@@ -1,0 +1,119 @@
+{
+  "id": "social-thread",
+  "name": "Social Media Thread",
+  "description": "Write a multi-post social thread (X/Twitter, LinkedIn, Threads) that hooks, delivers, and converts: it first locks the single angle/big idea, the platform and its character limits, the target reader, and the CTA, then drafts the thread as numbered posts with a scroll-stopping hook, one idea per post, and a clear close. Covers Twitter thread, LinkedIn carousel copy, viral thread, social content, thought-leadership posts, and engagement hooks. Locking one angle and the hook before writing is the point: a small model that commits to a single big idea avoids the meandering thread that tries to say five things and stops no scroll.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Angle scope (planner) — lock the one big idea, platform limits, reader, and CTA → gated on artifact `{{workPath}}/angle-scope.md` (markdown-notes)\n2. Draft the thread (copywriter) — write the numbered thread to the locked angle and limits → gated on `social-thread.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "angle-scope",
+  "triggers": [
+    "write a twitter thread",
+    "social media thread",
+    "linkedin post",
+    "viral thread",
+    "write social content"
+  ],
+  "steps": [
+    {
+      "id": "angle-scope",
+      "name": "Angle scope",
+      "description": "lock the one big idea, platform limits, reader, and CTA",
+      "prompt": "1) State the ONE big idea/angle in a single sentence — the single takeaway the reader keeps. 2) Pick the platform and its constraints (e.g. X: <=280 chars/post; LinkedIn: <=3000 chars, line breaks matter). 3) Define the target reader and why this angle stops their scroll. 4) Decide the thread length (e.g. 6-10 posts) and the CTA for the final post (follow, link, reply prompt). 5) Sketch the post-by-post beat list: hook → 1 idea per post → close/CTA. Write an acceptance-criteria checklist (e.g. 'post 1 is a standalone scroll-stopping hook'; 'one idea per post'; 'every post within the char limit'; 'numbered and ordered'; 'final post has a clear CTA'; 'on a single consistent voice'). Use write_task_note for the angle + beats + checklist, and write the same to the produces path. No thread copy yet.\n\nThe deliverable `{{workPath}}/angle-scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/angle-scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/angle-scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/angle-scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "angle-scope",
+        "maxAttempts": 3
+      },
+      "next": "draft"
+    },
+    {
+      "id": "draft",
+      "name": "Draft the thread",
+      "description": "write the numbered thread to the locked angle and limits",
+      "prompt": "Write the full thread as numbered posts. 1) Post 1 is the HOOK: a standalone, curiosity- or tension-driven opener that works even if no one reads the rest — no 'a thread:' throat-clearing as the only content. 2) Each subsequent post delivers exactly one idea from the beat list, building the argument. 3) Keep every post within the platform's character limit (count characters). 4) Use a punchy, consistent voice; short lines; concrete specifics over abstractions. 5) The final post delivers the CTA. Output markdown as a numbered list where each item is one post, with a character count noted in parentheses after each. Save to the produces path and note total post count.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "social-thread.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "social-thread.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "social-thread.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "draft",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Read social-thread.md and grade against the checklist. Check EACH and write PASS/FAIL: (a) post 1 is a standalone, scroll-stopping hook; (b) one idea per post; (c) every post is within the platform character limit (verify the counts); (d) posts are numbered and logically ordered; (e) the final post has a clear CTA; (f) a single consistent voice throughout. A thread that exceeds the char limit on any post or has a weak/missing hook FAILS — loop back to draft and name the posts to fix.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"draft\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "social-thread.md"
+        }
+      ],
+      "next": "draft"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

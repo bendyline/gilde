@@ -1,0 +1,141 @@
+{
+  "id": "audio-ad-spot",
+  "name": "Audio Ad Spot",
+  "description": "Produce a short broadcast/podcast audio ad spot (15s/30s/60s) — a tightly-timed script with a hook, value, and a single call-to-action, synthesized into a finished, runtime-accurate voiced spot with optional music bed cue. Scopes the offer, exact runtime, and mandatory disclaimers FIRST, then synthesizes a voiced spot that hits the time target. Locking the runtime and CTA before recording is what makes a spot land in its slot and drive one action instead of overrunning or rambling.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Ad scope (planner) — offer, exact runtime, single CTA, disclaimers, voice → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Write the spot script (copywriter) — timed ad script with hook, CTA, disclaimer, cues → gated on artifact `{{workPath}}/ad-script.md` (markdown-notes)\n3. Produce the spot (developer) — synthesize the voiced spot to the exact runtime → gated on `ad-spot.mp3` (audio-file)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "make a radio ad",
+    "audio ad spot",
+    "30 second commercial",
+    "podcast ad read",
+    "produce an audio ad"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Ad scope",
+      "description": "offer, exact runtime, single CTA, disclaimers, voice",
+      "prompt": "Lock the spot BEFORE writing or voicing. Step 1: capture the product/offer, the ONE target action (the single CTA), and the audience. Step 2: pick the EXACT runtime slot (15/30/60s) and derive the word budget (~2.5 words/second for ad reads — record it). Step 3: capture any mandatory disclaimer/legal line and how the brand/CTA must be stated. Step 4: pick the voice and tone, and whether a music bed cue is wanted. Step 5: define the arc: hook (first ~3s) -> value -> CTA -> brand/disclaimer. Write an acceptance-criteria checklist (finished audio within ±1s of the slot, opens with a hook in the first 3s, states exactly one CTA, includes the disclaimer, brand named clearly, not silent) and decisions to `{{workPath}}/scope.md` via write_task_note AND the produces path.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "script"
+    },
+    {
+      "id": "script",
+      "name": "Write the spot script",
+      "description": "timed ad script with hook, CTA, disclaimer, cues",
+      "prompt": "Write the spot to the scope. Step 1: write to the word budget so the read lands in the slot — open with the hook in the first ~3 seconds. Step 2: keep one clear value message and exactly ONE CTA, stated plainly. Step 3: include the brand name and the mandatory disclaimer (a quick read at the end is fine, but it counts against the time). Step 4: add VO cues (`[pause]`, emphasis, pace) and a music-bed cue if scoped, and write numbers/phone/URLs as they should be SPOKEN. Step 5: write the script to `{{workPath}}/ad-script.md` with a running word count and estimated runtime via write_task_note AND the produces path. On a loop-back, trim/expand only to fix the time or a missing element.\n\nThe deliverable `{{workPath}}/ad-script.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "{{workPath}}/ad-script.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/ad-script.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/ad-script.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "script",
+        "maxAttempts": 3
+      },
+      "next": "produce"
+    },
+    {
+      "id": "produce",
+      "name": "Produce the spot",
+      "description": "synthesize the voiced spot to the exact runtime",
+      "prompt": "Render the finished spot. Step 1: synthesize the approved script with the locked voice/tone via the text-to-speech capability. Step 2: measure the rendered duration; if it is outside ±1s of the slot, adjust pacing or trim the script (loop the copy phase if it cannot fit) until it lands. Step 3: if a music bed was scoped, mix a low ducked bed under the VO and apply gentle fades. Step 4: normalize loudness to a broadcast-sane level so it is not too quiet/hot. Step 5: write the finished audio to `ad-spot.mp3` and note its exact measured duration. write_task_note the path and duration. On a loop-back, fix only the flagged issue (over/under time, missing CTA/disclaimer, silence).",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "ad-spot.mp3",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "ad-spot.mp3",
+            "bytes": 1000
+          }
+        ],
+        "onReject": "produce",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Time it and listen. Step 1: confirm `ad-spot.mp3` exists, is non-silent, and its duration is within ±1s of the target slot (PASS/FAIL). Step 2: sample-listen (if audio capability exists) or check the script — does it open with a hook in the first ~3s? Step 3: confirm exactly ONE CTA is stated and the brand is named clearly. Step 4: confirm the mandatory disclaimer is present. Step 5: confirm loudness is reasonable (and the music bed, if any, is ducked under the VO). Write PASS/FAIL per criterion.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"produce\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "ad-spot.mp3"
+        }
+      ],
+      "next": "produce"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

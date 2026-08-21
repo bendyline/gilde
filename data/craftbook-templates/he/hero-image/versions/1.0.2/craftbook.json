@@ -1,0 +1,166 @@
+{
+  "id": "hero-image",
+  "name": "Marketing Hero Image",
+  "description": "Create a single high-impact marketing hero image from a brief and place it into a working hero section. Lock the brief FIRST — aspect ratio, subject, mood, palette, focal point, and crucially the safe zone where headline and CTA text will overlay — because a beautiful hero that has no room for copy (or whose focal point sits under the button) is useless. Then generate the image to the brief and place it behind real overlaid text to prove it works. Covers hero banners, marketing imagery, landing-page art, website headers, and key visuals.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Hero brief (visual-designer) — lock ratio, subject, mood, palette, focal point, text safe-zone → gated on artifact `{{workPath}}/brief.md` (markdown-notes)\n2. Generate the hero (image-generator) — render the hero image to the brief → gated on `assets` (image-set)\n3. Place in a hero section (developer) — build index.html with the hero behind real overlaid text → gated on `index.html` (html-marketing-site)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "brief",
+  "triggers": [
+    "make a hero image",
+    "marketing banner",
+    "landing page hero",
+    "website header image",
+    "key visual"
+  ],
+  "steps": [
+    {
+      "id": "brief",
+      "name": "Hero brief",
+      "description": "lock ratio, subject, mood, palette, focal point, text safe-zone",
+      "prompt": "1) Decide the aspect ratio and target use (e.g. 16:9 full-bleed web hero). 2) Lock the subject and scene, the mood/style, and the palette (hex) so the image will harmonize with the brand. 3) Define the FOCAL POINT and, critically, the TEXT SAFE ZONE — which third of the frame stays low-contrast/empty so an overlaid headline + CTA remains readable. 4) Note the headline and CTA copy that will sit on it (even placeholder) so placement is concrete. 5) Write an acceptance-criteria checklist: 'aspect ratio is <X>', 'focal point is off the text safe zone', 'palette matches <hex>', 'overlaid headline + CTA are readable against the image', 'image is delivered at usable resolution'. 6) Record brief + checklist via write_task_note AND to {{workPath}}/brief.md. No image yet.\n\nThe deliverable `{{workPath}}/brief.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "visual-designer",
+      "advanceWhen": {
+        "file": "{{workPath}}/brief.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/brief.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/brief.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "brief",
+        "maxAttempts": 3
+      },
+      "next": "generate"
+    },
+    {
+      "id": "generate",
+      "name": "Generate the hero",
+      "description": "render the hero image to the brief",
+      "prompt": "1) Read brief.md. 2) Using the image-generation capability (or a tasteful CSS/SVG composition if no image model is available), produce the hero at the locked aspect ratio and palette. 3) Compose so the focal point lands OUTSIDE the declared text safe zone and that zone stays calm enough for overlaid copy. 4) Match the mood and avoid clutter near where text goes. 5) Save it to assets/ (e.g. assets/hero.png or hero.svg) at usable resolution. 6) Generate at least one alternate framing if quick, so placement has options. Good looks like: a striking image with obvious clear space for the headline.",
+      "suggestedRole": "image-generator",
+      "advanceWhen": {
+        "file": "assets",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "fileCount",
+            "ext": [
+              "png",
+              "jpg",
+              "jpeg",
+              "svg",
+              "webp"
+            ],
+            "min": 3,
+            "dir": "assets"
+          }
+        ],
+        "onReject": "generate",
+        "maxAttempts": 3
+      },
+      "next": "place"
+    },
+    {
+      "id": "place",
+      "name": "Place in a hero section",
+      "description": "build index.html with the hero behind real overlaid text",
+      "prompt": "1) Build a single index.html hero section that uses the generated image as a full-bleed background (object-fit: cover or background-size: cover) at the locked aspect ratio. 2) Overlay the real headline and CTA button positioned within the safe zone, with a subtle scrim/gradient ONLY if needed for contrast. 3) Make it responsive — the focal point must survive a mobile crop. 4) Reference the real assets/ file (relative path). 5) On a loop-back, fix only named gaps (unreadable text, focal point clipped, wrong ratio). 6) write_task_note the page path and image used. Good looks like: a hero you could ship, with crisp, readable copy over the art.",
+      "suggestedRole": "developer",
+      "consumes": [
+        {
+          "file": "assets"
+        }
+      ],
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 1200
+          },
+          {
+            "kind": "htmlLint",
+            "file": "index.html"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          },
+          {
+            "name": "checkCssMinBytes",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html",
+              "minBytes": 600
+            }
+          }
+        ],
+        "onReject": "place",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "1) Confirm assets/ contains the hero image (PASS/FAIL). 2) Open index.html and verify the image renders full-bleed at the locked aspect ratio. 3) The decisive check: is the overlaid headline + CTA clearly READABLE against the image and is the focal point clear of the text (PASS/FAIL)? 4) Resize to a narrow viewport — does it survive the mobile crop? 5) Confirm the palette matches the brief. 6) Write PASS/FAIL per criterion. Unreadable/clashing text → loop back to place; bad image/focal point → note it for generate.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"place\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "index.html"
+        }
+      ],
+      "next": "place"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}

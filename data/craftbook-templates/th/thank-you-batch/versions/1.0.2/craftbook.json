@@ -1,0 +1,155 @@
+{
+  "id": "thank-you-batch",
+  "name": "Thank-You Note Batch",
+  "description": "Clear the owed-thanks list with notes that sound like you: read who is owed and for what from the correspondence roster, draft one note per person that names the actual gift or kindness — no template smell — then log every note so nobody who mattered goes unanswered. Locks the household voice and the coverage rules FIRST, then drafts the batch, then records it in the roster with a short run summary. Use for thank-you notes, clearing the owed-thanks list, 'we owe thank yous from the party', and post-holiday gratitude sweeps.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the batch (letter-writer) — owed list from the roster, voice guide, coverage rules → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Draft the notes (copywriter) — one personal note per owed person, in the household voice → gated on `letters/thank-you.md` (markdown-doc)\n3. Log the batch (archivist) — record each note in the roster, write the run summary → gated on artifact `{{workPath}}/report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "draft the thank you notes",
+    "clear the owed thanks list",
+    "we owe thank yous",
+    "write the thank you cards",
+    "thank you note batch"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the batch",
+      "description": "owed list from the roster, voice guide, coverage rules",
+      "prompt": "Define the batch before drafting a word. Step 1: read correspondents.json from the workspace — who is owed thanks, for what gift or kindness, and how long each has been owed. Step 2: read the household's voice notes if they exist ({{workPath}}/voice.md or a voice field on the roster) — the phrases this family actually uses, how they open and sign off, and what they would never say. Step 3: confirm with the owner anyone to add or defer, and how the notes go out (card, email, hand-delivered) since that shapes length. Step 4: write an acceptance-criteria checklist ('every owed person gets a note or an explicit deferral with a reason', 'every note names the actual gift or kindness — a generic thanks is a miss', 'the voice guide is respected and no two notes are interchangeable', 'every drafted note is logged against the roster'). Call write_task_note with the owed count + checklist and write {{workPath}}/scope.md.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "letter-writer",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "draft"
+    },
+    {
+      "id": "draft",
+      "name": "Draft the notes",
+      "description": "one personal note per owed person, in the household voice",
+      "prompt": "Draft the whole batch against the locked rules. Step 1: write one section per person in letters/thank-you.md — a heading with their name, then the note. Step 2: open each note with the specific gift or kindness from the roster in the first two sentences — the detail IS the thanks; 'thank you for the lovely gift' is a rejection. Step 3: vary the shape — if two notes could swap recipients without anyone noticing, rewrite one of them. Step 4: keep the household's voice throughout — warm, theirs, sized for how each note will be sent. Step 5: call write_task_note with the note count and anyone you had to defer.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "letters/thank-you.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "letters/thank-you.md",
+            "bytes": 1200
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "letters/thank-you.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "draft",
+        "maxAttempts": 3
+      },
+      "next": "log"
+    },
+    {
+      "id": "log",
+      "name": "Log the batch",
+      "description": "record each note in the roster, write the run summary",
+      "prompt": "Close the batch. Step 1: for each drafted note, record it against the person's entry through the project's correspondence capabilities (or note the exact roster update) so the owed-thanks tracking clears. Step 2: write the run summary — who got a note and what it names, who was deferred and why, and what still has to physically happen (addresses to find, stamps to buy). Step 3: keep it short and factual — this is a household ritual, not paperwork. Write {{workPath}}/report.md and call write_task_note with the drafted and deferred counts.\n\nThe deliverable `{{workPath}}/report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "archivist",
+      "advanceWhen": {
+        "file": "{{workPath}}/report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/report.md",
+            "bytes": 600,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "log",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open letters/thank-you.md and {{workPath}}/report.md and verify every criterion from {{workPath}}/scope.md: every owed person in correspondents.json has a note or an explicit deferral with a reason, every note names the actual gift or kindness from the roster — spot-check each against the record, a note that thanks someone for the wrong thing is worse than none — no two notes are interchangeable, the voice matches the household's guide, and every drafted note is logged. Write PASS/FAIL per criterion; on any failure, name the person and the gap and loop back to draft.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/report.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"draft\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/report.md",
+          "artifact": true
+        }
+      ],
+      "next": "draft"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.0.2",
+  "releasedAt": "2026-08-21T00:00:00Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26233"
+}
