@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "title": "Comprehensive Codebase Review multi-dimension eval",
+  "objective": "Measure whether the review verifies planted architecture, duplication, hygiene, and lightweight-security problems in real source, states its index coverage honestly, and delivers a consultant report with a grounded scorecard, systemic themes, and a machine-readable findings file.",
+  "tags": [
+    "corpus"
+  ],
+  "prompt": "Use the Comprehensive Codebase Review craftbook to do a deep, consultant-level review of this codebase and its architecture. Write the report to tasks/eval/codebase-review.md. Do not change source.",
+  "setup": {
+    "projectName": "Comprehensive Review Eval",
+    "about": "A small web service with deliberate problems in several dimensions: duplicated parsing logic, a hardcoded token, debug prints, dead code, and a leaky module boundary.",
+    "missionObjectives": "Verify problems in source across architecture, duplication, hygiene, and security; grade each dimension; separate quick wins from strategic work.",
+    "files": [
+      {
+        "path": "src/routes/orders.ts",
+        "content": "import { db } from '../storage/db';\nexport async function postOrder(req, res) {\n  // TODO: validate\n  // TODO: auth\n  // TODO: rate limit\n  const items = String(req.body.items || '');\n  const parsed = items.split(',').map(s => { const [sku, qty] = s.split(':'); return { sku: sku.trim(), qty: Number(qty || 1) }; });\n  console.log('DEBUG order', parsed);\n  const rows = await db.query(\"INSERT INTO orders (items) VALUES ('\" + items + \"')\");\n  res.json({ ok: true, rows });\n}\n"
+      },
+      {
+        "path": "src/routes/quotes.ts",
+        "content": "export async function postQuote(req, res) {\n  const items = String(req.body.items || '');\n  const parsed = items.split(',').map(s => { const [sku, qty] = s.split(':'); return { sku: sku.trim(), qty: Number(qty || 1) }; });\n  res.json({ quote: parsed.length * 10 });\n}\n"
+      },
+      {
+        "path": "src/storage/db.ts",
+        "content": "import { postOrder } from '../routes/orders';\nexport const API_TOKEN = 'sk-live-9f2a71c04d8e';\nexport const db = { query: async (sql) => { return [{ sql }]; } };\nexport function legacyMigrate() { /* unused since v2 */ return null; }\n"
+      },
+      {
+        "path": "test/quotes.test.ts",
+        "content": "test('quotes', async () => {\n  expect(1 + 1).toBe(2);\n});\n"
+      },
+      {
+        "path": "README.md",
+        "content": "# Order service\nA tiny order and quote service.\n"
+      }
+    ],
+    "worker": {
+      "name": "Rae",
+      "role": "Reviewer"
+    },
+    "craftbookParams": {
+      "workPath": "tasks/eval"
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "tasks/eval/codebase-review.md verifies the planted problems with real file citations, grades at least five dimensions, clusters findings into root-cause themes, and ships a machine-readable findings JSON beside it.",
+    "deliverables": [
+      {
+        "path": "tasks/eval/codebase-review.md",
+        "kind": "markdown-report",
+        "artifact": true,
+        "minBytes": 2500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/codebase-review.md",
+            "pattern": "##\\s+Executive summary[\\s\\S]*##\\s+Scorecard[\\s\\S]*##\\s+Systemic themes[\\s\\S]*##\\s+Findings[\\s\\S]*##\\s+Quick wins",
+            "flags": "i",
+            "label": "consultant report sections",
+            "artifact": true
+          },
+          {
+            "kind": "tableShape",
+            "file": "tasks/eval/codebase-review.md",
+            "requiredColumns": [
+              "Dimension",
+              "Grade"
+            ],
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/codebase-review.md",
+            "pattern": "src/routes/(orders|quotes)\\.ts",
+            "flags": "i",
+            "label": "duplication evidence cites a real route file",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/codebase-review.md",
+            "pattern": "API_TOKEN|hard-?coded (secret|token|credential)",
+            "flags": "i",
+            "label": "the planted hardcoded token is found",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/codebase-review.md",
+            "pattern": "console\\.log|debug (print|logging|output)",
+            "flags": "i",
+            "label": "the planted debug print is found",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/codebase-review.md",
+            "pattern": "root[\\s-]?cause",
+            "flags": "i",
+            "label": "themes analyze root cause",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/codebase-review.md",
+            "pattern": "Index coverage",
+            "flags": "i",
+            "label": "index coverage is stated",
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/codebase-review-findings.json",
+        "kind": "json",
+        "artifact": true,
+        "minBytes": 100,
+        "checks": [
+          {
+            "kind": "sniff",
+            "file": "tasks/eval/codebase-review-findings.json",
+            "sniff": "json-valid",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/codebase-review-findings.json",
+            "pattern": "\"severity\"[\\s\\S]*\"remediation\"",
+            "label": "structured findings with severity and remediation",
+            "artifact": true
+          }
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "tasks/eval/codebase-review.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "verification",
+        "description": "Findings cite real files and lines; the duplicated parser, SQL string-building, hardcoded token, debug print, dead export, and storage-imports-routes boundary leak are found rather than invented."
+      },
+      {
+        "name": "synthesis",
+        "description": "Findings cluster into root-cause themes with blast radius; the scorecard grades follow the evidence."
+      },
+      {
+        "name": "actionability",
+        "description": "Quick wins are safe and bounded; strategic recommendations name seams, sequence, and behavior-preserving tests; deeper specialist reviews are suggested where warranted."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "verified findings across dimensions",
+    "honest coverage statement",
+    "consultant-grade prioritization"
+  ]
+}
