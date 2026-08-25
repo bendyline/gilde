@@ -1,0 +1,192 @@
+{
+  "id": "schema-migration",
+  "name": "Schema / Type Migration",
+  "description": "Migrate a schema or data shape with the expand/contract discipline: reads accept both shapes while the data moves, the old shape is dropped only after every record is transformed, and real suite runs between stages prove no record was ever stranded.",
+  "category": "code-quality",
+  "role": "maintenance-review",
+  "tags": [
+    "migration",
+    "schema",
+    "types",
+    "refactor",
+    "codemod",
+    "expand-contract"
+  ],
+  "triggers": [
+    "migrate a schema",
+    "change a type everywhere",
+    "multi-file migration",
+    "rename a model across the codebase",
+    "type migration"
+  ],
+  "about": "Change a data model, schema, or type across a codebase while the data stays alive at every moment - expand/contract is THE method, and each claim is mechanically verified. First PLAN from the real files: read the actual schema and data files and every accessor that touches the current shape, document the current and target shapes with fields taken from those files, and lay the work out as expand (readers accept both shapes), migrate (transform the stored data), contract (drop the old shape and retire the dual-read) - with per-stage data safety and a per-stage rollback. Then MIGRATE at the real sites the plan names, running the suite between stages so every green is a recorded receipt: expand must be green before the data moves, and the data must be fully transformed before contract lands. Then VERIFY that no record was stranded - the old shape is gone exactly where contract says, every record is readable in the target shape with its values intact, and the whole suite is green. Finally an independent reviewer grades the chain against fixed criteria, and their REVISE verdict routes the work back automatically with concrete findings. Needs a project whose tests run via `npm run test`. Works identically whether the run edits the project directly or drafts a change proposal for the user to apply.",
+  "doc": {
+    "paramSchema": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "type": "string",
+          "title": "What to migrate",
+          "description": "The schema or shape change to make: the current shape, the target shape, and where the data lives. Leave empty when the task description already carries it.",
+          "default": ""
+        }
+      }
+    },
+    "capabilityFloor": "medium",
+    "diffpackCapable": true,
+    "commands": [
+      {
+        "scope": "script",
+        "name": "test",
+        "reason": "every migration stage must keep reads working - receipts"
+      }
+    ]
+  },
+  "workflow": {
+    "plan": "Plan expand/migrate/contract from the real schema and data files (per-stage data safety and rollback) -> execute at the real sites with the suite green between stages and reads accepting both shapes while the data moves -> verify every record readable, the old shape gone where contract says, and the suite green -> enforced independent review.",
+    "maxGateAttempts": 4,
+    "maxReviewRounds": 3,
+    "phases": [
+      {
+        "id": "plan-migration",
+        "name": "Plan the expand/contract migration",
+        "description": "Document the current and target shapes from the real files and stage the work as expand, migrate, contract - with per-stage data safety and rollback.",
+        "suggestedRole": "migration planner",
+        "capabilityFloor": "medium",
+        "prompt": "The migration: {{scope}}\n\nPlan from the REAL files before changing anything. Read the actual schema definitions and the actual data files, and find every accessor that touches the current shape with real searches over the tree - never from memory. Document the current shape and the exact target shape with field names and types taken from those files. Then lay the work out as expand/contract stages - the data must stay readable through every stage: first EXPAND (readers accept both the old and the new shape), then MIGRATE (transform the stored data to the new shape), then CONTRACT (drop the old shape and retire the dual-read). For each stage, state what keeps every existing record readable while that stage is in flight, and the concrete rollback if it goes wrong. If the current shape cannot be determined from the real files, record what is missing honestly and stop.\n\nWrite `{{workPath}}/migration-plan.md` with exactly these sections: `## Current shape` (from the real files, cited with backtick paths), `## Target shape` (exact fields and types), `## Stages` (expand, migrate, contract - what each touches, in order), `## Data safety` (why no record becomes unreadable at any stage), `## Rollback per stage`.",
+        "output": {
+          "path": "{{workPath}}/migration-plan.md",
+          "minBytes": 700,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Current shape",
+              "label": "Current shape section"
+            },
+            {
+              "pattern": "^##\\s+Target shape",
+              "label": "Target shape section"
+            },
+            {
+              "pattern": "^##\\s+Stages",
+              "label": "Stages section"
+            },
+            {
+              "pattern": "^##\\s+Data safety",
+              "label": "Data safety section"
+            },
+            {
+              "pattern": "^##\\s+Rollback per stage",
+              "label": "Rollback per stage section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/migration-plan.md",
+              "minCitations": 2,
+              "artifact": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "migrate",
+        "name": "Execute the stages",
+        "description": "Apply expand, migrate, contract at the real sites with the suite run between stages; reads accept both shapes until the plan retires the dual-read.",
+        "suggestedRole": "software engineer",
+        "capabilityFloor": "medium",
+        "prompt": "Read `{{workPath}}/migration-plan.md` and execute its stages in order at the real sites it names - the schema definition, the accessors, and the data transform - using `read_file` plus `write_file`/`replace_in_file`. Run the suite with `run_package_script` (`test`) between stages: expand must be green before the data moves, and the data must be fully transformed before contract drops the old shape. During expand, reads accept BOTH shapes, and the plan's contract stage says exactly when that dual-read retires - do not leave it behind as permanent fallback code, and do not remove it before the data has moved. Transform the stored data with a real, repeatable step (a script you ran, or an explicit recorded edit), never by retyping records from memory. If the command needs first-use approval, say so and wait rather than guessing. If a stage cannot keep the suite green, return the tree to the last green stage and record what blocked you honestly.\n\nWrite `{{workPath}}/change-notes.md` with exactly these sections: `## Stages executed` (each stage with its suite result), `## Files touched` (backtick path per line), `## Data transformed` (which records moved, how, and how you know none were lost), `## Deviations` (where execution departed from the plan and why, or 'none').",
+        "output": {
+          "path": "{{workPath}}/change-notes.md",
+          "minBytes": 700,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Stages executed",
+              "label": "Stages executed section"
+            },
+            {
+              "pattern": "^##\\s+Files touched",
+              "label": "Files touched section"
+            },
+            {
+              "pattern": "^##\\s+Data transformed",
+              "label": "Data transformed section"
+            },
+            {
+              "pattern": "^##\\s+Deviations",
+              "label": "Deviations section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/change-notes.md",
+              "minCitations": 2,
+              "artifact": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "verify",
+        "name": "Prove no record was stranded",
+        "description": "Check every record is in the target shape with values intact, the old shape is gone where contract says, and the whole suite is green.",
+        "suggestedRole": "software engineer",
+        "capabilityFloor": "medium",
+        "prompt": "Prove the migration with fresh eyes. Open the migrated data with `read_file` and check every record is in the target shape and none was lost - count records against the pre-migration state recorded in `{{workPath}}/change-notes.md`, and spot-check that values survived exactly. Search the real code for leftover reads of the old shape: the old field access must be gone exactly where the plan's contract stage says it should be gone. Re-run the whole suite with `run_package_script` (`test`) - it must be green. Anything you could not actually run or open gets labeled unverified, never claimed.\n\nWrite `{{workPath}}/verification.md` with exactly these sections: `## Old shape check` (the search you ran for leftover old-shape reads and what it found), `## Data integrity` (record counts and the spot-checked values), `## Suite` (the full-suite result), `## Result` (migrated with no record stranded, or what remains unverified and why).",
+        "output": {
+          "path": "{{workPath}}/verification.md",
+          "minBytes": 500,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Old shape check",
+              "label": "Old shape check section"
+            },
+            {
+              "pattern": "^##\\s+Data integrity",
+              "label": "Data integrity section"
+            },
+            {
+              "pattern": "^##\\s+Suite",
+              "label": "Suite section"
+            },
+            {
+              "pattern": "^##\\s+Result",
+              "label": "Result section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "commandEvidence",
+              "script": "test",
+              "expect": "pass",
+              "label": "the whole suite is green after the migration (verified run receipt)"
+            }
+          ]
+        }
+      }
+    ],
+    "review": {
+      "artifactPath": "{{workPath}}/verification.md",
+      "relatedPaths": [
+        "{{workPath}}/migration-plan.md",
+        "{{workPath}}/change-notes.md"
+      ],
+      "reviewPath": "{{workPath}}/review.md",
+      "reviewerRole": "migration reviewer",
+      "repairRole": "software engineer",
+      "minReviewBytes": 400,
+      "enforce": {
+        "fixStepId": "repair"
+      },
+      "criteria": [
+        "Every record stayed readable at every stage: the plan's expand stage genuinely accepted both shapes, and the recorded stage order never left data unreadable in between.",
+        "The contract stage landed only after the data moved: change-notes.md shows the transform completed (with a green suite) before the old shape was dropped.",
+        "Accessors changed at real sites: every path under Files touched exists and the change there matches the plan - open the touched files; do not grade from change-notes.md alone.",
+        "Data integrity is proven, not asserted: verification.md counts records against the pre-migration state and spot-checks that values survived exactly.",
+        "No old-shape read is left outside what the plan deliberately retains: the verification search is quoted and its result matches the contract stage.",
+        "Rollback per stage is genuine: each stage names a concrete restore path a person could actually follow, not a vague promise."
+      ]
+    }
+  }
+}

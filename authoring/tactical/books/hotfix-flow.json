@@ -1,0 +1,187 @@
+{
+  "id": "hotfix-flow",
+  "name": "Hotfix Flow",
+  "description": "Stop a live failure with the smallest change that fixes it at the real site: reproduce with the least machinery that demonstrates the failure, patch minimally with the proper repair recorded as follow-up, validate with a rollback path, and pass an enforced review of the blast radius.",
+  "category": "code-quality",
+  "role": "maintenance-review",
+  "tags": [
+    "hotfix",
+    "bug-fix",
+    "tdd",
+    "release",
+    "patch",
+    "regression",
+    "incident",
+    "minimal-diff",
+    "rollback"
+  ],
+  "triggers": [
+    "hotfix this bug",
+    "urgent production fix",
+    "expedited patch",
+    "fix the live defect",
+    "out-of-band fix",
+    "emergency fix",
+    "stop the bleeding"
+  ],
+  "about": "The minimal-diff bug fix for when something is broken NOW. Urgency is not an excuse for guesswork, so the ordering still holds — but every step is sized for an emergency. First REPRODUCE with the LEAST machinery that honestly demonstrates the failure: the command the incident names, a few-line probe, a focused test only when it costs minutes — never new test infrastructure at midnight. A hotfix aimed at an unreproduced defect is a coin flip. Then PATCH: the smallest change at the real defect site that stops the failure, with refactors, renames, and the proper deeper repair explicitly deferred into a written Follow-up rather than attempted under pressure — the debt is recorded, not denied. Then VALIDATE: re-run the exact reproduction, exercise the immediate neighborhood cheaply, state plainly what was and was not verified, and write the rollback path before anyone needs it. Finally an independent reviewer grades the whole chain — blast radius counted in the touched files, evidence concrete, rollback runnable, debt recorded — and a REVISE verdict routes the work back automatically with findings. Deliberately requires no test suite or npm commands: it works on projects where nothing is runnable but the failure itself, which is exactly where hotfixes happen. Works identically whether the run edits the project directly or drafts a change proposal for the user to apply.",
+  "doc": {
+    "paramSchema": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "type": "string",
+          "title": "Incident to hotfix",
+          "description": "The incident, bug report, or failing behavior to hotfix. Leave empty when the task description already carries it.",
+          "default": ""
+        }
+      }
+    },
+    "capabilityFloor": "small",
+    "diffpackCapable": true
+  },
+  "workflow": {
+    "plan": "Reproduce with the least machinery that demonstrates the failure -> smallest change that stops the bleeding at the real defect site (proper repair deferred to Follow-up) -> re-run the reproduction and record a rollback path -> enforced independent review of blast radius and honesty.",
+    "maxGateAttempts": 4,
+    "maxReviewRounds": 3,
+    "phases": [
+      {
+        "id": "reproduce",
+        "name": "Reproduce with the least machinery",
+        "description": "Establish the failure cheaply and concretely: a command, a probe, or a focused test — whatever demonstrates it fastest.",
+        "suggestedRole": "incident responder",
+        "capabilityFloor": "small",
+        "prompt": "The incident to hotfix: {{scope}}\n\nEstablish the failure with the LEAST machinery that honestly demonstrates it — this is an emergency, not the time to build test infrastructure. Read the incident report and the involved source with `read_file`. Choose the cheapest real reproduction: the command or entry point the report names, a few-line probe script, or a focused test only when the project already has an obvious test layout and it costs minutes. When a script-execution tool such as `run_nodejs_script` is wired this turn, actually run the reproduction and capture the output — the error text, the stack line, the wrong value. When no execution surface is available, say so plainly and pin the failure by reading the code to the exact line instead; never present a run you did not perform. Do not fix anything in this phase. If you cannot reproduce or locate the failure at all, record every attempt honestly rather than inventing a cause.\n\nWrite `{{workPath}}/repro.md` with exactly these sections: `## Symptom` (what is breaking, in the reporter's words), `## Repro command` (the exact command or probe that demonstrates it), `## Expected`, `## Actual` (the captured output or observed behavior — quote real text, and label anything you could not execute), `## Evidence` (the involved files with backtick paths, down to the line or symbol where the failure surfaces).",
+        "output": {
+          "path": "{{workPath}}/repro.md",
+          "minBytes": 500,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Symptom",
+              "label": "Symptom section"
+            },
+            {
+              "pattern": "^##\\s+Repro command",
+              "label": "Repro command section"
+            },
+            {
+              "pattern": "^##\\s+Expected",
+              "label": "Expected section"
+            },
+            {
+              "pattern": "^##\\s+Actual",
+              "label": "Actual section"
+            },
+            {
+              "pattern": "^##\\s+Evidence",
+              "label": "Evidence section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/repro.md",
+              "minCitations": 2,
+              "artifact": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "patch",
+        "name": "Smallest change that stops the bleeding",
+        "description": "Fix the cause at the real defect site with the minimum blast radius; defer the proper repair into Follow-up.",
+        "suggestedRole": "software engineer",
+        "capabilityFloor": "small",
+        "prompt": "Read `{{workPath}}/repro.md`, find the defect site it points at, and stop the bleeding with the SMALLEST change that fixes the cause. There is no prescribed output path for source changes — edit the actual files with `read_file` plus `write_file`/`replace_in_file`. Hotfix discipline: touch only what stopping THIS failure requires — no refactors, no renames, no drive-by cleanup, no new abstractions. When the proper repair is bigger than the emergency allows, make the safe narrow change now and write the proper repair into Follow-up instead of attempting it. Never special-case the exact reproduction input just to silence it, and never hide the failure behind a blanket try/catch that swallows the error instead of preventing it. Re-check the reproduction as you work.\n\nWrite `{{workPath}}/fix-notes.md` with exactly these sections: `## Problem` (one paragraph), `## Change` (what you altered and why it stops the failure at its cause), `## Files touched` (backtick path per line), `## Risk` (what this patch could still break and anything you did not verify — be honest), `## How to verify` (the exact commands or checks a person runs to confirm), `## Follow-up` (the deferred proper fix and the debt this patch leaves, plus the backport note when other branches or releases need it).",
+        "output": {
+          "path": "{{workPath}}/fix-notes.md",
+          "minBytes": 700,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Problem",
+              "label": "Problem section"
+            },
+            {
+              "pattern": "^##\\s+Change",
+              "label": "Change section"
+            },
+            {
+              "pattern": "^##\\s+Files touched",
+              "label": "Files touched section"
+            },
+            {
+              "pattern": "^##\\s+Risk",
+              "label": "Risk section"
+            },
+            {
+              "pattern": "^##\\s+How to verify",
+              "label": "How to verify section"
+            },
+            {
+              "pattern": "^##\\s+Follow-up",
+              "label": "Follow-up section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/fix-notes.md",
+              "minCitations": 2,
+              "artifact": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "validate",
+        "name": "Re-run the reproduction and record rollback",
+        "description": "Prove the failure is gone, be explicit about what was and was not verified, and write the escape route.",
+        "suggestedRole": "software engineer",
+        "capabilityFloor": "small",
+        "prompt": "Prove the patch did its one job, and write down the escape route. Read `{{workPath}}/repro.md` and re-run the EXACT reproduction it records — the failure must be gone. Exercise the immediate neighborhood the cheapest honest way you can (the same entry point on a healthy input, an existing script, a small probe) so the patch did not trade one failure for another. Anything you could not actually run is recorded as unverified, never claimed — and when no execution surface is available this turn, verify by re-reading the changed code against the reproduction and say plainly that the run itself is still owed. Then record the rollback: exactly how to undo this patch fast if it goes wrong after shipping.\n\nWrite `{{workPath}}/validation.md` with exactly these sections: `## Repro re-run` (the command and what happened, or the honest record of why it could not run), `## Result` (what is fixed, what was verified, what remains unverified), `## Rollback` (the concrete, runnable way to revert this patch — the exact files to restore or the commit to revert, plus any step that must accompany it).",
+        "output": {
+          "path": "{{workPath}}/validation.md",
+          "minBytes": 400,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Repro re-run",
+              "label": "Repro re-run section"
+            },
+            {
+              "pattern": "^##\\s+Result",
+              "label": "Result section"
+            },
+            {
+              "pattern": "^##\\s+Rollback",
+              "label": "Rollback section"
+            }
+          ]
+        }
+      }
+    ],
+    "review": {
+      "artifactPath": "{{workPath}}/validation.md",
+      "relatedPaths": [
+        "{{workPath}}/repro.md",
+        "{{workPath}}/fix-notes.md"
+      ],
+      "reviewPath": "{{workPath}}/review.md",
+      "reviewerRole": "incident reviewer",
+      "repairRole": "software engineer",
+      "minReviewBytes": 400,
+      "enforce": {
+        "fixStepId": "repair"
+      },
+      "criteria": [
+        "repro.md is concrete and honest: it quotes real captured output from a run that actually happened, or explicitly records that execution was unavailable and pins the failure to a line in the source — never an invented run.",
+        "The change is genuinely minimal: open every file fix-notes.md names and count the blast radius — nothing rode along beyond what stopping this one failure requires (no refactor, rename, or cleanup).",
+        "The patch fixes the cause at the real defect site rather than special-casing the reproduction input or swallowing the error with a blanket catch.",
+        "validation.md re-ran the original reproduction and the failure is gone — or states plainly what could not be run and why; nothing is claimed verified that was not.",
+        "The Rollback section is a real, runnable path: the exact files or commit to revert plus any accompanying step, not a vague instruction to undo the change.",
+        "The Follow-up section records the deferred proper fix and the debt this patch leaves, with a backport note when other branches or releases need it.",
+        "Every file path cited across repro.md, fix-notes.md, and validation.md exists in this project."
+      ]
+    }
+  }
+}

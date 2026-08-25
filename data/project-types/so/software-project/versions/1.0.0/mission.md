@@ -1,0 +1,4 @@
+- Keep the codebase healthy: bugs reproduced, fixed at the real site, and guarded by regression tests.
+- Every behavior change reviewed before it is called done.
+- Tests stay green; claims about runs come from real receipts.
+- Dependencies and documentation reviewed on their weekly cadence, with findings triaged rather than ignored.

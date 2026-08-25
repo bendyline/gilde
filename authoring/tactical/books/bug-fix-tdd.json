@@ -1,0 +1,237 @@
+{
+  "id": "bug-fix-tdd",
+  "name": "Reproduce-Then-Fix a Bug",
+  "description": "Fix a bug the disciplined way, with proof at every step: a failing test that reproduces it (verified red by a real test run), the smallest change at the real defect site, a green suite afterwards, and an enforced independent review of the fix.",
+  "category": "code-quality",
+  "role": "maintenance-review",
+  "tags": [
+    "bug-fix",
+    "tdd",
+    "regression-test",
+    "debugging",
+    "tests",
+    "quality"
+  ],
+  "triggers": [
+    "fix this bug",
+    "reproduce and fix",
+    "tdd bug fix",
+    "write a regression test",
+    "debug and fix"
+  ],
+  "about": "Fix a bug with the discipline a senior engineer would demand, and with each claim mechanically verified. First REPRODUCE: write a focused failing test in the project's real test layout and run the suite so the failure is recorded — a bug you cannot reproduce you cannot prove fixed, and this book's gates read the actual run receipts, not the author's summary. Then LOCATE the defect site and its causal chain before touching anything. Then make the SMALLEST change at that real site — never a prescribed scratch file — keeping the new test as a permanent regression guard. Then VALIDATE by re-running the original reproduction and the whole suite, which must now be green. Finally an independent reviewer grades the whole chain against fixed criteria and their REVISE verdict routes the work back automatically with concrete findings. Needs a project whose tests run via `npm run test`. Works identically whether the run edits the project directly or drafts a change proposal for the user to apply.",
+  "doc": {
+    "paramSchema": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "type": "string",
+          "title": "Bug to fix",
+          "description": "The bug report, failing behavior, or area to focus on. Leave empty when the task description already carries it.",
+          "default": ""
+        }
+      }
+    },
+    "capabilityFloor": "small",
+    "diffpackCapable": true,
+    "commands": [
+      {
+        "scope": "script",
+        "name": "test",
+        "reason": "Red-then-green proof: the reproduction must actually fail against the current code, and the whole suite must pass after the fix. The gates verify real run receipts."
+      }
+    ]
+  },
+  "workflow": {
+    "plan": "Reproduce with a failing test (verified red by a real run) -> locate the defect site and causal chain -> smallest fix at the real site -> validate red-to-green with the original reproduction -> enforced independent review.",
+    "maxGateAttempts": 4,
+    "maxReviewRounds": 3,
+    "phases": [
+      {
+        "id": "reproduce",
+        "name": "Reproduce with a failing test",
+        "description": "Establish the failure on the real code, as a running test that fails for the right reason.",
+        "suggestedRole": "debugging engineer",
+        "capabilityFloor": "small",
+        "prompt": "The bug to fix: {{scope}}\n\nEstablish the failure on the REAL code before changing anything. Read the bug description and the involved source. Find how this project runs its tests (`list_package_scripts`, then read the existing test layout). Write ONE focused test that captures the exact wrong behavior, in the project's real test layout and style — never a scratch file like `src/bug.test.js`. Then run the suite with `run_package_script` (`test`) and confirm it FAILS because of your new test, for the right reason — quote the failing assertion. If the command needs first-use approval, say so and wait rather than guessing. If you cannot reproduce the bug at all, record every attempt honestly; do not invent a cause.\n\nWrite `{{workPath}}/repro.md` with exactly these sections: `## Symptom` (what the user sees, in their words), `## Repro command` (the exact command you ran), `## Expected`, `## Actual`, `## Red evidence` (the failing test's path and the quoted failing output from the real run). Cite the real files involved with backtick paths.",
+        "output": {
+          "path": "{{workPath}}/repro.md",
+          "minBytes": 500,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Symptom",
+              "label": "Symptom section"
+            },
+            {
+              "pattern": "^##\\s+Repro command",
+              "label": "Repro command section"
+            },
+            {
+              "pattern": "^##\\s+Expected",
+              "label": "Expected section"
+            },
+            {
+              "pattern": "^##\\s+Actual",
+              "label": "Actual section"
+            },
+            {
+              "pattern": "^##\\s+Red evidence",
+              "label": "Red evidence section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/repro.md",
+              "minCitations": 2,
+              "artifact": true
+            },
+            {
+              "kind": "commandEvidence",
+              "script": "test",
+              "expect": "fail",
+              "label": "the suite genuinely fails (red) with the new reproduction test"
+            }
+          ]
+        }
+      },
+      {
+        "id": "locate",
+        "name": "Locate the defect",
+        "description": "Name the defect site and the causal chain from it to the symptom. No source edits.",
+        "suggestedRole": "root-cause analyst",
+        "capabilityFloor": "small",
+        "prompt": "Read `{{workPath}}/repro.md`, then trace the failure to its source. Name the defect site precisely: file, symbol, and the first place state or logic goes wrong. Explain the causal chain from that site to the observed symptom, step by step. Check sibling cases: does the same defect pattern appear in neighboring code paths that just have no test yet? Do not edit any source in this phase.\n\nWrite `{{workPath}}/diagnosis.md` with exactly these sections: `## Defect site` (the file and symbol, with backtick paths), `## Causal chain`, `## Siblings checked` (which neighboring paths you inspected and what you found). Every path you cite must be real.",
+        "output": {
+          "path": "{{workPath}}/diagnosis.md",
+          "minBytes": 600,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Defect site",
+              "label": "Defect site section"
+            },
+            {
+              "pattern": "^##\\s+Causal chain",
+              "label": "Causal chain section"
+            },
+            {
+              "pattern": "^##\\s+Siblings checked",
+              "label": "Siblings checked section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/diagnosis.md",
+              "minCitations": 2,
+              "artifact": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "fix",
+        "name": "Make the smallest fix",
+        "description": "Change the real defect site, minimally, keeping the new test as a regression guard.",
+        "suggestedRole": "software engineer",
+        "capabilityFloor": "small",
+        "prompt": "Read `{{workPath}}/diagnosis.md` and make the SMALLEST correct change at the defect site it names. There is no prescribed output path for source changes — edit the actual files from the diagnosis with `read_file` plus `write_file`/`replace_in_file`. Never special-case the reproduction's exact input just to silence the test; fix the cause. Cover the sibling cases the diagnosis flagged, and keep (or strengthen) the reproduction test so it becomes the permanent regression guard. Re-run the focused test while you work.\n\nThen write `{{workPath}}/fix-notes.md` with exactly these sections: `## Problem` (one paragraph), `## Change` (what you altered and why it breaks the causal chain), `## Files touched` (backtick path per line), `## Regression coverage` (which test now guards this), `## Risk` (what could still go wrong; be honest about anything unverified), `## How to verify` (the exact commands a person runs to confirm).",
+        "output": {
+          "path": "{{workPath}}/fix-notes.md",
+          "minBytes": 700,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Problem",
+              "label": "Problem section"
+            },
+            {
+              "pattern": "^##\\s+Change",
+              "label": "Change section"
+            },
+            {
+              "pattern": "^##\\s+Files touched",
+              "label": "Files touched section"
+            },
+            {
+              "pattern": "^##\\s+Regression coverage",
+              "label": "Regression coverage section"
+            },
+            {
+              "pattern": "^##\\s+Risk",
+              "label": "Risk section"
+            },
+            {
+              "pattern": "^##\\s+How to verify",
+              "label": "How to verify section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/fix-notes.md",
+              "minCitations": 2,
+              "artifact": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "validate",
+        "name": "Validate red-to-green",
+        "description": "Re-run the original reproduction and the whole suite; record the real results.",
+        "suggestedRole": "software engineer",
+        "capabilityFloor": "small",
+        "prompt": "Prove the fix with fresh eyes. Read `{{workPath}}/repro.md` and re-run the EXACT reproduction command it records with `run_package_script` (the suite runs ONLY through `run_package_script` with script name \"test\"; `run_installed_script` is for named ops scripts and is NOT the test runner) — the previously failing test must now pass, and the whole suite must be green. Anything you could not actually run gets labeled unverified, never claimed. If something regressed, your fix was too broad — go back and narrow it before validating again.\n\nWrite `{{workPath}}/validation.md` with exactly these sections: `## Repro re-run` (the command and what happened to the once-failing test), `## Suite` (the full-suite result), `## Result` (red-to-green confirmed, or what remains unverified and why).",
+        "output": {
+          "path": "{{workPath}}/validation.md",
+          "minBytes": 400,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Repro re-run",
+              "label": "Repro re-run section"
+            },
+            {
+              "pattern": "^##\\s+Suite",
+              "label": "Suite section"
+            },
+            {
+              "pattern": "^##\\s+Result",
+              "label": "Result section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "commandEvidence",
+              "script": "test",
+              "expect": "pass",
+              "label": "the whole suite is green after the fix (verified run receipt)"
+            }
+          ]
+        }
+      }
+    ],
+    "review": {
+      "artifactPath": "{{workPath}}/validation.md",
+      "relatedPaths": [
+        "{{workPath}}/repro.md",
+        "{{workPath}}/diagnosis.md",
+        "{{workPath}}/fix-notes.md"
+      ],
+      "reviewPath": "{{workPath}}/review.md",
+      "reviewerRole": "debugging reviewer",
+      "repairRole": "software engineer",
+      "minReviewBytes": 400,
+      "enforce": {
+        "fixStepId": "repair"
+      },
+      "criteria": [
+        "The failure was reproduced with recorded red evidence: repro.md quotes a real failing run of a test that lives in the project's actual test layout, or the run stopped honestly at needs-user.",
+        "diagnosis.md names a defect site that exists in this codebase and a causal chain that actually explains the symptom.",
+        "The change is at that defect site, is minimal, and covers the sibling cases the diagnosis flagged — open the touched files and check; do not grade from fix-notes.md alone.",
+        "validation.md re-ran the original reproduction command and the once-failing test now passes with the whole suite green — judged from the recorded runs, not the author's summary.",
+        "The reproduction test survives as a permanent regression guard: it exists in the test layout and would fail again if the fix were reverted.",
+        "fix-notes.md names every touched file (paths that exist), states residual risk honestly, and gives runnable verification steps."
+      ]
+    }
+  }
+}

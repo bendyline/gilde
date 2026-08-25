@@ -1,0 +1,439 @@
+{
+  "id": "ux-update",
+  "name": "Implement a UX Change",
+  "description": "Implement a UX change the way a careful product engineer would — grounded in the real code at every step, not in a redescription of it. First UNDERSTAND: restate the requested change as the user would experience it, find the involved surfaces in the actual pages, components, styles, and scripts, and capture the BEFORE state by quoting the real markup and wiring — including every behavior attached to those surfaces (handlers, keyboard shortcuts, ids, state), because each must still work afterwards. Then IMPLEMENT the smallest coherent change at those real sites, matching the surrounding product's conventions — its spacing, naming, and markup patterns — rather than inventing a new style, and moving existing behaviors with the elements rather than dropping them. Then VALIDATE by walking the changed flow and building a concrete before/after comparison grounded in the files, honest about what was inspected versus actually exercised. Finally an independent reviewer grades the delivered change as a user would judge it — request delivered, conventions respected, nothing that worked before broken — and a REVISE verdict routes the work back automatically with concrete findings. This is the fix-applying sibling of the report-only codebase UX review: that book tells you what is wrong, this one delivers the change. Works identically whether the run edits the project directly or drafts a change proposal for the user to apply.",
+  "plan": "Understand the request and capture the before state from the real code -> implement the smallest coherent change at the real sites in the product's own conventions -> validate the flow with a concrete before/after -> enforced independent review.",
+  "entryStepId": "understand",
+  "triggers": [
+    "make this ux change",
+    "move the button",
+    "improve this flow",
+    "update the ui"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "scope": {
+        "type": "string",
+        "title": "The UX change",
+        "description": "What should change for the user, in plain words. Leave empty when the task description carries it.",
+        "default": ""
+      },
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "understand",
+      "name": "Understand and capture the before state",
+      "description": "Restate the change as the user experiences it, find the real surfaces, and quote the current markup and wiring.",
+      "prompt": "The UX change to deliver: {{scope}}\n\nUnderstand before touching anything. Restate the requested change as the USER would experience it — what they see and do today, what they should see and do afterwards. Then find the involved surfaces in the REAL code: read the actual pages, components, styles, and scripts with `read_file` until you can point at the exact markup and wiring behind the current experience. Capture the BEFORE state from those files — quote the relevant snippets (the current markup, the handler, the shortcut wiring) so the change can later be judged against reality rather than memory. Catalogue every behavior attached to the surfaces you will touch — handlers, keyboard shortcuts, element ids other code references, state — because each of them must still work afterwards. If the request is ambiguous, record the reading you chose and why; if the described surface cannot be located in this codebase at all, say so honestly and stop rather than inventing one.\n\nWrite `{{workPath}}/before.md` with exactly these sections: `## Request` (the change in the user's terms), `## Current behavior` (what happens today, with the quoted snippets), `## Surfaces involved` (each file and the part it plays, with backtick paths). Every path you cite must be real.\n\nObservable handoff: write the completed result to `{{workPath}}/before.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "product engineer",
+      "capabilityFloor": "small",
+      "advanceWhen": {
+        "file": "{{workPath}}/before.md",
+        "minBytes": 500,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "implement"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/before.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/before.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/before.md",
+            "pattern": "^##\\s+Request",
+            "flags": "im",
+            "label": "Request section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/before.md",
+            "pattern": "^##\\s+Current behavior",
+            "flags": "im",
+            "label": "Current behavior section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/before.md",
+            "pattern": "^##\\s+Surfaces involved",
+            "flags": "im",
+            "label": "Surfaces involved section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/before.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "understand",
+        "maxAttempts": 4
+      },
+      "next": "implement"
+    },
+    {
+      "id": "implement",
+      "name": "Implement the smallest coherent change",
+      "description": "Deliver the request at the real sites, in the product's own conventions, keeping existing behaviors wired.",
+      "prompt": "Read `{{workPath}}/before.md` and deliver the SMALLEST coherent change at the real sites it names — edit the actual files with `read_file` plus `write_file`/`replace_in_file`; there is no prescribed output path for the change itself. Match the surrounding product's conventions: reuse its spacing, naming, class patterns, and markup style rather than inventing a new one — open neighboring code to see how this product already does the same kind of thing. Keep every existing behavior working: the handlers, keyboard shortcuts, element ids, and state catalogued in before.md must still be wired when you are done — move them with the element rather than dropping or duplicating them. Do not smuggle in unrequested changes; polish beyond the request is scope creep, not generosity.\n\nThen write `{{workPath}}/fix-notes.md` with exactly these sections: `## Problem` (the request, one paragraph), `## Change` (what you altered and how it delivers the request), `## Files touched` (backtick path per line), `## Consistency notes` (which existing conventions you followed and where you saw them), `## Risk` (what could break; be honest about anything unverified), `## How to verify` (the exact steps a person follows to see the new experience). Before working, open `{{workPath}}/before.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/fix-notes.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "frontend engineer",
+      "capabilityFloor": "small",
+      "consumes": [
+        {
+          "file": "{{workPath}}/before.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/fix-notes.md",
+        "minBytes": 700,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "validate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/fix-notes.md",
+            "bytes": 700,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/fix-notes.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Problem",
+            "flags": "im",
+            "label": "Problem section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Change",
+            "flags": "im",
+            "label": "Change section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Files touched",
+            "flags": "im",
+            "label": "Files touched section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Consistency notes",
+            "flags": "im",
+            "label": "Consistency notes section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Risk",
+            "flags": "im",
+            "label": "Risk section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+How to verify",
+            "flags": "im",
+            "label": "How to verify section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/fix-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "implement",
+        "maxAttempts": 4
+      },
+      "next": "validate"
+    },
+    {
+      "id": "validate",
+      "name": "Validate the changed flow",
+      "description": "Walk the new experience and build a concrete before/after grounded in the real files.",
+      "prompt": "Prove the change as the user would experience it. Read `{{workPath}}/before.md` and `{{workPath}}/fix-notes.md`, then re-open the changed files with `read_file` and walk the flow: where the element lives now, what happens on each interaction, where focus goes, what each shortcut does. Build a concrete before/after comparison grounded in the real files — quote the after state next to the before state that before.md recorded. Re-check every behavior from before.md's catalogue: each handler, shortcut, and id must be verifiably still wired in the current code. Say plainly which parts you INSPECTED (read the code) versus EXERCISED (actually ran or interacted with) — anything that is neither is unverified and must be named, never claimed.\n\nWrite `{{workPath}}/validation.md` with exactly these sections: `## Before / after` (the concrete comparison, quoting both states), `## What was exercised` (inspected versus exercised, honestly), `## Result` (delivered as requested, or what remains open and why). Before working, open `{{workPath}}/before.md`, `{{workPath}}/fix-notes.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/validation.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "product engineer",
+      "capabilityFloor": "small",
+      "consumes": [
+        {
+          "file": "{{workPath}}/before.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/fix-notes.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/validation.md",
+        "minBytes": 500,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/validation.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/validation.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Before\\s*/\\s*after",
+            "flags": "im",
+            "label": "Before / after section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+What was exercised",
+            "flags": "im",
+            "label": "What was exercised section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Result",
+            "flags": "im",
+            "label": "Result section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/validation.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "validate",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate the deliverable",
+      "description": "Independently grade the observable deliverable and route it to finish, repair, or user escalation.",
+      "prompt": "Review `{{workPath}}/validation.md`, `{{workPath}}/before.md`, `{{workPath}}/fix-notes.md` against every criterion below. Inspect the underlying evidence files named by the workflow; do not grade from the author's summary alone.\n\n1. The delivered change matches the request as a user would judge it — open the changed files and walk the flow; do not grade from fix-notes.md alone.\n2. The change respects the surrounding product's conventions — open neighboring code and compare naming, spacing, and markup patterns; a one-off new style where an existing pattern served does not pass.\n3. Nothing that worked before broke: every handler, keyboard shortcut, and id catalogued in before.md is still wired in the current code — check the wiring, not the claim.\n4. before.md quotes the real prior state and validation.md's before/after is grounded in the current files, not reconstructed from memory.\n5. The change is minimal: no unrequested alterations rode along with it.\n\nOpen `{{workPath}}/validation.md`, `{{workPath}}/before.md`, `{{workPath}}/fix-notes.md` with `read_artifact`. Write the evidence-backed review to `{{workPath}}/review.md` in the artifacts drawer with `write_artifact`.\n\nList the findings as a markdown table with columns `| Severity | File | Line | Problem | Fix |` (severities: critical/major/minor/nit; empty table only on PASS). Give each criterion a PASS or FAIL with a concrete path, excerpt, measurement, or observed behavior. End with exactly `Verdict: PASS` or `Verdict: REVISE`. The gate ENFORCES the verdict: a well-formed REVISE is rejected and routed back to `repair` automatically, carrying your findings — so list every finding in the table with a concrete fix. On PASS, `advance_task_step` to `finish`. Never write PASS while a criterion is unmet.",
+      "suggestedRole": "ux reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/validation.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/before.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/fix-notes.md",
+          "artifact": true
+        }
+      ],
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/review.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit PASS or REVISE verdict",
+            "artifact": true
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkFixReview",
+            "scope": "standard",
+            "inputs": {
+              "reviewPath": "{{workPath}}/review.md",
+              "fixStepId": "repair"
+            }
+          }
+        ],
+        "onReject": "evaluate",
+        "maxAttempts": 4
+      },
+      "next": "finish"
+    },
+    {
+      "id": "repair",
+      "name": "Repair the deliverable",
+      "description": "Fix only the concrete gaps from the latest independent review.",
+      "prompt": "Read `{{workPath}}/review.md` with `read_artifact` and repair every failed criterion in `{{workPath}}/validation.md`, `{{workPath}}/before.md`, `{{workPath}}/fix-notes.md`. Make changes on each file's declared surface (`write_artifact` for artifact inputs, `write_file` for workspace inputs), not in task notes or a reply. Preserve evidence that already passed. Re-run or re-check anything the reviewer found unproven. Ensure `{{workPath}}/validation.md` is genuinely updated this turn so the repair is observable, then hand it back for independent evaluation.",
+      "suggestedRole": "frontend engineer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/validation.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/before.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/fix-notes.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/validation.md",
+        "minBytes": 500,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/validation.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/validation.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Before\\s*/\\s*after",
+            "flags": "im",
+            "label": "Before / after section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+What was exercised",
+            "flags": "im",
+            "label": "What was exercised section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Result",
+            "flags": "im",
+            "label": "Result section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/validation.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "repair",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All deterministic and reviewer criteria passed.",
+      "prompt": "The independent review passed. Read `{{workPath}}/review.md` with `read_artifact`, then use `write_task_note` to record a concise DONE summary with the final deliverable paths (`{{workPath}}/validation.md`, `{{workPath}}/before.md`, `{{workPath}}/fix-notes.md`) and the evidence that each acceptance criterion passed. Report DONE without starting new work.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true
+    },
+    {
+      "id": "needs-user",
+      "name": "Escalate unresolved concerns",
+      "description": "The bounded repair loop ended without a defensible pass.",
+      "prompt": "The deliverable did not pass after 3 review rounds. Do not claim success. Read `{{workPath}}/review.md` with `read_artifact`, then use `write_task_note` to record DONE_WITH_CONCERNS: the unmet criteria, what was attempted, the affected paths, and the smallest user decision or missing input needed to continue.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true
+    }
+  ],
+  "diffpackCapable": true,
+  "capabilityFloor": "small",
+  "version": "1.0.0",
+  "releasedAt": "2026-08-24T00:00:00.000Z",
+  "minGezelVersion": "1.26236"
+}

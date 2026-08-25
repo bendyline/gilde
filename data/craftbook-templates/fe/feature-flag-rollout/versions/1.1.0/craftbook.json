@@ -1,0 +1,203 @@
+{
+  "id": "feature-flag-rollout",
+  "name": "Flagged Feature Rollout",
+  "description": "Add a new feature behind a feature flag so it can ship dark, be toggled per-environment/user, and roll back instantly without a deploy. Plans the flag contract FIRST — the flag name/default, the toggle points, the on/off behavior, the targeting (env/percentage/user), and the cleanup plan — then implements the flagged code with both paths working, then a reviewer verifies both states behave and the off-state default is safe. Covers feature flags, toggle points, percentage/targeted rollout, default-off safety, dark launches, and flag-cleanup discipline.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Plan the flag (planner) — lock flag name, default, toggle points, targeting → gated on artifact `{{workPath}}/plan.md` (markdown-notes)\n2. Build the flagged feature (developer) — implement both paths behind the flag → gated on `src/feature.js` (code-module)\n3. Verify both states (reviewer) — confirm off=original, on=new, safe default → gated on artifact `{{workPath}}/verify.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "plan",
+  "triggers": [
+    "add a feature flag",
+    "ship behind a flag",
+    "feature toggle",
+    "gradual rollout",
+    "dark launch a feature",
+    "feature flag rollout plan",
+    "canary release plan",
+    "percentage ramp",
+    "dark launch behind a flag"
+  ],
+  "steps": [
+    {
+      "id": "plan",
+      "name": "Plan the flag",
+      "description": "lock flag name, default, toggle points, targeting",
+      "prompt": "Plan the feature flag before coding. Step 1: Name the flag and set its DEFAULT (default-off is the safe choice for new features) and where its value is read from (config/env/flag service). Step 2: Identify the toggle points in the code — exactly where the flag branches old behavior vs new. Step 3: Define the behavior in each state precisely, and the targeting strategy (all-on/off, per-environment, percentage, or specific users). Step 4: Note the rollback story (flip the flag, no deploy) and the cleanup plan (when/how the flag and the dead branch get removed later). Step 5: Write a numbered acceptance-criteria checklist of 5-9 items (e.g. 'flag-off reproduces the original behavior exactly', 'flag-on enables the new feature', 'the default is safe', 'no code path runs both branches'). `write_task_note` the flag plan + checklist and write the same to the produces path.\n\nThe deliverable `{{workPath}}/plan.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/plan.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/plan.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/plan.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "plan",
+        "maxAttempts": 3
+      },
+      "next": "build"
+    },
+    {
+      "id": "build",
+      "name": "Build the flagged feature",
+      "description": "implement both paths behind the flag",
+      "prompt": "Implement the feature behind the flag to the plan. Step 1: Read the flag value from the agreed source with the safe default. Step 2: At each toggle point, branch cleanly: flag-OFF must reproduce the original behavior exactly (no behavior change for existing users), flag-ON enables the new feature. Step 3: Keep the flag check at the boundary so the two paths are clear and neither leaks into the other; support the targeting strategy (e.g. percentage/user check) if specified. Step 4: Ensure the new feature is reachable only when on, and that the off path is the trusted fallback. Write the implementation to the produces path. On a loop-back, fix only the named gap. `write_task_note` the file path and which criteria now pass.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "src/feature.js",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/feature.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/feature.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/feature.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/feature.js"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify both states",
+      "description": "confirm off=original, on=new, safe default",
+      "prompt": "Verify the flag behaves in both states. Step 1: With the flag OFF, confirm the behavior is identical to before the feature existed (existing tests still green, no surprises). Step 2: With the flag ON, confirm the new feature works as specified. Step 3: Confirm the default value is the safe one and that flipping the flag fully switches behavior with no deploy needed. Step 4: Confirm targeting (if any) routes correctly and that no path accidentally runs both branches. Write a verification note covering the off-state, on-state, and default to the produces path.\n\nThe deliverable `{{workPath}}/verify.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true,
+        "requireChange": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "src/feature.js",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "src/feature.js",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "src/feature.js"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "src/feature.js"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/verify.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Review `{{workPath}}/verify.md` against the original scope: every claim cites a real path, the severities and priorities are defensible, and nothing important in scope was skipped. Open the underlying files for at least the top findings; do not grade from the report's own summary. If a finding cannot be verified, say so explicitly.\n\nWrite your review to the artifact `{{workPath}}/review.md` with one `write_artifact` call: what you checked, what held, what did not (as a findings table with columns `| Severity | File | Line | Problem | Fix |` when anything needs fixing), ending with exactly `Verdict: PASS` or `Verdict: REVISE`. The gate enforces the verdict: a well-formed REVISE is routed back to the `verify` step automatically with your findings. On PASS, `advance_task_step` to `finish`.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "src/feature.js"
+        }
+      ],
+      "next": "finish",
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/review.md",
+            "bytes": 300,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit PASS or REVISE verdict",
+            "artifact": true
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkFixReview",
+            "scope": "standard",
+            "inputs": {
+              "taskRef": "{{task.ref}}",
+              "reviewPath": "{{workPath}}/review.md",
+              "fixStepId": "verify"
+            }
+          }
+        ],
+        "onReject": "evaluate",
+        "maxAttempts": 4
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.1.0",
+  "releasedAt": "2026-08-24T00:00:00.000Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26236"
+}

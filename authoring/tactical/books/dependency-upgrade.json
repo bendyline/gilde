@@ -1,0 +1,196 @@
+{
+  "id": "dependency-upgrade",
+  "name": "Upgrade a Dependency",
+  "description": "Upgrade dependencies in reviewable stages with proof at every step: a green suite before any bump, smallest-risk-first ordering, call-site adaptations at their real locations, a real suite run between stages, and an honest revert for anything that cannot go green.",
+  "category": "code-quality",
+  "role": "maintenance-review",
+  "tags": [
+    "dependencies",
+    "upgrade",
+    "maintenance",
+    "supply-chain",
+    "tests",
+    "quality"
+  ],
+  "triggers": [
+    "upgrade the dependencies",
+    "bump the deps",
+    "update this package",
+    "dependency upgrade"
+  ],
+  "about": "Upgrade dependencies the way a careful maintainer would, with each claim mechanically verified. This is the applying sibling of the report-only Dependency Audit: where that book tells you what is risky, this one moves the versions. First SURVEY: read the real dependency state (manifest, lockfile, installed packages, or a vendored tree the repository documents), run the suite so green-before-any-bump is a recorded receipt, and read each candidate's breaking-change surface from what exists LOCALLY - changelogs and READMEs inside node_modules, or the repository's own upgrade notes. Release notes are never invented; a candidate whose changes cannot be read locally is staged conservatively and marked unknown. Then UPGRADE stage by stage, smallest-risk-first: apply the version change at its real location, adapt the call sites it breaks, and run the suite before the next stage begins. A stage that cannot go green is reverted and recorded with the reason, never forced through; a major that needs real design work is deferred honestly. Then VERIFY the final tree green and record a concrete rollback path. Finally an independent reviewer grades the whole chain against fixed criteria, and their REVISE verdict routes the work back automatically with concrete findings. Needs a project whose tests run via `npm run test`. Works identically whether the run edits the project directly or drafts a change proposal for the user to apply.",
+  "doc": {
+    "paramSchema": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "type": "string",
+          "title": "What to upgrade",
+          "description": "A single dependency, a patch-level sweep, or a named major upgrade. Leave empty to survey and pick the safest valuable set.",
+          "default": ""
+        }
+      }
+    },
+    "capabilityFloor": "medium",
+    "diffpackCapable": true,
+    "commands": [
+      {
+        "scope": "script",
+        "name": "test",
+        "reason": "each upgrade stage must leave the suite green - the gates read real run receipts"
+      }
+    ],
+    "runModes": {
+      "scheduled": "supported"
+    }
+  },
+  "workflow": {
+    "plan": "Survey the real dependency state and stage the work smallest-risk-first (green-suite receipt before any bump) -> execute stage by stage with the suite run between stages and honest reverts -> verify the final tree green and record the rollback path -> enforced independent review.",
+    "maxGateAttempts": 4,
+    "maxReviewRounds": 3,
+    "phases": [
+      {
+        "id": "survey",
+        "name": "Survey the dependency state",
+        "description": "Read the real dependency state and each candidate's locally-readable breaking-change surface, record the green baseline, and stage the work smallest-risk-first.",
+        "suggestedRole": "dependency auditor",
+        "capabilityFloor": "medium",
+        "prompt": "The upgrade scope: {{scope}}\n\nEstablish the REAL dependency state before changing anything. Read `package.json` (and the lockfile if one exists), run `list_packages`, and work out how this project consumes each dependency - registry installs, or a vendored tree the repository documents. Then run the suite with `run_package_script` (`test`) and record that it is green BEFORE any bump. If the suite is already red, record the failure honestly and stop - never upgrade on top of a red suite. If the command needs first-use approval, say so and wait rather than guessing.\n\nFor each upgrade candidate, read its breaking-change surface from what is available LOCALLY: changelogs and READMEs inside `node_modules/`, or the repository's own upgrade notes for vendored code. Never invent release notes you did not read - a candidate whose changes you cannot read locally gets staged conservatively and marked unknown. Order the stages smallest-risk-first: patches before minors before majors, one dependency (or one tightly-coupled group) per stage. If nothing is worth upgrading here, record that finding honestly and stop.\n\nWrite `{{workPath}}/survey.md` with exactly these sections: `## Current state` (what is installed, from the real manifest and lockfile), `## Candidates` (each candidate with its current and target version and where you read its notes), `## Breaking-change notes` (what actually changes, only from sources you read, each cited with a backtick path), `## Stage plan` (numbered stages, smallest-risk-first, with the reason for the order).",
+        "output": {
+          "path": "{{workPath}}/survey.md",
+          "minBytes": 600,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Current state",
+              "label": "Current state section"
+            },
+            {
+              "pattern": "^##\\s+Candidates",
+              "label": "Candidates section"
+            },
+            {
+              "pattern": "^##\\s+Breaking-change notes",
+              "label": "Breaking-change notes section"
+            },
+            {
+              "pattern": "^##\\s+Stage plan",
+              "label": "Stage plan section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/survey.md",
+              "minCitations": 2,
+              "artifact": true
+            },
+            {
+              "kind": "commandEvidence",
+              "script": "test",
+              "expect": "pass",
+              "label": "green before any bump"
+            }
+          ]
+        }
+      },
+      {
+        "id": "upgrade",
+        "name": "Execute the stages",
+        "description": "Apply each stage at its real location, adapt the call sites it breaks, and run the suite between stages; revert and record any stage that cannot go green.",
+        "suggestedRole": "software engineer",
+        "capabilityFloor": "medium",
+        "prompt": "Read `{{workPath}}/survey.md` and execute its stage plan one stage at a time. For each stage: apply the version change at its real location - edit the manifest and run `npm_install` for registry dependencies, or replace the vendored tree exactly as the repository's convention documents for vendored ones - then adapt every call site the change breaks at its real location with `read_file` plus `write_file`/`replace_in_file`, and run the suite with `run_package_script` (`test`) before starting the next stage. Never begin a stage while the previous one is red.\n\nA stage that cannot go green gets REVERTED - put the manifest, lockfile, and touched files back exactly as they were - and recorded with the concrete failure, never forced through by weakening tests or pinning over the breakage. A major that turns out to need real design work is deferred honestly, not hacked through. If every stage had to be reverted, record that outcome honestly and stop.\n\nWrite `{{workPath}}/change-notes.md` with exactly these sections: `## Stages executed` (each stage with its suite result), `## Files touched` (backtick path per line), `## Adaptations` (each call-site change and why the new version needs it), `## Reverted stages` (each with the concrete failure that forced the revert, or 'none').",
+        "output": {
+          "path": "{{workPath}}/change-notes.md",
+          "minBytes": 700,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Stages executed",
+              "label": "Stages executed section"
+            },
+            {
+              "pattern": "^##\\s+Files touched",
+              "label": "Files touched section"
+            },
+            {
+              "pattern": "^##\\s+Adaptations",
+              "label": "Adaptations section"
+            },
+            {
+              "pattern": "^##\\s+Reverted stages",
+              "label": "Reverted stages section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/change-notes.md",
+              "minCitations": 2,
+              "artifact": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "verify",
+        "name": "Verify and record the rollback",
+        "description": "Re-run the whole suite on the final tree, spot-check the adaptations, and record a concrete rollback path.",
+        "suggestedRole": "software engineer",
+        "capabilityFloor": "medium",
+        "prompt": "Prove the result with fresh eyes. Re-run the whole suite with `run_package_script` (`test`) - it must be green on the final tree; if it is not, go back and fix or revert before verifying again. Re-read `{{workPath}}/change-notes.md` and spot-check each adaptation at its real location with `read_file`. Then record the rollback path: exactly which manifest and lockfile entries (or vendored files) to restore, and in what order, to return to the pre-upgrade state. Anything you could not actually run gets labeled unverified, never claimed.\n\nWrite `{{workPath}}/verification.md` with exactly these sections: `## Suite` (the full-suite command and its result), `## Adaptations verified` (which call sites you re-opened and what you confirmed), `## Rollback` (the concrete revert steps), `## Result` (upgraded and green, or what remains unverified and why).",
+        "output": {
+          "path": "{{workPath}}/verification.md",
+          "minBytes": 450,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Suite",
+              "label": "Suite section"
+            },
+            {
+              "pattern": "^##\\s+Adaptations verified",
+              "label": "Adaptations verified section"
+            },
+            {
+              "pattern": "^##\\s+Rollback",
+              "label": "Rollback section"
+            },
+            {
+              "pattern": "^##\\s+Result",
+              "label": "Result section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "commandEvidence",
+              "script": "test",
+              "expect": "pass",
+              "label": "the whole suite is green on the upgraded tree (verified run receipt)"
+            }
+          ]
+        }
+      }
+    ],
+    "review": {
+      "artifactPath": "{{workPath}}/verification.md",
+      "relatedPaths": [
+        "{{workPath}}/survey.md",
+        "{{workPath}}/change-notes.md"
+      ],
+      "reviewPath": "{{workPath}}/review.md",
+      "reviewerRole": "dependency reviewer",
+      "repairRole": "software engineer",
+      "minReviewBytes": 400,
+      "enforce": {
+        "fixStepId": "repair"
+      },
+      "criteria": [
+        "The stages in change-notes.md were real and ordered smallest-risk-first, matching the plan in survey.md or explaining every deviation.",
+        "Green between stages is receipts, not claims: the suite was genuinely run before the first bump and between stages - judged from the recorded runs, not the author's summary.",
+        "Breaking-change notes cite sources that were genuinely read locally; nothing is presented as a release note that was invented.",
+        "Every adaptation cites a real file, and the change at that site matches what the new version actually requires - open the touched files; do not grade from change-notes.md alone.",
+        "Stages that could not go green were reverted and recorded with concrete reasons; majors that need design work were deferred honestly, not hacked through.",
+        "verification.md records a concrete, runnable rollback path and the final suite run is green - judged from the recorded run receipts."
+      ]
+    }
+  }
+}

@@ -1,0 +1,227 @@
+{
+  "schemaVersion": 1,
+  "title": "CI pipeline grounded in real scripts",
+  "objective": "The craftbook authors a CI workflow for a repo that has exactly two scripts (test and lint) and no typecheck. The oracle verifies a real workflow exists under .github/workflows/, runs both real scripts with checkout and node setup pinned to major versions, triggers on push and pull_request, and invents nothing — no typecheck stage, no publish job, no fabricated secrets.",
+  "tags": [
+    "code",
+    "ci",
+    "devops",
+    "tactical-fleet"
+  ],
+  "prompt": "Use the CI Pipeline from Scratch craftbook: this repo has no CI at all. Set up a pipeline that runs on every push and pull request using what the repo already has — do not add stages for tools the repo does not use. Standard GitHub Actions layout.",
+  "setup": {
+    "projectName": "Relay Notes",
+    "about": "A small Node library with two package scripts: `npm run test` (node --test) and `npm run lint` (a repo-local lint script). No typecheck, no build step, no publish configuration.",
+    "files": [
+      {
+        "path": "package.json",
+        "content": "{\n  \"name\": \"relay-notes\",\n  \"private\": true,\n  \"version\": \"1.0.0\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test\",\n    \"lint\": \"node tools/lint.mjs\"\n  }\n}\n"
+      },
+      {
+        "path": "package-lock.json",
+        "content": "{\n  \"name\": \"relay-notes\",\n  \"version\": \"1.0.0\",\n  \"lockfileVersion\": 3,\n  \"requires\": true,\n  \"packages\": {\n    \"\": {\n      \"name\": \"relay-notes\",\n      \"version\": \"1.0.0\"\n    }\n  }\n}\n"
+      },
+      {
+        "path": "src/greet.js",
+        "content": "export function greet(name) {\n  const label = String(name ?? '').trim();\n  if (label === '') return 'Hello there!';\n  return `Hello, ${label}!`;\n}\n"
+      },
+      {
+        "path": "tools/lint.mjs",
+        "content": "import { readFileSync, readdirSync } from 'node:fs';\n\nlet problems = 0;\nfor (const file of readdirSync('src')) {\n  if (!file.endsWith('.js')) continue;\n  const text = readFileSync(`src/${file}`, 'utf8');\n  if (/\\t/.test(text)) {\n    console.error(`lint: tab indentation in src/${file}`);\n    problems++;\n  }\n}\nif (problems > 0) process.exit(1);\nconsole.log('lint ok');\n"
+      },
+      {
+        "path": "tests/greet.test.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { test } from 'node:test';\nimport { greet } from '../src/greet.js';\n\ntest('greets a trimmed name', () => {\n  assert.equal(greet('  Mira '), 'Hello, Mira!');\n});\n\ntest('falls back for an empty name', () => {\n  assert.equal(greet(''), 'Hello there!');\n});\n"
+      },
+      {
+        "path": "tests/verify-ci.mjs",
+        "surface": "harness",
+        "content": "import assert from 'node:assert/strict';\nimport { readFileSync, readdirSync } from 'node:fs';\nimport { join } from 'node:path';\n\nconst dir = '.github/workflows';\nlet names = [];\ntry {\n  names = readdirSync(dir).filter((f) => /\\.ya?ml$/i.test(f));\n} catch {}\nassert.ok(names.length >= 1, 'no workflow file exists under .github/workflows/');\nconst raw = names.map((f) => readFileSync(join(dir, f), 'utf8')).join('\\n---\\n');\n// Judge only active YAML: a comment honestly noting \"no typecheck script\"\n// must never trip the anti-invention assertions below.\nconst all = raw.replace(/#[^\\n]*/g, '');\nconsole.log('CIPIPE_ORACLE workflow found');\n\n// Checkout and Node setup, pinned to major versions.\nassert.ok(/actions\\/checkout@v\\d+/.test(all), 'uses actions/checkout pinned to a major version');\nassert.ok(/actions\\/setup-node@v\\d+/.test(all), 'uses actions/setup-node pinned to a major version');\nconsole.log('CIPIPE_ORACLE actions ok');\n\n// Runs both real scripts.\nassert.ok(/\\bnpm\\s+(?:run\\s+)?test\\b/.test(all), 'the workflow runs the test script');\nassert.ok(/\\bnpm\\s+run\\s+lint\\b/.test(all), 'the workflow runs the lint script');\nconsole.log('CIPIPE_ORACLE scripts ok');\n\n// Invokes nothing the repo does not have.\nassert.ok(!/typecheck/i.test(all), 'no invented typecheck stage - the repo has no such script');\nconst pkg = JSON.parse(readFileSync('package.json', 'utf8'));\nfor (const m of all.matchAll(/npm\\s+run\\s+([A-Za-z0-9:_-]+)/g)) {\n  if (m[1].startsWith('-')) continue;\n  assert.ok(pkg.scripts && pkg.scripts[m[1]], `workflow invokes \"npm run ${m[1]}\" but package.json has no such script`);\n}\nconsole.log('CIPIPE_ORACLE no invented commands');\n\n// Triggers on push and pull_request.\nassert.ok(/\\bpush\\b/.test(all), 'triggers on push');\nassert.ok(/\\bpull_request\\b/.test(all), 'triggers on pull_request');\nconsole.log('CIPIPE_ORACLE triggers ok');\n\n// No invented secrets, and no publish job in a repo with no release evidence.\nfor (const m of all.matchAll(/secrets\\.([A-Za-z0-9_]+)/g)) {\n  assert.equal(m[1], 'GITHUB_TOKEN', `workflow references invented secret \"${m[1]}\"`);\n}\nassert.ok(!/npm\\s+publish/.test(all), 'no publish step - the repo shows no release configuration');\nconsole.log('CIPIPE_ORACLE nothing invented');\nconsole.log('CIPIPE_ORACLE done');\n"
+      }
+    ],
+    "craftbookParams": {
+      "workPath": "tasks/eval"
+    }
+  },
+  "success": {
+    "summary": "A real GitHub Actions workflow exists at the conventional location, runs exactly the repo's two scripts on push and pull_request with pinned actions, invents no command, secret, or publish job — and every fleet artifact exists with the workflow commands verified against quoted package.json lines.",
+    "deliverables": [
+      {
+        "path": "tasks/eval/ci-plan.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/ci-plan.md",
+            "pattern": "^##\\s+Detected commands[\\s\\S]*^##\\s+Pipeline stages[\\s\\S]*^##\\s+Caching[\\s\\S]*^##\\s+Triggers",
+            "flags": "im",
+            "label": "ci-plan sections in order"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/ci-plan.md",
+            "pattern": "package\\.json",
+            "label": "the plan reads the real manifest"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "tasks/eval/ci-plan.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/ci-notes.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/ci-notes.md",
+            "pattern": "^##\\s+Files written[\\s\\S]*^##\\s+Stages[\\s\\S]*^##\\s+Choices explained",
+            "flags": "im",
+            "label": "ci-notes sections in order"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/ci-notes.md",
+            "pattern": "\\.github/workflows/",
+            "label": "names the conventional workflow location"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "tasks/eval/ci-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/verification.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/verification.md",
+            "pattern": "^##\\s+Workflow files[\\s\\S]*^##\\s+Commands verified against package\\.json[\\s\\S]*^##\\s+Result",
+            "flags": "im",
+            "label": "verification sections in order"
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/review.md",
+        "kind": "markdown-report",
+        "artifact": true,
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit reviewer verdict"
+          }
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "kind": "nodeRuns",
+        "file": "tests/greet.test.mjs"
+      },
+      {
+        "kind": "nodeScriptPasses",
+        "script": "tools/lint.mjs",
+        "timeoutMs": 30000,
+        "requiredOutput": [
+          {
+            "pattern": "lint ok",
+            "label": "the repo lint still passes"
+          }
+        ]
+      },
+      {
+        "kind": "nodeScriptPasses",
+        "script": "tests/verify-ci.mjs",
+        "timeoutMs": 60000,
+        "requiredOutput": [
+          {
+            "pattern": "CIPIPE_ORACLE workflow found",
+            "label": "a workflow exists at the conventional location"
+          },
+          {
+            "pattern": "CIPIPE_ORACLE scripts ok",
+            "label": "both real scripts run in CI"
+          },
+          {
+            "pattern": "CIPIPE_ORACLE no invented commands",
+            "label": "no command invented beyond package.json"
+          },
+          {
+            "pattern": "CIPIPE_ORACLE triggers ok",
+            "label": "triggers on push and pull_request"
+          },
+          {
+            "pattern": "CIPIPE_ORACLE nothing invented",
+            "label": "no fabricated secrets or publish job"
+          }
+        ]
+      }
+    ],
+    "taskNotes": {
+      "minBytes": 120,
+      "checks": [
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "\\bDONE\\b[\\s\\S]*(workflows|ci\\.yml|verification\\.md)",
+          "flags": "i",
+          "label": "DONE note names the workflow deliverable"
+        }
+      ]
+    },
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    },
+    "unchangedFixtures": [
+      "package.json",
+      "package-lock.json",
+      "src/greet.js",
+      "tools/lint.mjs",
+      "tests/greet.test.mjs"
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "tasks/eval/ci-notes.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "Grounded inventory",
+        "description": "Every planned stage maps to a script that exists in package.json, quoted verbatim; no typecheck, build, or publish stage was invented for this repo."
+      },
+      {
+        "name": "Workflow quality",
+        "description": "The workflow sits at the conventional location, pins actions to major versions, orders install before lint and test, wires dependency caching, and triggers on push and pull_request."
+      },
+      {
+        "name": "Verification honesty",
+        "description": "The verify pass matched each workflow command to a quoted manifest line and is plain about what only a live CI run on the host can prove."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "no invented commands or secrets",
+    "manifest-quoted verification",
+    "enforced review loop"
+  ]
+}

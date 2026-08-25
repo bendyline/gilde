@@ -1,0 +1,222 @@
+{
+  "schemaVersion": 1,
+  "title": "Bug fix with red-then-green proof",
+  "objective": "The craftbook drives a disciplined fix of a seeded boundary bug: a failing reproduction test written into the real test layout, the smallest change at the real defect site, a green suite afterwards, and an enforced review — all verified mechanically, including a mutant run proving the regression guard bites.",
+  "tags": [
+    "code",
+    "bug-fix",
+    "tdd",
+    "tactical-fleet"
+  ],
+  "prompt": "Use the Reproduce-Then-Fix a Bug craftbook for this: customers report that buying exactly 10 of an item does not get the bulk discount, but the pricing page promises the discount at 10 or more. The report is in source/bug-report.md. Reproduce it with a failing test first, then fix it properly.",
+  "setup": {
+    "projectName": "Orderly Pricing",
+    "about": "A tiny order-pricing module for a web shop. Tests run with `npm run test` (node --test).",
+    "files": [
+      {
+        "path": "package.json",
+        "content": "{\n  \"name\": \"orderly\",\n  \"private\": true,\n  \"version\": \"1.0.0\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test\"\n  }\n}\n"
+      },
+      {
+        "path": "src/pricing.js",
+        "content": "const BULK_THRESHOLD = 10;\nconst BULK_DISCOUNT = 0.15;\n\nexport function lineTotal(unitPrice, qty) {\n  if (!Number.isFinite(unitPrice) || unitPrice < 0) throw new Error('bad unitPrice');\n  if (!Number.isInteger(qty) || qty < 0) throw new Error('bad qty');\n  const subtotal = unitPrice * qty;\n  if (qty > BULK_THRESHOLD) {\n    return round2(subtotal * (1 - BULK_DISCOUNT));\n  }\n  return round2(subtotal);\n}\n\nfunction round2(value) {\n  return Math.round(value * 100) / 100;\n}\n"
+      },
+      {
+        "path": "tests/pricing.test.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { test } from 'node:test';\nimport { lineTotal } from '../src/pricing.js';\n\ntest('small orders pay full price', () => {\n  assert.equal(lineTotal(4, 5), 20);\n});\n\ntest('large orders get the bulk discount', () => {\n  assert.equal(lineTotal(10, 20), 170);\n});\n\ntest('rejects bad quantities', () => {\n  assert.throws(() => lineTotal(4, -1));\n});\n"
+      },
+      {
+        "path": "source/bug-report.md",
+        "content": "# Bug report\n\nFrom support: \"Our pricing page says 'buy 10 or more, save 15%'. A customer bought exactly 10 units at 8.00 and was charged 80.00 - no discount. Buying 11 units gives the discount. Exactly 10 does not.\"\n\nExpected: 10 units at 8.00 with the 15% bulk discount = 68.00.\nActual: charged the full 80.00.\n"
+      },
+      {
+        "path": "tests/verify-pricing.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { execFileSync } from 'node:child_process';\nimport { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';\nimport { join } from 'node:path';\nimport { lineTotal } from '../src/pricing.js';\n\n// 1) Behavior: the boundary is fixed and the neighborhood still holds.\nassert.equal(lineTotal(8, 10), 68, 'exactly 10 units must get the bulk discount');\nassert.equal(lineTotal(8, 11), 74.8, 'above the threshold keeps the discount');\nassert.equal(lineTotal(8, 9), 72, 'below the threshold pays full price');\nassert.equal(lineTotal(4, 5), 20, 'small orders unchanged');\nconsole.log('BUGFIX_ORACLE behavior ok');\n\n// 2) Regression guard bites: rebuild the tree with the ORIGINAL seeded\n// defect and the test suite must now FAIL - proof that a reproduction\n// test exists and would catch a revert. The current tree's suite must\n// pass (green after the fix).\nconst root = process.cwd();\nconst mutantRoot = join(root, '.oracle-mutant');\nrmSync(mutantRoot, { recursive: true, force: true });\nmkdirSync(join(mutantRoot, 'src'), { recursive: true });\ncpSync(join(root, 'tests'), join(mutantRoot, 'tests'), { recursive: true });\nrmSync(join(mutantRoot, 'tests', 'verify-pricing.mjs'), { force: true });\ncpSync(join(root, 'package.json'), join(mutantRoot, 'package.json'));\nconst current = readFileSync(join(root, 'src', 'pricing.js'), 'utf8');\nconst mutant = current.replace(/qty\\s*>=\\s*BULK_THRESHOLD/g, 'qty > BULK_THRESHOLD').replace(/qty\\s*>=\\s*10/g, 'qty > 10');\nassert.notEqual(mutant, current, 'could not re-seed the defect - the fix should have made the threshold inclusive');\nwriteFileSync(join(mutantRoot, 'src', 'pricing.js'), mutant);\n\nfunction runSuite(cwd) {\n  try {\n    execFileSync(process.execPath, ['--test'], { cwd, stdio: 'pipe', timeout: 30000 });\n    return 0;\n  } catch (err) {\n    return typeof err.status === 'number' ? err.status : 1;\n  }\n}\n\nassert.equal(runSuite(root), 0, 'the suite must be green on the fixed tree');\nconsole.log('BUGFIX_ORACLE suite green');\nassert.notEqual(runSuite(mutantRoot), 0, 'reverting the fix must make at least one test fail - the regression guard is missing or toothless');\nconsole.log('BUGFIX_ORACLE mutant caught');\nconst testFiles = readdirSync(join(root, 'tests')).filter((f) => f.endsWith('.mjs') && f !== 'verify-pricing.mjs');\nassert.ok(testFiles.length >= 1, 'test layout missing');\nconsole.log('BUGFIX_ORACLE done');\n",
+        "surface": "harness"
+      }
+    ],
+    "craftbookParams": {
+      "workPath": "tasks/eval",
+      "scope": "Buying exactly 10 units does not get the bulk discount; see source/bug-report.md."
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "The seeded boundary defect is fixed at the real site, the suite is green, a regression test catches a revert (mutant run), and every fleet artifact exists with honest citations.",
+    "deliverables": [
+      {
+        "path": "tasks/eval/repro.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/repro.md",
+            "pattern": "^##\\s+Symptom[\\s\\S]*^##\\s+Repro command[\\s\\S]*^##\\s+Expected[\\s\\S]*^##\\s+Actual[\\s\\S]*^##\\s+Red evidence",
+            "flags": "im",
+            "label": "reproduction sections in order"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "tasks/eval/repro.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/diagnosis.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 600,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/diagnosis.md",
+            "pattern": "^##\\s+Defect site[\\s\\S]*^##\\s+Causal chain[\\s\\S]*^##\\s+Siblings checked",
+            "flags": "im",
+            "label": "diagnosis sections in order"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/diagnosis.md",
+            "pattern": "src/pricing\\.js",
+            "label": "names the real defect site"
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/fix-notes.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 700,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/fix-notes.md",
+            "pattern": "^##\\s+Problem[\\s\\S]*^##\\s+Change[\\s\\S]*^##\\s+Files touched[\\s\\S]*^##\\s+Regression coverage[\\s\\S]*^##\\s+Risk[\\s\\S]*^##\\s+How to verify",
+            "flags": "im",
+            "label": "fix-notes sections in order"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "tasks/eval/fix-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/validation.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/validation.md",
+            "pattern": "^##\\s+Repro re-run[\\s\\S]*^##\\s+Suite[\\s\\S]*^##\\s+Result",
+            "flags": "im",
+            "label": "validation sections in order"
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/review.md",
+        "kind": "markdown-report",
+        "artifact": true,
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit reviewer verdict"
+          }
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "kind": "notContains",
+        "file": "src/pricing.js",
+        "pattern": "qty\\s*>\\s*BULK_THRESHOLD|qty\\s*>\\s*10\\b",
+        "label": "the seeded exclusive-threshold defect is gone"
+      },
+      {
+        "kind": "sourceParses",
+        "file": "src/pricing.js"
+      },
+      {
+        "kind": "nodeRuns",
+        "file": "tests/pricing.test.mjs"
+      },
+      {
+        "kind": "nodeScriptPasses",
+        "script": "tests/verify-pricing.mjs",
+        "timeoutMs": 60000,
+        "requiredOutput": [
+          {
+            "pattern": "BUGFIX_ORACLE behavior ok",
+            "label": "boundary behavior fixed"
+          },
+          {
+            "pattern": "BUGFIX_ORACLE suite green",
+            "label": "suite green on the fixed tree"
+          },
+          {
+            "pattern": "BUGFIX_ORACLE mutant caught",
+            "label": "regression guard catches a revert"
+          }
+        ]
+      }
+    ],
+    "taskNotes": {
+      "minBytes": 120,
+      "checks": [
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "\\bDONE\\b[\\s\\S]*(npm\\s+run\\s+test|node\\s+--test)",
+          "flags": "i",
+          "label": "DONE note names the real test command"
+        }
+      ]
+    },
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    },
+    "unchangedFixtures": [
+      "source/bug-report.md",
+      "package.json"
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "tasks/eval/fix-notes.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "Repro-first discipline",
+        "description": "A failing test was genuinely written and run before the fix, in the project's real test layout, and the red evidence quotes a real run rather than a claim."
+      },
+      {
+        "name": "Fix minimality",
+        "description": "The change is the smallest correct edit at the real defect site; no special-casing of the reported input, no unrelated churn."
+      },
+      {
+        "name": "Honest verification",
+        "description": "Validation re-ran the original reproduction, distinguishes verified results from anything unverified, and the review graded evidence rather than summaries."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "red-then-green proof",
+    "real-path citations",
+    "enforced review loop"
+  ]
+}

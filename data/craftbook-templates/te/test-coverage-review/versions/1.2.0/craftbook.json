@@ -1,0 +1,195 @@
+{
+  "id": "test-coverage-review",
+  "name": "Test Coverage Review",
+  "description": "Review a codebase or module's test suite for real coverage and quality, then produce a gap report and a prioritized backlog of tests to add. First scopes the units under review and locks a coverage standard distinguishing line coverage from behavioral coverage (critical paths, branches, edge cases, error handling, and regression protection), then audits the existing tests for what they actually assert and which behaviors and branches are untested or weakly tested, then writes a report ranking the highest-value missing or low-quality tests with a concrete description of each. Use this for a test coverage review, finding test gaps, auditing test quality, deciding what to test next, or assessing whether a module is well-tested — it distinguishes meaningful behavioral coverage from a green coverage number and returns a prioritized testing backlog rather than 'add more tests'.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the coverage standard (reviewer) — lock units in scope + a behavioral coverage bar → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Audit the test suite (reviewer) — find untested behavior + weak assertions → gated on artifact `{{workPath}}/audit.md` (markdown-notes)\n3. Write the coverage report (reviewer) — prioritized test backlog + quality findings → gated on artifact `{{workPath}}/coverage-review.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "test coverage review",
+    "where are the test gaps",
+    "is this well tested",
+    "what should I test next",
+    "audit the test suite",
+    "test quality review"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the coverage standard",
+      "description": "lock units in scope + a behavioral coverage bar",
+      "prompt": "Step 1: Identify the modules/units under review and their behavioral surface — the public functions, the critical paths, the branches, and the failure modes that matter. Step 2: Run the coverage tool if available (`vitest --coverage`, `pytest --cov`, etc.) to get the line/branch numbers as a starting signal — but treat it as a floor, not the goal. Step 3: Write a coverage acceptance-criteria checklist that distinguishes LINE coverage from BEHAVIORAL coverage: 'every critical path has a test that asserts its outcome', 'each conditional branch is exercised', 'edge cases (empty/null/boundary/large) are tested', 'error and exception paths are tested', 'tests assert behavior, not just that code runs without throwing', 'a regression in core logic would fail at least one test'. Step 4: State the target for THIS code (e.g. 'core domain logic ~90% branch + behavioral; glue code lighter'). Write the units + the coverage bar to `write_task_note` AND `{{workPath}}/scope.md`. No audit yet.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "audit"
+    },
+    {
+      "id": "audit",
+      "name": "Audit the test suite",
+      "description": "find untested behavior + weak assertions",
+      "prompt": "Step 1: Map the existing tests to the behavioral surface — for each unit, what is tested and what does each test actually ASSERT. Step 2: Flag the gaps: untested public functions, untested branches, missing edge cases (empty/null/boundary/error), and missing regression protection on core logic. Step 3: Flag WEAK tests — tests that only check 'it runs' without asserting outcomes, over-mocked tests that would pass even if the real logic broke, snapshot-only tests of meaningful logic, and tests coupled to implementation rather than behavior. Step 4: Cross-check the coverage numbers: where lines are 'covered' but no assertion verifies the result, call it out (covered ≠ tested). Step 5: For each gap, draft the test to add: the unit, the scenario/input, and the expected assertion. Step 6: Rank by value — core/critical logic and error paths first. Good looks like: 'parseAmount() has no test for negative or non-numeric input → add a test asserting it throws/returns Err', not 'add more tests'. Stage the gap list to `write_task_note`. Do not write the report yet.\n\nThe deliverable `{{workPath}}/audit.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/audit.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/audit.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/audit.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "audit",
+        "maxAttempts": 3
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Write the coverage report",
+      "description": "prioritized test backlog + quality findings",
+      "prompt": "Step 1: Open `{{workPath}}/coverage-review.md` and write a '## Summary': the coverage numbers, an honest behavioral-coverage assessment, and the biggest gap. Step 2: Add a '## Missing tests' backlog ranked by value; each entry: the unit, the untested scenario, and the assertion the new test should make. Step 3: Add a '## Weak tests' section listing low-value/misleading tests with how to strengthen them. Step 4: Add a '## Well-covered' section noting what is solidly tested (so effort goes where it's needed). Step 5: Add a '## Quick wins' callout for high-value, easy tests to add first. Every recommendation must name a concrete test and its assertion — no 'increase coverage'. On a loop-back, fix only the named gaps. `write_task_note` the report path and the count of missing high-value tests.\n\nThe deliverable `{{workPath}}/coverage-review.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/coverage-review.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true,
+        "requireChange": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/coverage-review.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/coverage-review.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/coverage-review.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open `{{workPath}}/coverage-review.md` with `read_artifact` first, then review it against the original scope: every claim cites a real path, the severities and priorities are defensible, and nothing important in scope was skipped. Open the underlying files for at least the top findings; do not grade from the report's own summary. If a finding cannot be verified, say so explicitly.\n\nWrite your review to the artifact `{{workPath}}/review.md` with one `write_artifact` call: what you checked, what held, what did not (as a findings table with columns `| Severity | File | Line | Problem | Fix |` when anything needs fixing), ending with exactly `Verdict: PASS` or `Verdict: REVISE`. The gate enforces the verdict: a well-formed REVISE is routed back to the `report` step automatically with your findings. On PASS, `advance_task_step` to `finish`.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/coverage-review.md",
+          "artifact": true
+        }
+      ],
+      "next": "finish",
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/review.md",
+            "bytes": 300,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit PASS or REVISE verdict",
+            "artifact": true
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkFixReview",
+            "scope": "standard",
+            "inputs": {
+              "taskRef": "{{task.ref}}",
+              "reviewPath": "{{workPath}}/review.md",
+              "fixStepId": "report"
+            }
+          }
+        ],
+        "onReject": "evaluate",
+        "maxAttempts": 4
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true
+    }
+  ],
+  "version": "1.2.0",
+  "releasedAt": "2026-08-24T00:00:00.000Z",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "minGezelVersion": "1.26236",
+  "runModes": {
+    "nightShift": "supported"
+  }
+}

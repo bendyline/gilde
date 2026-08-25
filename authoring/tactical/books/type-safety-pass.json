@@ -1,0 +1,185 @@
+{
+  "id": "type-safety-pass",
+  "name": "Type-Safety Pass",
+  "description": "Tighten a module against unsafe patterns — loose equality, implicit coercions, swallowed catches, untyped boundaries, any-casts — with counted evidence: an audit that inventories the patterns by a stated method, fixes that never silence a check to move a count, a same-method re-count, and an enforced independent review.",
+  "category": "code-quality",
+  "role": "maintenance-review",
+  "tags": [
+    "types",
+    "typescript",
+    "javascript",
+    "type-safety",
+    "strict",
+    "quality"
+  ],
+  "triggers": [
+    "tighten the types",
+    "kill any types",
+    "add type annotations",
+    "make this type-safe",
+    "fix type errors"
+  ],
+  "about": "Tighten code against the unsafe patterns that turn into 3am bugs, with the improvement proven by counting rather than claiming. First AUDIT: inventory the patterns in scope WITH COUNTS gathered by a stated, repeatable method (a grep per pattern, expressions quoted) — loose equality against null or undefined, implicit string/number coercions, swallowed catches that hide real errors, untyped or unvalidated boundaries, and in TypeScript projects any-casts and ignore-comments. The audit picks the concrete targets, names which behavioral consequences of these patterns are bugs this pass is expected to fix, records the guardrail, and captures the suite green before any change. Then CHANGE: fix pattern by pattern at the real sites — and never buy a lower count by weakening the code: no deleted assertions, no silenced error paths, no bare casts, no ignore-comments; a count that falls that way is a regression wearing a metric. Then VERIFY: re-count with exactly the audit's method, quote before and after per pattern, and show the suite green. Finally an independent reviewer grades the chain — counts genuinely fell by the same method, no suppression, behavior preserved except the declared consequence fixes — and a REVISE verdict routes the work back automatically with concrete findings. Small enough to run as night-shift work. Needs a project whose tests run via `npm run test`. Works identically whether the run edits the project directly or drafts a change proposal for the user to apply.",
+  "doc": {
+    "paramSchema": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "type": "string",
+          "title": "Where to tighten",
+          "description": "The module, folder, or area to audit for unsafe patterns. Leave empty when the task description already carries it.",
+          "default": ""
+        }
+      }
+    },
+    "capabilityFloor": "small",
+    "diffpackCapable": true,
+    "runModes": {
+      "nightShift": "supported"
+    },
+    "commands": [
+      {
+        "scope": "script",
+        "name": "test",
+        "reason": "The suite is the guardrail: it must be green before the pass starts and green at the end, so tightened checks provably did not break pinned behavior. The gates verify the green-before/green-after receipts from real runs, not the author's claims."
+      }
+    ]
+  },
+  "workflow": {
+    "plan": "Audit the unsafe patterns with counts and a stated method, pick targets, record the guardrail and a green suite -> fix pattern by pattern at the real sites without silencing anything -> re-count with the same method, quote before/after, suite green -> enforced independent review.",
+    "maxGateAttempts": 4,
+    "maxReviewRounds": 3,
+    "phases": [
+      {
+        "id": "audit",
+        "name": "Audit with counts",
+        "description": "Inventory the unsafe patterns in scope with counts by a stated method, pick concrete targets, record the guardrail, and capture the suite green.",
+        "suggestedRole": "code auditor",
+        "capabilityFloor": "small",
+        "prompt": "The area to tighten: {{scope}}\n\nInventory the unsafe patterns before fixing any of them — the improvement will be proven by re-counting later, so the counts and the exact method are the deliverable here. Read the involved source, then count each pattern class in scope with a stated, repeatable method (a grep per pattern works; quote the exact expressions you used): loose equality against null or undefined (`==`/`!=` where a strict check belongs), implicit string/number coercions (arithmetic or concatenation on values that may arrive as strings), swallowed catches (a catch that hides the error and carries on as if nothing failed), untyped or unvalidated boundaries (inputs used without a shape check), and in TypeScript projects `any`-casts and ignore-comments. Record the count per pattern and where each hit lives.\n\nPick the concrete targets for this pass and state the guardrail: which behavior is pinned by tests and must not change, and which behavioral CONSEQUENCES of these patterns are bugs this pass is expected to fix — name each one. Then find how the project runs its tests (`list_package_scripts`), run the suite with `run_package_script` (`test`), and record it green before any change; if it is already red, stop and report that honestly. If the command needs first-use approval, say so and wait rather than guessing.\n\nWrite `{{workPath}}/audit.md` with exactly these sections: `## Inventory` (counts by pattern with the exact method and grep expressions used), `## Targets` (the hits this pass will fix, with backtick paths), `## Guardrail` (what must not change, and the declared consequence fixes that may). Cite the real files with backtick paths.",
+        "output": {
+          "path": "{{workPath}}/audit.md",
+          "minBytes": 600,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Inventory[\\s\\S]*\\d",
+              "label": "Inventory section with counts"
+            },
+            {
+              "pattern": "^##\\s+Targets",
+              "label": "Targets section"
+            },
+            {
+              "pattern": "^##\\s+Guardrail",
+              "label": "Guardrail section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/audit.md",
+              "minCitations": 2,
+              "artifact": true
+            },
+            {
+              "kind": "commandEvidence",
+              "script": "test",
+              "expect": "pass",
+              "label": "green before the work starts"
+            }
+          ]
+        }
+      },
+      {
+        "id": "change",
+        "name": "Fix pattern by pattern",
+        "description": "Fix the targeted patterns at the real sites, never silencing a check or weakening an assertion to move a count.",
+        "suggestedRole": "software engineer",
+        "capabilityFloor": "small",
+        "prompt": "Read `{{workPath}}/audit.md` and fix the targeted patterns at the REAL sites with `read_file` plus `write_file`/`replace_in_file`, pattern by pattern. Replace loose equality with strict checks that state what they mean; normalize or validate values at the boundary they cross instead of coercing mid-calculation; make swallowed catches surface the error — rethrow, or report it the way the audit's guardrail declares — rather than carrying on as if nothing failed. Never buy a lower count by weakening the code: no deleting an assertion, no silencing an error path, no bare casts, and in TypeScript no `any` or ignore-comment to make a diagnostic disappear — a count that falls that way is a regression wearing a metric. Behavior changes only where the audit declared a consequence fix, and each one gets named in your notes. Run the suite with `run_package_script` (`test`) as you go and keep it green; a change that goes red gets narrowed, not stacked on. If a targeted hit turns out to be correct as written, record why and leave it — honesty beats a moved count.\n\nWrite `{{workPath}}/change-notes.md` with exactly these sections: `## Patterns addressed` (each pattern class, what the fix was, and any declared consequence fix it delivered), `## Files touched` (backtick path per line), `## Deviations` (targets handled differently than the audit planned, or `none`, honestly).",
+        "output": {
+          "path": "{{workPath}}/change-notes.md",
+          "minBytes": 600,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Patterns addressed",
+              "label": "Patterns addressed section"
+            },
+            {
+              "pattern": "^##\\s+Files touched",
+              "label": "Files touched section"
+            },
+            {
+              "pattern": "^##\\s+Deviations",
+              "label": "Deviations section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/change-notes.md",
+              "minCitations": 2,
+              "artifact": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "verify",
+        "name": "Re-count and verify",
+        "description": "Re-count every pattern with exactly the audit's method, quote before/after counts, and record the suite green.",
+        "suggestedRole": "software engineer",
+        "capabilityFloor": "small",
+        "prompt": "Prove the pass with fresh eyes. Read `{{workPath}}/audit.md` and RE-COUNT every pattern with EXACTLY the method and grep expressions it records — same expressions, same scope; a changed method voids the comparison, and if the recorded method cannot be reproduced that is a finding to report, not a license to substitute one. Quote the audit's count and the new count for each pattern side by side. Run the whole suite with `run_package_script` (`test`) and record the green result. Spot-check the fixed sites: the checks got stronger, not deleted, and no cast or ignore-comment crept in. Anything you could not actually re-run gets labeled unverified, never claimed.\n\nWrite `{{workPath}}/verification.md` with exactly these sections: `## Before / after counts` (per pattern, the audit count next to the re-count, same greps), `## Suite` (the full-suite result from the real run), `## Result` (which declared consequences are now fixed, and anything unverified).",
+        "output": {
+          "path": "{{workPath}}/verification.md",
+          "minBytes": 400,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Before\\s*/\\s*after counts[\\s\\S]*\\d",
+              "label": "Before / after counts with figures"
+            },
+            {
+              "pattern": "^##\\s+Suite",
+              "label": "Suite section"
+            },
+            {
+              "pattern": "^##\\s+Result",
+              "label": "Result section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "commandEvidence",
+              "script": "test",
+              "expect": "pass",
+              "label": "green after the pass (verified run receipt)"
+            }
+          ]
+        }
+      }
+    ],
+    "review": {
+      "artifactPath": "{{workPath}}/verification.md",
+      "relatedPaths": [
+        "{{workPath}}/audit.md",
+        "{{workPath}}/change-notes.md"
+      ],
+      "reviewPath": "{{workPath}}/review.md",
+      "reviewerRole": "code-quality reviewer",
+      "repairRole": "software engineer",
+      "minReviewBytes": 400,
+      "enforce": {
+        "fixStepId": "repair"
+      },
+      "criteria": [
+        "audit.md counts real patterns in real files with the exact method recorded (grep expressions quoted), and a green suite receipt exists from before the work started.",
+        "Counts genuinely fell and the re-count method matches the audit's exactly: verification.md quotes before and after per pattern — the measured target moved against the recorded baseline using the same method.",
+        "No suppression bought the improvement: open the touched files and confirm no assertion was weakened, no check deleted, no error path silenced, and no cast or ignore-comment introduced to move a count.",
+        "Observable behavior unchanged (or changed only as the audit declared): each consequence fix the audit named happened and is recorded in change-notes.md, and nothing else moved.",
+        "No stage left the suite red (receipts, not claims): green before the pass and green after it, from real runs.",
+        "change-notes.md names every touched file (paths that exist) and records its deviations honestly, including targets left alone because they were correct as written."
+      ]
+    }
+  }
+}

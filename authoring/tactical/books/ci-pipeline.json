@@ -1,0 +1,168 @@
+{
+  "id": "ci-pipeline",
+  "name": "CI Pipeline from Scratch",
+  "description": "Author a CI pipeline grounded in what the repo actually has: inventory the real package scripts, write the workflow at the conventional location with caching and merge-gating on green, and verify every command it invokes against the manifests — honest that CI itself cannot run locally. Adds a publish-on-tag release job only when the repo shows one.",
+  "category": "code-release",
+  "role": "maintenance-review",
+  "tags": [
+    "ci",
+    "devops",
+    "pipeline",
+    "automation",
+    "github-actions",
+    "cd",
+    "release",
+    "yaml"
+  ],
+  "triggers": [
+    "set up ci",
+    "create a ci pipeline",
+    "github actions workflow",
+    "build a ci/cd pipeline",
+    "add automated testing on push",
+    "set up a release pipeline",
+    "ci/cd for releases",
+    "publish on tag workflow",
+    "github actions release",
+    "automate the release"
+  ],
+  "about": "Set up continuous integration the way it survives contact with a real repo: every stage grounded in a command that actually exists, and no claim that local reading cannot back. First INVENTORY: read package.json and the repo layout, record the scripts that genuinely exist with their exact lines quoted, and decide the stages — install, lint, typecheck, test, build, whichever subset is real here — plus caching keyed to the lockfile and the triggers the work calls for. The cardinal sin this book exists to prevent is the invented command: a `run:` line calling a script the repo does not have turns the whole pipeline red on its first push, so nothing enters the plan without a quoted manifest line behind it. A release or publish stage is planned only when the repo shows one — publish config, a release script, a tag convention — and when present it is gated behind the green test/build stages and the tag trigger so publishing can never run before the checks pass. Then AUTHOR the real workflow file(s) at the conventional location for the detected host (`.github/workflows/ci.yml` for GitHub Actions by default): minimal, cached, actions pinned to major versions, gating merges on green, with no fabricated secrets or inputs. Then VERIFY by reading the workflow back and matching EVERY command it invokes to the quoted manifest line that provides it — and by being plain that CI cannot be executed locally, so the notes must say what reading verified and what only a live run on the host can prove. Finally an independent reviewer checks the same ground truth — commands exist, stages ordered, triggers match, nothing invented — and a REVISE verdict routes the work back automatically with concrete findings. Works identically whether the run edits the project directly or drafts a change proposal for the user to apply.",
+  "doc": {
+    "capabilityFloor": "small",
+    "diffpackCapable": true
+  },
+  "workflow": {
+    "plan": "Inventory the repo's real commands and decide the stages -> author the workflow at the conventional location, cached and merge-gating -> verify every invoked command against the manifests, honest about what only a live CI run can prove -> enforced independent review.",
+    "maxGateAttempts": 4,
+    "maxReviewRounds": 3,
+    "phases": [
+      {
+        "id": "inventory",
+        "name": "Inventory the repo",
+        "description": "Read the real scripts and layout, then plan stages, caching, and triggers — never a command that does not exist.",
+        "suggestedRole": "devops engineer",
+        "capabilityFloor": "small",
+        "prompt": "Learn what this repo actually needs before writing a line of YAML. Read `package.json` (and any workspace manifests) with `read_file` and record the scripts that genuinely exist — their exact names and the exact lines. Read the repo layout with `list_dir`: the lockfile (which package manager), the language, build outputs, and any existing workflow files. NEVER invent a command: a stage enters your plan only when a matching script or standard invocation exists in the repo — install, lint, typecheck, test, build, in whatever subset is real here, and nothing for tools the repo does not use. Decide caching from the lockfile and package manager, and the triggers the task calls for (typically pushes to the default branch and pull requests). Plan a release or publish stage ONLY when the repo shows one — a publish configuration, a release script, an existing tag convention; when nothing shows one, say so and leave it out. Note the CI host the repo points at (existing workflow files, hosting hints); default to GitHub Actions when nothing says otherwise.\n\nWrite `{{workPath}}/ci-plan.md` with exactly these sections: `## Detected commands` (each script name with the exact line quoted from `package.json`), `## Pipeline stages` (the stages in order and why each exists here), `## Caching` (what is cached and what it is keyed on), `## Triggers` (the events and why). Cite the real files with backtick paths.",
+        "output": {
+          "path": "{{workPath}}/ci-plan.md",
+          "minBytes": 500,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Detected commands",
+              "label": "Detected commands section"
+            },
+            {
+              "pattern": "^##\\s+Pipeline stages",
+              "label": "Pipeline stages section"
+            },
+            {
+              "pattern": "^##\\s+Caching",
+              "label": "Caching section"
+            },
+            {
+              "pattern": "^##\\s+Triggers",
+              "label": "Triggers section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/ci-plan.md",
+              "minCitations": 2,
+              "artifact": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "author",
+        "name": "Author the workflow",
+        "description": "Write the real workflow file(s) at the conventional location — minimal, cached, pinned, gating merges on green.",
+        "suggestedRole": "devops engineer",
+        "capabilityFloor": "small",
+        "prompt": "Read `{{workPath}}/ci-plan.md` and write the REAL workflow file(s) with `write_file` at the conventional location for the detected host — for GitHub Actions, `.github/workflows/ci.yml` unless the repo already has its own convention. Keep it minimal and fast: the planned stages in order, dependency caching wired to the lockfile, and the workflow triggering on the planned pushes and pull requests so merges gate on green. Pin every action to a major version (for example `actions/checkout@v4`); do not invent action names, inputs, or secrets. Every `run:` line must invoke a command the plan detected — nothing else. Add a release or publish job ONLY if ci-plan.md called for one, and gate it behind the green build/test stages and the tag trigger so a publish can never run before the checks pass; if the plan named no release stage, do not add one.\n\nThen write `{{workPath}}/ci-notes.md` with exactly these sections: `## Files written` (the real path of every workflow file, backtick path per line), `## Stages` (each job and step, and the detected command it runs), `## Choices explained` (caching, triggers, pinning, and anything you deliberately left out — including a release job when the repo showed no evidence for one).",
+        "output": {
+          "path": "{{workPath}}/ci-notes.md",
+          "minBytes": 500,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Files written",
+              "label": "Files written section"
+            },
+            {
+              "pattern": "^##\\s+Stages",
+              "label": "Stages section"
+            },
+            {
+              "pattern": "^##\\s+Choices explained",
+              "label": "Choices explained section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/ci-notes.md",
+              "minCitations": 2,
+              "artifact": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "verify",
+        "name": "Verify against the manifests",
+        "description": "Read the workflow back and match every invoked command to the manifest line that provides it; honest about what only a live run proves.",
+        "suggestedRole": "devops engineer",
+        "capabilityFloor": "small",
+        "prompt": "Verify the workflow the only honest way available without a CI run: read it back and check every claim against the repo. Open each workflow file named in `{{workPath}}/ci-notes.md` with `read_file`, and for EVERY command it invokes, find and quote the `package.json` line (or manifest entry) that provides it — a `run:` line with no matching script is a defect: fix it now at the workflow's real site, not in prose. Confirm the triggers match `{{workPath}}/ci-plan.md`. Confirm every action reference is pinned to a major version, and every secret the workflow references is a standard one (`GITHUB_TOKEN`) or one the user explicitly named — an invented secret is a defect. Be plain about the limit of this verification: CI cannot be executed locally, so state what reading verified and what only a real run on the host can prove — never claim the pipeline ran.\n\nWrite `{{workPath}}/verification.md` with exactly these sections: `## Workflow files` (each file checked, backtick paths), `## Commands verified against package.json` (each workflow command with the quoted manifest line that provides it), `## Result` (what reading verified, what only a live CI run can prove, and any defects found and fixed).",
+        "output": {
+          "path": "{{workPath}}/verification.md",
+          "minBytes": 500,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Workflow files",
+              "label": "Workflow files section"
+            },
+            {
+              "pattern": "^##\\s+Commands verified against package\\.json",
+              "label": "Commands verified section"
+            },
+            {
+              "pattern": "^##\\s+Result",
+              "label": "Result section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/verification.md",
+              "minCitations": 2,
+              "artifact": true
+            }
+          ]
+        }
+      }
+    ],
+    "review": {
+      "artifactPath": "{{workPath}}/verification.md",
+      "relatedPaths": [
+        "{{workPath}}/ci-plan.md",
+        "{{workPath}}/ci-notes.md"
+      ],
+      "reviewPath": "{{workPath}}/review.md",
+      "reviewerRole": "devops reviewer",
+      "repairRole": "devops engineer",
+      "minReviewBytes": 400,
+      "enforce": {
+        "fixStepId": "repair"
+      },
+      "criteria": [
+        "Every command the workflow invokes exists in the repo — open package.json (and any other manifests) and check each run: line yourself; a script the repo does not have fails this criterion.",
+        "The stages are ordered sensibly (dependencies installed before lint/test/build) and dependency caching is wired to the real lockfile.",
+        "The triggers match ci-plan.md, and a release or publish job exists only where the plan showed repo evidence for one — gated behind the green stages and the tag trigger when present.",
+        "Nothing is invented: every action is pinned to a major version, no fabricated action inputs, and no secrets beyond standard ones or those the user explicitly named.",
+        "verification.md is honest about the limit of local verification — what reading proved versus what only a live CI run can prove — and the accounts reconcile across ci-plan.md, ci-notes.md, and verification.md."
+      ]
+    }
+  }
+}

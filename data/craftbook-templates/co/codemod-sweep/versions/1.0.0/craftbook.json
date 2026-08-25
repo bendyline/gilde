@@ -1,0 +1,441 @@
+{
+  "id": "codemod-sweep",
+  "name": "Codemod Sweep",
+  "description": "Run a mechanical, wide change - a rename, an API-call migration, a dead-code removal - the way a careful engineer runs a codemod: completeness IS the product, and each claim is mechanically verified. First ENUMERATE: work out the concrete search pattern for the old form, run real searches over the actual tree, count every site (definitions, re-exports, imports, call sites, and string mentions such as log lines when the change covers them), and list explicit exclusions - files that must keep the old form, such as changelogs - each with a defensible reason. Then APPLY the change at every listed site while holding the stated invariants (no behavior change beyond the declared one), handling the shapes that break naive sweeps - re-exports, aliased imports, strings - and running the suite as you go. Then VERIFY by re-running the exact search: zero un-excluded sites may remain, the found/changed/excluded counts must reconcile exactly, and the whole suite must be green. Finally an independent reviewer grades the chain against fixed criteria, and their REVISE verdict routes the work back automatically with concrete findings. Needs a project whose tests run via `npm run test`. Works identically whether the run edits the project directly or drafts a change proposal for the user to apply.",
+  "plan": "Enumerate every site with real searches (a count plus the list, and exclusions with reasons) -> apply the mechanical change at every listed site under the stated invariants with the suite run as you go -> re-scan to zero un-excluded sites, reconcile the counts, prove the suite green -> enforced independent review.",
+  "entryStepId": "enumerate",
+  "triggers": [
+    "rename across the repo",
+    "codemod",
+    "migrate every call",
+    "remove the dead code"
+  ],
+  "runModes": {
+    "nightShift": "supported"
+  },
+  "commands": [
+    {
+      "scope": "script",
+      "name": "test",
+      "reason": "the sweep must not change behavior - receipts"
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "scope": {
+        "type": "string",
+        "title": "The mechanical change",
+        "description": "What to sweep: a rename, an API-call migration, dead-code removal. Name the old and new forms when you can.",
+        "default": ""
+      },
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "enumerate",
+      "name": "Enumerate every site",
+      "description": "Find every site with real searches before touching one; count them and list explicit exclusions with reasons. No edits in this phase.",
+      "prompt": "The mechanical change: {{scope}}\n\nFind EVERY site before touching one - the sweep's completeness is the product. Work out the concrete search pattern (or patterns) that finds the old form: the definition, re-exports, imports, call sites, and string mentions such as log lines when the change covers them. Run real searches over the actual tree with `list_dir` and `read_file`, and record the exact pattern you used. Count the sites and list every one with a backtick path. List explicit exclusions - files that genuinely must keep the old form, such as changelogs or other historical records - each with a reason a reviewer could defend. If the old form cannot be found at all, record that honestly and stop. Do not change anything in this phase.\n\nWrite `{{workPath}}/sites.md` with exactly these sections: `## Pattern` (the exact search pattern or patterns), `## Sites found` (the count on its own line, then the list with a backtick path per site and what is at it), `## Exclusions` (each excluded file with its reason, or 'none').\n\nObservable handoff: write the completed result to `{{workPath}}/sites.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "codebase analyst",
+      "capabilityFloor": "small",
+      "advanceWhen": {
+        "file": "{{workPath}}/sites.md",
+        "minBytes": 500,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "apply"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/sites.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/sites.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/sites.md",
+            "pattern": "^##\\s+Pattern",
+            "flags": "im",
+            "label": "Pattern section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/sites.md",
+            "pattern": "^##\\s+Sites found",
+            "flags": "im",
+            "label": "Sites found section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/sites.md",
+            "pattern": "^##\\s+Exclusions",
+            "flags": "im",
+            "label": "Exclusions section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/sites.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "enumerate",
+        "maxAttempts": 4
+      },
+      "next": "apply"
+    },
+    {
+      "id": "apply",
+      "name": "Apply the change at every site",
+      "description": "Make the mechanical change at every listed site, holding the stated invariants; leave exclusions untouched and run the suite as you go.",
+      "prompt": "Read `{{workPath}}/sites.md` and make the mechanical change at every listed site with `read_file` plus `write_file`/`replace_in_file`, holding the stated invariants: no behavior change beyond the declared one, and no listed site skipped. Handle the shapes that break naive sweeps deliberately - re-exports, aliased imports, and string mentions such as log lines when the declared change covers them. Leave every excluded file untouched. Run the suite with `run_package_script` (`test`) as you go and finish green; if the suite was red before you started, record that honestly and stop rather than sweeping on top of it. If the command needs first-use approval, say so and wait rather than guessing. A site that cannot take the change without altering behavior gets recorded with its reason, not forced.\n\nWrite `{{workPath}}/change-notes.md` with exactly these sections: `## Sites changed` (the count on its own line - it must reconcile with sites.md, with any difference explained), `## Files touched` (backtick path per line), `## Invariants held` (the declared change and why nothing else changed). Before working, open `{{workPath}}/sites.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/change-notes.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "software engineer",
+      "capabilityFloor": "small",
+      "consumes": [
+        {
+          "file": "{{workPath}}/sites.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/change-notes.md",
+        "minBytes": 500,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "verify"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/change-notes.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/change-notes.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/change-notes.md",
+            "pattern": "^##\\s+Sites changed",
+            "flags": "im",
+            "label": "Sites changed section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/change-notes.md",
+            "pattern": "^##\\s+Files touched",
+            "flags": "im",
+            "label": "Files touched section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/change-notes.md",
+            "pattern": "^##\\s+Invariants held",
+            "flags": "im",
+            "label": "Invariants held section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/change-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "apply",
+        "maxAttempts": 4
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Re-scan and reconcile",
+      "description": "Re-run the exact search to zero un-excluded sites, reconcile the counts across all three documents, and prove the suite green.",
+      "prompt": "Prove completeness with fresh eyes. Re-run the exact search pattern recorded in `{{workPath}}/sites.md` over the real tree - zero un-excluded sites may remain - and quote the re-scan and its result. Reconcile the counts: sites found in `{{workPath}}/sites.md`, sites changed in `{{workPath}}/change-notes.md`, and sites remaining now must add up exactly, with every exclusion accounted for. Open a few changed files with `read_file` and confirm the invariants held - nothing changed beyond the declared change. Re-run the whole suite with `run_package_script` (`test`) - it must be green. If the re-scan finds a missed site, fix it and re-scan again; if it cannot be fixed under the invariants, record it honestly instead of hiding it.\n\nWrite `{{workPath}}/verification.md` with exactly these sections: `## Residual scan` (the exact pattern re-run and what it found), `## Counts reconciled` (found vs changed vs excluded, adding up exactly), `## Suite` (the full-suite result), `## Result` (sweep complete, or what remains and why). Before working, open `{{workPath}}/sites.md`, `{{workPath}}/change-notes.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/verification.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "software engineer",
+      "capabilityFloor": "small",
+      "consumes": [
+        {
+          "file": "{{workPath}}/sites.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/change-notes.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/verification.md",
+        "minBytes": 450,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/verification.md",
+            "bytes": 450,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/verification.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Residual scan",
+            "flags": "im",
+            "label": "Residual scan section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Counts reconciled",
+            "flags": "im",
+            "label": "Counts reconciled section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Suite",
+            "flags": "im",
+            "label": "Suite section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Result",
+            "flags": "im",
+            "label": "Result section",
+            "artifact": true
+          },
+          {
+            "kind": "commandEvidence",
+            "script": "test",
+            "expect": "pass",
+            "label": "the suite is green after the sweep (verified run receipt)"
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate the deliverable",
+      "description": "Independently grade the observable deliverable and route it to finish, repair, or user escalation.",
+      "prompt": "Review `{{workPath}}/verification.md`, `{{workPath}}/sites.md`, `{{workPath}}/change-notes.md` against every criterion below. Inspect the underlying evidence files named by the workflow; do not grade from the author's summary alone.\n\n1. The re-scan in verification.md is quoted and shows zero un-excluded sites remaining for the exact pattern sites.md declared - re-run it yourself if anything looks off.\n2. The counts reconcile exactly across sites.md, change-notes.md, and verification.md: found, changed, excluded, and remaining add up with no unexplained gap.\n3. The invariants held: open a few changed files and confirm nothing changed beyond the declared mechanical change - do not grade from change-notes.md alone.\n4. Tricky shapes were genuinely handled: re-exports, aliased imports, and covered string mentions were changed, not skipped as too hard.\n5. Every exclusion has a defensible reason, and the excluded files are untouched.\n6. The suite is green after the sweep - judged from the recorded run receipts, not the author's summary.\n\nOpen `{{workPath}}/verification.md`, `{{workPath}}/sites.md`, `{{workPath}}/change-notes.md` with `read_artifact`. Write the evidence-backed review to `{{workPath}}/review.md` in the artifacts drawer with `write_artifact`.\n\nList the findings as a markdown table with columns `| Severity | File | Line | Problem | Fix |` (severities: critical/major/minor/nit; empty table only on PASS). Give each criterion a PASS or FAIL with a concrete path, excerpt, measurement, or observed behavior. End with exactly `Verdict: PASS` or `Verdict: REVISE`. The gate ENFORCES the verdict: a well-formed REVISE is rejected and routed back to `repair` automatically, carrying your findings — so list every finding in the table with a concrete fix. On PASS, `advance_task_step` to `finish`. Never write PASS while a criterion is unmet.",
+      "suggestedRole": "sweep reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/verification.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/sites.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/change-notes.md",
+          "artifact": true
+        }
+      ],
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/review.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit PASS or REVISE verdict",
+            "artifact": true
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkFixReview",
+            "scope": "standard",
+            "inputs": {
+              "reviewPath": "{{workPath}}/review.md",
+              "fixStepId": "repair"
+            }
+          }
+        ],
+        "onReject": "evaluate",
+        "maxAttempts": 4
+      },
+      "next": "finish"
+    },
+    {
+      "id": "repair",
+      "name": "Repair the deliverable",
+      "description": "Fix only the concrete gaps from the latest independent review.",
+      "prompt": "Read `{{workPath}}/review.md` with `read_artifact` and repair every failed criterion in `{{workPath}}/verification.md`, `{{workPath}}/sites.md`, `{{workPath}}/change-notes.md`. Make changes on each file's declared surface (`write_artifact` for artifact inputs, `write_file` for workspace inputs), not in task notes or a reply. Preserve evidence that already passed. Re-run or re-check anything the reviewer found unproven. Ensure `{{workPath}}/verification.md` is genuinely updated this turn so the repair is observable, then hand it back for independent evaluation.",
+      "suggestedRole": "software engineer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/verification.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/sites.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/change-notes.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/verification.md",
+        "minBytes": 450,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/verification.md",
+            "bytes": 450,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/verification.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Residual scan",
+            "flags": "im",
+            "label": "Residual scan section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Counts reconciled",
+            "flags": "im",
+            "label": "Counts reconciled section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Suite",
+            "flags": "im",
+            "label": "Suite section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Result",
+            "flags": "im",
+            "label": "Result section",
+            "artifact": true
+          },
+          {
+            "kind": "commandEvidence",
+            "script": "test",
+            "expect": "pass",
+            "label": "the suite is green after the sweep (verified run receipt)"
+          }
+        ],
+        "onReject": "repair",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All deterministic and reviewer criteria passed.",
+      "prompt": "The independent review passed. Read `{{workPath}}/review.md` with `read_artifact`, then use `write_task_note` to record a concise DONE summary with the final deliverable paths (`{{workPath}}/verification.md`, `{{workPath}}/sites.md`, `{{workPath}}/change-notes.md`) and the evidence that each acceptance criterion passed. Report DONE without starting new work.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true
+    },
+    {
+      "id": "needs-user",
+      "name": "Escalate unresolved concerns",
+      "description": "The bounded repair loop ended without a defensible pass.",
+      "prompt": "The deliverable did not pass after 3 review rounds. Do not claim success. Read `{{workPath}}/review.md` with `read_artifact`, then use `write_task_note` to record DONE_WITH_CONCERNS: the unmet criteria, what was attempted, the affected paths, and the smallest user decision or missing input needed to continue.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true
+    }
+  ],
+  "diffpackCapable": true,
+  "capabilityFloor": "small",
+  "version": "1.0.0",
+  "releasedAt": "2026-08-24T00:00:00.000Z",
+  "minGezelVersion": "1.26236"
+}

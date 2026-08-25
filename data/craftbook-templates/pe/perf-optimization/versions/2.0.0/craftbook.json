@@ -1,0 +1,511 @@
+{
+  "id": "perf-optimization",
+  "name": "Targeted Performance Fix",
+  "description": "Make code measurably faster without breaking it, and with every claim mechanically verified — because optimizing without measuring is guessing, and 'feels faster' is not a deliverable. First BASELINE: run the suite green, then measure the slow path with a repeatable method written down exactly (an operation counter, a timing harness, a suite duration, a query count), and pick the ONE bottleneck this run will attack. A number recorded without its method is a gate failure by construction. Then PLAN: a numeric target and small reversible stages that each leave the tree working. Then CHANGE: fix the bottleneck at the real sites — never by rewriting the measurement so the number looks better — keeping the suite green between stages. Then VERIFY: re-measure with the SAME method and quote both numbers side by side. Finally an independent reviewer grades the chain — method identical before and after, correctness held with receipts, no measurement theater — and a REVISE verdict routes the work back automatically with concrete findings. The scope can be any slow path: a hot function, an endpoint, an N+1 access pattern that re-fetches inside a loop, or a slow test suite — the discipline is identical for all of them: measure it, fix one bottleneck, re-measure it the same way. Needs a project whose tests run via `npm run test`. Works identically whether the run edits the project directly or drafts a change proposal for the user to apply.",
+  "plan": "Record a green suite and baseline numbers with their exact method -> plan a numeric target and reversible stages -> fix the one bottleneck at the real sites with the suite green throughout -> re-measure with the same method and quote both numbers -> enforced independent review.",
+  "entryStepId": "baseline",
+  "triggers": [
+    "optimize performance",
+    "make this faster",
+    "fix a slow function",
+    "profile and optimize",
+    "reduce latency",
+    "speed up the test suite",
+    "fix an n+1 pattern"
+  ],
+  "commands": [
+    {
+      "scope": "script",
+      "name": "test",
+      "reason": "Correctness is the guardrail: the suite must be green before the optimization starts, stay green between stages, and be green at the end. The gates verify the green-before/green-after receipts from real runs, not the author's claims."
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "scope": {
+        "type": "string",
+        "title": "What to optimize",
+        "description": "The slow path to work on: a function, an endpoint, an N+1 access pattern, a slow test suite. Leave empty when the task description carries it.",
+        "default": ""
+      },
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "baseline",
+      "name": "Measure the baseline",
+      "description": "Record the current numbers with a repeatable method, confirm the suite green, and pick the one bottleneck to attack.",
+      "prompt": "The optimization target: {{scope}}\n\nMeasure before you touch anything — a performance claim without a number is a guess, and this book's gates reject guesses by construction. Read the involved source and find how this project runs its tests (`list_package_scripts`). Run the suite with `run_package_script` (`test`) and confirm it is GREEN before the work starts; if it is already red, stop and report that honestly. If the command needs first-use approval, say so and wait rather than guessing.\n\nThen measure the slow path itself with a repeatable method you write down exactly: an operation counter the code exposes, a timing harness you run with `run_nodejs_script` (repeat it a few times and note the spread), the suite's own duration, a query or fetch count for an N+1 pattern. Record the numbers exactly as measured, with the command that produced them. Pick the ONE bottleneck this run will attack — reason from the measurements rather than guessing — and name its mechanism (quadratic rescan, repeated work inside a loop, per-item fetch, needless setup per test). One bottleneck at a time; park the rest in your notes.\n\nWrite `{{workPath}}/baseline.md` with exactly these sections: `## Current behavior` (what the slow path does and which tests pin its correctness), `## Measurements` (the numbers, the exact method and command used to gather them, and the chosen bottleneck with its mechanism), `## Guardrail` (what must not change: results on the same inputs, observable behavior, the suite staying green). Cite the real files involved with backtick paths.\n\nObservable handoff: write the completed result to `{{workPath}}/baseline.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "performance engineer",
+      "capabilityFloor": "medium",
+      "advanceWhen": {
+        "file": "{{workPath}}/baseline.md",
+        "minBytes": 500,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "plan"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/baseline.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/baseline.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/baseline.md",
+            "pattern": "^##\\s+Current behavior",
+            "flags": "im",
+            "label": "Current behavior section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/baseline.md",
+            "pattern": "^##\\s+Measurements[\\s\\S]*\\d",
+            "flags": "im",
+            "label": "Measurements section with recorded numbers",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/baseline.md",
+            "pattern": "^##\\s+Guardrail",
+            "flags": "im",
+            "label": "Guardrail section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/baseline.md",
+            "minCitations": 2,
+            "artifact": true
+          },
+          {
+            "kind": "commandEvidence",
+            "script": "test",
+            "expect": "pass",
+            "label": "green before the work starts"
+          }
+        ],
+        "onReject": "baseline",
+        "maxAttempts": 4
+      },
+      "next": "plan"
+    },
+    {
+      "id": "plan",
+      "name": "Plan the fix",
+      "description": "Set a numeric target for the one bottleneck and break the fix into reversible stages. No source edits.",
+      "prompt": "Read `{{workPath}}/baseline.md`, then plan the fix for the ONE bottleneck it names. State the target as a number wherever possible (an operation count under a budget, a duration under a threshold, one query per batch instead of one per item) and the mechanism of the improvement (a better data structure, hoisting repeated work out of the loop, batching the access, sharing expensive setup). Break the work into ordered stages where EACH stage is individually reversible and leaves the tree working with the suite green. Name the files each stage touches. State the acceptance criteria: the measured number reaching the target using the SAME method as the baseline, results identical on the same inputs, and the suite green after every stage. Do not edit any source in this phase.\n\nWrite `{{workPath}}/plan.md` with exactly these sections: `## Target` (the number to reach and the mechanism), `## Stages` (numbered, each reversible, each naming its files), `## Acceptance criteria`. Cite the real files with backtick paths. Before working, open `{{workPath}}/baseline.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/plan.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "performance engineer",
+      "capabilityFloor": "medium",
+      "consumes": [
+        {
+          "file": "{{workPath}}/baseline.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/plan.md",
+        "minBytes": 500,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "change"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/plan.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/plan.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/plan.md",
+            "pattern": "^##\\s+Target",
+            "flags": "im",
+            "label": "Target section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/plan.md",
+            "pattern": "^##\\s+Stages",
+            "flags": "im",
+            "label": "Stages section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/plan.md",
+            "pattern": "^##\\s+Acceptance criteria",
+            "flags": "im",
+            "label": "Acceptance criteria section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/plan.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "plan",
+        "maxAttempts": 4
+      },
+      "next": "change"
+    },
+    {
+      "id": "change",
+      "name": "Fix the bottleneck",
+      "description": "Execute the planned stages at the real sites, keeping the suite green and the measurement honest.",
+      "prompt": "Read `{{workPath}}/plan.md` and `{{workPath}}/baseline.md`, then execute the stages in order at the REAL sites — edit the actual files with `read_file` plus `write_file`/`replace_in_file`; never a scratch copy, and never a rewrite of the measurement itself so the number looks better — fixing the measured path is the job, fixing the measurement is theater. After EACH stage, run the suite with `run_package_script` (`test`) and confirm it is still green before starting the next; a stage that goes red gets reverted or narrowed, not stacked on. Re-run the baseline's measurement as you go so you can see the number actually moving. Results must stay identical on the same inputs — speed that changes answers is a bug, not a win. Keep the code readable; do not obfuscate for a marginal gain.\n\nWrite `{{workPath}}/change-notes.md` with exactly these sections: `## Stages executed` (each stage, in order, with its suite-green confirmation and any interim measurement), `## Files touched` (backtick path per line), `## Deviations from plan` (anything done differently than plan.md and why; write `none` honestly when there are none). Before working, open `{{workPath}}/baseline.md`, `{{workPath}}/plan.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/change-notes.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "software engineer",
+      "capabilityFloor": "medium",
+      "consumes": [
+        {
+          "file": "{{workPath}}/baseline.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/plan.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/change-notes.md",
+        "minBytes": 600,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "verify"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/change-notes.md",
+            "bytes": 600,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/change-notes.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/change-notes.md",
+            "pattern": "^##\\s+Stages executed",
+            "flags": "im",
+            "label": "Stages executed section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/change-notes.md",
+            "pattern": "^##\\s+Files touched",
+            "flags": "im",
+            "label": "Files touched section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/change-notes.md",
+            "pattern": "^##\\s+Deviations from plan",
+            "flags": "im",
+            "label": "Deviations from plan section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/change-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "change",
+        "maxAttempts": 4
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Re-measure and verify",
+      "description": "Re-measure with exactly the baseline's method, quote both numbers side by side, and record the suite green.",
+      "prompt": "Prove the speedup with fresh eyes. Read `{{workPath}}/baseline.md` and re-measure with EXACTLY the method and command it records — same workload, same counter, same harness; if the recorded method cannot be reproduced, that is a finding to report, not a license to substitute a friendlier one. Quote the baseline number and the new number side by side. Run the whole suite with `run_package_script` (`test`) and record the green result. Confirm results are identical to the baseline on the same inputs. Anything you could not actually re-run gets labeled unverified, never claimed.\n\nWrite `{{workPath}}/verification.md` with exactly these sections: `## Before / after` (the baseline figure and the re-measured figure side by side, same method, both quoted), `## Suite` (the full-suite result from the real run), `## Result` (target met or honestly missed, and anything unverified). Before working, open `{{workPath}}/baseline.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/verification.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "performance engineer",
+      "capabilityFloor": "medium",
+      "consumes": [
+        {
+          "file": "{{workPath}}/baseline.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/verification.md",
+        "minBytes": 400,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/verification.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/verification.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Before\\s*/\\s*after[\\s\\S]*\\d",
+            "flags": "im",
+            "label": "Before / after section with both numbers",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Suite",
+            "flags": "im",
+            "label": "Suite section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Result",
+            "flags": "im",
+            "label": "Result section",
+            "artifact": true
+          },
+          {
+            "kind": "commandEvidence",
+            "script": "test",
+            "expect": "pass",
+            "label": "green after the optimization (verified run receipt)"
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate the deliverable",
+      "description": "Independently grade the observable deliverable and route it to finish, repair, or user escalation.",
+      "prompt": "Review `{{workPath}}/verification.md`, `{{workPath}}/baseline.md`, `{{workPath}}/plan.md`, `{{workPath}}/change-notes.md` against every criterion below. Inspect the underlying evidence files named by the workflow; do not grade from the author's summary alone.\n\n1. baseline.md records real numbers with the exact method and command used to gather them — an adjective where a figure belongs fails this criterion — plus a green suite receipt from before the work started.\n2. The change attacks the ONE bottleneck the baseline names, at the real site, by the mechanism the plan declared — open the touched files and check; do not grade from change-notes.md alone.\n3. The measured target moved against the recorded baseline using the same method: verification.md quotes both numbers side by side, and the method is identical before and after — a changed workload, counter, or harness voids the comparison.\n4. Observable behavior unchanged (or changed only as the plan declared): results are identical on the same inputs, and correctness held with receipts.\n5. No stage left the suite red (receipts, not claims).\n6. No measurement theater: the number measured is the number the user feels — the real operation, path, or suite got faster, not a synthetic proxy, and the measurement itself was not weakened to flatter the result.\n\nOpen `{{workPath}}/verification.md`, `{{workPath}}/baseline.md`, `{{workPath}}/plan.md`, `{{workPath}}/change-notes.md` with `read_artifact`. Write the evidence-backed review to `{{workPath}}/review.md` in the artifacts drawer with `write_artifact`.\n\nList the findings as a markdown table with columns `| Severity | File | Line | Problem | Fix |` (severities: critical/major/minor/nit; empty table only on PASS). Give each criterion a PASS or FAIL with a concrete path, excerpt, measurement, or observed behavior. End with exactly `Verdict: PASS` or `Verdict: REVISE`. The gate ENFORCES the verdict: a well-formed REVISE is rejected and routed back to `repair` automatically, carrying your findings — so list every finding in the table with a concrete fix. On PASS, `advance_task_step` to `finish`. Never write PASS while a criterion is unmet.",
+      "suggestedRole": "performance reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/verification.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/baseline.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/plan.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/change-notes.md",
+          "artifact": true
+        }
+      ],
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/review.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit PASS or REVISE verdict",
+            "artifact": true
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkFixReview",
+            "scope": "standard",
+            "inputs": {
+              "reviewPath": "{{workPath}}/review.md",
+              "fixStepId": "repair"
+            }
+          }
+        ],
+        "onReject": "evaluate",
+        "maxAttempts": 4
+      },
+      "next": "finish"
+    },
+    {
+      "id": "repair",
+      "name": "Repair the deliverable",
+      "description": "Fix only the concrete gaps from the latest independent review.",
+      "prompt": "Read `{{workPath}}/review.md` with `read_artifact` and repair every failed criterion in `{{workPath}}/verification.md`, `{{workPath}}/baseline.md`, `{{workPath}}/plan.md`, `{{workPath}}/change-notes.md`. Make changes on each file's declared surface (`write_artifact` for artifact inputs, `write_file` for workspace inputs), not in task notes or a reply. Preserve evidence that already passed. Re-run or re-check anything the reviewer found unproven. Ensure `{{workPath}}/verification.md` is genuinely updated this turn so the repair is observable, then hand it back for independent evaluation.",
+      "suggestedRole": "software engineer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/verification.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/baseline.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/plan.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/change-notes.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/verification.md",
+        "minBytes": 400,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/verification.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/verification.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Before\\s*/\\s*after[\\s\\S]*\\d",
+            "flags": "im",
+            "label": "Before / after section with both numbers",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Suite",
+            "flags": "im",
+            "label": "Suite section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Result",
+            "flags": "im",
+            "label": "Result section",
+            "artifact": true
+          },
+          {
+            "kind": "commandEvidence",
+            "script": "test",
+            "expect": "pass",
+            "label": "green after the optimization (verified run receipt)"
+          }
+        ],
+        "onReject": "repair",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All deterministic and reviewer criteria passed.",
+      "prompt": "The independent review passed. Read `{{workPath}}/review.md` with `read_artifact`, then use `write_task_note` to record a concise DONE summary with the final deliverable paths (`{{workPath}}/verification.md`, `{{workPath}}/baseline.md`, `{{workPath}}/plan.md`, `{{workPath}}/change-notes.md`) and the evidence that each acceptance criterion passed. Report DONE without starting new work.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true
+    },
+    {
+      "id": "needs-user",
+      "name": "Escalate unresolved concerns",
+      "description": "The bounded repair loop ended without a defensible pass.",
+      "prompt": "The deliverable did not pass after 3 review rounds. Do not claim success. Read `{{workPath}}/review.md` with `read_artifact`, then use `write_task_note` to record DONE_WITH_CONCERNS: the unmet criteria, what was attempted, the affected paths, and the smallest user decision or missing input needed to continue.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true
+    }
+  ],
+  "diffpackCapable": true,
+  "capabilityFloor": "medium",
+  "version": "2.0.0",
+  "releasedAt": "2026-08-24T00:00:00.000Z",
+  "minGezelVersion": "1.26236"
+}

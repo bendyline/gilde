@@ -1,0 +1,230 @@
+{
+  "schemaVersion": 1,
+  "title": "Accessibility retrofit on a seeded page",
+  "objective": "The craftbook drives a real accessibility retrofit of a page seeded with five concrete violations: missing alt text on two meaningful images, a placeholder-as-label email input, a div-as-button control with no keyboard path, a heading jump from h1 to h4, and a decorative divider whose empty alt must survive untouched. Every repair is verified mechanically by string-parsing the fixed markup.",
+  "tags": [
+    "code",
+    "accessibility",
+    "a11y",
+    "tactical-fleet"
+  ],
+  "prompt": "Use the Accessibility Retrofit craftbook on this site: readers using screen readers and keyboards report the Field Notes page is unusable — images carry no descriptions, the signup field has no label, and the Join the list control cannot be reached or activated with the keyboard. Audit index.html, fix every violation at its real site in the markup, and verify the result.",
+  "setup": {
+    "projectName": "Acme Field Notes",
+    "about": "A small static newsletter site: index.html plus styles.css and a few inline SVG images. No build step and no test suite.",
+    "files": [
+      {
+        "path": "package.json",
+        "content": "{\n  \"name\": \"field-notes\",\n  \"private\": true,\n  \"version\": \"1.0.0\",\n  \"type\": \"module\"\n}\n"
+      },
+      {
+        "path": "index.html",
+        "content": "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Acme Field Notes</title>\n<link rel=\"stylesheet\" href=\"styles.css\">\n</head>\n<body>\n<div class=\"masthead\">\n  <h1>Acme Field Notes</h1>\n  <img src=\"images/divider.svg\" class=\"divider\" alt=\"\">\n</div>\n<div class=\"content\">\n  <h4>Latest dispatch</h4>\n  <img src=\"images/harvest-crew.svg\" class=\"feature\">\n  <p>The harvest crew finished the north field on Tuesday, two days ahead of schedule, and moved on to the orchard rows.</p>\n  <h4>Sign up for dispatches</h4>\n  <p>Get the weekly note by email.</p>\n  <input type=\"email\" placeholder=\"Your email address\">\n  <div class=\"button\" onclick=\"joinList()\">Join the list</div>\n  <p id=\"joined-note\" hidden>You are on the list.</p>\n  <h4>From the archive</h4>\n  <img src=\"images/seed-chart.svg\" class=\"feature\">\n  <p>Germination rates for the last five seasons, charted by seed lot and sowing week.</p>\n</div>\n<script>\nfunction joinList() {\n  document.getElementById('joined-note').hidden = false;\n}\n</script>\n</body>\n</html>\n"
+      },
+      {
+        "path": "styles.css",
+        "content": "body { margin: 0; font-family: Georgia, serif; color: #222; background: #faf8f4; }\n.masthead { padding: 2rem 1.5rem 0; }\n.divider { width: 100%; height: 12px; }\n.content { max-width: 40rem; padding: 1rem 1.5rem 3rem; }\n.feature { max-width: 100%; }\n.button { display: inline-block; padding: 0.5rem 1rem; background: #2e5d3b; color: #fff; cursor: pointer; }\n.button:hover { background: #234a2e; }\ninput[type=\"email\"] { padding: 0.5rem; width: 16rem; }\n"
+      },
+      {
+        "path": "images/harvest-crew.svg",
+        "content": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 320 180\"><rect width=\"320\" height=\"180\" fill=\"#dce8d8\"/><text x=\"16\" y=\"95\" font-size=\"16\">Harvest crew walking the north field at dawn</text></svg>\n"
+      },
+      {
+        "path": "images/seed-chart.svg",
+        "content": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 320 180\"><rect width=\"320\" height=\"180\" fill=\"#e8e2d4\"/><text x=\"16\" y=\"95\" font-size=\"16\">Germination rate by season, 2021 to 2025</text></svg>\n"
+      },
+      {
+        "path": "images/divider.svg",
+        "content": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 320 12\"><line x1=\"0\" y1=\"6\" x2=\"320\" y2=\"6\" stroke=\"#b8b0a0\" stroke-width=\"2\"/></svg>\n"
+      },
+      {
+        "path": "tests/verify-retrofit.mjs",
+        "surface": "harness",
+        "content": "import assert from 'node:assert/strict';\nimport { readFileSync } from 'node:fs';\n\nconst html = readFileSync('index.html', 'utf8');\n\nfunction imgTag(src) {\n  const tags = [...html.matchAll(/<img\\b[^>]*>/gi)].map((m) => m[0]);\n  const tag = tags.find((t) => t.includes(src));\n  assert.ok(tag, `an img referencing ${src} still exists`);\n  return tag;\n}\nfunction altOf(tag, src) {\n  const alt = tag.match(/\\balt\\s*=\\s*(\"([^\"]*)\"|'([^']*)')/i);\n  assert.ok(alt, `image ${src} carries an alt attribute`);\n  return alt[2] ?? alt[3] ?? '';\n}\n\n// 1) Meaningful images: specific, non-empty alt text.\nfor (const src of ['harvest-crew', 'seed-chart']) {\n  const alt = altOf(imgTag(src), src).trim();\n  assert.ok(alt.length >= 10, `alt for ${src} must be specific, got \"${alt}\"`);\n  assert.ok(!/^(image|photo|picture|graphic|img)$/i.test(alt), `alt for ${src} must not be filler`);\n  assert.ok(!/^(an? )?(image|photo|picture) of/i.test(alt), `alt for ${src} must not open with \"image of\"`);\n}\nconsole.log('A11YRETRO_ORACLE alts ok');\n\n// 2) The decorative divider keeps an EMPTY alt - no sprayed description.\nassert.equal(altOf(imgTag('divider'), 'divider').trim(), '', 'decorative divider keeps alt=\"\"');\nconsole.log('A11YRETRO_ORACLE decorative ok');\n\n// 3) The email input is labeled by a real label whose for resolves to its id.\nconst labels = [...html.matchAll(/<label\\b[^>]*\\bfor\\s*=\\s*[\"']([^\"']+)[\"'][^>]*>/gi)];\nassert.ok(labels.length >= 1, 'a label element with a for attribute exists');\nconst paired = labels.filter((m) => new RegExp(`<input\\\\b[^>]*\\\\bid\\\\s*=\\\\s*[\"']${m[1]}[\"']`, 'i').test(html));\nassert.ok(paired.length >= 1, \"a label's for attribute resolves to a real input id\");\nconsole.log('A11YRETRO_ORACLE label ok');\n\n// 4) The join control is a real button, or carries complete ARIA button semantics.\nconst join = html.match(/<([a-z0-9]+)\\b([^>]*)>\\s*Join the list/i);\nassert.ok(join, 'the \"Join the list\" control still exists');\nconst [, joinTag, joinAttrs] = join;\nif (joinTag.toLowerCase() !== 'button') {\n  assert.ok(/\\brole\\s*=\\s*[\"']button[\"']/i.test(joinAttrs), 'non-button control carries role=\"button\"');\n  assert.ok(/\\btabindex\\s*=\\s*[\"']0[\"']/i.test(joinAttrs), 'non-button control is focusable via tabindex=\"0\"');\n  const keyWired = /\\bonkey(?:down|up|press)\\s*=/i.test(joinAttrs) || /addEventListener\\s*\\(\\s*[\"']key(?:down|up|press)[\"']/i.test(html);\n  assert.ok(keyWired, 'non-button control has keyboard activation wired');\n}\nconsole.log('A11YRETRO_ORACLE control ok');\n\n// 5) Heading order is monotonic from a single h1.\nconst levels = [...html.matchAll(/<h([1-6])\\b[^>]*>/gi)].map((m) => Number(m[1]));\nassert.ok(levels.length >= 3, 'the page keeps its headings');\nassert.equal(levels[0], 1, 'the page starts at h1');\nfor (let i = 1; i < levels.length; i++) {\n  assert.ok(levels[i] <= levels[i - 1] + 1, `heading level jumps from h${levels[i - 1]} to h${levels[i]}`);\n}\nconsole.log('A11YRETRO_ORACLE headings ok');\n\n// 6) The join behavior target survives the retrofit.\nassert.ok(/joined-note/.test(html), 'the joined-note behavior target survives');\nconsole.log('A11YRETRO_ORACLE done');\n"
+      }
+    ],
+    "craftbookParams": {
+      "workPath": "tasks/eval"
+    }
+  },
+  "success": {
+    "summary": "All five seeded violations are repaired at their real sites in index.html — specific alts on the meaningful images, an empty alt preserved on the decorative divider, a paired label, a keyboard-operable join control, monotonic headings — and every fleet artifact exists with honest citations.",
+    "deliverables": [
+      {
+        "path": "tasks/eval/audit.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 600,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/audit.md",
+            "pattern": "^##\\s+Scope[\\s\\S]*^##\\s+Violations[\\s\\S]*^##\\s+Priorities",
+            "flags": "im",
+            "label": "audit sections in order"
+          },
+          {
+            "kind": "tableShape",
+            "file": "tasks/eval/audit.md",
+            "requiredColumns": [
+              "File",
+              "Issue",
+              "Priority"
+            ],
+            "minRows": 3,
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "tasks/eval/audit.md",
+            "minCitations": 2,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/audit.md",
+            "pattern": "index\\.html",
+            "label": "the audit names the real page"
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/fix-notes.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 700,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/fix-notes.md",
+            "pattern": "^##\\s+Problem[\\s\\S]*^##\\s+Change[\\s\\S]*^##\\s+Files touched[\\s\\S]*^##\\s+Per-violation disposition[\\s\\S]*^##\\s+Risk[\\s\\S]*^##\\s+How to verify",
+            "flags": "im",
+            "label": "fix-notes sections in order"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "tasks/eval/fix-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/validation.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/validation.md",
+            "pattern": "^##\\s+Per-item verification[\\s\\S]*^##\\s+Keyboard walk[\\s\\S]*^##\\s+Result",
+            "flags": "im",
+            "label": "validation sections in order"
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/review.md",
+        "kind": "markdown-report",
+        "artifact": true,
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit reviewer verdict"
+          }
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "kind": "notContains",
+        "file": "index.html",
+        "pattern": "<img\\b(?![^>]*\\balt\\s*=)[^>]*>",
+        "label": "no image is missing its alt attribute"
+      },
+      {
+        "kind": "htmlLint",
+        "file": "index.html"
+      },
+      {
+        "kind": "nodeScriptPasses",
+        "script": "tests/verify-retrofit.mjs",
+        "timeoutMs": 60000,
+        "requiredOutput": [
+          {
+            "pattern": "A11YRETRO_ORACLE alts ok",
+            "label": "meaningful images carry specific alt text"
+          },
+          {
+            "pattern": "A11YRETRO_ORACLE decorative ok",
+            "label": "the decorative divider keeps its empty alt"
+          },
+          {
+            "pattern": "A11YRETRO_ORACLE label ok",
+            "label": "the label's for pairs with a real input id"
+          },
+          {
+            "pattern": "A11YRETRO_ORACLE control ok",
+            "label": "the join control is keyboard-operable"
+          },
+          {
+            "pattern": "A11YRETRO_ORACLE headings ok",
+            "label": "heading order is monotonic"
+          }
+        ]
+      }
+    ],
+    "taskNotes": {
+      "minBytes": 120,
+      "checks": [
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "\\bDONE\\b[\\s\\S]*(validation\\.md|fix-notes\\.md|audit\\.md)",
+          "flags": "i",
+          "label": "DONE note names the deliverables"
+        }
+      ]
+    },
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    },
+    "unchangedFixtures": [
+      "package.json",
+      "images/harvest-crew.svg",
+      "images/seed-chart.svg",
+      "images/divider.svg"
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "tasks/eval/fix-notes.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "Real-site repair",
+        "description": "Violations were fixed in the actual markup with semantic elements preferred over ARIA bolt-ons — a real button and a real label rather than aria-label sprayed on divs."
+      },
+      {
+        "name": "Classification judgment",
+        "description": "Meaningful versus decorative images were classified correctly: specific purposeful alt text for the content images, an empty alt preserved on the divider, and the decorative call stated in the notes."
+      },
+      {
+        "name": "Honest verification trail",
+        "description": "Audit, fix-notes, and validation reconcile item for item, and validation separates what was inspected in the code from what was actually exercised."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "real-site fixes over ARIA theater",
+    "content vs decorative image judgment",
+    "enforced review loop"
+  ]
+}

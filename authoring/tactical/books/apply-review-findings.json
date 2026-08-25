@@ -1,0 +1,189 @@
+{
+  "id": "apply-review-findings",
+  "name": "Apply Review Findings",
+  "description": "Take an existing review's findings and close them for real: triage each one against the current code, fix the real ones at their actual sites with the smallest correct change, verify per finding, and account for every finding end to end under an enforced review.",
+  "category": "code-quality",
+  "role": "general",
+  "tags": [
+    "review-findings",
+    "follow-up",
+    "bug-fix",
+    "triage",
+    "quality",
+    "maintenance"
+  ],
+  "triggers": [
+    "apply the review findings",
+    "fix the findings",
+    "address the review",
+    "fix these issues"
+  ],
+  "about": "Close out a review the way the reviewer hoped someone would: every finding read, judged against the code as it stands TODAY, fixed at its real site or deferred with a reason a person can respect — and nothing silently dropped. First TRIAGE: read the findings (a findings JSON, a report with a findings table, or issue refs), open the cited code, and sort each finding — real, already fixed, stale, or out of scope — because reviews age and fixing a ghost is churn. Cluster the will-fix findings that belong together so one change closes them cleanly. Then FIX cluster by cluster: the smallest correct change per finding at the actual site, never a suppression or a cosmetic edit, with a per-finding disposition kept as the work happens. Then VALIDATE each addressed finding the way its report suggested — run what is runnable, probe what is probeable, and say plainly what could only be verified by reading. The enforced review then reconciles the ledger: the same finding ids must flow through triage, fix notes, and verification with consistent outcomes, because a finding lost between documents is a finding lost. Built for unattended work: findings arrive as a file or refs, dispositions come back as documents, and no runnable test suite is required. Works identically whether the run edits the project directly or drafts a change proposal for the user to apply.",
+  "doc": {
+    "paramSchema": {
+      "type": "object",
+      "properties": {
+        "findingsPath": {
+          "type": "string",
+          "title": "Findings file",
+          "description": "Artifacts-drawer path of the review findings to apply (a findings JSON array or a markdown report with a findings table). Leave empty when issueRefs or the task description carries them.",
+          "default": ""
+        },
+        "issueRefs": {
+          "type": "string",
+          "title": "Issue refs",
+          "description": "Comma-separated issue refs to address (e.g. BW-3,BW-8). Leave empty when findingsPath carries the work.",
+          "default": ""
+        }
+      }
+    },
+    "capabilityFloor": "small",
+    "diffpackCapable": true,
+    "runModes": {
+      "nightShift": "supported"
+    }
+  },
+  "workflow": {
+    "plan": "Triage every finding against the current code (real, already fixed, stale, out of scope) -> fix cluster by cluster at the real sites with a per-finding disposition -> verify each addressed finding the way its report suggested -> enforced review reconciles the full ledger.",
+    "maxGateAttempts": 4,
+    "maxReviewRounds": 3,
+    "phases": [
+      {
+        "id": "triage",
+        "name": "Triage the findings against current code",
+        "description": "Read every finding, judge it against the code as it stands now, and sort real work from ghosts.",
+        "suggestedRole": "code reviewer",
+        "capabilityFloor": "small",
+        "prompt": "Findings file (artifacts drawer): \"{{findingsPath}}\". Issue refs: \"{{issueRefs}}\". When both are empty, the task description carries the findings.\n\nRead every finding before fixing anything. Use `read_artifact` for the findings file when one is named; otherwise take the findings from the refs or the task description. Then judge each finding against the code as it stands NOW — open the cited files with `read_file` — and sort it: REAL (the problem is present today), ALREADY FIXED (the code moved on), STALE (the cited site no longer exists or the finding no longer applies), or OUT OF SCOPE (real but not this task's to change — say whose it is). Reviews age; never fix a ghost. Give every finding a stable id — keep the ids the findings already carry, or number them F-1, F-2, ... in reading order — and carry those ids through every later document. Cluster the will-fix findings that belong together so one change closes them cleanly. If the findings source cannot be found or holds no findings, record that honestly and stop rather than inventing work.\n\nWrite `{{workPath}}/triage.md` with exactly these sections: `## Findings read` (every finding: id, one-line summary, the cited site as a backtick path), `## Will fix` (the ids, each with the problem confirmed in the current code), `## Deferred` (the ids with an honest reason: already fixed, stale, or out of scope — write None when everything is real), `## Clusters` (which will-fix ids travel together and why).",
+        "output": {
+          "path": "{{workPath}}/triage.md",
+          "minBytes": 600,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Findings read",
+              "label": "Findings read section"
+            },
+            {
+              "pattern": "^##\\s+Will fix",
+              "label": "Will fix section"
+            },
+            {
+              "pattern": "^##\\s+Deferred",
+              "label": "Deferred section"
+            },
+            {
+              "pattern": "^##\\s+Clusters",
+              "label": "Clusters section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/triage.md",
+              "minCitations": 2,
+              "artifact": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "fix",
+        "name": "Fix cluster by cluster at the real sites",
+        "description": "The smallest correct change per finding, at the actual cited site, with a per-finding disposition ledger.",
+        "suggestedRole": "software engineer",
+        "capabilityFloor": "small",
+        "prompt": "Read `{{workPath}}/triage.md` and work the will-fix clusters one at a time, at the real sites. There is no prescribed output path for source changes — edit the actual files the findings point at with `read_file` plus `write_file`/`replace_in_file`. For each finding, make the smallest correct change that genuinely fixes what the finding describes — not a suppression, not a comment, not a workaround that leaves the problem alive. Keep surrounding behavior intact: a findings pass that breaks the neighborhood trades one review for another. Keep the per-finding ledger as you go. If a finding turns out unfixable as described, move it to a deferral with the honest reason instead of pretending — never claim a fix you did not make.\n\nWrite `{{workPath}}/fix-notes.md` with exactly these sections: `## Problem` (one paragraph: what this findings pass covered), `## Change` (per cluster: what you altered and why it closes those findings), `## Files touched` (backtick path per line), `## Per-finding disposition` (every id from triage: fixed at which path, or deferred with the reason), `## Risk` (what could break, honestly), `## How to verify` (per finding: the check its report suggested, or the closest runnable equivalent).",
+        "output": {
+          "path": "{{workPath}}/fix-notes.md",
+          "minBytes": 700,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Problem",
+              "label": "Problem section"
+            },
+            {
+              "pattern": "^##\\s+Change",
+              "label": "Change section"
+            },
+            {
+              "pattern": "^##\\s+Files touched",
+              "label": "Files touched section"
+            },
+            {
+              "pattern": "^##\\s+Per-finding disposition",
+              "label": "Per-finding disposition section"
+            },
+            {
+              "pattern": "^##\\s+Risk",
+              "label": "Risk section"
+            },
+            {
+              "pattern": "^##\\s+How to verify",
+              "label": "How to verify section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/fix-notes.md",
+              "minCitations": 2,
+              "artifact": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "validate",
+        "name": "Verify each finding the way its report suggested",
+        "description": "Re-check every addressed finding at its site, run what is runnable, and restate the deferrals.",
+        "suggestedRole": "software engineer",
+        "capabilityFloor": "small",
+        "prompt": "Re-check every addressed finding the way its report suggested. Read `{{workPath}}/fix-notes.md`, then verify each fixed finding at its site: re-read the changed code, and run what is runnable — the project's own scripts, or a small probe when a script-execution tool such as `run_nodejs_script` is wired this turn. When nothing is runnable, verify by reading and say so plainly — an unrun check is recorded as unverified, never claimed. Confirm the deferred findings still carry their reasons. Every finding id from triage must appear here with its outcome; a finding that vanished between documents is a finding dropped.\n\nWrite `{{workPath}}/validation.md` with exactly these sections: `## Per-finding verification` (every id: how it was re-checked and what was observed, with deferrals restated), `## Result` (closed versus deferred counts, what was verified by running versus by reading, and anything still owed).",
+        "output": {
+          "path": "{{workPath}}/validation.md",
+          "minBytes": 450,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Per-finding verification",
+              "label": "Per-finding verification section"
+            },
+            {
+              "pattern": "^##\\s+Result",
+              "label": "Result section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/validation.md",
+              "minCitations": 2,
+              "artifact": true
+            }
+          ]
+        }
+      }
+    ],
+    "review": {
+      "artifactPath": "{{workPath}}/validation.md",
+      "relatedPaths": [
+        "{{workPath}}/triage.md",
+        "{{workPath}}/fix-notes.md"
+      ],
+      "reviewPath": "{{workPath}}/review.md",
+      "reviewerRole": "findings auditor",
+      "repairRole": "software engineer",
+      "minReviewBytes": 400,
+      "enforce": {
+        "fixStepId": "repair"
+      },
+      "criteria": [
+        "Every finding from the source appears in triage.md's Findings read with an id and a cited site — count them against the findings source; a finding missing from the ledger is an automatic REVISE.",
+        "Each Will fix finding is genuinely addressed at a real site: open the touched files and confirm the change fixes what the finding describes, not a suppression, comment, or cosmetic edit.",
+        "Each Deferred finding carries an honest, specific reason (already fixed, stale, or out of scope) that holds up when you open the cited code.",
+        "The ledger reconciles: the same ids flow through triage.md, fix-notes.md's Per-finding disposition, and validation.md's Per-finding verification with consistent outcomes — no finding silently dropped or relabeled between documents.",
+        "validation.md re-checked each addressed finding the way its report suggested where runnable, and plainly labels anything verified only by reading — nothing claimed run that was not.",
+        "Every path cited across the three documents exists in this project, and fix-notes.md's Files touched matches the changes actually made."
+      ]
+    }
+  }
+}

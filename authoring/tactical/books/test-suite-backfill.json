@@ -1,0 +1,172 @@
+{
+  "id": "test-suite-backfill",
+  "name": "Test Suite Backfill",
+  "description": "Add tests that actually bite to untested code: rank the untested behavior by breakage cost, write tests in the project's real layout that a wrong implementation would fail, and prove the suite green with real run receipts — under an enforced independent review.",
+  "category": "code-quality",
+  "role": "maintenance-review",
+  "tags": [
+    "tests",
+    "coverage",
+    "testing",
+    "quality",
+    "regression"
+  ],
+  "triggers": [
+    "add tests to this code",
+    "backfill tests",
+    "increase test coverage",
+    "write tests for an untested module",
+    "test this function"
+  ],
+  "about": "Backfill a test suite that would actually catch a regression, not one that inflates a coverage number. First map the RISK: read the target modules and rank their untested behavior by breakage cost — what would hurt most if it went silently wrong — then choose concrete targets, because a suite built without that ranking pins the easy paths and misses the expensive ones. Then WRITE the tests in the project's real test layout and style, with one discipline above all others: every test must be able to FAIL. Assert actual values, actual errors, actual edge cases — never tautologies like expecting true, asserting a mock returns what it was told, or restating the implementation back at itself. The module under test does not change: if a test exposes what looks like a genuine bug, pin the current behavior or flag it honestly for the user instead of silently editing the source to match an expectation. Then VERIFY with the whole suite green — judged from real run receipts, not the author's summary — and a per-test statement of the regression each one guards. Finally an independent reviewer opens the tests themselves and grades the assertions against fixed criteria; a REVISE verdict routes the work back automatically with concrete findings. Needs a project whose tests run via `npm run test`. Suited to unattended night-shift runs. Works identically whether the run edits the project directly or drafts a change proposal for the user to apply.",
+  "doc": {
+    "capabilityFloor": "small",
+    "diffpackCapable": true,
+    "commands": [
+      {
+        "scope": "script",
+        "name": "test",
+        "reason": "The new tests must run green in the real suite — the verify gate checks real run receipts, not claims."
+      }
+    ],
+    "runModes": {
+      "nightShift": "supported"
+    }
+  },
+  "workflow": {
+    "plan": "Map untested behavior by breakage cost and choose targets -> write tests in the real layout that a wrong implementation would fail -> verify the whole suite green with run receipts -> enforced independent review of the assertions.",
+    "maxGateAttempts": 4,
+    "maxReviewRounds": 3,
+    "phases": [
+      {
+        "id": "risk-map",
+        "name": "Map the risk",
+        "description": "Read the target modules and rank untested behavior by breakage cost; choose concrete targets. No test writing yet.",
+        "suggestedRole": "quality engineer",
+        "capabilityFloor": "small",
+        "prompt": "Before writing any test, learn what is worth testing. Read the target module(s) named by the task with `read_file` — the whole file, not the signatures — and read the existing test layout (`list_dir` on the test folder, then the test files) to learn where tests live and how this project writes them. Rank the UNTESTED behavior by breakage cost: what would hurt users or downstream code most if it went silently wrong — boundary semantics, error contracts, arithmetic, state transitions — not what is easiest to cover. Then choose concrete targets: the specific functions and the specific behaviors of each you will pin, including the edge and error cases. Be honest about what you are deliberately leaving untested and why.\n\nWrite `{{workPath}}/risk-map.md` with exactly these sections: `## Modules` (each target module and what it does, with backtick paths), `## Risks ranked` (the untested behaviors ordered by breakage cost, with the cost stated), `## Chosen targets` (the tests you will write, each naming the behavior it pins). Every path you cite must be real.",
+        "output": {
+          "path": "{{workPath}}/risk-map.md",
+          "minBytes": 500,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Modules",
+              "label": "Modules section"
+            },
+            {
+              "pattern": "^##\\s+Risks ranked",
+              "label": "Risks ranked section"
+            },
+            {
+              "pattern": "^##\\s+Chosen targets",
+              "label": "Chosen targets section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/risk-map.md",
+              "minCitations": 2,
+              "artifact": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "write-tests",
+        "name": "Write tests that can fail",
+        "description": "Add the tests in the project's real layout and style, asserting actual behavior — never tautologies.",
+        "suggestedRole": "software engineer",
+        "capabilityFloor": "small",
+        "prompt": "Read `{{workPath}}/risk-map.md` and write the chosen tests in the project's REAL test layout and style — the same folder, naming convention, and assertion idioms the existing tests use, added with `write_file`. There is no prescribed output path for the tests themselves; they live where this project's tests live. Every test must be able to FAIL: assert actual values, actual thrown errors, actual edge-case results. Never write tautologies — expecting true, asserting a mock returns what it was told, or asserting whatever the implementation currently returns without knowing why it is right. Backfill means tests, not source changes: do not modify the module under test. If a test exposes what you believe is a genuine bug, pin the current behavior with a characterization test or flag it honestly in your notes for the user — never silently edit the source to match your expectation. Run the suite with `run_package_script` (`test`) as you go and make each test pass for the right reason; if the command needs first-use approval, say so and wait rather than guessing.\n\nThen write `{{workPath}}/test-notes.md` with exactly these sections: `## Tests added` (the real path of every new test file, backtick path per line), `## Behaviors pinned` (each test and the exact behavior it asserts), `## How each test would catch a realistic break` (for each test, the plausible wrong implementation it would fail on).",
+        "output": {
+          "path": "{{workPath}}/test-notes.md",
+          "minBytes": 600,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Tests added",
+              "label": "Tests added section"
+            },
+            {
+              "pattern": "^##\\s+Behaviors pinned",
+              "label": "Behaviors pinned section"
+            },
+            {
+              "pattern": "^##\\s+How each test would catch a realistic break",
+              "label": "realistic-break section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/test-notes.md",
+              "minCitations": 2,
+              "artifact": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "verify",
+        "name": "Verify the suite green",
+        "description": "Run the whole suite and record the real result, with a per-test statement of the regression it guards.",
+        "suggestedRole": "software engineer",
+        "capabilityFloor": "small",
+        "prompt": "Prove the backfill with a full, fresh run. Execute the whole suite with `run_package_script` (`test`) — every test, old and new, must pass. If anything fails, fix the TEST (or honestly report the module bug it exposed); do not touch the module under test to force green. Then account for the coverage: for each new test, one line stating the regression it now guards — what break it would catch that yesterday's suite would have missed. Compare against `{{workPath}}/risk-map.md`: any chosen target you did not cover gets an honest deferral with the reason, never silence.\n\nWrite `{{workPath}}/verification.md` with exactly these sections: `## Suite` (the exact command and the real full-suite result), `## Coverage summary` (per-test: the regression it guards; plus honest deferrals), `## Result` (green confirmed, or what remains open and why).",
+        "output": {
+          "path": "{{workPath}}/verification.md",
+          "minBytes": 400,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Suite",
+              "label": "Suite section"
+            },
+            {
+              "pattern": "^##\\s+Coverage summary",
+              "label": "Coverage summary section"
+            },
+            {
+              "pattern": "^##\\s+Result",
+              "label": "Result section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/verification.md",
+              "minCitations": 2,
+              "artifact": true
+            },
+            {
+              "kind": "commandEvidence",
+              "script": "test",
+              "expect": "pass",
+              "label": "the whole suite is green with the new tests (verified run receipt)"
+            }
+          ]
+        }
+      }
+    ],
+    "review": {
+      "artifactPath": "{{workPath}}/verification.md",
+      "relatedPaths": [
+        "{{workPath}}/risk-map.md",
+        "{{workPath}}/test-notes.md"
+      ],
+      "reviewPath": "{{workPath}}/review.md",
+      "reviewerRole": "test reviewer",
+      "repairRole": "software engineer",
+      "minReviewBytes": 400,
+      "enforce": {
+        "fixStepId": "repair"
+      },
+      "criteria": [
+        "The new tests live in the project's real test layout and follow its existing naming and assertion style — open the test files and check.",
+        "Each test pins observable behavior a wrong implementation would fail: open the assertions — expecting true, asserting a mock returns what it was told, or restating the implementation back at itself does not pass.",
+        "The edge and error cases the risk map ranked are covered, or honestly deferred with a stated reason — reconcile risk-map.md's chosen targets against test-notes.md and verification.md.",
+        "The whole suite is green by real run receipt, judged from the recorded runs rather than the author's summary.",
+        "The module under test was not modified to make tests pass — the only changes are new or updated test files and the working notes."
+      ]
+    }
+  }
+}

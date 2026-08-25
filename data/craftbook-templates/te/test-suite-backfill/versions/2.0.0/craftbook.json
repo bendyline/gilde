@@ -1,0 +1,428 @@
+{
+  "id": "test-suite-backfill",
+  "name": "Test Suite Backfill",
+  "description": "Backfill a test suite that would actually catch a regression, not one that inflates a coverage number. First map the RISK: read the target modules and rank their untested behavior by breakage cost — what would hurt most if it went silently wrong — then choose concrete targets, because a suite built without that ranking pins the easy paths and misses the expensive ones. Then WRITE the tests in the project's real test layout and style, with one discipline above all others: every test must be able to FAIL. Assert actual values, actual errors, actual edge cases — never tautologies like expecting true, asserting a mock returns what it was told, or restating the implementation back at itself. The module under test does not change: if a test exposes what looks like a genuine bug, pin the current behavior or flag it honestly for the user instead of silently editing the source to match an expectation. Then VERIFY with the whole suite green — judged from real run receipts, not the author's summary — and a per-test statement of the regression each one guards. Finally an independent reviewer opens the tests themselves and grades the assertions against fixed criteria; a REVISE verdict routes the work back automatically with concrete findings. Needs a project whose tests run via `npm run test`. Suited to unattended night-shift runs. Works identically whether the run edits the project directly or drafts a change proposal for the user to apply.",
+  "plan": "Map untested behavior by breakage cost and choose targets -> write tests in the real layout that a wrong implementation would fail -> verify the whole suite green with run receipts -> enforced independent review of the assertions.",
+  "entryStepId": "risk-map",
+  "triggers": [
+    "add tests to this code",
+    "backfill tests",
+    "increase test coverage",
+    "write tests for an untested module",
+    "test this function"
+  ],
+  "runModes": {
+    "nightShift": "supported"
+  },
+  "commands": [
+    {
+      "scope": "script",
+      "name": "test",
+      "reason": "The new tests must run green in the real suite — the verify gate checks real run receipts, not claims."
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "risk-map",
+      "name": "Map the risk",
+      "description": "Read the target modules and rank untested behavior by breakage cost; choose concrete targets. No test writing yet.",
+      "prompt": "Before writing any test, learn what is worth testing. Read the target module(s) named by the task with `read_file` — the whole file, not the signatures — and read the existing test layout (`list_dir` on the test folder, then the test files) to learn where tests live and how this project writes them. Rank the UNTESTED behavior by breakage cost: what would hurt users or downstream code most if it went silently wrong — boundary semantics, error contracts, arithmetic, state transitions — not what is easiest to cover. Then choose concrete targets: the specific functions and the specific behaviors of each you will pin, including the edge and error cases. Be honest about what you are deliberately leaving untested and why.\n\nWrite `{{workPath}}/risk-map.md` with exactly these sections: `## Modules` (each target module and what it does, with backtick paths), `## Risks ranked` (the untested behaviors ordered by breakage cost, with the cost stated), `## Chosen targets` (the tests you will write, each naming the behavior it pins). Every path you cite must be real.\n\nObservable handoff: write the completed result to `{{workPath}}/risk-map.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "quality engineer",
+      "capabilityFloor": "small",
+      "advanceWhen": {
+        "file": "{{workPath}}/risk-map.md",
+        "minBytes": 500,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "write-tests"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/risk-map.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/risk-map.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/risk-map.md",
+            "pattern": "^##\\s+Modules",
+            "flags": "im",
+            "label": "Modules section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/risk-map.md",
+            "pattern": "^##\\s+Risks ranked",
+            "flags": "im",
+            "label": "Risks ranked section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/risk-map.md",
+            "pattern": "^##\\s+Chosen targets",
+            "flags": "im",
+            "label": "Chosen targets section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/risk-map.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "risk-map",
+        "maxAttempts": 4
+      },
+      "next": "write-tests"
+    },
+    {
+      "id": "write-tests",
+      "name": "Write tests that can fail",
+      "description": "Add the tests in the project's real layout and style, asserting actual behavior — never tautologies.",
+      "prompt": "Read `{{workPath}}/risk-map.md` and write the chosen tests in the project's REAL test layout and style — the same folder, naming convention, and assertion idioms the existing tests use, added with `write_file`. There is no prescribed output path for the tests themselves; they live where this project's tests live. Every test must be able to FAIL: assert actual values, actual thrown errors, actual edge-case results. Never write tautologies — expecting true, asserting a mock returns what it was told, or asserting whatever the implementation currently returns without knowing why it is right. Backfill means tests, not source changes: do not modify the module under test. If a test exposes what you believe is a genuine bug, pin the current behavior with a characterization test or flag it honestly in your notes for the user — never silently edit the source to match your expectation. Run the suite with `run_package_script` (`test`) as you go and make each test pass for the right reason; if the command needs first-use approval, say so and wait rather than guessing.\n\nThen write `{{workPath}}/test-notes.md` with exactly these sections: `## Tests added` (the real path of every new test file, backtick path per line), `## Behaviors pinned` (each test and the exact behavior it asserts), `## How each test would catch a realistic break` (for each test, the plausible wrong implementation it would fail on). Before working, open `{{workPath}}/risk-map.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/test-notes.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "software engineer",
+      "capabilityFloor": "small",
+      "consumes": [
+        {
+          "file": "{{workPath}}/risk-map.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/test-notes.md",
+        "minBytes": 600,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "verify"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/test-notes.md",
+            "bytes": 600,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/test-notes.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/test-notes.md",
+            "pattern": "^##\\s+Tests added",
+            "flags": "im",
+            "label": "Tests added section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/test-notes.md",
+            "pattern": "^##\\s+Behaviors pinned",
+            "flags": "im",
+            "label": "Behaviors pinned section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/test-notes.md",
+            "pattern": "^##\\s+How each test would catch a realistic break",
+            "flags": "im",
+            "label": "realistic-break section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/test-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "write-tests",
+        "maxAttempts": 4
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify the suite green",
+      "description": "Run the whole suite and record the real result, with a per-test statement of the regression it guards.",
+      "prompt": "Prove the backfill with a full, fresh run. Execute the whole suite with `run_package_script` (`test`) — every test, old and new, must pass. If anything fails, fix the TEST (or honestly report the module bug it exposed); do not touch the module under test to force green. Then account for the coverage: for each new test, one line stating the regression it now guards — what break it would catch that yesterday's suite would have missed. Compare against `{{workPath}}/risk-map.md`: any chosen target you did not cover gets an honest deferral with the reason, never silence.\n\nWrite `{{workPath}}/verification.md` with exactly these sections: `## Suite` (the exact command and the real full-suite result), `## Coverage summary` (per-test: the regression it guards; plus honest deferrals), `## Result` (green confirmed, or what remains open and why). Before working, open `{{workPath}}/risk-map.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/verification.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "software engineer",
+      "capabilityFloor": "small",
+      "consumes": [
+        {
+          "file": "{{workPath}}/risk-map.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/verification.md",
+        "minBytes": 400,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/verification.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/verification.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Suite",
+            "flags": "im",
+            "label": "Suite section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Coverage summary",
+            "flags": "im",
+            "label": "Coverage summary section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Result",
+            "flags": "im",
+            "label": "Result section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/verification.md",
+            "minCitations": 2,
+            "artifact": true
+          },
+          {
+            "kind": "commandEvidence",
+            "script": "test",
+            "expect": "pass",
+            "label": "the whole suite is green with the new tests (verified run receipt)"
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate the deliverable",
+      "description": "Independently grade the observable deliverable and route it to finish, repair, or user escalation.",
+      "prompt": "Review `{{workPath}}/verification.md`, `{{workPath}}/risk-map.md`, `{{workPath}}/test-notes.md` against every criterion below. Inspect the underlying evidence files named by the workflow; do not grade from the author's summary alone.\n\n1. The new tests live in the project's real test layout and follow its existing naming and assertion style — open the test files and check.\n2. Each test pins observable behavior a wrong implementation would fail: open the assertions — expecting true, asserting a mock returns what it was told, or restating the implementation back at itself does not pass.\n3. The edge and error cases the risk map ranked are covered, or honestly deferred with a stated reason — reconcile risk-map.md's chosen targets against test-notes.md and verification.md.\n4. The whole suite is green by real run receipt, judged from the recorded runs rather than the author's summary.\n5. The module under test was not modified to make tests pass — the only changes are new or updated test files and the working notes.\n\nOpen `{{workPath}}/verification.md`, `{{workPath}}/risk-map.md`, `{{workPath}}/test-notes.md` with `read_artifact`. Write the evidence-backed review to `{{workPath}}/review.md` in the artifacts drawer with `write_artifact`.\n\nList the findings as a markdown table with columns `| Severity | File | Line | Problem | Fix |` (severities: critical/major/minor/nit; empty table only on PASS). Give each criterion a PASS or FAIL with a concrete path, excerpt, measurement, or observed behavior. End with exactly `Verdict: PASS` or `Verdict: REVISE`. The gate ENFORCES the verdict: a well-formed REVISE is rejected and routed back to `repair` automatically, carrying your findings — so list every finding in the table with a concrete fix. On PASS, `advance_task_step` to `finish`. Never write PASS while a criterion is unmet.",
+      "suggestedRole": "test reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/verification.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/risk-map.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/test-notes.md",
+          "artifact": true
+        }
+      ],
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/review.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit PASS or REVISE verdict",
+            "artifact": true
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkFixReview",
+            "scope": "standard",
+            "inputs": {
+              "reviewPath": "{{workPath}}/review.md",
+              "fixStepId": "repair"
+            }
+          }
+        ],
+        "onReject": "evaluate",
+        "maxAttempts": 4
+      },
+      "next": "finish"
+    },
+    {
+      "id": "repair",
+      "name": "Repair the deliverable",
+      "description": "Fix only the concrete gaps from the latest independent review.",
+      "prompt": "Read `{{workPath}}/review.md` with `read_artifact` and repair every failed criterion in `{{workPath}}/verification.md`, `{{workPath}}/risk-map.md`, `{{workPath}}/test-notes.md`. Make changes on each file's declared surface (`write_artifact` for artifact inputs, `write_file` for workspace inputs), not in task notes or a reply. Preserve evidence that already passed. Re-run or re-check anything the reviewer found unproven. Ensure `{{workPath}}/verification.md` is genuinely updated this turn so the repair is observable, then hand it back for independent evaluation.",
+      "suggestedRole": "software engineer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/verification.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/risk-map.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/test-notes.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/verification.md",
+        "minBytes": 400,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/verification.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/verification.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Suite",
+            "flags": "im",
+            "label": "Suite section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Coverage summary",
+            "flags": "im",
+            "label": "Coverage summary section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Result",
+            "flags": "im",
+            "label": "Result section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/verification.md",
+            "minCitations": 2,
+            "artifact": true
+          },
+          {
+            "kind": "commandEvidence",
+            "script": "test",
+            "expect": "pass",
+            "label": "the whole suite is green with the new tests (verified run receipt)"
+          }
+        ],
+        "onReject": "repair",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All deterministic and reviewer criteria passed.",
+      "prompt": "The independent review passed. Read `{{workPath}}/review.md` with `read_artifact`, then use `write_task_note` to record a concise DONE summary with the final deliverable paths (`{{workPath}}/verification.md`, `{{workPath}}/risk-map.md`, `{{workPath}}/test-notes.md`) and the evidence that each acceptance criterion passed. Report DONE without starting new work.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true
+    },
+    {
+      "id": "needs-user",
+      "name": "Escalate unresolved concerns",
+      "description": "The bounded repair loop ended without a defensible pass.",
+      "prompt": "The deliverable did not pass after 3 review rounds. Do not claim success. Read `{{workPath}}/review.md` with `read_artifact`, then use `write_task_note` to record DONE_WITH_CONCERNS: the unmet criteria, what was attempted, the affected paths, and the smallest user decision or missing input needed to continue.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true
+    }
+  ],
+  "diffpackCapable": true,
+  "capabilityFloor": "small",
+  "version": "2.0.0",
+  "releasedAt": "2026-08-24T00:00:00.000Z",
+  "minGezelVersion": "1.26236"
+}

@@ -1,0 +1,3 @@
+This project is a working codebase. The crew treats it the way a good engineering team treats production software: bugs get reproduced before they get fixed, changes come with tests, fixes get reviewed before they count as done, and claims are backed by real runs rather than confidence.
+
+The developer leads the work. The reviewer is the second set of eyes on anything that changes behavior. The boekwachter reads the code and its documents in quiet hours and files concrete findings — those findings feed the nightly fix sweep, which drafts change proposals for the user to review and apply. Nothing lands in the tree without a person or a green gate behind it.

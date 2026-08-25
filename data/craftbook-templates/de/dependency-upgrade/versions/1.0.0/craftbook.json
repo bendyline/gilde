@@ -1,0 +1,459 @@
+{
+  "id": "dependency-upgrade",
+  "name": "Upgrade a Dependency",
+  "description": "Upgrade dependencies the way a careful maintainer would, with each claim mechanically verified. This is the applying sibling of the report-only Dependency Audit: where that book tells you what is risky, this one moves the versions. First SURVEY: read the real dependency state (manifest, lockfile, installed packages, or a vendored tree the repository documents), run the suite so green-before-any-bump is a recorded receipt, and read each candidate's breaking-change surface from what exists LOCALLY - changelogs and READMEs inside node_modules, or the repository's own upgrade notes. Release notes are never invented; a candidate whose changes cannot be read locally is staged conservatively and marked unknown. Then UPGRADE stage by stage, smallest-risk-first: apply the version change at its real location, adapt the call sites it breaks, and run the suite before the next stage begins. A stage that cannot go green is reverted and recorded with the reason, never forced through; a major that needs real design work is deferred honestly. Then VERIFY the final tree green and record a concrete rollback path. Finally an independent reviewer grades the whole chain against fixed criteria, and their REVISE verdict routes the work back automatically with concrete findings. Needs a project whose tests run via `npm run test`. Works identically whether the run edits the project directly or drafts a change proposal for the user to apply.",
+  "plan": "Survey the real dependency state and stage the work smallest-risk-first (green-suite receipt before any bump) -> execute stage by stage with the suite run between stages and honest reverts -> verify the final tree green and record the rollback path -> enforced independent review.",
+  "entryStepId": "survey",
+  "triggers": [
+    "upgrade the dependencies",
+    "bump the deps",
+    "update this package",
+    "dependency upgrade"
+  ],
+  "runModes": {
+    "scheduled": "supported"
+  },
+  "commands": [
+    {
+      "scope": "script",
+      "name": "test",
+      "reason": "each upgrade stage must leave the suite green - the gates read real run receipts"
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "scope": {
+        "type": "string",
+        "title": "What to upgrade",
+        "description": "A single dependency, a patch-level sweep, or a named major upgrade. Leave empty to survey and pick the safest valuable set.",
+        "default": ""
+      },
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "survey",
+      "name": "Survey the dependency state",
+      "description": "Read the real dependency state and each candidate's locally-readable breaking-change surface, record the green baseline, and stage the work smallest-risk-first.",
+      "prompt": "The upgrade scope: {{scope}}\n\nEstablish the REAL dependency state before changing anything. Read `package.json` (and the lockfile if one exists), run `list_packages`, and work out how this project consumes each dependency - registry installs, or a vendored tree the repository documents. Then run the suite with `run_package_script` (`test`) and record that it is green BEFORE any bump. If the suite is already red, record the failure honestly and stop - never upgrade on top of a red suite. If the command needs first-use approval, say so and wait rather than guessing.\n\nFor each upgrade candidate, read its breaking-change surface from what is available LOCALLY: changelogs and READMEs inside `node_modules/`, or the repository's own upgrade notes for vendored code. Never invent release notes you did not read - a candidate whose changes you cannot read locally gets staged conservatively and marked unknown. Order the stages smallest-risk-first: patches before minors before majors, one dependency (or one tightly-coupled group) per stage. If nothing is worth upgrading here, record that finding honestly and stop.\n\nWrite `{{workPath}}/survey.md` with exactly these sections: `## Current state` (what is installed, from the real manifest and lockfile), `## Candidates` (each candidate with its current and target version and where you read its notes), `## Breaking-change notes` (what actually changes, only from sources you read, each cited with a backtick path), `## Stage plan` (numbered stages, smallest-risk-first, with the reason for the order).\n\nObservable handoff: write the completed result to `{{workPath}}/survey.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "dependency auditor",
+      "capabilityFloor": "medium",
+      "advanceWhen": {
+        "file": "{{workPath}}/survey.md",
+        "minBytes": 600,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "upgrade"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/survey.md",
+            "bytes": 600,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/survey.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/survey.md",
+            "pattern": "^##\\s+Current state",
+            "flags": "im",
+            "label": "Current state section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/survey.md",
+            "pattern": "^##\\s+Candidates",
+            "flags": "im",
+            "label": "Candidates section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/survey.md",
+            "pattern": "^##\\s+Breaking-change notes",
+            "flags": "im",
+            "label": "Breaking-change notes section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/survey.md",
+            "pattern": "^##\\s+Stage plan",
+            "flags": "im",
+            "label": "Stage plan section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/survey.md",
+            "minCitations": 2,
+            "artifact": true
+          },
+          {
+            "kind": "commandEvidence",
+            "script": "test",
+            "expect": "pass",
+            "label": "green before any bump"
+          }
+        ],
+        "onReject": "survey",
+        "maxAttempts": 4
+      },
+      "next": "upgrade"
+    },
+    {
+      "id": "upgrade",
+      "name": "Execute the stages",
+      "description": "Apply each stage at its real location, adapt the call sites it breaks, and run the suite between stages; revert and record any stage that cannot go green.",
+      "prompt": "Read `{{workPath}}/survey.md` and execute its stage plan one stage at a time. For each stage: apply the version change at its real location - edit the manifest and run `npm_install` for registry dependencies, or replace the vendored tree exactly as the repository's convention documents for vendored ones - then adapt every call site the change breaks at its real location with `read_file` plus `write_file`/`replace_in_file`, and run the suite with `run_package_script` (`test`) before starting the next stage. Never begin a stage while the previous one is red.\n\nA stage that cannot go green gets REVERTED - put the manifest, lockfile, and touched files back exactly as they were - and recorded with the concrete failure, never forced through by weakening tests or pinning over the breakage. A major that turns out to need real design work is deferred honestly, not hacked through. If every stage had to be reverted, record that outcome honestly and stop.\n\nWrite `{{workPath}}/change-notes.md` with exactly these sections: `## Stages executed` (each stage with its suite result), `## Files touched` (backtick path per line), `## Adaptations` (each call-site change and why the new version needs it), `## Reverted stages` (each with the concrete failure that forced the revert, or 'none'). Before working, open `{{workPath}}/survey.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/change-notes.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "software engineer",
+      "capabilityFloor": "medium",
+      "consumes": [
+        {
+          "file": "{{workPath}}/survey.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/change-notes.md",
+        "minBytes": 700,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "verify"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/change-notes.md",
+            "bytes": 700,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/change-notes.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/change-notes.md",
+            "pattern": "^##\\s+Stages executed",
+            "flags": "im",
+            "label": "Stages executed section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/change-notes.md",
+            "pattern": "^##\\s+Files touched",
+            "flags": "im",
+            "label": "Files touched section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/change-notes.md",
+            "pattern": "^##\\s+Adaptations",
+            "flags": "im",
+            "label": "Adaptations section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/change-notes.md",
+            "pattern": "^##\\s+Reverted stages",
+            "flags": "im",
+            "label": "Reverted stages section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/change-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "upgrade",
+        "maxAttempts": 4
+      },
+      "next": "verify"
+    },
+    {
+      "id": "verify",
+      "name": "Verify and record the rollback",
+      "description": "Re-run the whole suite on the final tree, spot-check the adaptations, and record a concrete rollback path.",
+      "prompt": "Prove the result with fresh eyes. Re-run the whole suite with `run_package_script` (`test`) - it must be green on the final tree; if it is not, go back and fix or revert before verifying again. Re-read `{{workPath}}/change-notes.md` and spot-check each adaptation at its real location with `read_file`. Then record the rollback path: exactly which manifest and lockfile entries (or vendored files) to restore, and in what order, to return to the pre-upgrade state. Anything you could not actually run gets labeled unverified, never claimed.\n\nWrite `{{workPath}}/verification.md` with exactly these sections: `## Suite` (the full-suite command and its result), `## Adaptations verified` (which call sites you re-opened and what you confirmed), `## Rollback` (the concrete revert steps), `## Result` (upgraded and green, or what remains unverified and why). Before working, open `{{workPath}}/change-notes.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/verification.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "software engineer",
+      "capabilityFloor": "medium",
+      "consumes": [
+        {
+          "file": "{{workPath}}/change-notes.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/verification.md",
+        "minBytes": 450,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/verification.md",
+            "bytes": 450,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/verification.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Suite",
+            "flags": "im",
+            "label": "Suite section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Adaptations verified",
+            "flags": "im",
+            "label": "Adaptations verified section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Rollback",
+            "flags": "im",
+            "label": "Rollback section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Result",
+            "flags": "im",
+            "label": "Result section",
+            "artifact": true
+          },
+          {
+            "kind": "commandEvidence",
+            "script": "test",
+            "expect": "pass",
+            "label": "the whole suite is green on the upgraded tree (verified run receipt)"
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate the deliverable",
+      "description": "Independently grade the observable deliverable and route it to finish, repair, or user escalation.",
+      "prompt": "Review `{{workPath}}/verification.md`, `{{workPath}}/survey.md`, `{{workPath}}/change-notes.md` against every criterion below. Inspect the underlying evidence files named by the workflow; do not grade from the author's summary alone.\n\n1. The stages in change-notes.md were real and ordered smallest-risk-first, matching the plan in survey.md or explaining every deviation.\n2. Green between stages is receipts, not claims: the suite was genuinely run before the first bump and between stages - judged from the recorded runs, not the author's summary.\n3. Breaking-change notes cite sources that were genuinely read locally; nothing is presented as a release note that was invented.\n4. Every adaptation cites a real file, and the change at that site matches what the new version actually requires - open the touched files; do not grade from change-notes.md alone.\n5. Stages that could not go green were reverted and recorded with concrete reasons; majors that need design work were deferred honestly, not hacked through.\n6. verification.md records a concrete, runnable rollback path and the final suite run is green - judged from the recorded run receipts.\n\nOpen `{{workPath}}/verification.md`, `{{workPath}}/survey.md`, `{{workPath}}/change-notes.md` with `read_artifact`. Write the evidence-backed review to `{{workPath}}/review.md` in the artifacts drawer with `write_artifact`.\n\nList the findings as a markdown table with columns `| Severity | File | Line | Problem | Fix |` (severities: critical/major/minor/nit; empty table only on PASS). Give each criterion a PASS or FAIL with a concrete path, excerpt, measurement, or observed behavior. End with exactly `Verdict: PASS` or `Verdict: REVISE`. The gate ENFORCES the verdict: a well-formed REVISE is rejected and routed back to `repair` automatically, carrying your findings — so list every finding in the table with a concrete fix. On PASS, `advance_task_step` to `finish`. Never write PASS while a criterion is unmet.",
+      "suggestedRole": "dependency reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/verification.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/survey.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/change-notes.md",
+          "artifact": true
+        }
+      ],
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/review.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit PASS or REVISE verdict",
+            "artifact": true
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkFixReview",
+            "scope": "standard",
+            "inputs": {
+              "reviewPath": "{{workPath}}/review.md",
+              "fixStepId": "repair"
+            }
+          }
+        ],
+        "onReject": "evaluate",
+        "maxAttempts": 4
+      },
+      "next": "finish"
+    },
+    {
+      "id": "repair",
+      "name": "Repair the deliverable",
+      "description": "Fix only the concrete gaps from the latest independent review.",
+      "prompt": "Read `{{workPath}}/review.md` with `read_artifact` and repair every failed criterion in `{{workPath}}/verification.md`, `{{workPath}}/survey.md`, `{{workPath}}/change-notes.md`. Make changes on each file's declared surface (`write_artifact` for artifact inputs, `write_file` for workspace inputs), not in task notes or a reply. Preserve evidence that already passed. Re-run or re-check anything the reviewer found unproven. Ensure `{{workPath}}/verification.md` is genuinely updated this turn so the repair is observable, then hand it back for independent evaluation.",
+      "suggestedRole": "software engineer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/verification.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/survey.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/change-notes.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/verification.md",
+        "minBytes": 450,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/verification.md",
+            "bytes": 450,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/verification.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Suite",
+            "flags": "im",
+            "label": "Suite section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Adaptations verified",
+            "flags": "im",
+            "label": "Adaptations verified section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Rollback",
+            "flags": "im",
+            "label": "Rollback section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Result",
+            "flags": "im",
+            "label": "Result section",
+            "artifact": true
+          },
+          {
+            "kind": "commandEvidence",
+            "script": "test",
+            "expect": "pass",
+            "label": "the whole suite is green on the upgraded tree (verified run receipt)"
+          }
+        ],
+        "onReject": "repair",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All deterministic and reviewer criteria passed.",
+      "prompt": "The independent review passed. Read `{{workPath}}/review.md` with `read_artifact`, then use `write_task_note` to record a concise DONE summary with the final deliverable paths (`{{workPath}}/verification.md`, `{{workPath}}/survey.md`, `{{workPath}}/change-notes.md`) and the evidence that each acceptance criterion passed. Report DONE without starting new work.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true
+    },
+    {
+      "id": "needs-user",
+      "name": "Escalate unresolved concerns",
+      "description": "The bounded repair loop ended without a defensible pass.",
+      "prompt": "The deliverable did not pass after 3 review rounds. Do not claim success. Read `{{workPath}}/review.md` with `read_artifact`, then use `write_task_note` to record DONE_WITH_CONCERNS: the unmet criteria, what was attempted, the affected paths, and the smallest user decision or missing input needed to continue.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true
+    }
+  ],
+  "diffpackCapable": true,
+  "capabilityFloor": "medium",
+  "version": "1.0.0",
+  "releasedAt": "2026-08-24T00:00:00.000Z",
+  "minGezelVersion": "1.26236"
+}

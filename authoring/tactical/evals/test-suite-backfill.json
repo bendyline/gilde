@@ -1,0 +1,197 @@
+{
+  "schemaVersion": 1,
+  "title": "Test backfill proven by mutants",
+  "objective": "The craftbook drives a risk-ranked backfill of an untested date-range module. The oracle proves the new tests bite: three seeded mutations (an exclusive boundary, a duration off-by-one, overlap collapsed to containment) are applied in copies and the model's suite must fail at least two of them while staying green on the real tree — with the module under test byte-identical to the fixture.",
+  "tags": [
+    "code",
+    "tests",
+    "coverage",
+    "tactical-fleet"
+  ],
+  "prompt": "Use the Test Suite Backfill craftbook: src/date-range.js schedules bookings across the product and has no tests at all — tests/ only covers the formatter. Backfill a meaningful suite for the date-range module in the existing test layout, highest-risk behavior first: its bounds are inclusive on both ends and an inverted range must throw.",
+  "setup": {
+    "projectName": "Booking Ranges",
+    "about": "A tiny scheduling library. Tests run with `npm run test` (node --test). src/date-range.js is untested; src/format.js has an existing test that shows the layout and style.",
+    "files": [
+      {
+        "path": "package.json",
+        "content": "{\n  \"name\": \"booking-ranges\",\n  \"private\": true,\n  \"version\": \"1.0.0\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test\"\n  }\n}\n"
+      },
+      {
+        "path": "src/date-range.js",
+        "content": "// Inclusive [start, end] day ranges. Days are ISO strings like '2026-03-14'.\nconst DAY_MS = 86400000;\n\nfunction dayValue(day) {\n  if (typeof day !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(day)) {\n    throw new Error(`invalid day: ${day}`);\n  }\n  const value = Date.parse(`${day}T00:00:00Z`);\n  if (Number.isNaN(value)) throw new Error(`invalid day: ${day}`);\n  return value;\n}\n\nfunction assertRange(range) {\n  const start = dayValue(range.start);\n  const end = dayValue(range.end);\n  if (start > end) {\n    throw new Error(`invalid range: ${range.start} is after ${range.end}`);\n  }\n  return { start, end };\n}\n\nexport function overlaps(a, b) {\n  const ra = assertRange(a);\n  const rb = assertRange(b);\n  return ra.start <= rb.end && rb.start <= ra.end;\n}\n\nexport function containsDay(range, day) {\n  const r = assertRange(range);\n  const d = dayValue(day);\n  return d >= r.start && d <= r.end;\n}\n\nexport function durationDays(range) {\n  const r = assertRange(range);\n  return Math.round((r.end - r.start) / DAY_MS) + 1;\n}\n"
+      },
+      {
+        "path": "src/format.js",
+        "content": "export function slugify(text) {\n  return String(text)\n    .toLowerCase()\n    .trim()\n    .replace(/[^a-z0-9]+/g, '-')\n    .replace(/^-+|-+$/g, '');\n}\n"
+      },
+      {
+        "path": "tests/format.test.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { test } from 'node:test';\nimport { slugify } from '../src/format.js';\n\ntest('slugify collapses spaces and punctuation', () => {\n  assert.equal(slugify('Walnut writing desk!'), 'walnut-writing-desk');\n});\n\ntest('slugify trims stray dashes', () => {\n  assert.equal(slugify('  --Oak shelf--  '), 'oak-shelf');\n});\n"
+      },
+      {
+        "path": "tests/verify-backfill.mjs",
+        "surface": "harness",
+        "content": "import assert from 'node:assert/strict';\nimport { execFileSync } from 'node:child_process';\nimport { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';\nimport { join } from 'node:path';\n\nconst root = process.cwd();\nconst ORACLE = 'verify-backfill.mjs';\n\n// Bare `node --test` discovery: finds tests/**/*.test.* from cwd and skips\n// dot-directories, so the .oracle-* mutant copies never leak into a run.\n// (A literal `--test tests/` directory argument no longer resolves on\n// modern Node - it is treated as a module path.)\nfunction runSuite(cwd) {\n  try {\n    execFileSync(process.execPath, ['--test'], { cwd, stdio: 'pipe', timeout: 30000 });\n    return 0;\n  } catch (err) {\n    return typeof err.status === 'number' ? err.status : 1;\n  }\n}\n\n// 1) New tests exist in the real layout and target the date-range module.\nconst testFiles = readdirSync(join(root, 'tests'), { recursive: true })\n  .map(String)\n  .filter((f) => /\\.test\\.(mjs|js|cjs)$/.test(f) && !f.endsWith('format.test.mjs'));\nassert.ok(testFiles.length >= 1, 'no new test file found in tests/');\nconst newTestText = testFiles.map((f) => readFileSync(join(root, 'tests', f), 'utf8')).join('\\n');\nassert.ok(/date-range/.test(newTestText), 'the new tests never reference the date-range module');\nconsole.log('BACKFILL_ORACLE new tests found');\n\n// 2) The suite is green on the real tree.\nassert.equal(runSuite(root), 0, 'the suite must pass on the real tree');\nconsole.log('BACKFILL_ORACLE suite green');\n\n// 3) Seeded defects in copies must make the new suite fail - proof the tests bite.\nconst source = readFileSync(join(root, 'src', 'date-range.js'), 'utf8');\nfunction mutantCaught(name, mutate) {\n  const mroot = join(root, `.oracle-${name}`);\n  rmSync(mroot, { recursive: true, force: true });\n  mkdirSync(mroot, { recursive: true });\n  cpSync(join(root, 'src'), join(mroot, 'src'), { recursive: true });\n  cpSync(join(root, 'tests'), join(mroot, 'tests'), { recursive: true });\n  rmSync(join(mroot, 'tests', ORACLE), { force: true });\n  cpSync(join(root, 'package.json'), join(mroot, 'package.json'));\n  const mutated = mutate(source);\n  assert.notEqual(mutated, source, `mutation ${name} failed to apply - src/date-range.js was altered`);\n  writeFileSync(join(mroot, 'src', 'date-range.js'), mutated);\n  const caught = runSuite(mroot) !== 0;\n  console.log(`BACKFILL_ORACLE mutant ${name} ${caught ? 'caught' : 'MISSED'}`);\n  return caught;\n}\n\nconst caught = [\n  mutantCaught('boundary', (s) => s.replace('rb.start <= ra.end', 'rb.start < ra.end')),\n  mutantCaught('duration', (s) => s.replace('/ DAY_MS) + 1', '/ DAY_MS)')),\n  mutantCaught('containment', (s) => s.replace('ra.start <= rb.end && rb.start <= ra.end', 'ra.start <= rb.start && rb.end <= ra.end')),\n].filter(Boolean).length;\nassert.ok(caught >= 2, `the new tests caught only ${caught}/3 seeded defects - they do not pin real behavior`);\nconsole.log(`BACKFILL_ORACLE mutants ${caught}/3`);\nconsole.log('BACKFILL_ORACLE done');\n"
+      }
+    ],
+    "craftbookParams": {
+      "workPath": "tasks/eval"
+    }
+  },
+  "success": {
+    "summary": "New tests for the date-range module live in the real layout, the whole suite is green on the untouched tree, and the tests catch at least two of three seeded mutations — with every fleet artifact present and honestly cited.",
+    "deliverables": [
+      {
+        "path": "tasks/eval/risk-map.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/risk-map.md",
+            "pattern": "^##\\s+Modules[\\s\\S]*^##\\s+Risks ranked[\\s\\S]*^##\\s+Chosen targets",
+            "flags": "im",
+            "label": "risk-map sections in order"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/risk-map.md",
+            "pattern": "src/date-range\\.js",
+            "label": "names the real target module"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "tasks/eval/risk-map.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/test-notes.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 600,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/test-notes.md",
+            "pattern": "^##\\s+Tests added[\\s\\S]*^##\\s+Behaviors pinned[\\s\\S]*^##\\s+How each test would catch a realistic break",
+            "flags": "im",
+            "label": "test-notes sections in order"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "tasks/eval/test-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/verification.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/verification.md",
+            "pattern": "^##\\s+Suite[\\s\\S]*^##\\s+Coverage summary[\\s\\S]*^##\\s+Result",
+            "flags": "im",
+            "label": "verification sections in order"
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/review.md",
+        "kind": "markdown-report",
+        "artifact": true,
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit reviewer verdict"
+          }
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "kind": "nodeRuns",
+        "file": "tests/format.test.mjs"
+      },
+      {
+        "kind": "nodeScriptPasses",
+        "script": "tests/verify-backfill.mjs",
+        "timeoutMs": 120000,
+        "requiredOutput": [
+          {
+            "pattern": "BACKFILL_ORACLE new tests found",
+            "label": "new tests exist in the real layout"
+          },
+          {
+            "pattern": "BACKFILL_ORACLE suite green",
+            "label": "the whole suite passes on the real tree"
+          },
+          {
+            "pattern": "BACKFILL_ORACLE mutants [23]/3",
+            "label": "the new tests catch seeded defects"
+          }
+        ]
+      }
+    ],
+    "taskNotes": {
+      "minBytes": 120,
+      "checks": [
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "\\bDONE\\b[\\s\\S]*(npm\\s+run\\s+test|node\\s+--test)",
+          "flags": "i",
+          "label": "DONE note names the real test command"
+        }
+      ]
+    },
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    },
+    "unchangedFixtures": [
+      "package.json",
+      "src/date-range.js",
+      "src/format.js",
+      "tests/format.test.mjs"
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "tasks/eval/test-notes.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "Risk-driven targeting",
+        "description": "The tests pin the behaviors whose silent breakage costs most — inclusive bounds, duration arithmetic, the invalid-range throw — following the risk map rather than the easiest paths."
+      },
+      {
+        "name": "Tests that bite",
+        "description": "Each test asserts real values, errors, and edge cases a wrong implementation would fail; no tautologies, and seeded mutations to the module are actually caught."
+      },
+      {
+        "name": "Layout fidelity and honesty",
+        "description": "Tests follow the existing layout and style, the suite result comes from real runs, the module under test is untouched, and uncovered targets are deferred honestly."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "mutation-proof regression guards",
+    "risk-ranked coverage",
+    "enforced review of assertions"
+  ]
+}

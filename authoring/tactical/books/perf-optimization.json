@@ -1,0 +1,219 @@
+{
+  "id": "perf-optimization",
+  "name": "Targeted Performance Fix",
+  "description": "Make a measured, targeted performance improvement: baseline numbers recorded with their method before anything changes, one bottleneck fixed in reversible stages with the suite green, the same measurement re-run to prove the gain, and an enforced independent review.",
+  "category": "code-quality",
+  "role": "maintenance-review",
+  "tags": [
+    "performance",
+    "optimization",
+    "profiling",
+    "benchmark",
+    "speed",
+    "tests"
+  ],
+  "triggers": [
+    "optimize performance",
+    "make this faster",
+    "fix a slow function",
+    "profile and optimize",
+    "reduce latency",
+    "speed up the test suite",
+    "fix an n+1 pattern"
+  ],
+  "about": "Make code measurably faster without breaking it, and with every claim mechanically verified — because optimizing without measuring is guessing, and 'feels faster' is not a deliverable. First BASELINE: run the suite green, then measure the slow path with a repeatable method written down exactly (an operation counter, a timing harness, a suite duration, a query count), and pick the ONE bottleneck this run will attack. A number recorded without its method is a gate failure by construction. Then PLAN: a numeric target and small reversible stages that each leave the tree working. Then CHANGE: fix the bottleneck at the real sites — never by rewriting the measurement so the number looks better — keeping the suite green between stages. Then VERIFY: re-measure with the SAME method and quote both numbers side by side. Finally an independent reviewer grades the chain — method identical before and after, correctness held with receipts, no measurement theater — and a REVISE verdict routes the work back automatically with concrete findings. The scope can be any slow path: a hot function, an endpoint, an N+1 access pattern that re-fetches inside a loop, or a slow test suite — the discipline is identical for all of them: measure it, fix one bottleneck, re-measure it the same way. Needs a project whose tests run via `npm run test`. Works identically whether the run edits the project directly or drafts a change proposal for the user to apply.",
+  "doc": {
+    "paramSchema": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "type": "string",
+          "title": "What to optimize",
+          "description": "The slow path to work on: a function, an endpoint, an N+1 access pattern, a slow test suite. Leave empty when the task description carries it.",
+          "default": ""
+        }
+      }
+    },
+    "capabilityFloor": "medium",
+    "diffpackCapable": true,
+    "commands": [
+      {
+        "scope": "script",
+        "name": "test",
+        "reason": "Correctness is the guardrail: the suite must be green before the optimization starts, stay green between stages, and be green at the end. The gates verify the green-before/green-after receipts from real runs, not the author's claims."
+      }
+    ]
+  },
+  "workflow": {
+    "plan": "Record a green suite and baseline numbers with their exact method -> plan a numeric target and reversible stages -> fix the one bottleneck at the real sites with the suite green throughout -> re-measure with the same method and quote both numbers -> enforced independent review.",
+    "maxGateAttempts": 4,
+    "maxReviewRounds": 3,
+    "phases": [
+      {
+        "id": "baseline",
+        "name": "Measure the baseline",
+        "description": "Record the current numbers with a repeatable method, confirm the suite green, and pick the one bottleneck to attack.",
+        "suggestedRole": "performance engineer",
+        "capabilityFloor": "medium",
+        "prompt": "The optimization target: {{scope}}\n\nMeasure before you touch anything — a performance claim without a number is a guess, and this book's gates reject guesses by construction. Read the involved source and find how this project runs its tests (`list_package_scripts`). Run the suite with `run_package_script` (`test`) and confirm it is GREEN before the work starts; if it is already red, stop and report that honestly. If the command needs first-use approval, say so and wait rather than guessing.\n\nThen measure the slow path itself with a repeatable method you write down exactly: an operation counter the code exposes, a timing harness you run with `run_nodejs_script` (repeat it a few times and note the spread), the suite's own duration, a query or fetch count for an N+1 pattern. Record the numbers exactly as measured, with the command that produced them. Pick the ONE bottleneck this run will attack — reason from the measurements rather than guessing — and name its mechanism (quadratic rescan, repeated work inside a loop, per-item fetch, needless setup per test). One bottleneck at a time; park the rest in your notes.\n\nWrite `{{workPath}}/baseline.md` with exactly these sections: `## Current behavior` (what the slow path does and which tests pin its correctness), `## Measurements` (the numbers, the exact method and command used to gather them, and the chosen bottleneck with its mechanism), `## Guardrail` (what must not change: results on the same inputs, observable behavior, the suite staying green). Cite the real files involved with backtick paths.",
+        "output": {
+          "path": "{{workPath}}/baseline.md",
+          "minBytes": 500,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Current behavior",
+              "label": "Current behavior section"
+            },
+            {
+              "pattern": "^##\\s+Measurements[\\s\\S]*\\d",
+              "label": "Measurements section with recorded numbers"
+            },
+            {
+              "pattern": "^##\\s+Guardrail",
+              "label": "Guardrail section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/baseline.md",
+              "minCitations": 2,
+              "artifact": true
+            },
+            {
+              "kind": "commandEvidence",
+              "script": "test",
+              "expect": "pass",
+              "label": "green before the work starts"
+            }
+          ]
+        }
+      },
+      {
+        "id": "plan",
+        "name": "Plan the fix",
+        "description": "Set a numeric target for the one bottleneck and break the fix into reversible stages. No source edits.",
+        "suggestedRole": "performance engineer",
+        "capabilityFloor": "medium",
+        "prompt": "Read `{{workPath}}/baseline.md`, then plan the fix for the ONE bottleneck it names. State the target as a number wherever possible (an operation count under a budget, a duration under a threshold, one query per batch instead of one per item) and the mechanism of the improvement (a better data structure, hoisting repeated work out of the loop, batching the access, sharing expensive setup). Break the work into ordered stages where EACH stage is individually reversible and leaves the tree working with the suite green. Name the files each stage touches. State the acceptance criteria: the measured number reaching the target using the SAME method as the baseline, results identical on the same inputs, and the suite green after every stage. Do not edit any source in this phase.\n\nWrite `{{workPath}}/plan.md` with exactly these sections: `## Target` (the number to reach and the mechanism), `## Stages` (numbered, each reversible, each naming its files), `## Acceptance criteria`. Cite the real files with backtick paths.",
+        "output": {
+          "path": "{{workPath}}/plan.md",
+          "minBytes": 500,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Target",
+              "label": "Target section"
+            },
+            {
+              "pattern": "^##\\s+Stages",
+              "label": "Stages section"
+            },
+            {
+              "pattern": "^##\\s+Acceptance criteria",
+              "label": "Acceptance criteria section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/plan.md",
+              "minCitations": 2,
+              "artifact": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "change",
+        "name": "Fix the bottleneck",
+        "description": "Execute the planned stages at the real sites, keeping the suite green and the measurement honest.",
+        "suggestedRole": "software engineer",
+        "capabilityFloor": "medium",
+        "prompt": "Read `{{workPath}}/plan.md` and `{{workPath}}/baseline.md`, then execute the stages in order at the REAL sites — edit the actual files with `read_file` plus `write_file`/`replace_in_file`; never a scratch copy, and never a rewrite of the measurement itself so the number looks better — fixing the measured path is the job, fixing the measurement is theater. After EACH stage, run the suite with `run_package_script` (`test`) and confirm it is still green before starting the next; a stage that goes red gets reverted or narrowed, not stacked on. Re-run the baseline's measurement as you go so you can see the number actually moving. Results must stay identical on the same inputs — speed that changes answers is a bug, not a win. Keep the code readable; do not obfuscate for a marginal gain.\n\nWrite `{{workPath}}/change-notes.md` with exactly these sections: `## Stages executed` (each stage, in order, with its suite-green confirmation and any interim measurement), `## Files touched` (backtick path per line), `## Deviations from plan` (anything done differently than plan.md and why; write `none` honestly when there are none).",
+        "output": {
+          "path": "{{workPath}}/change-notes.md",
+          "minBytes": 600,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Stages executed",
+              "label": "Stages executed section"
+            },
+            {
+              "pattern": "^##\\s+Files touched",
+              "label": "Files touched section"
+            },
+            {
+              "pattern": "^##\\s+Deviations from plan",
+              "label": "Deviations from plan section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/change-notes.md",
+              "minCitations": 2,
+              "artifact": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "verify",
+        "name": "Re-measure and verify",
+        "description": "Re-measure with exactly the baseline's method, quote both numbers side by side, and record the suite green.",
+        "suggestedRole": "performance engineer",
+        "capabilityFloor": "medium",
+        "prompt": "Prove the speedup with fresh eyes. Read `{{workPath}}/baseline.md` and re-measure with EXACTLY the method and command it records — same workload, same counter, same harness; if the recorded method cannot be reproduced, that is a finding to report, not a license to substitute a friendlier one. Quote the baseline number and the new number side by side. Run the whole suite with `run_package_script` (`test`) and record the green result. Confirm results are identical to the baseline on the same inputs. Anything you could not actually re-run gets labeled unverified, never claimed.\n\nWrite `{{workPath}}/verification.md` with exactly these sections: `## Before / after` (the baseline figure and the re-measured figure side by side, same method, both quoted), `## Suite` (the full-suite result from the real run), `## Result` (target met or honestly missed, and anything unverified).",
+        "output": {
+          "path": "{{workPath}}/verification.md",
+          "minBytes": 400,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Before\\s*/\\s*after[\\s\\S]*\\d",
+              "label": "Before / after section with both numbers"
+            },
+            {
+              "pattern": "^##\\s+Suite",
+              "label": "Suite section"
+            },
+            {
+              "pattern": "^##\\s+Result",
+              "label": "Result section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "commandEvidence",
+              "script": "test",
+              "expect": "pass",
+              "label": "green after the optimization (verified run receipt)"
+            }
+          ]
+        }
+      }
+    ],
+    "review": {
+      "artifactPath": "{{workPath}}/verification.md",
+      "relatedPaths": [
+        "{{workPath}}/baseline.md",
+        "{{workPath}}/plan.md",
+        "{{workPath}}/change-notes.md"
+      ],
+      "reviewPath": "{{workPath}}/review.md",
+      "reviewerRole": "performance reviewer",
+      "repairRole": "software engineer",
+      "minReviewBytes": 400,
+      "enforce": {
+        "fixStepId": "repair"
+      },
+      "criteria": [
+        "baseline.md records real numbers with the exact method and command used to gather them — an adjective where a figure belongs fails this criterion — plus a green suite receipt from before the work started.",
+        "The change attacks the ONE bottleneck the baseline names, at the real site, by the mechanism the plan declared — open the touched files and check; do not grade from change-notes.md alone.",
+        "The measured target moved against the recorded baseline using the same method: verification.md quotes both numbers side by side, and the method is identical before and after — a changed workload, counter, or harness voids the comparison.",
+        "Observable behavior unchanged (or changed only as the plan declared): results are identical on the same inputs, and correctness held with receipts.",
+        "No stage left the suite red (receipts, not claims).",
+        "No measurement theater: the number measured is the number the user feels — the real operation, path, or suite got faster, not a synthetic proxy, and the measurement itself was not weakened to flatter the result."
+      ]
+    }
+  }
+}

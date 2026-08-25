@@ -1,0 +1,182 @@
+{
+  "id": "codemod-sweep",
+  "name": "Codemod Sweep",
+  "description": "Make a mechanical change everywhere it applies - a rename, an API-call migration, dead-code removal: enumerate every site first, apply the change under stated invariants, then re-scan to prove zero un-excluded sites remain, with counts that reconcile exactly and a green suite as receipts.",
+  "category": "code-quality",
+  "role": "general",
+  "tags": [
+    "codemod",
+    "rename",
+    "refactor",
+    "sweep",
+    "mechanical-change",
+    "quality"
+  ],
+  "triggers": [
+    "rename across the repo",
+    "codemod",
+    "migrate every call",
+    "remove the dead code"
+  ],
+  "about": "Run a mechanical, wide change - a rename, an API-call migration, a dead-code removal - the way a careful engineer runs a codemod: completeness IS the product, and each claim is mechanically verified. First ENUMERATE: work out the concrete search pattern for the old form, run real searches over the actual tree, count every site (definitions, re-exports, imports, call sites, and string mentions such as log lines when the change covers them), and list explicit exclusions - files that must keep the old form, such as changelogs - each with a defensible reason. Then APPLY the change at every listed site while holding the stated invariants (no behavior change beyond the declared one), handling the shapes that break naive sweeps - re-exports, aliased imports, strings - and running the suite as you go. Then VERIFY by re-running the exact search: zero un-excluded sites may remain, the found/changed/excluded counts must reconcile exactly, and the whole suite must be green. Finally an independent reviewer grades the chain against fixed criteria, and their REVISE verdict routes the work back automatically with concrete findings. Needs a project whose tests run via `npm run test`. Works identically whether the run edits the project directly or drafts a change proposal for the user to apply.",
+  "doc": {
+    "paramSchema": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "type": "string",
+          "title": "The mechanical change",
+          "description": "What to sweep: a rename, an API-call migration, dead-code removal. Name the old and new forms when you can.",
+          "default": ""
+        }
+      }
+    },
+    "capabilityFloor": "small",
+    "diffpackCapable": true,
+    "commands": [
+      {
+        "scope": "script",
+        "name": "test",
+        "reason": "the sweep must not change behavior - receipts"
+      }
+    ],
+    "runModes": {
+      "nightShift": "supported"
+    }
+  },
+  "workflow": {
+    "plan": "Enumerate every site with real searches (a count plus the list, and exclusions with reasons) -> apply the mechanical change at every listed site under the stated invariants with the suite run as you go -> re-scan to zero un-excluded sites, reconcile the counts, prove the suite green -> enforced independent review.",
+    "maxGateAttempts": 4,
+    "maxReviewRounds": 3,
+    "phases": [
+      {
+        "id": "enumerate",
+        "name": "Enumerate every site",
+        "description": "Find every site with real searches before touching one; count them and list explicit exclusions with reasons. No edits in this phase.",
+        "suggestedRole": "codebase analyst",
+        "capabilityFloor": "small",
+        "prompt": "The mechanical change: {{scope}}\n\nFind EVERY site before touching one - the sweep's completeness is the product. Work out the concrete search pattern (or patterns) that finds the old form: the definition, re-exports, imports, call sites, and string mentions such as log lines when the change covers them. Run real searches over the actual tree with `list_dir` and `read_file`, and record the exact pattern you used. Count the sites and list every one with a backtick path. List explicit exclusions - files that genuinely must keep the old form, such as changelogs or other historical records - each with a reason a reviewer could defend. If the old form cannot be found at all, record that honestly and stop. Do not change anything in this phase.\n\nWrite `{{workPath}}/sites.md` with exactly these sections: `## Pattern` (the exact search pattern or patterns), `## Sites found` (the count on its own line, then the list with a backtick path per site and what is at it), `## Exclusions` (each excluded file with its reason, or 'none').",
+        "output": {
+          "path": "{{workPath}}/sites.md",
+          "minBytes": 500,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Pattern",
+              "label": "Pattern section"
+            },
+            {
+              "pattern": "^##\\s+Sites found",
+              "label": "Sites found section"
+            },
+            {
+              "pattern": "^##\\s+Exclusions",
+              "label": "Exclusions section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/sites.md",
+              "minCitations": 2,
+              "artifact": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "apply",
+        "name": "Apply the change at every site",
+        "description": "Make the mechanical change at every listed site, holding the stated invariants; leave exclusions untouched and run the suite as you go.",
+        "suggestedRole": "software engineer",
+        "capabilityFloor": "small",
+        "prompt": "Read `{{workPath}}/sites.md` and make the mechanical change at every listed site with `read_file` plus `write_file`/`replace_in_file`, holding the stated invariants: no behavior change beyond the declared one, and no listed site skipped. Handle the shapes that break naive sweeps deliberately - re-exports, aliased imports, and string mentions such as log lines when the declared change covers them. Leave every excluded file untouched. Run the suite with `run_package_script` (`test`) as you go and finish green; if the suite was red before you started, record that honestly and stop rather than sweeping on top of it. If the command needs first-use approval, say so and wait rather than guessing. A site that cannot take the change without altering behavior gets recorded with its reason, not forced.\n\nWrite `{{workPath}}/change-notes.md` with exactly these sections: `## Sites changed` (the count on its own line - it must reconcile with sites.md, with any difference explained), `## Files touched` (backtick path per line), `## Invariants held` (the declared change and why nothing else changed).",
+        "output": {
+          "path": "{{workPath}}/change-notes.md",
+          "minBytes": 500,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Sites changed",
+              "label": "Sites changed section"
+            },
+            {
+              "pattern": "^##\\s+Files touched",
+              "label": "Files touched section"
+            },
+            {
+              "pattern": "^##\\s+Invariants held",
+              "label": "Invariants held section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/change-notes.md",
+              "minCitations": 2,
+              "artifact": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "verify",
+        "name": "Re-scan and reconcile",
+        "description": "Re-run the exact search to zero un-excluded sites, reconcile the counts across all three documents, and prove the suite green.",
+        "suggestedRole": "software engineer",
+        "capabilityFloor": "small",
+        "prompt": "Prove completeness with fresh eyes. Re-run the exact search pattern recorded in `{{workPath}}/sites.md` over the real tree - zero un-excluded sites may remain - and quote the re-scan and its result. Reconcile the counts: sites found in `{{workPath}}/sites.md`, sites changed in `{{workPath}}/change-notes.md`, and sites remaining now must add up exactly, with every exclusion accounted for. Open a few changed files with `read_file` and confirm the invariants held - nothing changed beyond the declared change. Re-run the whole suite with `run_package_script` (`test`) - it must be green. If the re-scan finds a missed site, fix it and re-scan again; if it cannot be fixed under the invariants, record it honestly instead of hiding it.\n\nWrite `{{workPath}}/verification.md` with exactly these sections: `## Residual scan` (the exact pattern re-run and what it found), `## Counts reconciled` (found vs changed vs excluded, adding up exactly), `## Suite` (the full-suite result), `## Result` (sweep complete, or what remains and why).",
+        "output": {
+          "path": "{{workPath}}/verification.md",
+          "minBytes": 450,
+          "requiredPatterns": [
+            {
+              "pattern": "^##\\s+Residual scan",
+              "label": "Residual scan section"
+            },
+            {
+              "pattern": "^##\\s+Counts reconciled",
+              "label": "Counts reconciled section"
+            },
+            {
+              "pattern": "^##\\s+Suite",
+              "label": "Suite section"
+            },
+            {
+              "pattern": "^##\\s+Result",
+              "label": "Result section"
+            }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "commandEvidence",
+              "script": "test",
+              "expect": "pass",
+              "label": "the suite is green after the sweep (verified run receipt)"
+            }
+          ]
+        }
+      }
+    ],
+    "review": {
+      "artifactPath": "{{workPath}}/verification.md",
+      "relatedPaths": [
+        "{{workPath}}/sites.md",
+        "{{workPath}}/change-notes.md"
+      ],
+      "reviewPath": "{{workPath}}/review.md",
+      "reviewerRole": "sweep reviewer",
+      "repairRole": "software engineer",
+      "minReviewBytes": 400,
+      "enforce": {
+        "fixStepId": "repair"
+      },
+      "criteria": [
+        "The re-scan in verification.md is quoted and shows zero un-excluded sites remaining for the exact pattern sites.md declared - re-run it yourself if anything looks off.",
+        "The counts reconcile exactly across sites.md, change-notes.md, and verification.md: found, changed, excluded, and remaining add up with no unexplained gap.",
+        "The invariants held: open a few changed files and confirm nothing changed beyond the declared mechanical change - do not grade from change-notes.md alone.",
+        "Tricky shapes were genuinely handled: re-exports, aliased imports, and covered string mentions were changed, not skipped as too hard.",
+        "Every exclusion has a defensible reason, and the excluded files are untouched.",
+        "The suite is green after the sweep - judged from the recorded run receipts, not the author's summary."
+      ]
+    }
+  }
+}

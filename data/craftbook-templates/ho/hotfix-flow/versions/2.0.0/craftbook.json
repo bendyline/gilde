@@ -1,0 +1,442 @@
+{
+  "id": "hotfix-flow",
+  "name": "Hotfix Flow",
+  "description": "The minimal-diff bug fix for when something is broken NOW. Urgency is not an excuse for guesswork, so the ordering still holds — but every step is sized for an emergency. First REPRODUCE with the LEAST machinery that honestly demonstrates the failure: the command the incident names, a few-line probe, a focused test only when it costs minutes — never new test infrastructure at midnight. A hotfix aimed at an unreproduced defect is a coin flip. Then PATCH: the smallest change at the real defect site that stops the failure, with refactors, renames, and the proper deeper repair explicitly deferred into a written Follow-up rather than attempted under pressure — the debt is recorded, not denied. Then VALIDATE: re-run the exact reproduction, exercise the immediate neighborhood cheaply, state plainly what was and was not verified, and write the rollback path before anyone needs it. Finally an independent reviewer grades the whole chain — blast radius counted in the touched files, evidence concrete, rollback runnable, debt recorded — and a REVISE verdict routes the work back automatically with findings. Deliberately requires no test suite or npm commands: it works on projects where nothing is runnable but the failure itself, which is exactly where hotfixes happen. Works identically whether the run edits the project directly or drafts a change proposal for the user to apply.",
+  "plan": "Reproduce with the least machinery that demonstrates the failure -> smallest change that stops the bleeding at the real defect site (proper repair deferred to Follow-up) -> re-run the reproduction and record a rollback path -> enforced independent review of blast radius and honesty.",
+  "entryStepId": "reproduce",
+  "triggers": [
+    "hotfix this bug",
+    "urgent production fix",
+    "expedited patch",
+    "fix the live defect",
+    "out-of-band fix",
+    "emergency fix",
+    "stop the bleeding"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "scope": {
+        "type": "string",
+        "title": "Incident to hotfix",
+        "description": "The incident, bug report, or failing behavior to hotfix. Leave empty when the task description already carries it.",
+        "default": ""
+      },
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "reproduce",
+      "name": "Reproduce with the least machinery",
+      "description": "Establish the failure cheaply and concretely: a command, a probe, or a focused test — whatever demonstrates it fastest.",
+      "prompt": "The incident to hotfix: {{scope}}\n\nEstablish the failure with the LEAST machinery that honestly demonstrates it — this is an emergency, not the time to build test infrastructure. Read the incident report and the involved source with `read_file`. Choose the cheapest real reproduction: the command or entry point the report names, a few-line probe script, or a focused test only when the project already has an obvious test layout and it costs minutes. When a script-execution tool such as `run_nodejs_script` is wired this turn, actually run the reproduction and capture the output — the error text, the stack line, the wrong value. When no execution surface is available, say so plainly and pin the failure by reading the code to the exact line instead; never present a run you did not perform. Do not fix anything in this phase. If you cannot reproduce or locate the failure at all, record every attempt honestly rather than inventing a cause.\n\nWrite `{{workPath}}/repro.md` with exactly these sections: `## Symptom` (what is breaking, in the reporter's words), `## Repro command` (the exact command or probe that demonstrates it), `## Expected`, `## Actual` (the captured output or observed behavior — quote real text, and label anything you could not execute), `## Evidence` (the involved files with backtick paths, down to the line or symbol where the failure surfaces).\n\nObservable handoff: write the completed result to `{{workPath}}/repro.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "incident responder",
+      "capabilityFloor": "small",
+      "advanceWhen": {
+        "file": "{{workPath}}/repro.md",
+        "minBytes": 500,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "patch"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/repro.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/repro.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/repro.md",
+            "pattern": "^##\\s+Symptom",
+            "flags": "im",
+            "label": "Symptom section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/repro.md",
+            "pattern": "^##\\s+Repro command",
+            "flags": "im",
+            "label": "Repro command section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/repro.md",
+            "pattern": "^##\\s+Expected",
+            "flags": "im",
+            "label": "Expected section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/repro.md",
+            "pattern": "^##\\s+Actual",
+            "flags": "im",
+            "label": "Actual section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/repro.md",
+            "pattern": "^##\\s+Evidence",
+            "flags": "im",
+            "label": "Evidence section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/repro.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "reproduce",
+        "maxAttempts": 4
+      },
+      "next": "patch"
+    },
+    {
+      "id": "patch",
+      "name": "Smallest change that stops the bleeding",
+      "description": "Fix the cause at the real defect site with the minimum blast radius; defer the proper repair into Follow-up.",
+      "prompt": "Read `{{workPath}}/repro.md`, find the defect site it points at, and stop the bleeding with the SMALLEST change that fixes the cause. There is no prescribed output path for source changes — edit the actual files with `read_file` plus `write_file`/`replace_in_file`. Hotfix discipline: touch only what stopping THIS failure requires — no refactors, no renames, no drive-by cleanup, no new abstractions. When the proper repair is bigger than the emergency allows, make the safe narrow change now and write the proper repair into Follow-up instead of attempting it. Never special-case the exact reproduction input just to silence it, and never hide the failure behind a blanket try/catch that swallows the error instead of preventing it. Re-check the reproduction as you work.\n\nWrite `{{workPath}}/fix-notes.md` with exactly these sections: `## Problem` (one paragraph), `## Change` (what you altered and why it stops the failure at its cause), `## Files touched` (backtick path per line), `## Risk` (what this patch could still break and anything you did not verify — be honest), `## How to verify` (the exact commands or checks a person runs to confirm), `## Follow-up` (the deferred proper fix and the debt this patch leaves, plus the backport note when other branches or releases need it). Before working, open `{{workPath}}/repro.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/fix-notes.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "software engineer",
+      "capabilityFloor": "small",
+      "consumes": [
+        {
+          "file": "{{workPath}}/repro.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/fix-notes.md",
+        "minBytes": 700,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "validate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/fix-notes.md",
+            "bytes": 700,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/fix-notes.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Problem",
+            "flags": "im",
+            "label": "Problem section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Change",
+            "flags": "im",
+            "label": "Change section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Files touched",
+            "flags": "im",
+            "label": "Files touched section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Risk",
+            "flags": "im",
+            "label": "Risk section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+How to verify",
+            "flags": "im",
+            "label": "How to verify section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Follow-up",
+            "flags": "im",
+            "label": "Follow-up section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/fix-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "patch",
+        "maxAttempts": 4
+      },
+      "next": "validate"
+    },
+    {
+      "id": "validate",
+      "name": "Re-run the reproduction and record rollback",
+      "description": "Prove the failure is gone, be explicit about what was and was not verified, and write the escape route.",
+      "prompt": "Prove the patch did its one job, and write down the escape route. Read `{{workPath}}/repro.md` and re-run the EXACT reproduction it records — the failure must be gone. Exercise the immediate neighborhood the cheapest honest way you can (the same entry point on a healthy input, an existing script, a small probe) so the patch did not trade one failure for another. Anything you could not actually run is recorded as unverified, never claimed — and when no execution surface is available this turn, verify by re-reading the changed code against the reproduction and say plainly that the run itself is still owed. Then record the rollback: exactly how to undo this patch fast if it goes wrong after shipping.\n\nWrite `{{workPath}}/validation.md` with exactly these sections: `## Repro re-run` (the command and what happened, or the honest record of why it could not run), `## Result` (what is fixed, what was verified, what remains unverified), `## Rollback` (the concrete, runnable way to revert this patch — the exact files to restore or the commit to revert, plus any step that must accompany it). Before working, open `{{workPath}}/repro.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/validation.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "software engineer",
+      "capabilityFloor": "small",
+      "consumes": [
+        {
+          "file": "{{workPath}}/repro.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/validation.md",
+        "minBytes": 400,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/validation.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/validation.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Repro re-run",
+            "flags": "im",
+            "label": "Repro re-run section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Result",
+            "flags": "im",
+            "label": "Result section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Rollback",
+            "flags": "im",
+            "label": "Rollback section",
+            "artifact": true
+          }
+        ],
+        "onReject": "validate",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate the deliverable",
+      "description": "Independently grade the observable deliverable and route it to finish, repair, or user escalation.",
+      "prompt": "Review `{{workPath}}/validation.md`, `{{workPath}}/repro.md`, `{{workPath}}/fix-notes.md` against every criterion below. Inspect the underlying evidence files named by the workflow; do not grade from the author's summary alone.\n\n1. repro.md is concrete and honest: it quotes real captured output from a run that actually happened, or explicitly records that execution was unavailable and pins the failure to a line in the source — never an invented run.\n2. The change is genuinely minimal: open every file fix-notes.md names and count the blast radius — nothing rode along beyond what stopping this one failure requires (no refactor, rename, or cleanup).\n3. The patch fixes the cause at the real defect site rather than special-casing the reproduction input or swallowing the error with a blanket catch.\n4. validation.md re-ran the original reproduction and the failure is gone — or states plainly what could not be run and why; nothing is claimed verified that was not.\n5. The Rollback section is a real, runnable path: the exact files or commit to revert plus any accompanying step, not a vague instruction to undo the change.\n6. The Follow-up section records the deferred proper fix and the debt this patch leaves, with a backport note when other branches or releases need it.\n7. Every file path cited across repro.md, fix-notes.md, and validation.md exists in this project.\n\nOpen `{{workPath}}/validation.md`, `{{workPath}}/repro.md`, `{{workPath}}/fix-notes.md` with `read_artifact`. Write the evidence-backed review to `{{workPath}}/review.md` in the artifacts drawer with `write_artifact`.\n\nList the findings as a markdown table with columns `| Severity | File | Line | Problem | Fix |` (severities: critical/major/minor/nit; empty table only on PASS). Give each criterion a PASS or FAIL with a concrete path, excerpt, measurement, or observed behavior. End with exactly `Verdict: PASS` or `Verdict: REVISE`. The gate ENFORCES the verdict: a well-formed REVISE is rejected and routed back to `repair` automatically, carrying your findings — so list every finding in the table with a concrete fix. On PASS, `advance_task_step` to `finish`. Never write PASS while a criterion is unmet.",
+      "suggestedRole": "incident reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/validation.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/repro.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/fix-notes.md",
+          "artifact": true
+        }
+      ],
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/review.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit PASS or REVISE verdict",
+            "artifact": true
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkFixReview",
+            "scope": "standard",
+            "inputs": {
+              "reviewPath": "{{workPath}}/review.md",
+              "fixStepId": "repair"
+            }
+          }
+        ],
+        "onReject": "evaluate",
+        "maxAttempts": 4
+      },
+      "next": "finish"
+    },
+    {
+      "id": "repair",
+      "name": "Repair the deliverable",
+      "description": "Fix only the concrete gaps from the latest independent review.",
+      "prompt": "Read `{{workPath}}/review.md` with `read_artifact` and repair every failed criterion in `{{workPath}}/validation.md`, `{{workPath}}/repro.md`, `{{workPath}}/fix-notes.md`. Make changes on each file's declared surface (`write_artifact` for artifact inputs, `write_file` for workspace inputs), not in task notes or a reply. Preserve evidence that already passed. Re-run or re-check anything the reviewer found unproven. Ensure `{{workPath}}/validation.md` is genuinely updated this turn so the repair is observable, then hand it back for independent evaluation.",
+      "suggestedRole": "software engineer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/validation.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/repro.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/fix-notes.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/validation.md",
+        "minBytes": 400,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/validation.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/validation.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Repro re-run",
+            "flags": "im",
+            "label": "Repro re-run section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Result",
+            "flags": "im",
+            "label": "Result section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Rollback",
+            "flags": "im",
+            "label": "Rollback section",
+            "artifact": true
+          }
+        ],
+        "onReject": "repair",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All deterministic and reviewer criteria passed.",
+      "prompt": "The independent review passed. Read `{{workPath}}/review.md` with `read_artifact`, then use `write_task_note` to record a concise DONE summary with the final deliverable paths (`{{workPath}}/validation.md`, `{{workPath}}/repro.md`, `{{workPath}}/fix-notes.md`) and the evidence that each acceptance criterion passed. Report DONE without starting new work.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true
+    },
+    {
+      "id": "needs-user",
+      "name": "Escalate unresolved concerns",
+      "description": "The bounded repair loop ended without a defensible pass.",
+      "prompt": "The deliverable did not pass after 3 review rounds. Do not claim success. Read `{{workPath}}/review.md` with `read_artifact`, then use `write_task_note` to record DONE_WITH_CONCERNS: the unmet criteria, what was attempted, the affected paths, and the smallest user decision or missing input needed to continue.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true
+    }
+  ],
+  "diffpackCapable": true,
+  "capabilityFloor": "small",
+  "version": "2.0.0",
+  "releasedAt": "2026-08-24T00:00:00.000Z",
+  "minGezelVersion": "1.26236"
+}

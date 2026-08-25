@@ -1,0 +1,145 @@
+{
+  "schemaVersion": 1,
+  "id": "nightly-fix-sweep",
+  "name": "Nightly Fix Sweep",
+  "description": "Turn a batch of open code findings into reviewable change proposals. The host triages the leads against the current code — a lead that no longer matches the file, or that needs a judgement only the owner can make, is legitimately left out — then clusters what belongs together as ONE change (a fix that spans a file and its caller is one cluster, not two) and fans out one drafting shard per cluster. Each shard makes the smallest correct change for its leads and explains it under Problem, Change, Risk, and How to verify. Built for unattended night runs: proposals are what the user reviews and applies in the morning, and the project's files are never touched by the sweep itself.",
+  "version": "1.0.0",
+  "releasedAt": "2026-08-24T00:00:00.000Z",
+  "minGezelVersion": "1.26236",
+  "entryStepId": "triage",
+  "triggers": [
+    "sweep the open findings",
+    "nightly fixes",
+    "draft fixes for the open issues",
+    "fix the boekwachter findings"
+  ],
+  "runModes": {
+    "nightShift": "recommended"
+  },
+  "diffpackCapable": true,
+  "capabilityFloor": "small",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      },
+      "leads": {
+        "type": "string",
+        "title": "Leads",
+        "description": "Comma-separated finding refs to sweep (e.g. BW-3,BW-8). Leave empty when the task description carries the leads.",
+        "default": ""
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "triage",
+      "name": "Triage the leads into clusters",
+      "suggestedRole": "developer",
+      "capabilityFloor": "medium",
+      "prompt": "You have been handed open findings to sweep: {{leads}}. The task description may carry more detail per lead.\n\nRead the affected files and judge each lead against the CURRENT code: real, already fixed, stale, or a judgement only the owner can make. Leaving a lead out is legitimate — say why rather than forcing a change to satisfy a stale review.\n\nCluster what belongs together as ONE change: a fix that spans a file and its caller is one cluster, not two — splitting it would hand the user two half-changes neither of which stands alone. At most 8 clusters; prefer fewer, focused ones.\n\nWrite ONE `write_task_note` starting with the line `## Triage`: per lead, whether you will fix it and which cluster it belongs to, with reasons for anything left out.\n\nThen write the cluster list to the artifact `{{workPath}}/clusters.json` with ONE `write_artifact` call: a JSON array where each entry is an object with exactly these string fields — `slug` (short kebab-case name for the cluster, e.g. \"auth-null-guard\"), `issueRefs` (the refs in that cluster, comma-separated), and `focus` (one sentence on what that cluster should change). If nothing is worth fixing, write an empty array `[]` and say why in your note.",
+      "advanceWhen": {
+        "file": "{{workPath}}/clusters.json",
+        "artifact": true,
+        "minBytes": 2,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/clusters.json",
+            "sniff": "json-valid",
+            "artifact": true
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkTaskNoteContains",
+            "scope": "standard",
+            "inputs": {
+              "taskRef": "{{task.ref}}",
+              "pattern": "##\\s*Triage"
+            }
+          }
+        ],
+        "onReject": "triage",
+        "maxAttempts": 3
+      },
+      "next": "fanout"
+    },
+    {
+      "id": "fanout",
+      "name": "Draft the proposals",
+      "spawnFanout": true,
+      "prompt": "Your clusters are being drafted, one proposal per cluster. Wait for the shards to finish, then call `advance_task_step`.",
+      "next": "collect"
+    },
+    {
+      "id": "collect",
+      "name": "Hand over",
+      "terminal": true,
+      "prompt": "The sweep is done. Write one short `write_task_note` naming the proposals your crew drafted (by cluster) and any leads deliberately left alone with their reasons, then call `advance_task_step`. Never claim anything was fixed or applied — these are proposals for the user to review."
+    }
+  ],
+  "spawn": {
+    "overFile": "{{workPath}}/clusters.json",
+    "overArtifact": true,
+    "entryStepId": "draft",
+    "steps": [
+      {
+        "id": "draft",
+        "name": "Draft the change",
+        "suggestedRole": "developer",
+        "capabilityFloor": "small",
+        "prompt": "Your cluster is {{issueRefs}} ({{slug}}). What it should change: {{focus}}\n\nRead the affected files first, then make the smallest correct change for those leads and nothing else. Use `read_file`, `write_file`, and `replace_in_file` exactly as you always do. Keep it focused — a change a reviewer can read in a minute gets applied; a sprawling one gets dismissed. If a lead turns out to be wrong once you are in the code, leave it alone and say so.\n\nThen write your explanation to the artifact `{{diffpack.dir}}/notes.md` in ONE `write_artifact` call, with exactly these four headings:\n\n## Problem\n## Change\n## Risk\n## How to verify\n\nUnder Change, describe what you altered and why, naming the refs. Under Risk, be honest about what you could not verify without running the code. Then call `advance_task_step`.",
+        "advanceWhen": {
+          "file": "{{diffpack.dir}}/notes.md",
+          "artifact": true,
+          "minBytes": 200
+        },
+        "gate": {
+          "at": "completion",
+          "checks": [
+            {
+              "kind": "contains",
+              "file": "{{diffpack.dir}}/notes.md",
+              "pattern": "##\\s+Problem",
+              "label": "Problem section",
+              "artifact": true
+            },
+            {
+              "kind": "contains",
+              "file": "{{diffpack.dir}}/notes.md",
+              "pattern": "##\\s+Change",
+              "label": "Change section",
+              "artifact": true
+            },
+            {
+              "kind": "contains",
+              "file": "{{diffpack.dir}}/notes.md",
+              "pattern": "##\\s+Risk",
+              "label": "Risk section",
+              "artifact": true
+            },
+            {
+              "kind": "contains",
+              "file": "{{diffpack.dir}}/notes.md",
+              "pattern": "##\\s+How to verify",
+              "label": "How to verify section",
+              "artifact": true
+            }
+          ],
+          "onReject": "draft",
+          "maxAttempts": 3
+        },
+        "terminal": true
+      }
+    ]
+  }
+}
