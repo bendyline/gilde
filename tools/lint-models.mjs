@@ -58,10 +58,68 @@ function isPermissiveOpenMdw(license) {
   return /^openmdw[- ]1\.(?:0|1)$/i.test(license?.trim() ?? '');
 }
 
+/**
+ * The quantization width a label names, as it would be written in a
+ * title: "Q4", "Q8", "IQ2", "MXFP4", "BF16". Null when the label names
+ * no width - `muse-glimmer-30b-q4` shipped `K-Quant-17GB`, and a tag
+ * that says nothing cannot be required to appear in a name.
+ *
+ * IQ is tested before Q so `IQ2_XXS` does not read as `Q2`.
+ */
+function quantWidthLabel(quantization) {
+  const q = quantization?.toLowerCase();
+  if (!q) return null;
+  const mxfp = q.match(/(?:^|[^a-z0-9])mxfp(\d)/);
+  if (mxfp) return `MXFP${mxfp[1]}`;
+  const iq = q.match(/(?:^|[^a-z0-9])iq(\d)/);
+  if (iq) return `IQ${iq[1]}`;
+  const qn = q.match(/(?:^|[^a-z0-9])q(\d)/);
+  if (qn) return `Q${qn[1]}`;
+  const bit = q.match(/(?:^|[^a-z0-9])(\d)bit/);
+  if (bit) return `Q${bit[1]}`;
+  if (/bf16/.test(q)) return 'BF16';
+  if (/fp?16/.test(q)) return 'F16';
+  return null;
+}
+
+/**
+ * Does this name state the width, in any of the spellings a title
+ * legitimately uses? "(9B, Q4)", "(IQ2_XXS)", "(mixed 2/4-bit)",
+ * "Ternary Bonsai 27B (2-bit)", "(MXFP4)" all count.
+ */
+function nameStatesQuantWidth(name, width) {
+  const n = name.toLowerCase();
+  const digits = width.match(/\d+$/)?.[0];
+  // "4-bit" / "4bit" states the same width "Q4" does, and a mixed-precision
+  // title names both of its widths in one phrase ("mixed 2/4-bit").
+  const bits = String.raw`(?:^|[^a-z0-9])(?:\d\s?/\s?)?${digits}(?:\s?/\s?\d)?\s?-?bit`;
+  // IQ2 is a 2-bit quantization, so "mixed 2/4-bit" states it as honestly
+  // as "IQ2_XXS" does.
+  if (width.startsWith('IQ')) return new RegExp(String.raw`iq\s?${digits}|${bits}`).test(n);
+  if (width.startsWith('MXFP')) return new RegExp(String.raw`mxfp\s?${digits}`).test(n);
+  if (width === 'BF16' || width === 'F16') return /\bb?fp?16\b/.test(n);
+  // Q4 also covers the "FP4" spelling of the same width.
+  return new RegExp(String.raw`(?:^|[^a-z0-9])(?:i?q|fp)\s?[-_]?${digits}|${bits}`).test(n);
+}
+
 export function lintChatModelManifest(manifest) {
   const modelId = manifest.id ?? '(unknown id)';
   const errors = [];
   const warnings = [];
+
+  // A user picking between two installs of the same weights sees only the
+  // title and the size; without the width, `Gemma 4 (E4B)` at Q8 and
+  // `Gemma 4 (E4B, Q4)` read as the same model at two sizes for no reason.
+  const quantLabel =
+    manifest.llamaCpp?.quantization ?? manifest.mlx?.quantization ?? manifest.ds4?.quantization;
+  const quantWidth = quantWidthLabel(quantLabel);
+  if (manifest.name && quantWidth && !nameStatesQuantWidth(manifest.name, quantWidth)) {
+    errors.push({
+      modelId,
+      rule: 'name-omits-quantization',
+      detail: `name "${manifest.name}" does not state its ${quantWidth} quantization`,
+    });
+  }
 
   if (isPermissiveOpenMdw(manifest.license) && manifest.licenseClass !== 'open') {
     errors.push({
