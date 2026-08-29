@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "releasedAt": "2026-08-29T00:00:00Z",
+  "driver": "script",
+  "source": {
+    "inlineFetch": "import { defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'http-json-rows-fetch',\n  description: 'Fetches a bounded page of rows from a JSON or NDJSON HTTP endpoint.',\n  inputs: {\n    cursor: { type: 'json', description: 'Opaque continuation value from the previous pass.' },\n    config: { type: 'json', description: 'Endpoint URL, item path, and paging fields.', required: true },\n  },\n  outputs: {\n    records: { type: 'array', description: 'Rows for the observation table.', itemType: 'object' },\n    cursor: { type: 'string', description: 'Continuation value for the next pass.', nullable: true },\n    rateLimited: { type: 'boolean', description: 'True when the source throttled the pass.', nullable: true },\n    partial: { type: 'boolean', description: 'True when more pages remained after the page budget.', nullable: true },\n  },\n  requires: ['network', 'credential:$credential'],\n} as const);\n\ntype Config = {\n  url?: unknown;\n  itemsPath?: unknown;\n  format?: unknown;\n  timeField?: unknown;\n  sinceParam?: unknown;\n  pageParam?: unknown;\n  nextPagePath?: unknown;\n  maxPages?: unknown;\n};\n\nconst input = gezel.input as { cursor?: unknown; config?: Config };\nconst config = input.config ?? {};\n\nconst rawUrl = typeof config.url === 'string' ? config.url.trim() : '';\nif (!rawUrl) throw new Error('An endpoint URL is required.');\nlet origin: string;\ntry {\n  const parsed = new URL(rawUrl);\n  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error('bad protocol');\n  origin = parsed.origin;\n} catch {\n  throw new Error('The endpoint URL must be an absolute HTTP or HTTPS URL.');\n}\n\nconst itemsPath = typeof config.itemsPath === 'string' ? config.itemsPath.trim() : '';\nconst format = config.format === 'ndjson' ? 'ndjson' : 'json';\nconst timeField = typeof config.timeField === 'string' ? config.timeField.trim() : '';\nconst sinceParam = typeof config.sinceParam === 'string' ? config.sinceParam.trim() : '';\nconst nextPagePath = typeof config.nextPagePath === 'string' ? config.nextPagePath.trim() : '';\nconst maxPages = Number.isFinite(Number(config.maxPages))\n  ? Math.max(1, Math.min(Number(config.maxPages), 20))\n  : 5;\n\n/** Walk a dotted `a.b.c` path (with or without a leading `$.`). */\nfunction pick(value: unknown, path: string): unknown {\n  if (!path) return value;\n  let current = value;\n  for (const key of path.replace(/^\\$\\.?/, '').split('.')) {\n    if (!key) continue;\n    if (current === null || typeof current !== 'object') return undefined;\n    current = (current as Record<string, unknown>)[key];\n  }\n  return current;\n}\n\nfunction rowsFrom(body: string): Record<string, unknown>[] {\n  if (format === 'ndjson') {\n    const out: Record<string, unknown>[] = [];\n    for (const line of body.split('\\n')) {\n      const trimmed = line.trim();\n      if (!trimmed) continue;\n      const parsed = JSON.parse(trimmed) as unknown;\n      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {\n        out.push(parsed as Record<string, unknown>);\n      }\n    }\n    return out;\n  }\n  const parsed = JSON.parse(body) as unknown;\n  const items = itemsPath ? pick(parsed, itemsPath) : parsed;\n  if (!Array.isArray(items)) {\n    throw new Error(\n      itemsPath\n        ? 'The item path did not resolve to a list. Check `itemsPath` against the response shape.'\n        : 'The endpoint did not return a list. Set `itemsPath` to where the rows live in the response.',\n    );\n  }\n  return items.filter(\n    (item): item is Record<string, unknown> =>\n      Boolean(item) && typeof item === 'object' && !Array.isArray(item),\n  );\n}\n\nfunction isThrottle(status: number, headers: Record<string, string | undefined>): boolean {\n  if (status === 429) return true;\n  return status === 503 && Boolean(headers['retry-after']);\n}\n\nconst priorCursor = typeof input.cursor === 'string' ? input.cursor : '';\nlet nextUrl = rawUrl;\nif (sinceParam && priorCursor) {\n  const target = new URL(rawUrl);\n  target.searchParams.set(sinceParam, priorCursor);\n  nextUrl = target.toString();\n}\n\nconst records: Record<string, unknown>[] = [];\nlet newestSeen = priorCursor;\nlet rateLimited = false;\nlet more = false;\n\nfor (let page = 0; page < maxPages && nextUrl; page++) {\n  const target = new URL(nextUrl);\n  // Never forward the credential across an origin change — a redirect or a\n  // hostile `nextPagePath` would otherwise leak it to a third party.\n  if (target.origin !== origin) {\n    throw new Error('Pagination changed origin; refusing to forward the credential.');\n  }\n  const headers = { Accept: format === 'ndjson' ? 'application/x-ndjson' : 'application/json' };\n  let response;\n  try {\n    response = await gezel.http.authed(target.toString(), { credential: '$credential', headers });\n  } catch (error) {\n    if ((error as { code?: string }).code !== 'CREDENTIAL_MISSING') throw error;\n    response = await gezel.http.request(target.toString(), { headers });\n  }\n  if (isThrottle(response.status, response.headers)) {\n    // Emit what this pass collected and flag the throttle rather than\n    // throwing: a throw voids the batch and re-fetches the same window next\n    // tick, which is how a rate-limited API gets hammered.\n    rateLimited = true;\n    break;\n  }\n  if (!response.ok) {\n    throw new Error('Row fetch failed (' + response.status + '): ' + response.body.slice(0, 240));\n  }\n\n  const pageRows = rowsFrom(response.body);\n  for (const row of pageRows) {\n    records.push(row);\n    if (timeField) {\n      const value = pick(row, timeField);\n      if (typeof value === 'string' && (!newestSeen || value > newestSeen)) newestSeen = value;\n    }\n  }\n\n  let candidate = '';\n  if (nextPagePath && format === 'json') {\n    const link = pick(JSON.parse(response.body) as unknown, nextPagePath);\n    if (typeof link === 'string' && link) candidate = link;\n  }\n  if (candidate && new URL(candidate, origin).origin === origin) {\n    nextUrl = new URL(candidate, origin).toString();\n    more = page + 1 >= maxPages;\n  } else {\n    nextUrl = '';\n  }\n}\n\ngezel.output({\n  records,\n  cursor: newestSeen || null,\n  ...(rateLimited ? { rateLimited: true } : {}),\n  ...(more && !rateLimited ? { partial: true } : {}),\n});\n",
+    "table": "rows"
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "url": {
+        "type": "string",
+        "title": "Endpoint URL"
+      },
+      "itemsPath": {
+        "type": "string",
+        "title": "Path to the rows in the response (e.g. data.results)"
+      },
+      "format": {
+        "type": "string",
+        "title": "Response format",
+        "enum": [
+          "json",
+          "ndjson"
+        ]
+      },
+      "timeField": {
+        "type": "string",
+        "title": "Field holding each row's timestamp"
+      },
+      "sinceParam": {
+        "type": "string",
+        "title": "Query parameter for incremental fetches"
+      },
+      "nextPagePath": {
+        "type": "string",
+        "title": "Path to the next-page URL in the response"
+      },
+      "maxPages": {
+        "type": "integer",
+        "title": "Pages per sync",
+        "minimum": 1,
+        "maximum": 20
+      }
+    },
+    "required": [
+      "url"
+    ]
+  },
+  "secretShape": {
+    "kind": "apikey",
+    "field": "token",
+    "label": "API token",
+    "required": false,
+    "description": "Sent as a bearer token. Leave blank for an endpoint that needs no authentication."
+  },
+  "setupInstructions": {
+    "title": "Point Gezel at a JSON endpoint",
+    "description": "Any endpoint that returns a list of rows works — an export URL, a query API, an NDJSON log feed. Gezel stores the rows as a data table and your gezels query it with SQL instead of reading files.",
+    "steps": [
+      "Paste the endpoint URL. If it needs a token, add one below; it is stored in your keychain and never reaches the model.",
+      "If the rows are nested in the response (for example under `data.results`), set the item path to where they live.",
+      "Set the timestamp field if the rows carry one. Gezel partitions by day on that field, which is what keeps queries fast as the table grows.",
+      "For an endpoint that supports incremental reads, name its since-parameter so each sync only fetches what is new."
+    ]
+  },
+  "normalize": {
+    "kind": "observations"
+  },
+  "completeness": "window",
+  "notes": "An observation corpus: rows land as partitioned columnar files rather than one file per record, and gezels read them through list_tables/describe_table/query_table. The column schema is inferred from the first rows that arrive, so `describe_table` marks it inferred — cast explicitly if a comparison behaves oddly. Pagination is bounded per sync and never follows a link to a different origin, so the credential cannot leak to a third party. A throttled source is reported rather than thrown, so the engine backs off instead of re-fetching the same window."
+}

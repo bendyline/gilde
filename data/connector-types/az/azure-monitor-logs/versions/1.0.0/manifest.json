@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "releasedAt": "2026-08-29T00:00:00Z",
+  "driver": "native",
+  "source": {
+    "adapterId": "azure-monitor-logs"
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "workspaceId": {
+        "type": "string",
+        "title": "Log Analytics workspace ID"
+      },
+      "kqlTable": {
+        "type": "string",
+        "title": "Table to mirror (e.g. AppRequests)"
+      },
+      "filter": {
+        "type": "string",
+        "title": "Extra KQL filter (optional)"
+      },
+      "table": {
+        "type": "string",
+        "title": "Name for the table in Gezel (optional)"
+      },
+      "timeColumn": {
+        "type": "string",
+        "title": "Timestamp column"
+      },
+      "backfillDays": {
+        "type": "integer",
+        "title": "Days of history on the first sync",
+        "minimum": 1,
+        "maximum": 365
+      },
+      "pageRows": {
+        "type": "integer",
+        "title": "Rows per sync",
+        "minimum": 100,
+        "maximum": 50000
+      },
+      "apiBaseUrl": {
+        "type": "string",
+        "title": "API base URL (sovereign clouds only)"
+      }
+    },
+    "required": [
+      "workspaceId",
+      "kqlTable"
+    ]
+  },
+  "secretShape": {
+    "kind": "apikey",
+    "field": "token",
+    "label": "Azure access token",
+    "required": true,
+    "description": "An Azure AD access token for https://api.loganalytics.io with Log Analytics Reader on the workspace. Stored in your keychain; it never reaches the model.",
+    "helpUrl": "https://learn.microsoft.com/azure/azure-monitor/logs/api/overview",
+    "helpLabel": "Azure Monitor Logs API docs"
+  },
+  "setupInstructions": {
+    "title": "Connect a Log Analytics workspace",
+    "description": "Gezel reads one table from your workspace on a schedule and stores it locally as a data table. Nothing is written back to Azure, and the query only ever reads.",
+    "steps": [
+      "In the Azure portal, open your Log Analytics workspace and copy its Workspace ID from the Overview page.",
+      "Name the table you want mirrored — AppRequests, AzureDiagnostics, and AppExceptions are common starting points.",
+      "Give Gezel an access token for the Log Analytics API with the Log Analytics Reader role. Read access is all it needs.",
+      "Optionally add a KQL filter to narrow what is mirrored, and set how many days of history the first sync should reach back."
+    ]
+  },
+  "normalize": {
+    "kind": "observations"
+  },
+  "allowedOrigins": [
+    "https://api.loganalytics.io"
+  ],
+  "completeness": "window",
+  "notes": "An observation corpus: rows land as partitioned columnar files and gezels read them through list_tables/describe_table/query_table rather than as files. Log Analytics has no continuation token, so syncing pages over time — each pass reads rows strictly newer than the last one written, oldest-first, up to the row budget. The watermark advances only after a clean write, so a failed pass re-reads its window instead of skipping it. Because the comparison is strict, a row sharing a timestamp to the tick with the previous page's last row can be missed; the alternative re-delivers that row on every pass forever. Azure reports each column's type, so the table's schema comes from the source rather than being inferred from a sample."
+}
