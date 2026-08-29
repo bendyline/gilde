@@ -139,6 +139,21 @@ async function fetchAndHash(repo, path, rev = 'main') {
   return { sha256: createHash('sha256').update(buf).digest('hex'), sizeBytes: buf.length };
 }
 
+/**
+ * Fetch a repo file as text. Used for `chatTemplateFrom`, where the point is
+ * to capture the CONTENT of an upstream template rather than a pin to it —
+ * the whole reason the field exists is that the quant repos we install from
+ * shipped a stale copy of exactly this file.
+ */
+async function fetchText(repo, path, rev = 'main') {
+  const url = `${HF_HUB_BASE}/${repo}/resolve/${rev}/${path}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`HF resolve ${url} failed: ${res.status} ${res.statusText}`);
+  }
+  return await res.text();
+}
+
 async function buildLlamaCppBlock(cfg, pinCurrent = false, engine = 'llamaCpp') {
   const {
     huggingfaceRepo,
@@ -285,6 +300,8 @@ async function buildMlxBlock(cfg, pinCurrent = false) {
     subdir,
     quantization,
     chatTemplate,
+    chatTemplateOverride,
+    chatTemplateFrom,
     residentBytes,
     disabledReason,
   } = cfg;
@@ -307,6 +324,26 @@ async function buildMlxBlock(cfg, pinCurrent = false) {
     }
   }
   const approxSizeBytes = installFiles.reduce((s, f) => s + f.sizeBytes, 0);
+
+  // `chatTemplateFrom` names the repo that owns the CORRECT template; we
+  // inline its bytes so the published manifest is self-contained and the
+  // daemon never has to reach a gated repo at install time. Refreshing is
+  // then a plain rebuild, which is the point — a template pasted by hand
+  // into a recipe is one nobody re-checks when upstream fixes it again.
+  let resolvedOverride = chatTemplateOverride;
+  if (chatTemplateFrom) {
+    if (resolvedOverride) {
+      throw new Error('mlx: set only one of chatTemplateOverride / chatTemplateFrom');
+    }
+    const { repo, path = 'chat_template.jinja', revision: tplRev } =
+      typeof chatTemplateFrom === 'string' ? { repo: chatTemplateFrom } : chatTemplateFrom;
+    console.log(`[hf] fetching chat template from ${repo}/${path}…`);
+    resolvedOverride = await fetchText(repo, path, tplRev ?? 'main');
+    if (resolvedOverride.trim().length === 0) {
+      throw new Error(`chatTemplateFrom ${repo}/${path} resolved to an empty template`);
+    }
+  }
+
   return {
     huggingfaceRepo,
     ...(subdir ? { subdir } : {}),
@@ -320,6 +357,7 @@ async function buildMlxBlock(cfg, pinCurrent = false) {
     })),
     ...(residentBytes ? { residentBytes } : {}),
     ...(chatTemplate ? { chatTemplate } : {}),
+    ...(resolvedOverride ? { chatTemplateOverride: resolvedOverride } : {}),
     ...(disabledReason ? { disabledReason } : {}),
   };
 }
