@@ -150,3 +150,38 @@ junk (objective minimums), only *fail-and-loop* or *escalate*; it can't loop
 forever (`maxAttempts` → halt); and it's strictly opt-in per step (absent
 `gate`, behavior is unchanged), so existing craftbooks (ship, qa, …) are
 untouched.
+
+## Step sizing — peak evidence and restart cost
+
+A step's **peak evidence** is however much it must hold at once. Two phrasings
+of the same review produce very different peaks:
+
+| phrasing | peak | lost if the turn stops |
+|---|---|---|
+| "read all 25 records, then write observations" | 25 records | everything |
+| "for each group of ~5: read, judge, append to the deliverable" | 5 records | one group |
+
+The output is identical. The failure modes are not.
+
+Wild-caught on `pull-request-review` batch 9 (gezel/44): a service restart
+could not restore 25 large records into the rebuilt context, the model re-read
+the ones its recovery markers named as missing, and the next restart dropped a
+similar set again. The loop is structural — re-reading only recovers when the
+evidence fits, and this batch did not fit any replay budget. Fixed in 1.9.0 by
+rephrasing the fanout step as a per-group loop that appends as it goes.
+
+When authoring a step, ask:
+
+- **What is its peak evidence?** If the answer is "everything it reads", write
+  it as a loop over groups with a persist call inside the loop.
+- **If the daemon dies halfway, how much work is lost?** "All of it" means the
+  step is holding state it should have written down.
+- **Does the gate still work?** It should: the deliverable is the same file,
+  just written incrementally. Coverage shards and completeness checks are
+  unaffected because they are evaluated at the end either way.
+
+This applies to any read-heavy step — corpus reviews, audits, multi-document
+synthesis — not only fanout. The runtime now also carries a general nudge in
+the system prompt when a persistence tool is on the roster, but a step that
+*names* the incremental shape is far more reliable than one that hopes the
+model infers it.
