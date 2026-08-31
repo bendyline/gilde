@@ -34,72 +34,69 @@
         "content": "import assert from 'node:assert/strict';\nimport { execFileSync } from 'node:child_process';\nimport { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';\nimport { join } from 'node:path';\n\nconst root = process.cwd();\nconst ORACLE = 'verify-backfill.mjs';\n\n// Bare `node --test` discovery: finds tests/**/*.test.* from cwd and skips\n// dot-directories, so the .oracle-* mutant copies never leak into a run.\n// (A literal `--test tests/` directory argument no longer resolves on\n// modern Node - it is treated as a module path.)\nfunction runSuite(cwd) {\n  try {\n    execFileSync(process.execPath, ['--test'], { cwd, stdio: 'pipe', timeout: 30000 });\n    return 0;\n  } catch (err) {\n    return typeof err.status === 'number' ? err.status : 1;\n  }\n}\n\n// 1) New tests exist in the real layout and target the date-range module.\nconst testFiles = readdirSync(join(root, 'tests'), { recursive: true })\n  .map(String)\n  .filter((f) => /\\.test\\.(mjs|js|cjs)$/.test(f) && !f.endsWith('format.test.mjs'));\nassert.ok(testFiles.length >= 1, 'no new test file found in tests/');\nconst newTestText = testFiles.map((f) => readFileSync(join(root, 'tests', f), 'utf8')).join('\\n');\nassert.ok(/date-range/.test(newTestText), 'the new tests never reference the date-range module');\nconsole.log('BACKFILL_ORACLE new tests found');\n\n// 2) The suite is green on the real tree.\nassert.equal(runSuite(root), 0, 'the suite must pass on the real tree');\nconsole.log('BACKFILL_ORACLE suite green');\n\n// 3) Seeded defects in copies must make the new suite fail - proof the tests bite.\nconst source = readFileSync(join(root, 'src', 'date-range.js'), 'utf8');\nfunction mutantCaught(name, mutate) {\n  const mroot = join(root, `.oracle-${name}`);\n  rmSync(mroot, { recursive: true, force: true });\n  mkdirSync(mroot, { recursive: true });\n  cpSync(join(root, 'src'), join(mroot, 'src'), { recursive: true });\n  cpSync(join(root, 'tests'), join(mroot, 'tests'), { recursive: true });\n  rmSync(join(mroot, 'tests', ORACLE), { force: true });\n  cpSync(join(root, 'package.json'), join(mroot, 'package.json'));\n  const mutated = mutate(source);\n  assert.notEqual(mutated, source, `mutation ${name} failed to apply - src/date-range.js was altered`);\n  writeFileSync(join(mroot, 'src', 'date-range.js'), mutated);\n  const caught = runSuite(mroot) !== 0;\n  console.log(`BACKFILL_ORACLE mutant ${name} ${caught ? 'caught' : 'MISSED'}`);\n  return caught;\n}\n\nconst caught = [\n  mutantCaught('boundary', (s) => s.replace('rb.start <= ra.end', 'rb.start < ra.end')),\n  mutantCaught('duration', (s) => s.replace('/ DAY_MS) + 1', '/ DAY_MS)')),\n  mutantCaught('containment', (s) => s.replace('ra.start <= rb.end && rb.start <= ra.end', 'ra.start <= rb.start && rb.end <= ra.end')),\n].filter(Boolean).length;\nassert.ok(caught >= 2, `the new tests caught only ${caught}/3 seeded defects - they do not pin real behavior`);\nconsole.log(`BACKFILL_ORACLE mutants ${caught}/3`);\nconsole.log('BACKFILL_ORACLE done');\n",
         "surface": "harness"
       }
-    ],
-    "craftbookParams": {
-      "workPath": "tasks/eval"
-    }
+    ]
   },
   "mocks": [],
   "success": {
     "summary": "New tests for the date-range module live in the real layout, the whole suite is green on the untouched tree, and the tests catch at least two of three seeded mutations — with every fleet artifact present and honestly cited.",
     "deliverables": [
       {
-        "path": "tasks/eval/risk-map.md",
+        "path": "{{task.dir}}/risk-map.md",
         "kind": "markdown-notes",
         "artifact": true,
         "minBytes": 500,
         "checks": [
           {
             "kind": "contains",
-            "file": "tasks/eval/risk-map.md",
+            "file": "{{task.dir}}/risk-map.md",
             "pattern": "^##\\s+Modules[\\s\\S]*^##\\s+Risks ranked[\\s\\S]*^##\\s+Chosen targets",
             "flags": "im",
             "label": "risk-map sections in order"
           },
           {
             "kind": "contains",
-            "file": "tasks/eval/risk-map.md",
+            "file": "{{task.dir}}/risk-map.md",
             "pattern": "src/date-range\\.js",
             "label": "names the real target module"
           },
           {
             "kind": "citationsResolve",
-            "file": "tasks/eval/risk-map.md",
+            "file": "{{task.dir}}/risk-map.md",
             "minCitations": 2,
             "artifact": true
           }
         ]
       },
       {
-        "path": "tasks/eval/test-notes.md",
+        "path": "{{task.dir}}/test-notes.md",
         "kind": "markdown-notes",
         "artifact": true,
         "minBytes": 600,
         "checks": [
           {
             "kind": "contains",
-            "file": "tasks/eval/test-notes.md",
+            "file": "{{task.dir}}/test-notes.md",
             "pattern": "^##\\s+Tests added[\\s\\S]*^##\\s+Behaviors pinned[\\s\\S]*^##\\s+How each test would catch a realistic break",
             "flags": "im",
             "label": "test-notes sections in order"
           },
           {
             "kind": "citationsResolve",
-            "file": "tasks/eval/test-notes.md",
+            "file": "{{task.dir}}/test-notes.md",
             "minCitations": 2,
             "artifact": true
           }
         ]
       },
       {
-        "path": "tasks/eval/verification.md",
+        "path": "{{task.dir}}/verification.md",
         "kind": "markdown-notes",
         "artifact": true,
         "minBytes": 400,
         "checks": [
           {
             "kind": "contains",
-            "file": "tasks/eval/verification.md",
+            "file": "{{task.dir}}/verification.md",
             "pattern": "^##\\s+Suite[\\s\\S]*^##\\s+Coverage summary[\\s\\S]*^##\\s+Result",
             "flags": "im",
             "label": "verification sections in order"
@@ -107,14 +104,14 @@
         ]
       },
       {
-        "path": "tasks/eval/review.md",
+        "path": "{{task.dir}}/review.md",
         "kind": "markdown-report",
         "artifact": true,
         "minBytes": 400,
         "checks": [
           {
             "kind": "contains",
-            "file": "tasks/eval/review.md",
+            "file": "{{task.dir}}/review.md",
             "pattern": "Verdict:\\s*(?:PASS|REVISE)",
             "flags": "i",
             "label": "explicit reviewer verdict"
@@ -172,7 +169,7 @@
   },
   "rubric": {
     "artifact": {
-      "path": "tasks/eval/test-notes.md",
+      "path": "{{task.dir}}/test-notes.md",
       "kind": "markdown"
     },
     "axes": [

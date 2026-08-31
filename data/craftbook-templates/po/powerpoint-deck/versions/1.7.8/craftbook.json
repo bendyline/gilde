@@ -1,0 +1,404 @@
+{
+  "id": "powerpoint-deck",
+  "name": "PowerPoint from Content",
+  "description": "Turn supplied content or a factual topic into a real, editable PowerPoint. Supplied sources remain authoritative, and internet research is strongly recommended for factual grounding; topic-only runs may proceed without it when access is unavailable or the deck is explicitly exploratory, provided unsupported facts are not invented. A researcher records the source boundary and fact ledger before a planner locks a numbered slide outline. A copywriter writes a task-specific Markdown deck with exactly one H1 per outline slide, while deterministic gates keep the slide count, titles, and order aligned. A reviewer checks factual traceability before a designer converts the Markdown to PPTX, previews every slide, and saves the requested PPTX in artifacts.\n\nEvery run's working files default to the task's own artifact folder (tasks/<num>/) and its deck to a task-specific workspace folder, so source packets, outlines, Markdown, and reviews cannot collide with an earlier PowerPoint task. Artifact working files must be read and written with the artifact tools; the Markdown deck source and user-facing PowerPoint remain in the workspace.",
+  "entryStepId": "research",
+  "triggers": [
+    "make a powerpoint",
+    "create a pptx",
+    "powerpoint from this content",
+    "turn this into a presentation",
+    "build a slide deck file",
+    "export these slides to powerpoint"
+  ],
+  "recommends": [
+    {
+      "kind": "external-services",
+      "reason": "the research step verifies sources with live web search"
+    }
+  ],
+  "toolsets": [
+    {
+      "toolsetId": "docblocks",
+      "sourceId": "bundled",
+      "autoAllow": true,
+      "reason": "convert the task-specific Markdown deck directly to PPTX, preview slides, and save the finished PowerPoint without a prompt per call"
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer for the source packet, outline, review, and retained PPTX. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      },
+      "outputDir": {
+        "type": "string",
+        "title": "Deck folder",
+        "description": "Project-workspace-relative folder for the Markdown deck source and the finished PowerPoint. Defaults to a task-specific path; override it with a stable name such as powerpoint/india when useful.",
+        "default": "powerpoint/task-{{task.num}}"
+      },
+      "outputPath": {
+        "type": "string",
+        "title": "Workspace output path",
+        "description": "Project-workspace-relative path for the finished PowerPoint.",
+        "default": "{{outputDir}}/deck.pptx"
+      },
+      "sourcePath": {
+        "type": "string",
+        "title": "Source file",
+        "description": "Optional exact workspace-relative path to authoritative source content. Leave blank when the deck starts from a topic that needs web research.",
+        "default": ""
+      },
+      "topic": {
+        "type": "string",
+        "title": "Topic",
+        "description": "The factual topic or question the deck should address.",
+        "default": ""
+      },
+      "content": {
+        "type": "string",
+        "title": "Inline source brief",
+        "description": "Optional inline source material or factual brief for the deck.",
+        "default": ""
+      },
+      "audience": {
+        "type": "string",
+        "title": "Audience",
+        "description": "The people who will view the deck and the decision they need to make.",
+        "default": "general audience"
+      }
+    },
+    "anyOf": [
+      {
+        "required": [
+          "sourcePath"
+        ],
+        "properties": {
+          "sourcePath": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      {
+        "required": [
+          "topic"
+        ],
+        "properties": {
+          "topic": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      {
+        "required": [
+          "content"
+        ],
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "research",
+      "name": "Acquire and verify sources",
+      "description": "Read the exact supplied source and strongly prefer authoritative research before outlining, while allowing an honest no-research path.",
+      "prompt": "Build the source packet before planning any slides. This run's artifact working folder is `{{workPath}}` and its workspace deck folder is `{{outputDir}}`. Files outside it—including an earlier `notes/outline.md`, root `deck.md`, or another PowerPoint task directory—are not inputs and must not be read or reused unless `{{sourcePath}}` names one exactly. Exact source path: `{{sourcePath}}`. Topic: `{{topic}}`. Inline source brief: `{{content}}`. Audience: `{{audience}}`. 0. If source path, topic, and inline content are all empty, call `ask_user_question` for the missing subject or exact source and stop. Do not call `read_task_notes`, inspect the workspace, or reuse an earlier deck while the source boundary is missing. 1. When `{{sourcePath}}` is non-empty, your FIRST source action is `read_file` on that exact path. Never replace a named source with a similarly named file, and never skip a supplied source. 2. Otherwise treat non-empty `{{content}}` as supplied source material and `{{topic}}` as the research question. FIRST call `search` for `{{topic}}` to check what the user already has — the shared document library, project and gezel memories, artifacts, and installed knowledge catalogs are all covered by that one call. Open a shared-library hit with `read_document`, a workspace hit with `read_file`, an artifact hit with `read_artifact`. Anything you find there is a citable source: record it in the table by its exact path, and prefer it over an external page when the two disagree, because it is the user’s own material. Then add external grounding: use `web_search` when registered, otherwise `wikipedia_search`. Wikipedia search results already carry each top article’s lead text, so read and cite them straight from the search result. Call `wikipedia_read` with a result’s exact title only when you need more of that one article. Use `fetch_url` or browser automation for non-Wikipedia pages only — passing a wikipedia.org URL to `fetch_url` returns the rendered page (scripts and navigation chrome) and is cut off before the article text begins. Prefer primary sources, official statistics, standards bodies, peer-reviewed work, or reputable institutional summaries. You may proceed without external research when external tools are unavailable or when the topic is explicitly exploratory, generative, or proposal-oriented. If you skip it, say so plainly, record why, frame unsourced content as original concepts or reasoning rather than established fact, and do not invent a source, URL, research result, or tool-verification workaround. Do not treat model memory, the task prompt, an earlier deck, or an invented URL as research. 3. Write `{{workPath}}/sources.md` with: the invocation inputs and their boundary; research status (`completed` or `skipped`, with reason); a source table with title, resolvable URL or exact file path, authority/date, and intended use (the table may be empty when research was honestly skipped); a fact ledger where every number, quotation, and externally checkable claim carries `(source: URL-or-path)`; a separate ledger of original proposals or reasoning that makes no factual-source claim; conflicts and uncertainties; and facts that must not be invented. Do not silently overwrite supplied facts with external claims—record conflicts explicitly. 4. When any source was used, include at least one resolvable citation. When none was used, do NOT fabricate one and do NOT stall: write the line `Research status: skipped — no citable sources available (reason: <reason>)` and continue. Missing network, denied permissions, an offline toolset, or a topic with nothing to find are all legitimate reasons; an unsupported claim is not. An honest attestation satisfies this step exactly as a citation does. Call `write_task_note` with the sources used—or that research was skipped—and any uncertainty. Do not draft the outline or deck yet.\n\nStore `{{workPath}}/sources.md` in the artifacts drawer with `write_artifact`, then verify it with `read_artifact`; do not write this working file to the workspace.",
+      "suggestedRole": "researcher",
+      "advanceWhen": {
+        "file": "{{workPath}}/sources.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/sources.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/sources.md",
+            "minCitations": 0,
+            "artifact": true
+          },
+          {
+            "kind": "researchEvidence",
+            "sourcePath": "{{sourcePath}}",
+            "tools": [
+              "web_search",
+              "wikipedia_search",
+              "wikipedia_read",
+              "fetch_url",
+              "browser_navigate",
+              "run_playwright_script"
+            ],
+            "minSuccessful": 1,
+            "externalOptional": true
+          }
+        ],
+        "onReject": "research",
+        "maxAttempts": 3
+      },
+      "next": "outline"
+    },
+    {
+      "id": "outline",
+      "name": "Lock the slide outline",
+      "description": "Lock the audience, purpose, sequence, evidence, and one message per slide.",
+      "prompt": "Read `{{workPath}}/sources.md` and plan the deck from its verified fact ledger and original-proposal ledger. If `{{sourcePath}}` is non-empty, also read that exact source. Do not borrow facts, titles, or slide content from an earlier outline or deck outside `{{workPath}}`; a requested similarity is a structural constraint, not permission to mix source packets. 1. State the audience, occasion, and ONE takeaway. 2. Use exactly the slide count the user asked for; only when they gave none, draft 8-15 slides. Format every slide heading exactly as `## Slide N — Title`, numbered consecutively from 1. Under each heading write `Message:`, `Evidence:`, and `Visual:`. Every sourced factual evidence line must point to a citation already recorded in `{{workPath}}/sources.md`. When research was skipped, original concepts and reasoned recommendations may be labeled `PROPOSAL` and need no citation; mark any unsupported externally checkable claim `UNVERIFIED` rather than filling gaps from memory. 3. Open with context, make the middle a coherent argument, and close with the ask or next step. Include a Sources slide in this locked outline when the audience needs visible references and sources actually exist. 4. Write acceptance criteria: every numbered outline slide must become exactly one H1 in {{outputDir}}/deck.md, with the same title and order; one idea per slide; no wall of text; factual claims remain traceable; proposals remain clearly framed as proposals; visual preview passes; an artifact copy is retained; and the exact workspace file `{{outputPath}}` is delivered. Write only `{{workPath}}/outline.md`, then call `write_task_note` with the exact slide count, takeaway, and requested output path. Do not write slide content or presentation code.\n\nOpen `{{workPath}}/sources.md` from the artifacts drawer with `read_artifact` before working. Store `{{workPath}}/outline.md` in the artifacts drawer with `write_artifact`, then verify it with `read_artifact`; do not write this working file to the workspace.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/outline.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/outline.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/outline.md",
+            "pattern": "(?:^|\\n)#{2,6}\\s+(?:Slide\\s+)?1(?:\\s*[.:\\-–—]\\s*|\\s+)\\S",
+            "flags": "i",
+            "label": "a numbered Slide 1 heading",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/outline.md",
+            "minCitations": 0,
+            "artifact": true
+          }
+        ],
+        "onReject": "outline",
+        "maxAttempts": 3
+      },
+      "next": "write",
+      "consumes": [
+        {
+          "file": "{{workPath}}/sources.md",
+          "artifact": true
+        }
+      ]
+    },
+    {
+      "id": "write",
+      "name": "Write the Markdown deck",
+      "description": "Write {{outputDir}}/deck.md with exactly one matching H1 per locked outline slide.",
+      "prompt": "Read `{{workPath}}/sources.md` and `{{workPath}}/outline.md`, then write `{{outputDir}}/deck.md` to the locked sequence. 1. For every `## Slide N — Title` in the outline, create exactly one `# Title` H1 in {{outputDir}}/deck.md, preserving the title and order verbatim. Do not add, merge, drop, or reorder slides. Do not add `---` separators unless a visible horizontal rule is intended. Slides are split on H1: a deck whose slides are `##` converts to ONE slide, so never use `##` for a slide and never add a `# ` document title. 2. Under each H1, land that slide's one message with 3-6 short bullet phrases, a compact Markdown table, or a short quotation; never use paragraph walls. 3. Keep every factual claim traceable to `{{workPath}}/sources.md`. Put concise `(source: URL-or-path)` citations next to load-bearing figures/claims. Use a Sources slide only when it is already in the locked outline; never add an unoutlined slide. Never invent a number, quotation, organization, or URL. 4. Bold the load-bearing figure or claim. 5. The final H1 must be the outline's ask or next-step slide. 6. On loop-back, repair only the mismatch or claim the gate/reviewer names. Call `write_task_note` with the path and H1 count. Do not create HTML, JavaScript, OOXML, or PPTX bytes.\n\nOpen `{{workPath}}/sources.md`, `{{workPath}}/outline.md` from the artifacts drawer with `read_artifact` before working.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "{{outputDir}}/deck.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{outputDir}}/deck.md",
+            "bytes": 700
+          },
+          {
+            "kind": "contains",
+            "file": "{{outputDir}}/deck.md",
+            "pattern": "(?:^|\\n)#\\s+\\S",
+            "label": "at least one H1 slide heading"
+          },
+          {
+            "kind": "markdownHeadingsMatch",
+            "file": "{{outputDir}}/deck.md",
+            "outlineFile": "{{workPath}}/outline.md",
+            "outlineArtifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{outputDir}}/deck.md",
+            "minCitations": 0
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "review",
+      "consumes": [
+        {
+          "file": "{{workPath}}/sources.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/outline.md",
+          "artifact": true
+        }
+      ]
+    },
+    {
+      "id": "review",
+      "name": "Review narrative and grounding",
+      "description": "Verify slide parity, factual traceability, and presentation readiness before conversion.",
+      "prompt": "Read `{{workPath}}/sources.md`, `{{workPath}}/outline.md`, and `{{outputDir}}/deck.md`. Write `{{workPath}}/review.md` with PASS/FAIL for every criterion: (1) each numbered outline slide appears exactly once as an H1 with the same title and order; (2) the deck opens with context and closes with the locked ask; (3) each slide has one message and concise content; (4) every number, quote, and externally checkable claim maps to a real `(source: URL-or-path)` entry in the source packet; (5) no `UNVERIFIED` claim is presented as fact; (6) tables and visuals are purposeful and likely to fit. Cite `{{workPath}}/sources.md`, `{{workPath}}/outline.md`, and `{{outputDir}}/deck.md` as `(source: path)` when recording evidence. Any failure must name the slide and exact repair. If every criterion passes, call `advance_task_step({ ref, stepId: \"review\", next: \"publish\" })`. If any criterion fails, call `advance_task_step({ ref, stepId: \"review\", next: \"write\" })`. Never publish a failed or ungrounded deck.\n\nOpen `{{workPath}}/sources.md`, `{{workPath}}/outline.md` from the artifacts drawer with `read_artifact` before working. Store `{{workPath}}/review.md` in the artifacts drawer with `write_artifact`, then verify it with `read_artifact`; do not write this working file to the workspace.",
+      "suggestedRole": "reviewer",
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/review.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/review.md",
+            "pattern": "PASS|FAIL",
+            "flags": "i",
+            "label": "explicit PASS/FAIL verdicts",
+            "artifact": true
+          },
+          {
+            "kind": "markdownHeadingsMatch",
+            "file": "{{outputDir}}/deck.md",
+            "outlineFile": "{{workPath}}/outline.md",
+            "outlineArtifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/review.md",
+            "minCitations": 1,
+            "artifact": true
+          }
+        ],
+        "onReject": "review",
+        "maxAttempts": 3
+      },
+      "next": "write",
+      "consumes": [
+        {
+          "file": "{{workPath}}/sources.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/outline.md",
+          "artifact": true
+        },
+        {
+          "file": "{{outputDir}}/deck.md"
+        }
+      ]
+    },
+    {
+      "id": "publish",
+      "name": "Publish the PowerPoint",
+      "description": "Convert {{outputDir}}/deck.md with DocBlocks, preview every slide, retain an artifact, and deliver {{outputPath}}.",
+      "prompt": "Publish the reviewed `{{outputDir}}/deck.md` as a real editable PowerPoint with the pre-authorized DocBlocks tools. 1. Call `list_roots` and identify the read-enabled workspace root and write-enabled artifacts root. If there is no write root, report the blocker rather than substituting HTML. 2. Call `convert_document` ONCE for this approved revision with source `{ \"kind\": \"file\", \"rootId\": <workspace root id>, \"path\": \"{{outputDir}}/deck.md\" }`, target `[{ \"format\": \"pptx\", \"fidelity\": \"editable-native\", \"slideBreak\": \"h1\", \"title\": <deck title> }]`, an audience-appropriate theme, and `autoTemplates: true`. 3. Call `preview_document` with source `{ \"kind\": \"artifact\", \"uri\": <the artifact uri returned by convert_document> }`. `source` is an OBJECT, never the bare URI string, and the artifact form takes exactly the two keys `kind` and `uri` — any other key is rejected. Paginate with `startIndex` plus `maxItems` (20 maximum per call). Inspect every slide: the preview slide count must equal the H1 count in {{outputDir}}/deck.md; no overflow or tiny text; tables legible; hierarchy consistent. If QA fails, do not save a known-bad PPTX or silently remove content—record the exact slide and route back to write. 4. When preview passes, call `save_artifact` with destination `{ \"rootId\": <artifacts root id>, \"path\": \"{{workPath}}/deck.pptx\", \"ifExists\": \"error\" }`; on a loop-back, replace only with the current expectedSha256. 5. DocBlocks can write only to the artifacts root, so land the workspace copy with `copy_artifact_to_workspace` using source `\"{{workPath}}/deck.pptx\"` and dest `\"{{outputPath}}\"` — one call, no text/binary round-trip. Never rebuild the PPTX with `write_file`; it corrupts the binary. If `copy_artifact_to_workspace` is not in your tool list this turn, stop and report that exact blocker with `write_task_note`, naming the retained artifact path — do not substitute an HTML deck, a renamed text file, or a second `save_artifact` aimed at the workspace root. 6. Call `write_task_note` with the artifact path, workspace path, slide count, theme, and preview result. Do not hand-build an HTML deck or presentation XML.",
+      "suggestedRole": "designer",
+      "advanceWhen": {
+        "file": "{{outputPath}}",
+        "minBytes": 1
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{outputPath}}",
+            "bytes": 1000
+          }
+        ],
+        "onReject": "publish",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "consumes": [
+        {
+          "file": "{{outputDir}}/deck.md"
+        }
+      ]
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate the saved deck",
+      "description": "Review the PPTX against the locked source, outline, and visual criteria.",
+      "prompt": "Review the retained artifact `{{workPath}}/deck.pptx` against `{{workPath}}/sources.md`, `{{workPath}}/outline.md`, and `{{workPath}}/review.md`. Use `list_roots` to identify the artifacts root and `preview_document` with source `{ \"kind\": \"file\", \"rootId\": <artifacts root id>, \"path\": \"{{workPath}}/deck.pptx\" }`; inspect all slides. Confirm: it is a real PPTX; `workspace/{{outputPath}}` exists; the preview slide count equals the locked outline/H1 count; every outlined slide appears once and in order; source facts and citations remain visible or are represented by the outlined Sources slide; each slide has one message; text/tables fit; theme is consistent; the closing ask is present; and the retained `{{workPath}}/deck.pptx` and `workspace/{{outputPath}}` represent the same approved revision. Write PASS/FAIL for every criterion. Every pass routes to `finish`; a content, grounding, density, or slide-structure failure routes to `write`; a conversion, theme, save, or copy failure with {{outputDir}}/deck.md still approved routes to `publish`. Never route to finish while a criterion is unmet. After about three unproductive loops, stop with DONE_WITH_CONCERNS.\n\nOpen `{{workPath}}/sources.md`, `{{workPath}}/outline.md`, `{{workPath}}/review.md` from the artifacts drawer with `read_artifact` before working.\n\nOpen the retained `{{workPath}}/deck.pptx` from the artifacts drawer with `read_artifact`.",
+      "suggestedRole": "reviewer",
+      "next": "write",
+      "consumes": [
+        {
+          "file": "{{workPath}}/sources.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/outline.md",
+          "artifact": true
+        },
+        {
+          "file": "{{outputDir}}/deck.md"
+        },
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        },
+        {
+          "file": "{{outputPath}}"
+        },
+        {
+          "file": "{{workPath}}/deck.pptx",
+          "artifact": true
+        }
+      ]
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All research, narrative, slide, and file checks passed.",
+      "prompt": "Every acceptance criterion passed. Call `write_task_note` with a short DONE summary naming `{{workPath}}/sources.md`, `{{workPath}}/outline.md`, and `{{outputDir}}/deck.md` as the grounded source chain, `{{workPath}}/deck.pptx` as the retained artifact, and `workspace/{{outputPath}}` as the user-facing deliverable, plus the slide count and confirmation that visual preview passed. Then report DONE.\n\nOpen `{{workPath}}/sources.md`, `{{workPath}}/outline.md` from the artifacts drawer with `read_artifact` before working.\n\nOpen the retained `{{workPath}}/deck.pptx` from the artifacts drawer with `read_artifact`.",
+      "suggestedRole": "designer",
+      "terminal": true,
+      "consumes": [
+        {
+          "file": "{{workPath}}/sources.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/outline.md",
+          "artifact": true
+        },
+        {
+          "file": "{{outputDir}}/deck.md"
+        },
+        {
+          "file": "{{outputPath}}"
+        },
+        {
+          "file": "{{workPath}}/deck.pptx",
+          "artifact": true
+        }
+      ]
+    }
+  ],
+  "version": "1.7.8",
+  "releasedAt": "2026-08-26T14:00:00Z",
+  "minGezelVersion": "1.26233"
+}
