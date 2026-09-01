@@ -1,0 +1,277 @@
+{
+  "id": "ab-test-readout",
+  "name": "A/B Test Readout",
+  "description": "Analyze a controlled experiment and produce a decision-ready readout: does the variant beat control, by how much, and is it real? States the hypothesis, the primary metric, and the decision rule FIRST (to avoid p-hacking and metric-shopping), then computes lift, statistical significance, and confidence intervals as a data-analyst, then writes a plain-language ship/no-ship recommendation. Use this for an experiment analysis, A/B test results, significance testing, conversion-lift readout, or an experiment decision memo.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the hypothesis (data-analyst) — lock the hypothesis, primary metric, and decision rule before looking → gated on artifact `{{workPath}}/hypothesis-scope.md` (markdown-notes)\n2. Analyze the experiment (data-analyst) — compute lift, significance, and confidence intervals → gated on `data/stats.json` (json)\n3. Write the readout (copywriter) — produce a plain-language ship/no-ship recommendation → gated on artifact `{{workPath}}/readout.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "hypothesis-scope",
+  "triggers": [
+    "analyze an ab test",
+    "experiment readout",
+    "is this result significant",
+    "ab test results",
+    "ship or no ship from a test"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "hypothesis-scope",
+      "name": "Scope the hypothesis",
+      "description": "lock the hypothesis, primary metric, and decision rule before looking",
+      "prompt": "Define the experiment's contract BEFORE computing anything, to prevent metric-shopping. Step 1: state the hypothesis ('variant B increases checkout conversion vs control'). Step 2: name the ONE primary metric the decision rests on and how it's defined (conversions / exposures). Step 3: list guardrail metrics that must not regress. Step 4: state the decision rule up front (e.g. 'ship if lift is positive and significant at 95% and no guardrail drops > 2%'). Step 5: write an acceptance-criteria checklist ('reports lift with a confidence interval', 'reports a significance test for the primary metric', 'checks sample size / power', 'gives a clear ship/no-ship tied to the decision rule', 'flags any guardrail regression'). Call write_task_note and write the hypothesis + metric + decision rule + checklist to {{workPath}}/hypothesis-scope.md.\n\nThe deliverable `{{workPath}}/hypothesis-scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "{{workPath}}/hypothesis-scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/hypothesis-scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/hypothesis-scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "hypothesis-scope",
+        "maxAttempts": 3
+      },
+      "next": "analyze",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "analyze",
+      "name": "Analyze the experiment",
+      "description": "compute lift, significance, and confidence intervals",
+      "prompt": "Compute the statistics for the primary metric and guardrails. Step 1: for control and variant, report exposures, conversions, and the rate. Step 2: compute absolute and relative lift. Step 3: run the appropriate significance test (two-proportion z-test for a rate; report the p-value) and a confidence interval on the lift. Step 4: assess whether the sample size is adequate (was the experiment powered, or is it underpowered/peeking?). Step 5: compute the guardrail metrics and flag any regression. Step 6: apply the decision rule to reach a tentative verdict. Write the computed numbers to data/stats.json (rates, lift, p-value, CI, guardrails) and call write_task_note with the figures and the tentative call.",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "data/stats.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "data/stats.json",
+            "bytes": 2
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "data/stats.json"
+            }
+          }
+        ],
+        "onReject": "analyze",
+        "maxAttempts": 3
+      },
+      "next": "write",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "write",
+      "name": "Write the readout",
+      "description": "produce a plain-language ship/no-ship recommendation",
+      "prompt": "Write a decision-ready readout from the computed stats — no new numbers. Step 1: lead with the recommendation (Ship / Don't ship / Inconclusive) in the first sentence, tied to the decision rule. Step 2: state the lift with its confidence interval and whether it cleared significance, in plain language ('+8% conversion, 95% CI [3%, 13%], significant at p=0.01'). Step 3: note the guardrail check result. Step 4: caveat honestly — underpowered, short runtime, novelty effect, or a result too good to be true. Step 5: end with the concrete next action. Write the readout to {{workPath}}/readout.md and call write_task_note with the recommendation. On a loop-back, fix only the named gaps.\n\nThe deliverable `{{workPath}}/readout.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "{{workPath}}/readout.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/readout.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/readout.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Read {{workPath}}/readout.md and check it against the scope. Verify: it leads with a clear ship/no-ship recommendation tied to the stated decision rule; it reports lift WITH a confidence interval; it reports a significance test for the primary metric; it addresses sample size / power; and it flags any guardrail regression. Re-check the headline lift and significance call against data/stats.json. Confirm the verdict actually follows from the decision rule (not metric-shopped). Write PASS/FAIL per criterion; any FAIL loops back to write.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/readout.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/readout.md",
+          "artifact": true
+        }
+      ],
+      "next": "write",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

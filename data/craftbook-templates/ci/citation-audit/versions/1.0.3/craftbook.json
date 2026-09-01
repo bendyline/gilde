@@ -1,0 +1,278 @@
+{
+  "id": "citation-audit",
+  "name": "Citation Audit",
+  "description": "Audit an existing document's claims against its citations and report every mismatch: a reviewer pairs each cited claim with the citation it depends on and locks the audit rubric, a researcher opens each cited source and verifies the claim is actually supported, and a reviewer compiles a per-citation audit report with verdicts and fixes. The ordering matters because auditing without first pairing claims to citations misses unsupported claims, and a report without a fixed verdict scale is inconsistent; building the claim-citation pairing and rubric first makes the audit exhaustive and the report actionable. Use this for checking that citations support their claims, source-verification of a draft, catching citation drift or unsupported statements, and 'do these references actually back up the text' reviews.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the audit (reviewer) — pair each cited claim to its citation + lock the rubric → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Verify each citation (researcher) — open each source, confirm it backs the paired claim → gated on artifact `{{workPath}}/verify.md` (markdown-notes)\n3. Compile the audit report (reviewer) — per-citation verdicts, justifying quotes, and fixes → gated on artifact `{{workPath}}/audit.md` (markdown-report)\n\nSource discipline:\n\n- Audit only claims that appear in the supplied draft or source bundle.\n- Keep the draft's citation labels verbatim, such as `Claim [A]`, so each verdict is traceable.\n- Treat uncited factual sentences in the draft as `Uncited-Claim`; do not create new claims to make the report longer.\n- If a source excerpt is missing or contradicts the draft, say that directly and propose a correction or citation fix.\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "audit the citations",
+    "check citations support the claims",
+    "verify the references in this doc",
+    "citation accuracy check",
+    "are these sources legit"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the audit",
+      "description": "pair each cited claim to its citation + lock the rubric",
+      "prompt": "1. Read the target document and build a pairing table in {{workPath}}/scope.md: for every inline citation, record a pair id (P1, P2, ...), the exact claim sentence it supports, and the citation/reference it points to. 2. Also flag every factual claim that has NO citation as a candidate (these are audit findings too). 3. Lock the verdict rubric: Supported (source clearly backs the claim), Partially-Supported (source backs part / overstates), Not-Supported (source does not back it), Source-Missing/Dead (citation cannot be located), Uncited-Claim. 4. Write an acceptance-criteria checklist (e.g. 'every inline citation is paired and audited', 'uncited factual claims are listed', 'each pair gets exactly one verdict from the rubric', 'each Not-Supported/Partial verdict quotes the source to justify it', 'a fix is proposed per problem'). 5. Record decisions. Call write_task_note with the pairing table + rubric + checklist; write the same to {{workPath}}/scope.md.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "verify",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "verify",
+      "name": "Verify each citation",
+      "description": "open each source, confirm it backs the paired claim",
+      "prompt": "1. For each pair id, locate and open the cited source and read the relevant part. 2. Log to {{workPath}}/verify.md: the pair id, whether the source was reachable, the exact passage/figure the claim relies on (quote it), and a proposed verdict from the locked rubric with a one-line reason. 3. Be strict: a source on the right topic that does not actually state the specific claim is Not-Supported, not Supported. 4. For dead or unfindable citations, record Source-Missing/Dead and what you searched. 5. For each problem, draft a concrete fix (correct the claim, swap the source, or add a citation). Good looks like a verify log where every pair's verdict is justified by a quote. Do not write the final report yet.\n\nThe deliverable `{{workPath}}/verify.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "researcher",
+      "advanceWhen": {
+        "file": "{{workPath}}/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/verify.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/verify.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 3
+      },
+      "next": "report",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "report",
+      "name": "Compile the audit report",
+      "description": "per-citation verdicts, justifying quotes, and fixes",
+      "prompt": "1. Write {{workPath}}/audit.md with a summary (counts per verdict, and the count of uncited claims) then one entry per pair id: the claim, the citation, the verdict from the rubric, the justifying quote from the source, and the proposed fix for any non-Supported verdict. 2. Add a dedicated 'Uncited claims' section listing factual statements that lack a citation. 3. Use ONLY rubric verdicts and base each strictly on {{workPath}}/verify.md. 4. Make it actionable — an editor should be able to apply every fix directly. 5. On a loop-back, fix only the named gaps. 6. Call write_task_note with the report path and which criteria now pass.\n\nBefore working, open the artifact input `{{workPath}}/verify.md` with `read_artifact`; do not look for it in the workspace.\n\nThe deliverable `{{workPath}}/audit.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/verify.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/audit.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/audit.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/audit.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open {{workPath}}/audit.md and check EACH criterion PASS/FAIL: (1) every citation paired in {{workPath}}/scope.md has an audited entry — none skipped; (2) an uncited-claims section lists statements lacking citations; (3) each entry has exactly one rubric verdict; (4) every Not-Supported/Partially-Supported/Dead verdict is justified by a quoted source passage (spot-check 3 against {{workPath}}/verify.md); (5) each problem has a concrete, applicable fix; (6) the summary counts match the entries. A report that marks a topically-related-but-non-supporting source as Supported, or skips a citation, FAILS.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/audit.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/audit.md",
+          "artifact": true
+        }
+      ],
+      "next": "report",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

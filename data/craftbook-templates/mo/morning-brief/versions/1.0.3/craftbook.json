@@ -1,0 +1,241 @@
+{
+  "id": "morning-brief",
+  "name": "Morning Topic Brief",
+  "description": "Be informed without the doomscroll: this morning's items per watched topic, each with its source named, rumor separated from reporting, and yesterday's noise skipped — five minutes that replace an hour of feeds. Locks the brief rules FIRST, then gathers from the feeds, then writes the dated brief into the archive next to the previous ones. Use for morning briefs, daily topic digests, 'what happened overnight', news catch-ups on watched topics, and staying informed without the scroll.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Set the brief rules (editor) — topics read, yesterday skimmed, brief rules locked → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Gather the morning's items (researcher) — fetch per topic, annotate sources, mark the cuts → gated on artifact `{{workPath}}/items.md` (markdown-notes)\n3. Write today's brief (copywriter) — the dated brief in the archive, sources named, rumor flagged\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "morning brief",
+    "what happened overnight",
+    "today's brief",
+    "run the morning digest",
+    "catch me up on my topics"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Set the brief rules",
+      "description": "topics read, yesterday skimmed, brief rules locked",
+      "prompt": "Set the brief's rules before touching the feeds. Step 1: read topics.json from the workspace — the topics being watched and their names — and skim the most recent brief in briefs/ so you know what yesterday already covered. Step 2: lock the brief rules — one section per topic; every item names its source, with a link when the feed gives one; an item that already appeared in yesterday's brief is skipped or explicitly marked as already covered, never re-reported as new; an item resting on a single source is flagged as rumor or unconfirmed, never stated as fact. Step 3: write an acceptance-criteria checklist ('a section for every topic in topics.json', 'every item cites its source', 'no yesterday item re-reported as new', 'single-source items flagged', 'five minutes to read, not an hour'). Call write_task_note with the topic list + checklist and write {{workPath}}/scope.md. No fetching yet.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "editor",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "gather",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "gather",
+      "name": "Gather the morning's items",
+      "description": "fetch per topic, annotate sources, mark the cuts",
+      "prompt": "Gather this morning's items. Step 1: pull the current items for each watched topic — through the project's feed capabilities when the feeds are wired live, or from the freshest feed snapshots in the workspace. Step 2: for each topic, list every fetched item with its title, source, link, and anything the feed says about its confidence. Step 3: mark the cuts — which items are duplicates of yesterday's brief, which rest on a single source, which are noise not worth the owner's morning — and say why in a few words each. Step 4: write the full annotated item list to {{workPath}}/items.md and call write_task_note with the fetched/kept/cut counts per topic.\n\nThe deliverable `{{workPath}}/items.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "researcher",
+      "advanceWhen": {
+        "file": "{{workPath}}/items.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/items.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/items.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "gather",
+        "maxAttempts": 3
+      },
+      "next": "brief",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "brief",
+      "name": "Write today's brief",
+      "description": "the dated brief in the archive, sources named, rumor flagged",
+      "prompt": "Write today's brief from the gathered items. Step 1: date the brief and write it into the archive — a new file in briefs/ named for today (YYYY-MM-DD.md), next to the previous ones. Step 2: one section per topic, using the topic's name as the heading; under it, the kept items — each a sentence or two of what actually happened, with the source named and linked where the feed gave one. Step 3: keep rumor separate — a single-sourced item appears with its flag ('unconfirmed', 'single source'), never dressed as settled reporting. Step 4: where yesterday's story is still the story, one line saying nothing new beats re-reporting it. Step 5: five minutes of reading, no filler. Call write_task_note with the item count per topic and the brief's path.",
+      "suggestedRole": "copywriter",
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open today's brief in briefs/ and {{workPath}}/items.md and verify every criterion from {{workPath}}/scope.md: a section for every topic in topics.json, every item citing a named source (linked where the feed gave one), no item from yesterday's brief re-reported as new, every single-sourced item carrying its rumor or unconfirmed flag, and total reading time near five minutes. Cross-check the brief's items against the gathered list — nothing in the brief that was not fetched. Write PASS/FAIL per criterion; on any failure, name the gap and loop back to brief.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"brief\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. If you advance without a target, the loop sends you back by design. After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "next": "brief",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

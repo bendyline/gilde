@@ -1,0 +1,288 @@
+{
+  "id": "deploy-checklist",
+  "name": "Deploy Checklist",
+  "description": "Author and then actually execute a pre-deploy verification checklist for shipping a release to production — the concrete gates that must be green before the deploy button is pressed: tests passing, build clean, migrations reviewed, config/secrets present, feature flags set, rollback path confirmed, and observability/alerts ready. A planner scopes the checklist tailored to this service and risk level, a developer runs each item and records real evidence (command output, links, screenshots) for pass or fail, and a reviewer signs off go/no-go. Use this before a production deploy, a release cut-over, or any 'are we ready to ship?' gate where skipping a step causes outages.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the checklist (planner) — define the go/no-go gates for THIS service and release → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Verify each gate (developer) — execute every checklist item and record real evidence → gated on `deploy-checklist.md` (markdown-doc)\n3. Sign off go/no-go (reviewer) — audit the evidence and confirm the go/no-go decision → gated on artifact `{{workPath}}/report.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "pre-deploy checklist",
+    "are we ready to deploy",
+    "go/no-go for release",
+    "production deploy checklist",
+    "ship readiness check"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the checklist",
+      "description": "define the go/no-go gates for THIS service and release",
+      "prompt": "1. Identify what is being deployed (service, version, target environment) and its blast radius / risk level. 2. Build the checklist of pre-deploy gates tailored to this service — at minimum: CI green (tests + lint + build), schema/data migrations reviewed and reversible, required config and secrets present in the target env, feature flags in their intended state, dependencies/external services healthy, a confirmed rollback path, and observability (dashboards, alerts, on-call) ready. 3. Drop any gate that genuinely does not apply and note why; add service-specific gates (cache warmups, queue drains, third-party rate limits) that do. 4. For each gate, write the EXACT verification step (the command to run, the URL to check, the artifact to inspect) and the explicit pass condition. 5. Good looks like: an ordered, unambiguous checklist where any engineer could execute each item and objectively decide pass/fail, and where each item has a defined pass condition. Write this as an acceptance-criteria checklist (each gate IS a criterion) plus the deploy context to the notes file via write_task_note AND to {{workPath}}/scope.md.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "verify",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "verify",
+      "name": "Verify each gate",
+      "description": "execute every checklist item and record real evidence",
+      "prompt": "1. Open {{workPath}}/scope.md and work through every gate IN ORDER, actually running the verification step (run the command, hit the endpoint, inspect the artifact) — do not assume, do not skip. 2. For each gate record: the step taken, the real evidence (command output, status, link), and a PASS or FAIL with the pass condition met or not. 3. If a gate FAILS, mark it FAIL with the specific reason — do not silently soften it; a failed gate is a no-go signal. 4. Render the result as a markdown checklist where every item is checked [x] only when its evidence genuinely supports PASS. 5. Conclude with an overall GO (all gates PASS) or NO-GO (any gate FAIL) recommendation and the single biggest risk. 6. Good looks like: a completed checklist where every gate from scope.md has attached evidence and an honest verdict, with a clear top-line go/no-go. Write the executed checklist to deploy-checklist.md.\n\nBefore working, open the artifact input `{{workPath}}/scope.md` with `read_artifact`; do not look for it in the workspace.",
+      "suggestedRole": "developer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/scope.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "deploy-checklist.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "deploy-checklist.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "deploy-checklist.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 3
+      },
+      "next": "report",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace"
+      }
+    },
+    {
+      "id": "report",
+      "name": "Sign off go/no-go",
+      "description": "audit the evidence and confirm the go/no-go decision",
+      "prompt": "1. Open deploy-checklist.md and audit each gate's EVIDENCE, not just its checkbox — a checked box with weak or missing evidence is a FAIL. 2. Confirm every gate from {{workPath}}/scope.md is present and that no gate was dropped without a recorded reason. 3. Re-derive the overall verdict: if any gate is FAIL, the deploy is NO-GO regardless of the recorded recommendation. 4. Note any gate whose evidence is ambiguous and must be re-verified. 5. Write a PASS/FAIL per gate and a final, defensible GO or NO-GO with the deciding factors. 6. Any insufficient evidence routes back to the verify phase to re-run that gate. Write your sign-off to {{workPath}}/report.md.\n\nBefore working, open the artifact input `{{workPath}}/scope.md` with `read_artifact`; do not look for it in the workspace.\n\nThe deliverable `{{workPath}}/report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/scope.md",
+          "artifact": true
+        },
+        {
+          "file": "deploy-checklist.md"
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "deploy-checklist.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "deploy-checklist.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open deploy-checklist.md and verify it against the gates locked in {{workPath}}/scope.md, PASS/FAIL each gate. Confirm: (a) every gate from scope.md appears with a recorded verification step; (b) each gate has REAL evidence (command output, link, or artifact), not just a checked box; (c) no gate was dropped without a stated reason; (d) the pass condition for each gate is genuinely met where marked PASS; (e) the document ends with a clear GO/NO-GO that is consistent with the gates (any FAIL ⇒ NO-GO). Any gate lacking evidence or wrongly marked routes back to the verify phase to re-run it.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"verify\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "deploy-checklist.md"
+        }
+      ],
+      "next": "verify",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

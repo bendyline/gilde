@@ -1,0 +1,279 @@
+{
+  "id": "evidence-brief",
+  "name": "Decision Evidence Brief",
+  "description": "Answer a specific decision question with a weighted, confidence-rated evidence brief: a planner frames the decision and the options, locks the evidence criteria and a confidence scale, a researcher gathers evidence for and against each option and rates the strength of each piece, and a copywriter writes a decision-oriented brief that states a recommendation with explicit confidence levels and the key uncertainties. The ordering matters because evidence gathered before framing the decision is unfocused and a recommendation without a confidence scale hides how strong the case really is; fixing the question, the options, and a confidence rubric first produces an honest, decision-ready brief. Use this for evidence-based decision support, 'what does the evidence say we should do about X', recommendation memos, weighing options with confidence levels, and policy/strategy briefs grounded in sources.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Frame the decision (planner) — decision question, options, evidence + confidence rubric → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Gather & rate evidence (researcher) — evidence for/against each option, strength-rated + cited → gated on artifact `{{workPath}}/evidence.md` (markdown-notes)\n3. Write the brief (copywriter) — recommendation with confidence + key uncertainties → gated on artifact `{{workPath}}/brief.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "evidence brief",
+    "what does the evidence say we should do",
+    "decision support memo",
+    "recommendation with confidence levels",
+    "weigh the options with evidence"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Frame the decision",
+      "description": "decision question, options, evidence + confidence rubric",
+      "prompt": "1. State the exact decision question and the discrete options on the table (including 'do nothing' if relevant) in a few lines. 2. Lock the criteria that good evidence must meet for this decision (relevance, source quality, recency) and a confidence scale: High / Medium / Low, with a one-line definition of each (e.g. High = multiple independent strong sources agree). 3. Decide how evidence maps to a recommendation (e.g. weigh strength-rated evidence for/against each option). 4. Write an acceptance-criteria checklist (e.g. 'evidence is gathered for AND against each option', 'each piece of evidence is rated for strength and cited', 'the recommendation states an explicit confidence level', 'key uncertainties and what would change the recommendation are listed', 'no recommendation exceeds the confidence its evidence supports'). 5. Record decisions. Call write_task_note with the question, options, confidence scale, and checklist; write the same to {{workPath}}/scope.md.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "research",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "research",
+      "name": "Gather & rate evidence",
+      "description": "evidence for/against each option, strength-rated + cited",
+      "prompt": "1. For each option, gather evidence both FOR and AGAINST into {{workPath}}/evidence.md: the finding, its source [n], the date, and a strength rating per the locked confidence scale with a reason (sample size, source quality, corroboration). 2. Actively seek disconfirming evidence for the option you suspect is best — steelman the alternatives so the brief is not a foregone conclusion. 3. Corroborate strong claims across independent sources before rating them High. 4. Explicitly record what is unknown and what evidence would resolve it. 5. Mark anything you cannot verify UNVERIFIED. Good looks like a balanced, strength-rated evidence file per option. Do not write the recommendation yet.\n\nThe deliverable `{{workPath}}/evidence.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "researcher",
+      "advanceWhen": {
+        "file": "{{workPath}}/evidence.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/evidence.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/evidence.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "research",
+        "maxAttempts": 3
+      },
+      "next": "write",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "write",
+      "name": "Write the brief",
+      "description": "recommendation with confidence + key uncertainties",
+      "prompt": "1. Write {{workPath}}/brief.md: a bottom-line recommendation up top stating which option and at what confidence level (High/Medium/Low), then a section per option laying out evidence for and against with each piece's strength rating and citation [n], then a 'Key uncertainties & what would change this' section. 2. Calibrate the stated confidence to the evidence — do not claim High confidence on Low/Medium evidence; if the evidence is thin, say so plainly. 3. Present the alternatives fairly, including the strongest case against your recommendation. 4. Add a References list from {{workPath}}/evidence.md so every [n] resolves. 5. Keep it decision-ready and scannable. 6. On a loop-back, fix only the named gaps. 7. Call write_task_note with the brief path and which criteria now pass.\n\nBefore working, open the artifact input `{{workPath}}/evidence.md` with `read_artifact`; do not look for it in the workspace.\n\nThe deliverable `{{workPath}}/brief.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "consumes": [
+        {
+          "file": "{{workPath}}/evidence.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/brief.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/brief.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/brief.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open {{workPath}}/brief.md and check EACH criterion PASS/FAIL: (1) evidence is presented for AND against each option (not one-sided); (2) each piece of evidence is strength-rated and cited (spot-check 3 against {{workPath}}/evidence.md); (3) the recommendation states an explicit confidence level; (4) the stated confidence is calibrated to the evidence — a High-confidence call must rest on multiple strong corroborated sources; (5) a 'key uncertainties / what would change this' section exists; (6) the strongest counter-case is acknowledged. A one-sided brief, or one claiming more confidence than its evidence supports, FAILS.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/brief.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/brief.md",
+          "artifact": true
+        }
+      ],
+      "next": "write",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

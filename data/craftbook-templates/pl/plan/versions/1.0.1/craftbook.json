@@ -1,0 +1,222 @@
+{
+  "id": "plan",
+  "name": "Plan",
+  "description": "Author a PLAN for a piece of work as a reviewable **draft task** — the gezel equivalent of `/plan` in other tools.\n\nUnlike a normal craftbook, this one's deliverable is not a workspace file: it's a high-quality *draft task* (a plan) that the user reviews and then activates to run. Invoke it via the `start_plan` tool, which creates the draft and an authoring task that walks this craftbook. The authoring gates inspect the draft being built (via the authoring task's `craftbookParams.draftRef`), so a weak model can't skip the parts that make a plan good.\n\nSteps:\n\n1. **Frame the goal** (planner) — write a strong \"about\" on the draft and set 3–8 concrete **outcomes** (what should be created or updated at success). Gated by `checkPlanFramed`.\n2. **Design the build steps** (planner) — add ordered build steps to the draft, each given a concrete static deliverable + enforced gate via `set_step_deliverable`. Gated by `checkStepsHaveDeliverables`.\n3. **Add the verification step** (planner) — append a terminal step (via `add_verification_step`) that confirms every outcome with evidence before the task can close. Gated by `checkVerificationStep`.\n4. **Review the plan** (planner) — sanity-check the whole graph. Gated by `checkPlanReady`, which returns one list of any remaining gaps.\n5. **Hand off to the user** (planner, terminal) — summarize the plan and tell the user to review and **activate** it.\n\nWhen activated (draft → active), the produced task runs its build steps — each looping back on a missed deliverable — and its terminal step verifies the outcomes were kept.\n",
+  "entryStepId": "frame",
+  "triggers": [
+    "plan this",
+    "make a plan",
+    "plan for",
+    "/plan"
+  ],
+  "steps": [
+    {
+      "id": "frame",
+      "name": "Frame the goal",
+      "description": "Write a strong 'about' and set the outcomes on the draft plan.",
+      "prompt": "You are drafting a PLAN. The plan is a separate **draft task** — its ref is in your task's `craftbookParams.draftRef` (shown in your task description / entry note). Everything you author here targets that draft via the `task` argument.\n\n**Do two things:**\n\n1. **Write a strong \"about\".** Call `update_task({ task: \"<draftRef>\", description })` with a clear job-to-be-done from the user's perspective — what success looks like, in 120+ characters.\n2. **Set the outcomes.** Call `set_outcomes({ task: \"<draftRef>\", outcomes: [ ... ] })` with 3–8 concrete, individually-verifiable statements of what should be **created or updated** at completion (e.g. \"An index.html with a playable snake game and a game-over/restart screen\", \"A README documenting how to run it\").\n\nWhen done, call `advance_task_step({ ref, stepId: \"frame\", next: \"outline\" })`. The gate rejects until the draft has a real about and at least 3 outcomes — fix what it names and advance again.",
+      "suggestedRole": "planner",
+      "gate": {
+        "at": "completion",
+        "scripts": [
+          {
+            "name": "checkPlanFramed",
+            "scope": "standard",
+            "inputs": {}
+          }
+        ],
+        "onReject": "frame",
+        "maxAttempts": 4
+      },
+      "next": "outline",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "none"
+      }
+    },
+    {
+      "id": "outline",
+      "name": "Design the build steps",
+      "description": "Add ordered build steps to the draft, each gated on a concrete static deliverable.",
+      "prompt": "Design the implementation as an ordered series of **build steps** on the draft (`craftbookParams.draftRef`). Each build step must produce a **concrete static file** with an enforced gate.\n\nThe draft starts with one placeholder step named **\"Implement\"**. First call `craftbook_read({ task: \"<draftRef>\" })` and note the actual id of that placeholder step. Then either:\n- repurpose that exact step with `craftbook_update_step({ task: \"<draftRef>\", stepId: \"<actualId>\", name, prompt, suggestedRole })`, then immediately call `set_step_deliverable({ task: \"<draftRef>\", stepId: \"<actualId>\", path, kind })`; or\n- remove that exact step with `craftbook_remove_step({ task: \"<draftRef>\", stepId: \"<actualId>\" })` after you have added the real build steps.\n\nFor each added step, in order:\n1. `craftbook_add_step({ task: \"<draftRef>\", name, prompt, suggestedRole })` — a concrete, instructive step (e.g. name \"Build the game\", role \"developer\", a prompt that says exactly what to make).\n2. Call `craftbook_read({ task: \"<draftRef>\" })` and use the actual id of the step you just added.\n3. `set_step_deliverable({ task: \"<draftRef>\", stepId: \"<actualId>\", path, kind })` — declare the named file it produces and auto-attach the gate. Pick `kind` to match the artifact: `html-page` / `html-game` / `markdown-report` / `code-with-tests` / `json` / etc.\n\nDo not invent step ids like `build` unless `craftbook_read` shows that exact id. Do not advance while any build step lacks `advanceWhen`/`gate`. Order the steps so each builds on the last. When every build step has a deliverable, call `advance_task_step({ ref, stepId: \"outline\", next: \"verify-step\" })`. The gate lists any step still missing a deliverable.",
+      "suggestedRole": "planner",
+      "gate": {
+        "at": "completion",
+        "scripts": [
+          {
+            "name": "checkStepsHaveDeliverables",
+            "scope": "standard",
+            "inputs": {}
+          }
+        ],
+        "onReject": "outline",
+        "maxAttempts": 4
+      },
+      "next": "verify-step",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "none"
+      }
+    },
+    {
+      "id": "verify-step",
+      "name": "Add the verification step",
+      "description": "Append a terminal verification step that checks the outcomes were kept.",
+      "prompt": "Add the final **verification step** to the draft (`craftbookParams.draftRef`): call `add_verification_step({ task: \"<draftRef>\" })`. This appends a terminal step — gated by `checkOutcomesMet` — that makes the executor confirm each outcome (with evidence) before the task can close. Pass a custom `prompt` only if you need domain-specific verification instructions.\n\nThen call `advance_task_step({ ref, stepId: \"verify-step\", next: \"review\" })`. The gate rejects until the draft has a terminal step that verifies the outcomes.",
+      "suggestedRole": "planner",
+      "gate": {
+        "at": "completion",
+        "scripts": [
+          {
+            "name": "checkVerificationStep",
+            "scope": "standard",
+            "inputs": {}
+          }
+        ],
+        "onReject": "verify-step",
+        "maxAttempts": 4
+      },
+      "next": "review",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "none"
+      }
+    },
+    {
+      "id": "review",
+      "name": "Review the plan",
+      "description": "Sanity-check the whole plan before handing it to the user.",
+      "prompt": "Final check before handing the plan to the user. `craftbook_read({ task: \"<draftRef>\" })` and sanity-check: the steps are ordered sensibly, each build step has a deliverable, and the last step verifies the outcomes. Fix anything off with the `craftbook_*` / `set_step_deliverable` tools on the draft.\n\nWhen the plan is solid, call `advance_task_step({ ref, stepId: \"review\", next: \"done\" })`. The gate returns a single list of anything still missing (thin about, fewer than 3 outcomes, ungated steps, or no verification step).",
+      "suggestedRole": "planner",
+      "gate": {
+        "at": "completion",
+        "scripts": [
+          {
+            "name": "checkPlanReady",
+            "scope": "standard",
+            "inputs": {}
+          }
+        ],
+        "onReject": "review",
+        "maxAttempts": 4
+      },
+      "next": "done",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "none"
+      }
+    },
+    {
+      "id": "done",
+      "name": "Hand off to the user",
+      "description": "Summarize the plan and tell the user to review and activate it.",
+      "prompt": "The plan is ready. Summarize it for the user in your reply: mention the draft task **<draftRef>** by its ref (so it renders as a reviewable plan card), and recap the about, the outcomes, and the build steps. Tell the user they can **review and activate** the plan to run it — or ask you to tweak it first. Then report DONE.",
+      "suggestedRole": "planner",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "none"
+      }
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-09-01T20:00:00Z"
+}

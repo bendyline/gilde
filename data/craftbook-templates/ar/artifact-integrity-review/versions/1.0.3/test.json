@@ -1,0 +1,139 @@
+{
+  "schemaVersion": 1,
+  "title": "Artifact Integrity & Ship Review isolated eval",
+  "objective": "Measure whether the review reconciles expected and staged release assets, catches cross-artifact identity and content blockers, and refuses an unsafe GO verdict.",
+  "tags": [
+    "corpus"
+  ],
+  "prompt": "Use the Artifact Integrity & Ship Review craftbook on the staged release/ tree. Treat release/expected.json as the release contract, inspect only local evidence, and write tasks/eval/artifact-integrity-review.md. Do not modify or execute the artifacts.",
+  "setup": {
+    "projectName": "Artifact Integrity Maintenance Eval",
+    "about": "An extracted release fixture with deliberate missing, mismatched, secret-bearing, and broken-site assets.",
+    "missionObjectives": "Give each expected artifact an honest verdict and issue a release-wide NO-GO when blockers remain.",
+    "files": [
+      {
+        "path": "release/expected.json",
+        "content": "{\n  \"version\": \"2.4.0\",\n  \"commit\": \"abc123\",\n  \"required\": [\"site\", \"cli-package\", \"windows-installer.exe\"],\n  \"siteEntry\": \"site/index.html\",\n  \"cliVersion\": \"2.4.0\"\n}\n"
+      },
+      {
+        "path": "release/site/index.html",
+        "content": "<!doctype html><html><body><main>Returns Desk 2.4.0</main><script src=\"app.abc.js\"></script></body></html>\n"
+      },
+      {
+        "path": "release/site/app.def.js",
+        "content": "console.log('build abc123');\n"
+      },
+      {
+        "path": "release/cli-package/package.json",
+        "content": "{\"name\":\"returns-cli\",\"version\":\"2.3.9\",\"bin\":{\"returns\":\"bin/returns.js\"},\"files\":[\"bin\",\".env\"]}\n"
+      },
+      {
+        "path": "release/cli-package/bin/returns.js",
+        "content": "#!/usr/bin/env node\nconsole.log('returns-cli 2.3.9');\n"
+      },
+      {
+        "path": "release/cli-package/.env",
+        "content": "RETURNS_API_TOKEN=fixture-secret-must-not-ship\n"
+      },
+      {
+        "path": "release/checksums.txt",
+        "content": "0000000000000000000000000000000000000000000000000000000000000000  site/index.html\n"
+      }
+    ],
+    "worker": {
+      "name": "Rae",
+      "role": "Reviewer"
+    },
+    "craftbookParams": {
+      "workPath": "tasks/eval"
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "tasks/eval/artifact-integrity-review.md issues NO-GO, reconciles all expected assets, and cites each seeded blocker and uncertainty.",
+    "deliverables": [
+      {
+        "path": "tasks/eval/artifact-integrity-review.md",
+        "kind": "markdown-report",
+        "minBytes": 1700,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/artifact-integrity-review.md",
+            "pattern": "NO-GO|NO GO|block",
+            "flags": "i",
+            "label": "release verdict"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/artifact-integrity-review.md",
+            "pattern": "windows-installer\\.exe[\\s\\S]{0,160}(missing|not present|NO-GO)",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/artifact-integrity-review.md",
+            "pattern": "app\\.abc\\.js[\\s\\S]{0,160}(missing|broken)|app\\.def\\.js",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/artifact-integrity-review.md",
+            "pattern": "2\\.3\\.9[\\s\\S]{0,160}2\\.4\\.0|version mismatch",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/artifact-integrity-review.md",
+            "pattern": "\\.env|RETURNS_API_TOKEN|secret",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/artifact-integrity-review.md",
+            "pattern": "checksum|000000",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/artifact-integrity-review.md",
+            "pattern": "GO|NO-GO|NOT-VERIFIED",
+            "flags": "i",
+            "label": "per-artifact verdict vocabulary"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/artifact-integrity-review.md",
+            "pattern": "Not verified|NOT-VERIFIED|platform",
+            "flags": "i"
+          }
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "tasks/eval/artifact-integrity-review.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "reconciliation",
+        "description": "Expected and staged assets are exhaustively matched with provenance."
+      },
+      {
+        "name": "isolation and evidence",
+        "description": "Checks rely on staged paths, metadata, hashes, and bounded local inspection."
+      },
+      {
+        "name": "verdict integrity",
+        "description": "Per-artifact and release-wide verdicts follow blockers and uncertainty."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "expected-vs-present inventory",
+    "cross-artifact identity",
+    "honest ship verdict"
+  ]
+}

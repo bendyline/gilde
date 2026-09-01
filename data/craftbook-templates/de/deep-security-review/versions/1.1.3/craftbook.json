@@ -1,0 +1,378 @@
+{
+  "id": "deep-security-review",
+  "name": "Deep Security Review",
+  "description": "Run a slow, thorough, WHOLE-CODEBASE security audit that looks for SYSTEMIC weaknesses — a vulnerability class repeated across many routes, a missing control at an architectural layer, inconsistent authorization, ad-hoc secret handling, a trust-boundary violation — not just isolated issues in one file. First reconnoiters the whole system using gezel's static security index (dependency inventory, attack surface, source/sink findings, taint reachability), then builds a threat model to find the highest-blast-radius areas, then audits those areas holistically confirming real source-to-sink paths and consistency of controls across every entry point, then clusters findings into root-cause systemic themes, then writes a prioritized report with a machine-readable findings file. Use this for a deep or systemic security review, a codebase security audit, a nightly security sweep, or finding security issues across a whole project — it is intentionally broader and deeper than a PR-time diff review (see pr-security-review for that).\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Reconnoiter the whole system (reviewer) — build a whole-system security map from the static index → gated on artifact `{{workPath}}/security/surface-map.md` (markdown-notes)\n2. Threat-model the system (reviewer) — assets, actors, STRIDE per boundary, highest blast radius → gated on artifact `{{workPath}}/security/threat-model.md` (markdown-notes)\n3. Audit for systemic weaknesses (reviewer) — confirm real source→sink paths and control consistency across all entry points → gated on artifact `{{workPath}}/security/findings.md` (markdown-notes)\n4. Cluster findings into systemic themes (reviewer) — group findings by root cause; rank by blast radius → gated on artifact `{{workPath}}/security/themes.md` (markdown-notes)\n5. Write the security report (reviewer) — systemic report + machine-readable findings, all citing real files → gated on artifact `security-review/REPORT.md` (security-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "recon",
+  "triggers": [
+    "deep security review",
+    "audit the codebase for vulnerabilities",
+    "systemic security review",
+    "find security issues across the whole codebase",
+    "whole-codebase security audit",
+    "nightly security audit"
+  ],
+  "toolsets": [
+    {
+      "toolsetId": "builtin.security-intel",
+      "autoAllow": true,
+      "reason": "static security analysis over the index — scan, findings, attack surface, dependencies, taint reachability"
+    },
+    {
+      "toolsetId": "builtin.code-intel",
+      "autoAllow": true,
+      "reason": "navigate and read the code to confirm each lead"
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "recon",
+      "name": "Reconnoiter the whole system",
+      "description": "build a whole-system security map from the static index",
+      "prompt": "You are starting a deep, whole-codebase security review — take your time and look across the ENTIRE system, not one file. Step 1: Call `security_scan` to build the dependency inventory and run any installed OSS scanners (semgrep / osv-scanner / gitleaks). Step 2: Call `map_repo`, `map_attack_surface`, `security_overview`, and `list_dependencies` to assemble a whole-system picture: languages and top areas; entry points; route/handler files; auth & middleware boundaries; secret touchpoints (config/env/credential files); files that read untrusted input (taint sources); external integrations and data stores; and the dependency inventory with any advisories. Step 3: Identify the trust boundaries — where untrusted data crosses into the system and where privileged/state-changing operations live. Step 4: Record the CANDIDATE SYSTEMIC THEMES that `security_overview` surfaced (categories recurring across many files) as leads to investigate. Write a whole-system surface map — assets, entry points, trust boundaries, the auth model, data stores, external dependencies, and the candidate themes — to `{{workPath}}/security/surface-map.md`. No findings yet; this phase orients the review across the whole codebase.\n\nThe deliverable `{{workPath}}/security/surface-map.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/security/surface-map.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/security/surface-map.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/security/surface-map.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "recon",
+        "maxAttempts": 3
+      },
+      "next": "threatmodel",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "threatmodel",
+      "name": "Threat-model the system",
+      "description": "assets, actors, STRIDE per boundary, highest blast radius",
+      "prompt": "Using the surface map, build the system's threat model to decide WHERE systemic weaknesses would hurt most. Step 1: List the assets worth protecting (user data, secrets, money/state-changing operations, admin capability) and the actors/threats (unauthenticated user, authenticated user, insider, compromised dependency). Step 2: For each trust boundary, walk STRIDE (spoofing, tampering, repudiation, information-disclosure, denial-of-service, elevation-of-privilege) and note where a weakness would have the highest BLAST RADIUS across the system. Step 3: Prioritize — which boundaries or assets, if weak, would compromise many parts of the app at once? Those are where systemic issues hide and where the audit should spend its time. Write the threat model — assets, actors, trust zones, STRIDE-per-boundary, and the ranked high-blast-radius areas to focus on — to `{{workPath}}/security/threat-model.md`.\n\nThe deliverable `{{workPath}}/security/threat-model.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/security/threat-model.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/security/threat-model.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/security/threat-model.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "threatmodel",
+        "maxAttempts": 3
+      },
+      "next": "audit",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "audit",
+      "name": "Audit for systemic weaknesses",
+      "description": "confirm real source→sink paths and control consistency across all entry points",
+      "prompt": "Investigate the high-blast-radius areas for CONCRETE, SYSTEMIC weaknesses — not one-off style nits. Step 1: Use `scan_findings` (filter by severity/category) to pull the static leads, then VERIFY each in the code with `read_symbol` / `read_file` — a regex lead is not a finding until you confirm the vulnerable path. Step 2: For untrusted inputs, use `trace_taint` on the relevant files to see which sinks are reachable, then confirm the actual source→sink path by reading it; flag any path that reaches a dangerous sink without validation, escaping, or parameterization. Step 3: Assess the auth model HOLISTICALLY — is every route behind an auth boundary? Is authorization applied consistently across ALL entry points, or is the same check missing or re-implemented differently in several places (a systemic broken-access / IDOR pattern)? Step 4: Check secrets posture (hardcoded or logged secrets, ad-hoc env reads), crypto usage (weak algorithms, predictable randomness), and dependency risk (advisory-bearing packages from `list_dependencies`). Step 5: For every CONFIRMED finding capture file:line, the vulnerability class, an exploit sketch, severity and likelihood, and a concrete remediation. Prefer findings that RECUR across the codebase — a class of bug appearing in many places is the systemic signal. Stage the running findings list to `{{workPath}}/security/findings.md`; also note the threat classes you checked and found clean.\n\nThe deliverable `{{workPath}}/security/findings.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/security/findings.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/security/findings.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/security/findings.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "audit",
+        "maxAttempts": 3
+      },
+      "next": "synthesize",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "synthesize",
+      "name": "Cluster findings into systemic themes",
+      "description": "group findings by root cause; rank by blast radius",
+      "prompt": "Step back from the individual findings and cluster them into SYSTEMIC THEMES — the root-cause patterns that explain many findings at once (e.g. 'input validation is inconsistent across the API routes', 'secrets are loaded ad hoc in several modules with no central config', 'there is no shared authorization layer so each endpoint re-checks access differently'). Step 1: Group the findings by ROOT CAUSE, not by file. Step 2: For each theme, state the root cause (the architectural gap), the BLAST RADIUS (how much of the system it touches and how many findings it explains), and the systemic FIX (the single change that would prevent the whole class). Step 3: Rank the themes by blast radius × severity. Write the themes to `{{workPath}}/security/themes.md`. A clean codebase with no material findings can say so plainly rather than inventing themes.\n\nThe deliverable `{{workPath}}/security/themes.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/security/themes.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/security/themes.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/security/themes.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "synthesize",
+        "maxAttempts": 3
+      },
+      "next": "report",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "report",
+      "name": "Write the security report",
+      "description": "systemic report + machine-readable findings, all citing real files",
+      "prompt": "Write the final deliverable as TWO files in the `security-review/` folder. Step 1: Write `security-review/findings.json` — a JSON array where each finding is an object with: `file` (a REAL workspace path), `line` (a number), `severity` (one of critical, high, medium, low, info), `category`, `title`, `remediation` (a concrete fix), and `theme` (the systemic theme it belongs to). Every `file` MUST be a real path in this workspace and every finding MUST have a line, a severity, and a concrete remediation — no fabricated paths. Step 2: Write `security-review/REPORT.md` with these sections, using those exact headings: `## Verdict` — a one-line top verdict (e.g. Block / Remediate-then-ship / Acceptable) with the count of findings by severity; do NOT say 'safe to merge' while any critical/high finding is open. `## Systemic Themes` — each theme from synthesize with its root cause and blast radius (this is the heart of a deep review). `## Findings` — each finding as `### [SEVERITY] class — file:line` with the exploit sketch, impact, and remediation, ordered by severity then blast radius. `## Verified Safe` — the threat classes you checked and found clean, so coverage is auditable. `## Not Statically Verifiable` — anything needing a pentest or runtime check. On a loop-back, fix ONLY the gaps the evaluator named without dropping findings that already passed.\n\nThe deliverable `security-review/REPORT.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "security-review/REPORT.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "security-review/REPORT.md",
+            "bytes": 1500,
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open `security-review/REPORT.md` and `security-review/findings.json` and grade the review against its acceptance criteria. Check EACH and write PASS/FAIL with a one-line reason: (1) every finding is pinned to a REAL file:line (no fabricated paths) with a severity and a concrete remediation; (2) the Systemic Themes section names the root-cause patterns with their blast radius — a deep review is about systemic issues, not a list of isolated nits; (3) untrusted-input findings trace a real source→sink path rather than restating a raw scanner hit; (4) the auth model was assessed HOLISTICALLY (consistency across all entry points), not file-by-file; (5) a Verified-safe section makes the review's coverage auditable; (6) the verdict matches the open severity (no 'safe' with an open critical/high); (7) no vague filler like 'consider validating inputs' — every finding is concrete. If any criterion fails, name the exact gap and loop back.\n\nThe deliverable lives in the project's artifacts drawer — open `security-review/REPORT.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "security-review/REPORT.md",
+          "artifact": true
+        }
+      ],
+      "next": "report",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "The security review passed every acceptance criterion. Write a one-paragraph DONE summary to task notes via `write_task_note`: the top-line verdict, the count of findings by severity, the systemic themes, and the deliverable paths (`security-review/REPORT.md` + `security-review/findings.json`). Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.1.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

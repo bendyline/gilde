@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 1,
+  "title": "UX change with before/after proof",
+  "objective": "The craftbook drives a described UX change on a small orders page: move the bottom-of-page search into the header next to the title with an exact requested placeholder, while the / keyboard shortcut and the list-filter handler keep working. Placement, placeholder, and surviving wiring are verified mechanically against the fixed markup.",
+  "tags": [
+    "code",
+    "ux",
+    "frontend",
+    "tactical-fleet"
+  ],
+  "prompt": "Use the Implement a UX Change craftbook: nobody finds the search on the Orderboard page because it sits at the very bottom. Move the search into the header next to the title, set its placeholder to 'Search orders…', and keep the / keyboard shortcut working. The full request is in source/change-request.md.",
+  "setup": {
+    "projectName": "Orderboard",
+    "about": "A single-page order list for a small furniture shop: index.html with an inline script, plus styles.css. No build step and no test suite.",
+    "files": [
+      {
+        "path": "package.json",
+        "content": "{\n  \"name\": \"orderboard\",\n  \"private\": true,\n  \"version\": \"1.0.0\",\n  \"type\": \"module\"\n}\n"
+      },
+      {
+        "path": "index.html",
+        "content": "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Orderboard</title>\n<link rel=\"stylesheet\" href=\"styles.css\">\n</head>\n<body>\n<header class=\"topbar\">\n  <h1>Orderboard</h1>\n</header>\n<main>\n  <ul id=\"orders\">\n    <li>#1042 Walnut writing desk</li>\n    <li>#1043 Oak bookshelf</li>\n    <li>#1044 Cherry side table</li>\n    <li>#1045 Maple bench</li>\n    <li>#1046 Walnut picture frame</li>\n  </ul>\n</main>\n<section class=\"search-row\">\n  <input id=\"search\" type=\"search\" placeholder=\"Filter orders\">\n</section>\n<script>\nconst search = document.getElementById('search');\nsearch.addEventListener('input', () => {\n  const q = search.value.toLowerCase();\n  for (const item of document.querySelectorAll('#orders li')) {\n    item.hidden = q !== '' && !item.textContent.toLowerCase().includes(q);\n  }\n});\ndocument.addEventListener('keydown', (event) => {\n  if (event.key === '/' && document.activeElement !== search) {\n    event.preventDefault();\n    search.focus();\n  }\n});\n</script>\n</body>\n</html>\n"
+      },
+      {
+        "path": "styles.css",
+        "content": "body { margin: 0; font-family: system-ui, sans-serif; color: #1c2430; background: #f5f6f8; }\n.topbar { display: flex; align-items: center; gap: 1rem; padding: 0.75rem 1.25rem; background: #223047; color: #fff; }\n.topbar h1 { margin: 0; font-size: 1.2rem; }\nmain { max-width: 40rem; padding: 1rem 1.25rem; }\n#orders { list-style: none; padding: 0; }\n#orders li { padding: 0.5rem 0.25rem; border-bottom: 1px solid #dde1e8; }\n.search-row { padding: 1rem 1.25rem; }\n#search { padding: 0.4rem 0.6rem; width: 16rem; }\n"
+      },
+      {
+        "path": "source/change-request.md",
+        "content": "# Change request\n\nFrom the product owner: \"Nobody finds the search — it sits at the very bottom of the page. Move the search into the header, next to the Orderboard title. Set its placeholder to 'Search orders…'. The / keyboard shortcut people already use must keep working, and typing in the box must still filter the list.\"\n"
+      },
+      {
+        "path": "tests/verify-ux-update.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { readFileSync } from 'node:fs';\n\nconst html = readFileSync('index.html', 'utf8');\nlet code = html;\nfor (const m of html.matchAll(/<script\\b[^>]*\\bsrc\\s*=\\s*[\"']([^\"']+)[\"']/gi)) {\n  try { code += readFileSync(m[1], 'utf8'); } catch {}\n}\n\n// 1) Exactly one search input, and it lives inside the header, next to the title.\nconst inputs = [...html.matchAll(/<input\\b[^>]*>/gi)].map((m) => m[0]).filter((t) => /\\bid\\s*=\\s*[\"']search[\"']/i.test(t));\nassert.equal(inputs.length, 1, 'exactly one #search input exists');\nconst header = html.match(/<header\\b[^>]*>([\\s\\S]*?)<\\/header>/i);\nassert.ok(header, 'the header still exists');\nassert.ok(/\\bid\\s*=\\s*[\"']search[\"']/i.test(header[1]), 'the search input lives inside the header');\nassert.ok(/<h1\\b[^>]*>[^<]*Orderboard/i.test(header[1]), 'the Orderboard title is still in the header');\nconsole.log('UXUPDATE_ORACLE placement ok');\n\n// 2) The placeholder is exactly as requested.\nconst ph = inputs[0].match(/\\bplaceholder\\s*=\\s*[\"']([^\"']*)[\"']/i);\nassert.ok(ph, 'the search input has a placeholder');\nassert.equal(ph[1], 'Search orders…', 'placeholder is exactly \"Search orders…\"');\nconsole.log('UXUPDATE_ORACLE placeholder ok');\n\n// 3) The / shortcut still targets and focuses the search input.\nassert.ok(/['\"]\\/['\"]/.test(code), 'the / key hook survives');\nassert.ok(/getElementById\\(\\s*['\"]search['\"]\\s*\\)|querySelector\\(\\s*['\"]#search['\"]\\s*\\)/.test(code), 'the script still targets #search');\nassert.ok(/\\.focus\\s*\\(\\s*\\)/.test(code), 'the shortcut still focuses the search input');\nconsole.log('UXUPDATE_ORACLE shortcut ok');\n\n// 4) The list-filter behavior is still wired.\nassert.ok(/addEventListener\\s*\\(\\s*['\"]input['\"]/.test(code) || /\\boninput\\s*=/i.test(html), 'the input filter handler is still wired');\nassert.ok(/#orders/.test(code), 'the filter still targets the order list');\nconsole.log('UXUPDATE_ORACLE filter ok');\nconsole.log('UXUPDATE_ORACLE done');\n",
+        "surface": "harness"
+      }
+    ],
+    "craftbookParams": {
+      "scope": "Move the search into the header next to the Orderboard title, set its placeholder to 'Search orders…', and keep the / keyboard shortcut and the list filtering working; see source/change-request.md."
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "The search input sits inside the header next to the title with the exact requested placeholder, the old bottom-of-page placement is gone, and the / shortcut plus the filter handler still work — with every fleet artifact present and honestly cited.",
+    "deliverables": [
+      {
+        "path": "{{task.dir}}/before.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/before.md",
+            "pattern": "^##\\s+Request[\\s\\S]*^##\\s+Current behavior[\\s\\S]*^##\\s+Surfaces involved",
+            "flags": "im",
+            "label": "before sections in order"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{task.dir}}/before.md",
+            "minCitations": 2,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/before.md",
+            "pattern": "index\\.html",
+            "label": "names the real page"
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/fix-notes.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 700,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/fix-notes.md",
+            "pattern": "^##\\s+Problem[\\s\\S]*^##\\s+Change[\\s\\S]*^##\\s+Files touched[\\s\\S]*^##\\s+Consistency notes[\\s\\S]*^##\\s+Risk[\\s\\S]*^##\\s+How to verify",
+            "flags": "im",
+            "label": "fix-notes sections in order"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{task.dir}}/fix-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/validation.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/validation.md",
+            "pattern": "^##\\s+Before\\s*/\\s*after[\\s\\S]*^##\\s+What was exercised[\\s\\S]*^##\\s+Result",
+            "flags": "im",
+            "label": "validation sections in order"
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/review.md",
+        "kind": "markdown-report",
+        "artifact": true,
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit reviewer verdict"
+          }
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "kind": "notContains",
+        "file": "index.html",
+        "pattern": "placeholder=[\"']Filter orders[\"']",
+        "label": "the old bottom-of-page search placeholder is gone"
+      },
+      {
+        "kind": "htmlLint",
+        "file": "index.html"
+      },
+      {
+        "kind": "nodeScriptPasses",
+        "script": "tests/verify-ux-update.mjs",
+        "timeoutMs": 60000,
+        "requiredOutput": [
+          {
+            "pattern": "UXUPDATE_ORACLE placement ok",
+            "label": "search moved into the header next to the title"
+          },
+          {
+            "pattern": "UXUPDATE_ORACLE placeholder ok",
+            "label": "placeholder is exactly as requested"
+          },
+          {
+            "pattern": "UXUPDATE_ORACLE shortcut ok",
+            "label": "the / shortcut still focuses the search"
+          },
+          {
+            "pattern": "UXUPDATE_ORACLE filter ok",
+            "label": "the list filter is still wired"
+          }
+        ]
+      }
+    ],
+    "taskNotes": {
+      "minBytes": 120,
+      "checks": [
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "\\bDONE\\b[\\s\\S]*(validation\\.md|fix-notes\\.md|before\\.md)",
+          "flags": "i",
+          "label": "DONE note names the deliverables"
+        }
+      ]
+    },
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    },
+    "unchangedFixtures": [
+      "package.json",
+      "source/change-request.md"
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "{{task.dir}}/fix-notes.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "Request fidelity",
+        "description": "The delivered change is what was asked, judged as a user would: search in the header next to the title, the exact placeholder, nothing extra smuggled in."
+      },
+      {
+        "name": "Convention respect",
+        "description": "The edit reuses the page's existing structure, naming, and style patterns — the topbar's own layout — rather than inventing a new one-off style."
+      },
+      {
+        "name": "Behavior preservation with honest verification",
+        "description": "The / shortcut and the input filter still work after the move, and validation separates what was inspected in the code from what was actually exercised."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "before/after grounded in real markup",
+    "existing behaviors preserved",
+    "enforced review loop"
+  ]
+}

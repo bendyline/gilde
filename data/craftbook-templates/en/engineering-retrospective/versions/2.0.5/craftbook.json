@@ -1,0 +1,577 @@
+{
+  "id": "engineering-retrospective",
+  "name": "Engineering Retrospective",
+  "description": "Build a data-grounded engineering retrospective from git history: activity, hotspots, review patterns, and per-person growth notes for a given window.",
+  "basedOn": {
+    "name": "gstack",
+    "url": "https://github.com/garrytan/gstack"
+  },
+  "plan": "Build an engineering retrospective from reproducible repository evidence, not memory or a leaderboard. Use read-only `run_git` queries and workspace records, state the time window and identity mapping, preserve both counts and qualitative examples, and explain data limits. Interpret activity in context: commit volume is not productivity, review visibility is incomplete, and individual notes must be constructive growth observations rather than performance ratings.",
+  "entryStepId": "scope-retro",
+  "triggers": [
+    "weekly retro",
+    "what did we ship",
+    "engineering retrospective"
+  ],
+  "command": "engineering-retrospective",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope-retro",
+      "name": "Define the retrospective window and evidence contract",
+      "description": "Lock the period, repositories, participants, questions, identity aliases, and privacy boundaries.",
+      "prompt": "Confirm the requested time window, repository scope, comparison baseline, participants, timezone, team events, and intended audience. Resolve obvious author aliases from read-only history and label ambiguous identities instead of merging them. Define the questions the retrospective should answer, the datasets required, exclusions, privacy rules, and known blind spots such as squash merges or off-platform reviews.\n\nObservable handoff: write the completed result to `retro/scope.md` in the workspace with `write_file`. Do not merely describe what the file would contain. Re-read it with `read_file` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "engineering operations analyst",
+      "advanceWhen": {
+        "file": "retro/scope.md",
+        "minBytes": 700,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "goto": "collect-evidence"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "retro/scope.md",
+            "bytes": 700
+          },
+          {
+            "kind": "sniff",
+            "file": "retro/scope.md",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "contains",
+            "file": "retro/scope.md",
+            "pattern": "^##\\s+Window",
+            "flags": "im",
+            "label": "Window section"
+          },
+          {
+            "kind": "contains",
+            "file": "retro/scope.md",
+            "pattern": "^##\\s+Repositories",
+            "flags": "im",
+            "label": "Repositories section"
+          },
+          {
+            "kind": "contains",
+            "file": "retro/scope.md",
+            "pattern": "^##\\s+Identity map",
+            "flags": "im",
+            "label": "Identity map section"
+          },
+          {
+            "kind": "contains",
+            "file": "retro/scope.md",
+            "pattern": "^##\\s+Questions",
+            "flags": "im",
+            "label": "Questions section"
+          },
+          {
+            "kind": "contains",
+            "file": "retro/scope.md",
+            "pattern": "^##\\s+Limits and privacy",
+            "flags": "im",
+            "label": "Limits and privacy section"
+          }
+        ],
+        "onReject": "scope-retro",
+        "maxAttempts": 3
+      },
+      "next": "collect-evidence",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace"
+      }
+    },
+    {
+      "id": "collect-evidence",
+      "name": "Collect and reconcile the engineering evidence",
+      "description": "Gather reproducible activity, churn, hotspot, collaboration, and quality signals with caveats.",
+      "prompt": "Use read-only `run_git` calls for log, shortlog, show, and diff statistics within `retro/scope.md`; do not use shell pipelines. Preserve the exact query arguments and result counts. Reconcile totals across authors and date boundaries, sample the work behind the numbers, and identify hotspots, change concentration, review or pairing signals visible in history, rework, test activity, documentation, maintenance, and operational work. Compare with the chosen baseline where possible. Treat missing data as missing, not zero.\n\nObservable handoff: write the completed result to `retro/evidence.md` in the workspace with `write_file`. Do not merely describe what the file would contain. Re-read it with `read_file` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "engineering data analyst",
+      "consumes": [
+        {
+          "file": "retro/scope.md"
+        }
+      ],
+      "advanceWhen": {
+        "file": "retro/evidence.md",
+        "minBytes": 1400,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "goto": "synthesize-retro"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "retro/evidence.md",
+            "bytes": 1400
+          },
+          {
+            "kind": "sniff",
+            "file": "retro/evidence.md",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "contains",
+            "file": "retro/evidence.md",
+            "pattern": "^##\\s+Queries",
+            "flags": "im",
+            "label": "Queries section"
+          },
+          {
+            "kind": "contains",
+            "file": "retro/evidence.md",
+            "pattern": "^##\\s+Activity",
+            "flags": "im",
+            "label": "Activity section"
+          },
+          {
+            "kind": "contains",
+            "file": "retro/evidence.md",
+            "pattern": "^##\\s+Hotspots",
+            "flags": "im",
+            "label": "Hotspots section"
+          },
+          {
+            "kind": "contains",
+            "file": "retro/evidence.md",
+            "pattern": "^##\\s+Collaboration",
+            "flags": "im",
+            "label": "Collaboration section"
+          },
+          {
+            "kind": "contains",
+            "file": "retro/evidence.md",
+            "pattern": "^##\\s+Quality signals",
+            "flags": "im",
+            "label": "Quality signals section"
+          },
+          {
+            "kind": "contains",
+            "file": "retro/evidence.md",
+            "pattern": "^##\\s+Data limitations",
+            "flags": "im",
+            "label": "Data limitations section"
+          }
+        ],
+        "onReject": "collect-evidence",
+        "maxAttempts": 3
+      },
+      "next": "synthesize-retro",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace"
+      }
+    },
+    {
+      "id": "synthesize-retro",
+      "name": "Write the engineering retrospective",
+      "description": "Turn the evidence into balanced lessons, growth notes, and owned experiments.",
+      "prompt": "Write a retrospective grounded in `retro/evidence.md`. Explain the period's goals and events before interpreting metrics. Highlight outcomes, strengths, bottlenecks, hotspots, recurring rework, review patterns, maintenance load, and changes from baseline, citing paths or examples. Include constructive per-person growth notes only when supported by multiple observations; name contributions and opportunities without ranking people or equating volume with value. End with three to five owned, measurable experiments and a date for checking results.\n\nObservable handoff: write the completed result to `retro/engineering-retrospective.md` in the workspace with `write_file`. Do not merely describe what the file would contain. Re-read it with `read_file` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "engineering manager",
+      "consumes": [
+        {
+          "file": "retro/evidence.md"
+        }
+      ],
+      "advanceWhen": {
+        "file": "retro/engineering-retrospective.md",
+        "minBytes": 1600,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "retro/engineering-retrospective.md",
+            "bytes": 1600
+          },
+          {
+            "kind": "sniff",
+            "file": "retro/engineering-retrospective.md",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "contains",
+            "file": "retro/engineering-retrospective.md",
+            "pattern": "^##\\s+Period context",
+            "flags": "im",
+            "label": "Period context section"
+          },
+          {
+            "kind": "contains",
+            "file": "retro/engineering-retrospective.md",
+            "pattern": "^##\\s+What went well",
+            "flags": "im",
+            "label": "What went well section"
+          },
+          {
+            "kind": "contains",
+            "file": "retro/engineering-retrospective.md",
+            "pattern": "^##\\s+Friction and hotspots",
+            "flags": "im",
+            "label": "Friction and hotspots section"
+          },
+          {
+            "kind": "contains",
+            "file": "retro/engineering-retrospective.md",
+            "pattern": "^##\\s+Collaboration and growth",
+            "flags": "im",
+            "label": "Collaboration and growth section"
+          },
+          {
+            "kind": "contains",
+            "file": "retro/engineering-retrospective.md",
+            "pattern": "^##\\s+Experiments",
+            "flags": "im",
+            "label": "Experiments section"
+          },
+          {
+            "kind": "contains",
+            "file": "retro/engineering-retrospective.md",
+            "pattern": "^##\\s+Evidence limits",
+            "flags": "im",
+            "label": "Evidence limits section"
+          }
+        ],
+        "onReject": "synthesize-retro",
+        "maxAttempts": 3
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace"
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate the deliverable",
+      "description": "Independently grade the observable deliverable and route it to finish, repair, or user escalation.",
+      "prompt": "Review `retro/engineering-retrospective.md`, `retro/scope.md`, `retro/evidence.md` against every criterion below. Inspect the underlying evidence files named by the workflow; do not grade from the author's summary alone.\n\n1. The time window, repository scope, baseline, identities, and evidence queries are reproducible.\n2. Counts reconcile or discrepancies are explained, and missing signals are not treated as zero.\n3. Every important conclusion traces to multiple observations, paths, or examples rather than activity volume alone.\n4. Strengths, friction, hotspots, maintenance, collaboration, and changes from baseline are balanced and contextualized.\n5. Individual notes are evidence-backed, constructive, privacy-conscious, and never framed as rankings or performance scores.\n6. Experiments have owners, measurable outcomes, and a review date.\n\nOpen `retro/engineering-retrospective.md`, `retro/scope.md`, `retro/evidence.md` with `read_file`. Write the evidence-backed review to `{{workPath}}/reviews/engineering-retrospective-review.md` in the artifacts drawer with `write_artifact`. Give each criterion a PASS or FAIL with a concrete path, excerpt, measurement, or observed behavior. End with exactly `Verdict: PASS` or `Verdict: REVISE`. Then use `advance_task_step` for the active task: PASS routes to `finish`; REVISE routes to `repair` for review rounds 1 through 2, and the 3th REVISE routes to `needs-user`. Never route to finish while a criterion is unmet.",
+      "suggestedRole": "engineering leadership reviewer",
+      "consumes": [
+        {
+          "file": "retro/engineering-retrospective.md"
+        },
+        {
+          "file": "retro/scope.md"
+        },
+        {
+          "file": "retro/evidence.md"
+        }
+      ],
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/reviews/engineering-retrospective-review.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reviews/engineering-retrospective-review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit PASS or REVISE verdict",
+            "artifact": true
+          }
+        ],
+        "onReject": "evaluate",
+        "maxAttempts": 3
+      },
+      "next": "repair",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "repair",
+      "name": "Repair the deliverable",
+      "description": "Fix only the concrete gaps from the latest independent review.",
+      "prompt": "Read `{{workPath}}/reviews/engineering-retrospective-review.md` with `read_artifact` and repair every failed criterion in `retro/engineering-retrospective.md`, `retro/scope.md`, `retro/evidence.md`. Make changes on each file's declared surface (`write_artifact` for artifact inputs, `write_file` for workspace inputs), not in task notes or a reply. Preserve evidence that already passed. Re-run or re-check anything the reviewer found unproven. Ensure `retro/engineering-retrospective.md` is genuinely updated this turn so the repair is observable, then hand it back for independent evaluation.",
+      "suggestedRole": "engineering manager",
+      "consumes": [
+        {
+          "file": "{{workPath}}/reviews/engineering-retrospective-review.md",
+          "artifact": true
+        },
+        {
+          "file": "retro/engineering-retrospective.md"
+        },
+        {
+          "file": "retro/scope.md"
+        },
+        {
+          "file": "retro/evidence.md"
+        }
+      ],
+      "advanceWhen": {
+        "file": "retro/engineering-retrospective.md",
+        "minBytes": 1600,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "retro/engineering-retrospective.md",
+            "bytes": 1600
+          },
+          {
+            "kind": "sniff",
+            "file": "retro/engineering-retrospective.md",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "contains",
+            "file": "retro/engineering-retrospective.md",
+            "pattern": "^##\\s+Period context",
+            "flags": "im",
+            "label": "Period context section"
+          },
+          {
+            "kind": "contains",
+            "file": "retro/engineering-retrospective.md",
+            "pattern": "^##\\s+What went well",
+            "flags": "im",
+            "label": "What went well section"
+          },
+          {
+            "kind": "contains",
+            "file": "retro/engineering-retrospective.md",
+            "pattern": "^##\\s+Friction and hotspots",
+            "flags": "im",
+            "label": "Friction and hotspots section"
+          },
+          {
+            "kind": "contains",
+            "file": "retro/engineering-retrospective.md",
+            "pattern": "^##\\s+Collaboration and growth",
+            "flags": "im",
+            "label": "Collaboration and growth section"
+          },
+          {
+            "kind": "contains",
+            "file": "retro/engineering-retrospective.md",
+            "pattern": "^##\\s+Experiments",
+            "flags": "im",
+            "label": "Experiments section"
+          },
+          {
+            "kind": "contains",
+            "file": "retro/engineering-retrospective.md",
+            "pattern": "^##\\s+Evidence limits",
+            "flags": "im",
+            "label": "Evidence limits section"
+          }
+        ],
+        "onReject": "repair",
+        "maxAttempts": 3
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "artifact"
+        ]
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All deterministic and reviewer criteria passed.",
+      "prompt": "The independent review passed. Read `{{workPath}}/reviews/engineering-retrospective-review.md` with `read_artifact`, then use `write_task_note` to record a concise DONE summary with the final deliverable paths (`retro/engineering-retrospective.md`, `retro/scope.md`, `retro/evidence.md`) and the evidence that each acceptance criterion passed. Report DONE without starting new work.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/reviews/engineering-retrospective-review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "needs-user",
+      "name": "Escalate unresolved concerns",
+      "description": "The bounded repair loop ended without a defensible pass.",
+      "prompt": "The deliverable did not pass after 3 review rounds. Do not claim success. Read `{{workPath}}/reviews/engineering-retrospective-review.md` with `read_artifact`, then use `write_task_note` to record DONE_WITH_CONCERNS: the unmet criteria, what was attempted, the affected paths, and the smallest user decision or missing input needed to continue.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/reviews/engineering-retrospective-review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "2.0.5",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

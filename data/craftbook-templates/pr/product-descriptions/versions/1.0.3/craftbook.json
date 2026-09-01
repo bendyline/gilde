@@ -1,0 +1,213 @@
+{
+  "id": "product-descriptions",
+  "name": "Bulk Product Descriptions",
+  "description": "Generate consistent, on-brand product descriptions in bulk from a list of products and their attributes: it first locks the brand voice, the field schema (title, short blurb, long description, bullet features, SEO meta), and a worked exemplar, then drafts every product to that exact template so the whole catalog reads as one voice. Covers ecommerce product copy, catalog descriptions, Shopify/Amazon listings, bulk SKU copywriting, and product detail pages. Locking the voice and one exemplar before the batch is the key move: it stops a small model from drifting in tone and structure across items, which is the classic failure of bulk copy.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Voice & schema scope (planner) — lock brand voice, the per-product field schema, and one exemplar → gated on artifact `{{workPath}}/voice-scope.md` (markdown-notes)\n2. Draft all descriptions (copywriter) — write every product to the locked template and voice → gated on `product-descriptions.json` (json)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "voice-scope",
+  "triggers": [
+    "write product descriptions",
+    "bulk product copy",
+    "ecommerce listings",
+    "shopify descriptions",
+    "catalog copy"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "voice-scope",
+      "name": "Voice & schema scope",
+      "description": "lock brand voice, the per-product field schema, and one exemplar",
+      "prompt": "1) Define the brand voice in 3-5 adjectives plus 2 do's and 2 don'ts (e.g. 'warm, expert, concise; do use sensory detail; don't use hype superlatives'). 2) Define the per-product field schema and length limits: title (<=60 chars), short blurb (1 sentence), long description (40-80 words), 3-5 feature bullets, and an SEO meta description (<=155 chars). 3) Identify the product input (a list, CSV, or attributes) and confirm every product has the data the schema needs. 4) Write ONE fully worked exemplar for a sample product, filling every field, as the template the batch must match. Write an acceptance-criteria checklist (e.g. 'every product has all schema fields'; 'all fields within length limits'; 'consistent voice across items'; 'no invented specs not in the input'; 'titles are unique and descriptive'). Use write_task_note for the voice + schema + exemplar + checklist, and write the same to the produces path. No batch yet.\n\nThe deliverable `{{workPath}}/voice-scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/voice-scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/voice-scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/voice-scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "voice-scope",
+        "maxAttempts": 3
+      },
+      "next": "draft",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "draft",
+      "name": "Draft all descriptions",
+      "description": "write every product to the locked template and voice",
+      "prompt": "Produce a description for EVERY product in the input, each matching the exemplar's schema and the locked voice. 1) For each product, fill every field: title, short blurb, long description, feature bullets, SEO meta. 2) Use only attributes present in the input — never invent specs, materials, or measurements. 3) Keep the voice identical across all items; vary the wording, not the tone. 4) Respect every length limit. 5) Output a single valid JSON array, one object per product, with consistent keys matching the schema (e.g. {\"sku\", \"title\", \"shortBlurb\", \"longDescription\", \"bullets\", \"seoMeta\"}). Do not skip any product. Save to the produces path and note the product count covered.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "product-descriptions.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "product-descriptions.json",
+            "bytes": 2
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "product-descriptions.json"
+            }
+          }
+        ],
+        "onReject": "draft",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace"
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Parse product-descriptions.json (must be valid JSON) and grade against the checklist. Check EACH and write PASS/FAIL: (a) every product from the input has an object with all schema fields populated; (b) all fields are within their length limits; (c) the voice and structure are consistent across items (spot-check 3-4); (d) no invented specs absent from the input; (e) titles are unique and descriptive. A batch that drifts in tone, skips products, or fabricates attributes FAILS — loop back to draft and name the offending SKUs.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"draft\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "product-descriptions.json"
+        }
+      ],
+      "next": "draft",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

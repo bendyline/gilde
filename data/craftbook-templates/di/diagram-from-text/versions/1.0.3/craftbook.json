@@ -1,0 +1,221 @@
+{
+  "id": "diagram-from-text",
+  "name": "Diagram from Text",
+  "description": "Render a clear technical diagram — flowchart, architecture, sequence, ER, or org chart — from a plain-language description, as code-defined (Mermaid/Graphviz/SVG) so it is editable and version-controllable rather than a flat picture. Spec FIRST the diagram type, the exact nodes and edges, and the layout direction, because diagrams fail when relationships are wrong or the graph is an unreadable tangle; then build the diagram so it renders, with every described entity and relationship present and labeled. Covers flowcharts, architecture diagrams, sequence diagrams, ER diagrams, org charts, mind maps, and diagram-as-code.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Spec the diagram (planner) — lock type, nodes, edges, labels, and layout → gated on artifact `{{workPath}}/spec.md` (markdown-notes)\n2. Build the diagram (developer) — author the renderable diagram to the spec → gated on `index.html` (html-page)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "spec",
+  "triggers": [
+    "make a diagram from this description",
+    "draw a flowchart",
+    "architecture diagram",
+    "sequence diagram",
+    "turn text into a diagram"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "spec",
+      "name": "Spec the diagram",
+      "description": "lock type, nodes, edges, labels, and layout",
+      "prompt": "1) Parse the description and choose the right diagram TYPE (flowchart, sequence, ER, class, state, org chart, mind map). 2) Enumerate the exact NODES (entities/steps/actors) with their labels and the exact EDGES (relationships/transitions/messages) with their labels and direction — list them explicitly so nothing is dropped or invented. 3) Decide layout direction (top-down vs left-right) and any grouping/subgraphs. 4) Pick the rendering format (Mermaid is the default for editability; Graphviz/SVG if requested). 5) Write an acceptance-criteria checklist: 'every entity in the description is a node', 'every stated relationship is an edge with correct direction', 'labels match the description', 'the diagram renders without syntax errors', 'layout is readable (no needless crossings)'. 6) Record the node/edge list + checklist via write_task_note AND to {{workPath}}/spec.md.\n\nThe deliverable `{{workPath}}/spec.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/spec.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/spec.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/spec.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "spec",
+        "maxAttempts": 3
+      },
+      "next": "build",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "build",
+      "name": "Build the diagram",
+      "description": "author the renderable diagram to the spec",
+      "prompt": "1) Read spec.md's node/edge list. 2) Author the diagram in the chosen format (e.g. a Mermaid graph in an index.html that loads mermaid.js and renders it, so it actually displays). 3) Add EVERY node and EVERY edge from the spec with the correct labels and direction — do not add entities that weren't described and do not omit any. 4) Set the layout direction and use subgraphs/grouping for clarity; choose an arrangement that minimizes edge crossings. 5) Verify the syntax parses (the diagram renders, no error box). 6) On a loop-back, fix only the named gaps (missing edge, wrong arrow direction, syntax error). 7) write_task_note the file path and node/edge counts. The deliverable is index.html that renders the diagram.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 800
+          },
+          {
+            "kind": "htmlLint",
+            "file": "index.html"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "1) Open index.html and confirm the diagram actually RENDERS with no syntax/error box (PASS/FAIL). 2) Cross-check against spec.md: every described entity appears as a node and every stated relationship appears as an edge with the correct DIRECTION and label (PASS/FAIL — this is the core check). 3) Confirm no invented nodes/edges. 4) Judge readability — is the layout legible or a tangle? 5) Write PASS/FAIL per criterion. Missing/wrong relationships or a non-rendering diagram → loop back to build.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "index.html"
+        }
+      ],
+      "next": "build",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

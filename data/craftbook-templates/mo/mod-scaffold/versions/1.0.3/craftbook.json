@@ -1,0 +1,293 @@
+{
+  "id": "mod-scaffold",
+  "name": "Scaffold a Mod",
+  "description": "Start the mod right: a correctly-shaped Minecraft datapack — pack.mcmeta carrying the right format number for the target game version, namespaced folders laid out properly, and one working example of the mod's core idea — plus install steps a twelve-year-old can follow. Locks the idea and the version's structure rules FIRST, then scaffolds the tree, then writes the README. Use for starting a datapack, scaffolding a mod, 'my kid wants a mod that…', datapack setup, and first-mod projects.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the mod (modmaker) — the idea, the target version, the structure rules locked → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Scaffold the datapack (developer) — pack.mcmeta plus the namespaced tree with one working example → gated on `pack.mcmeta` (json)\n3. Write the README (copywriter) — install and test steps a twelve-year-old can follow → gated on `README.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "scaffold a mod",
+    "start a datapack",
+    "make a minecraft mod",
+    "set up the datapack",
+    "my kid wants a mod"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the mod",
+      "description": "the idea, the target version, the structure rules locked",
+      "prompt": "Define the mod before creating a single file. Step 1: state the mod's core idea in one sentence — the thing that should happen in the game — and the target game version it must run on. Step 2: lock the structure rules for that version — the pack_format number pack.mcmeta must carry for the target version (from the project's version notes when present, stated explicitly either way), the namespace for this mod (short, lowercase, no spaces), and the folder layout the version expects under data/ for the mechanics the idea needs (functions, recipes, advancements, tags). Step 3: decide the one working example that proves the core idea end to end — the smallest set of files that makes the thing actually happen in-game. Step 4: write an acceptance-criteria checklist ('pack.mcmeta is valid JSON with the right pack_format for the target version', 'all content lives under the namespaced folders', 'the working example is complete — every file it needs exists', 'README has install steps and a test step a kid can follow'). Call write_task_note with the idea + version + pack_format + checklist and write {{workPath}}/scope.md.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "modmaker",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "scaffold",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "scaffold",
+      "name": "Scaffold the datapack",
+      "description": "pack.mcmeta plus the namespaced tree with one working example",
+      "prompt": "Build the datapack tree against the locked rules. Step 1: write pack.mcmeta at the workspace root — valid JSON with the pack object carrying the pack_format number locked in scope and a one-line description of the mod. Step 2: lay out the namespaced tree under data/ exactly as the target version expects, and build the working example — every function, recipe, advancement, or tag file the core idea needs, each in its right folder with its right name; a scaffold whose example is missing a file teaches a kid that mods do not work. Step 3: use the version's correct folder names and identifier syntax throughout — one renamed folder between versions is the classic silent break, so double-check against the structure rules from scope. Step 4: re-read every JSON file for validity and every function file for command syntax. Call write_task_note with the file count and the namespace.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "pack.mcmeta",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "pack.mcmeta",
+            "bytes": 2
+          },
+          {
+            "kind": "contains",
+            "file": "pack.mcmeta",
+            "pattern": "pack_format",
+            "label": "pack.mcmeta declares its pack_format"
+          },
+          {
+            "kind": "fileCount",
+            "ext": [
+              "json",
+              "mcfunction"
+            ],
+            "min": 3,
+            "dir": "data"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "pack.mcmeta"
+            }
+          }
+        ],
+        "onReject": "scaffold",
+        "maxAttempts": 3
+      },
+      "next": "docs",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "docs",
+      "name": "Write the README",
+      "description": "install and test steps a twelve-year-old can follow",
+      "prompt": "Write the README that gets the mod into the game. Step 1: open with what the mod does, in one line a kid would repeat to a friend. Step 2: write the install steps — where the datapack folder goes for the target version, written concretely for the platform, one action per step, no step assuming knowledge the last step did not give. Step 3: write the test step — exactly what to do in-game to see the mod work, and exactly what should happen when it does. Step 4: add the version note — which game version this pack targets and the one-line warning that other versions may need a different format number. Write README.md and call write_task_note with the README path and the test step in one line.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "README.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "README.md",
+            "bytes": 600
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "README.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "docs",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open pack.mcmeta, walk the tree under data/, and read README.md against every criterion from {{workPath}}/scope.md: pack.mcmeta is valid JSON carrying the pack_format locked for the target version, all content sits under the namespaced folders with the version's correct folder names, the working example is complete — trace the core idea file by file and confirm every reference resolves — and the README's install and test steps are concrete enough for a twelve-year-old to follow without help. Write PASS/FAIL per criterion; on any failure, name the missing or misplaced file and loop back to scaffold.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"scaffold\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "README.md"
+        }
+      ],
+      "next": "scaffold",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

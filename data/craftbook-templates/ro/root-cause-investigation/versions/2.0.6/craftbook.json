@@ -1,0 +1,595 @@
+{
+  "id": "root-cause-investigation",
+  "name": "Root-Cause Investigation",
+  "description": "Debug systematically: reproduce the failure and find the true root cause before changing any code, then fix and verify. Enforces a no-fix-without-diagnosis discipline.",
+  "basedOn": {
+    "name": "gstack",
+    "url": "https://github.com/garrytan/gstack"
+  },
+  "plan": "Reproduce first, diagnose second, change code only after the evidence identifies a root cause. Keep an explicit hypothesis ledger so plausible stories cannot silently become facts. Prefer the smallest experiment that separates competing explanations. The final report must connect symptom, causal mechanism, fix, and regression proof with inspectable paths and command results.",
+  "entryStepId": "reproduce",
+  "triggers": [
+    "debug this",
+    "fix this bug",
+    "why is this broken",
+    "root cause analysis",
+    "investigate this error",
+    "investigate this bug",
+    "root cause this",
+    "why is this failing",
+    "figure out why it breaks",
+    "diagnose this incident",
+    "investigate this",
+    "find the bug",
+    "root cause"
+  ],
+  "command": "root-cause-investigation",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "reproduce",
+      "name": "Reproduce and bound the failure",
+      "description": "Establish a stable failing case, expected behavior, environment, and blast radius.",
+      "prompt": "Read the request, relevant code, existing tests, logs, and configuration. Reproduce the problem with the smallest safe case you can run. Record exact inputs, expected and actual results, environment details, frequency, and whether the failure is deterministic. If it cannot be reproduced, document the attempts and the missing observation needed; do not invent a cause or edit production code.\n\nObservable handoff: write the completed result to `investigations/reproduction.md` in the workspace with `write_file`. Do not merely describe what the file would contain. Re-read it with `read_file` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "debugging engineer",
+      "advanceWhen": {
+        "file": "investigations/reproduction.md",
+        "minBytes": 700,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "goto": "diagnose"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "investigations/reproduction.md",
+            "bytes": 700
+          },
+          {
+            "kind": "sniff",
+            "file": "investigations/reproduction.md",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "contains",
+            "file": "investigations/reproduction.md",
+            "pattern": "^##\\s+Symptom",
+            "flags": "im",
+            "label": "Symptom section"
+          },
+          {
+            "kind": "contains",
+            "file": "investigations/reproduction.md",
+            "pattern": "^##\\s+Minimal reproduction",
+            "flags": "im",
+            "label": "Minimal reproduction section"
+          },
+          {
+            "kind": "contains",
+            "file": "investigations/reproduction.md",
+            "pattern": "^##\\s+Expected",
+            "flags": "im",
+            "label": "Expected behavior section"
+          },
+          {
+            "kind": "contains",
+            "file": "investigations/reproduction.md",
+            "pattern": "^##\\s+Actual",
+            "flags": "im",
+            "label": "Actual behavior section"
+          },
+          {
+            "kind": "contains",
+            "file": "investigations/reproduction.md",
+            "pattern": "^##\\s+Evidence",
+            "flags": "im",
+            "label": "Evidence section"
+          }
+        ],
+        "onReject": "reproduce",
+        "maxAttempts": 3
+      },
+      "next": "diagnose",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace"
+      }
+    },
+    {
+      "id": "diagnose",
+      "name": "Prove the root cause",
+      "description": "Test competing hypotheses and identify the causal mechanism before modifying code.",
+      "prompt": "Use `investigations/reproduction.md` to form at least two plausible hypotheses. Trace the relevant execution and data paths with workspace search and file-reading tools. For each hypothesis, run a discriminating experiment and record its predicted versus observed outcome. Name the first bad state or decision, explain how it produces the symptom, and check for sibling cases. Do not change source code in this phase.\n\nObservable handoff: write the completed result to `investigations/root-cause-analysis.md` in the workspace with `write_file`. Do not merely describe what the file would contain. Re-read it with `read_file` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "root-cause analyst",
+      "consumes": [
+        {
+          "file": "investigations/reproduction.md"
+        }
+      ],
+      "advanceWhen": {
+        "file": "investigations/root-cause-analysis.md",
+        "minBytes": 1000,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "goto": "fix-and-verify"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "investigations/root-cause-analysis.md",
+            "bytes": 1000
+          },
+          {
+            "kind": "sniff",
+            "file": "investigations/root-cause-analysis.md",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "contains",
+            "file": "investigations/root-cause-analysis.md",
+            "pattern": "^##\\s+Hypotheses",
+            "flags": "im",
+            "label": "Hypotheses section"
+          },
+          {
+            "kind": "contains",
+            "file": "investigations/root-cause-analysis.md",
+            "pattern": "^##\\s+Experiments",
+            "flags": "im",
+            "label": "Experiments section"
+          },
+          {
+            "kind": "contains",
+            "file": "investigations/root-cause-analysis.md",
+            "pattern": "^##\\s+Root cause",
+            "flags": "im",
+            "label": "Root cause section"
+          },
+          {
+            "kind": "contains",
+            "file": "investigations/root-cause-analysis.md",
+            "pattern": "^##\\s+Causal chain",
+            "flags": "im",
+            "label": "Causal chain section"
+          },
+          {
+            "kind": "contains",
+            "file": "investigations/root-cause-analysis.md",
+            "pattern": "^##\\s+Blast radius",
+            "flags": "im",
+            "label": "Blast radius section"
+          }
+        ],
+        "onReject": "diagnose",
+        "maxAttempts": 3
+      },
+      "next": "fix-and-verify",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace"
+      }
+    },
+    {
+      "id": "fix-and-verify",
+      "name": "Implement the smallest fix and verify it",
+      "description": "Correct the proven mechanism and demonstrate both regression coverage and non-regression.",
+      "prompt": "Read both investigation files. Implement the smallest maintainable change that breaks the documented causal chain. Add or strengthen a regression test that fails on the old behavior and passes with the fix. Run the focused test, relevant neighboring tests, and any proportionate static checks. Record exact changed paths and exact verification commands with exit results. If the environment prevents a check, label it unverified and explain what is needed to run it.\n\nObservable handoff: write the completed result to `{{workPath}}/reports/root-cause-investigation.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "software engineer",
+      "advanceWhen": {
+        "file": "{{workPath}}/reports/root-cause-investigation.md",
+        "minBytes": 1200,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "bytes": 1200,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "pattern": "^##\\s+Root cause",
+            "flags": "im",
+            "label": "Root cause section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "pattern": "^##\\s+Fix",
+            "flags": "im",
+            "label": "Fix section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "pattern": "^##\\s+Changed files",
+            "flags": "im",
+            "label": "Changed files section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "pattern": "^##\\s+Regression coverage",
+            "flags": "im",
+            "label": "Regression coverage section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "pattern": "^##\\s+Verification",
+            "flags": "im",
+            "label": "Verification section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "pattern": "^##\\s+Rollback",
+            "flags": "im",
+            "label": "Rollback section",
+            "artifact": true
+          }
+        ],
+        "onReject": "fix-and-verify",
+        "maxAttempts": 3
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate the deliverable",
+      "description": "Independently grade the observable deliverable and route it to finish, repair, or user escalation.",
+      "prompt": "Review `{{workPath}}/reports/root-cause-investigation.md`, `investigations/reproduction.md`, `investigations/root-cause-analysis.md` against every criterion below. Inspect the underlying evidence files named by the workflow; do not grade from the author's summary alone.\n\n1. The failure is reproducible or the report explicitly stops without claiming an unproven diagnosis.\n2. Competing hypotheses were separated by recorded experiments rather than intuition.\n3. The stated root cause includes a causal chain from first bad state to observed symptom.\n4. The change is limited to that causal mechanism and covers identified sibling cases.\n5. A regression test and neighboring checks have concrete, credible results with no fabricated execution evidence.\n6. The report identifies changed files, residual risk, and a viable rollback.\n\nOpen `{{workPath}}/reports/root-cause-investigation.md` with `read_artifact`. Open `investigations/reproduction.md`, `investigations/root-cause-analysis.md` with `read_file`. Write the evidence-backed review to `{{workPath}}/reviews/root-cause-investigation-review.md` in the artifacts drawer with `write_artifact`. Give each criterion a PASS or FAIL with a concrete path, excerpt, measurement, or observed behavior. End with exactly `Verdict: PASS` or `Verdict: REVISE`. Then use `advance_task_step` for the active task: PASS routes to `finish`; REVISE routes to `repair` for review rounds 1 through 2, and the 3th REVISE routes to `needs-user`. Never route to finish while a criterion is unmet.",
+      "suggestedRole": "debugging reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/reports/root-cause-investigation.md",
+          "artifact": true
+        },
+        {
+          "file": "investigations/reproduction.md"
+        },
+        {
+          "file": "investigations/root-cause-analysis.md"
+        }
+      ],
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/reviews/root-cause-investigation-review.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reviews/root-cause-investigation-review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit PASS or REVISE verdict",
+            "artifact": true
+          }
+        ],
+        "onReject": "evaluate",
+        "maxAttempts": 3
+      },
+      "next": "repair",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "repair",
+      "name": "Repair the deliverable",
+      "description": "Fix only the concrete gaps from the latest independent review.",
+      "prompt": "Read `{{workPath}}/reviews/root-cause-investigation-review.md` with `read_artifact` and repair every failed criterion in `{{workPath}}/reports/root-cause-investigation.md`, `investigations/reproduction.md`, `investigations/root-cause-analysis.md`. Make changes on each file's declared surface (`write_artifact` for artifact inputs, `write_file` for workspace inputs), not in task notes or a reply. Preserve evidence that already passed. Re-run or re-check anything the reviewer found unproven. Ensure `{{workPath}}/reports/root-cause-investigation.md` is genuinely updated this turn so the repair is observable, then hand it back for independent evaluation.",
+      "suggestedRole": "software engineer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/reviews/root-cause-investigation-review.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/reports/root-cause-investigation.md",
+          "artifact": true
+        },
+        {
+          "file": "investigations/reproduction.md"
+        },
+        {
+          "file": "investigations/root-cause-analysis.md"
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/reports/root-cause-investigation.md",
+        "minBytes": 1200,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "bytes": 1200,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "pattern": "^##\\s+Root cause",
+            "flags": "im",
+            "label": "Root cause section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "pattern": "^##\\s+Fix",
+            "flags": "im",
+            "label": "Fix section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "pattern": "^##\\s+Changed files",
+            "flags": "im",
+            "label": "Changed files section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "pattern": "^##\\s+Regression coverage",
+            "flags": "im",
+            "label": "Regression coverage section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "pattern": "^##\\s+Verification",
+            "flags": "im",
+            "label": "Verification section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "pattern": "^##\\s+Rollback",
+            "flags": "im",
+            "label": "Rollback section",
+            "artifact": true
+          }
+        ],
+        "onReject": "repair",
+        "maxAttempts": 3
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "workspace"
+        ]
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All deterministic and reviewer criteria passed.",
+      "prompt": "The independent review passed. Read `{{workPath}}/reviews/root-cause-investigation-review.md` with `read_artifact`, then use `write_task_note` to record a concise DONE summary with the final deliverable paths (`{{workPath}}/reports/root-cause-investigation.md`, `investigations/reproduction.md`, `investigations/root-cause-analysis.md`) and the evidence that each acceptance criterion passed. Report DONE without starting new work.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/reviews/root-cause-investigation-review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "needs-user",
+      "name": "Escalate unresolved concerns",
+      "description": "The bounded repair loop ended without a defensible pass.",
+      "prompt": "The deliverable did not pass after 3 review rounds. Do not claim success. Read `{{workPath}}/reviews/root-cause-investigation-review.md` with `read_artifact`, then use `write_task_note` to record DONE_WITH_CONCERNS: the unmet criteria, what was attempted, the affected paths, and the smallest user decision or missing input needed to continue.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/reviews/root-cause-investigation-review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "2.0.6",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

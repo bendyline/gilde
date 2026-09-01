@@ -1,0 +1,284 @@
+{
+  "id": "favicon-set",
+  "name": "Favicon & App-Icon Set",
+  "description": "Generate the complete favicon and app-icon set a modern site needs — the multi-size favicon, Apple touch icon, Android/maskable icons, and the web app manifest plus the exact HTML link/meta tags — from a single source mark, ensuring the icon stays legible at 16px and the maskable variant survives platform cropping. Lock FIRST the source mark, the exact size matrix, and the safe-area/padding rules (maskable icons need extra padding or platforms clip them) because favicon sets fail when the icon is illegible tiny or gets cropped on Android; then generate every size and emit the manifest + install snippet. Covers favicons, app icons, PWA icons, touch icons, maskable icons, and the web app manifest.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the icon set (planner) — lock source mark, size matrix, and maskable safe-area → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Generate the icons (image-generator) — render every size, including a safe-area maskable → gated on `assets` (image-set)\n3. Manifest & install snippet (developer) — emit manifest.json and the HTML head snippet → gated on `index.html` (html-page)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "generate a favicon set",
+    "make app icons",
+    "pwa icons and manifest",
+    "apple touch icon",
+    "favicon from my logo"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the icon set",
+      "description": "lock source mark, size matrix, and maskable safe-area",
+      "prompt": "1) Identify the source mark/logo (or a simplified glyph version suited to tiny sizes) and the brand background color. 2) Lock the SIZE MATRIX: favicon 16/32/48 (ICO + PNG), apple-touch-icon 180, Android/PWA 192 and 512, plus a 512 MASKABLE variant. 3) Lock the maskable SAFE-AREA rule: the icon content must sit within the central ~80% (≈10% padding each side) so Android's mask doesn't clip it, with a solid background fill. 4) Decide the manifest fields (name, short_name, theme_color, background_color, icons array with purpose: any/maskable). 5) Write an acceptance-criteria checklist: 'all matrix sizes produced', 'icon is legible at 16px (simplified if needed)', 'maskable variant keeps content in the safe area on a filled background', 'manifest.json is valid and lists every icon with correct sizes/purpose', 'the HTML link/meta snippet references the real files'. 6) Record matrix + rules + checklist via write_task_note AND to {{workPath}}/scope.md.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "generate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "generate",
+      "name": "Generate the icons",
+      "description": "render every size, including a safe-area maskable",
+      "prompt": "1) Read scope.md. 2) Produce each size in the matrix from the source mark, saving into assets/ with conventional names (favicon-16.png, favicon-32.png, apple-touch-icon.png, icon-192.png, icon-512.png, maskable-512.png, and favicon.ico). 3) For the smallest sizes, use the SIMPLIFIED glyph so it stays legible at 16px — fine detail that vanishes tiny must be dropped. 4) For the maskable variant, render the icon within the central safe area on a solid background fill so platform masks (circle/squircle) never clip it. 5) Keep the mark and colors consistent across sizes. 6) Eyeball the 16px and the masked 512 to confirm legibility and no clipping. write_task_note the produced files. Good looks like: a crisp tiny favicon and a maskable icon that survives any crop.",
+      "suggestedRole": "image-generator",
+      "advanceWhen": {
+        "file": "assets",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "fileCount",
+            "ext": [
+              "png",
+              "jpg",
+              "jpeg",
+              "svg",
+              "webp"
+            ],
+            "min": 3,
+            "dir": "assets"
+          }
+        ],
+        "onReject": "generate",
+        "maxAttempts": 3
+      },
+      "next": "manifest",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "manifest",
+      "name": "Manifest & install snippet",
+      "description": "emit manifest.json and the HTML head snippet",
+      "prompt": "1) Write manifest.json with name, short_name, theme_color, background_color, and an icons array entry for each generated icon (src, sizes, type, and purpose: \"any\" or \"maskable\" for the maskable one) — referencing the real files in assets/. 2) Build index.html whose <head> contains the full install snippet: the favicon link tags (ICO + PNG sizes), the apple-touch-icon link, the manifest link, and a theme-color meta — all pointing at the real assets/ paths — and whose body shows a small preview rendering each icon at its native size plus a 16px row. 3) Validate manifest.json parses and every src resolves to a real file. 4) On a loop-back, fix only named gaps (missing icon entry, wrong purpose, broken path). 5) write_task_note the manifest and page paths. The gated deliverable is index.html.",
+      "suggestedRole": "developer",
+      "consumes": [
+        {
+          "file": "assets"
+        }
+      ],
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 800
+          },
+          {
+            "kind": "htmlLint",
+            "file": "index.html"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          }
+        ],
+        "onReject": "manifest",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "1) Open assets/ and confirm every matrix size exists (16/32/48, 180, 192, 512, maskable-512, favicon.ico) (PASS/FAIL). 2) Open manifest.json — it parses, theme/background colors set, and every icon listed with correct sizes and purpose (any vs maskable) pointing at real files (PASS/FAIL). 3) Open index.html and verify the head snippet links the favicon, apple-touch-icon, and manifest at real paths; view the 16px preview row — is the icon legible tiny (PASS/FAIL)? 4) Inspect the maskable icon — is content within the safe area on a filled background so it won't clip (PASS/FAIL)? 5) Write PASS/FAIL per criterion. Missing sizes, illegible 16px, clipped maskable, or a broken manifest → loop back to manifest (or generate if an icon is wrong).\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"manifest\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "index.html"
+        }
+      ],
+      "next": "manifest",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

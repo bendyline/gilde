@@ -1,0 +1,282 @@
+{
+  "id": "data-export-migrate",
+  "name": "Migrate Data Between Tools",
+  "description": "Migrate records from a source tool/format to a destination tool/format — CRM to CRM, spreadsheet to app, JSON export to a new API — with a field mapping, value transforms, and a reconciliation that proves nothing was lost or corrupted. Locks the source→destination field map, the transform/normalization rules, and the reconciliation criteria FIRST, then builds the extract-transform-load with a dry-run preview, then verifies record counts match, key fields round-trip, and a diff report flags any mismatch. Mapping-and-reconciliation-before-load is the discipline that makes a migration trustworthy rather than a one-shot leap of faith.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the migration (planner) — field map, transforms, reconciliation criteria → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Build the migration (developer) — extract, transform, dry-run, load, reconcile → gated on `migrate.py` (code-module)\n3. Verify the migration (reviewer) — counts reconcile, fields round-trip, diff clean → gated on artifact `{{workPath}}/verify.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "migrate data between tools",
+    "move my CRM data",
+    "import an export into another app",
+    "convert and load records",
+    "migrate a spreadsheet to an app"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the migration",
+      "description": "field map, transforms, reconciliation criteria",
+      "prompt": "Define the migration contract before moving data. Step 1: profile the source (format, record count, fields, key) and the destination (target schema, required fields, the key/upsert semantics). Step 2: build the source→destination field map, including fields that split/merge/rename, and list destination required-fields with no source — each needs a default or makes the record invalid. Step 3: define per-field transforms (date/format normalization, enum remapping, unit conversion) and the validation rules a destination record must satisfy. Step 4: define the reconciliation criteria — counts match (in vs out vs rejected), a chosen key set round-trips, and key totals/sums match. Step 5: write an acceptance-criteria checklist ('every source record is loaded or explicitly rejected with a reason', 'field map applied, no unmapped data dropped silently', 'transforms produce valid destination values', 'counts reconcile', 'a dry-run preview exists before any write', 'a diff report lists every mismatch'). Call write_task_note with the map + transforms + reconciliation + checklist and write {{workPath}}/scope.md. No load yet.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "build",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "build",
+      "name": "Build the migration",
+      "description": "extract, transform, dry-run, load, reconcile",
+      "prompt": "Implement the migration to the locked map. Step 1: extract all source records. Step 2: transform each record through the field map and transforms into a destination-shaped object; validate it, and on failure route it to a rejected list with the reason rather than dropping it. Step 3: produce a DRY-RUN preview first — the transformed records and a summary (to-load / rejected counts) — and write it before any destination write. Step 4: load into the destination using the upsert key so a re-run is idempotent (no duplicates). Step 5: run reconciliation — produce a diff report comparing source vs destination on counts and the chosen key fields, listing every mismatch — and write the migration module plus the diff report. Call write_task_note with the module path, the diff-report path, and the loaded/rejected counts.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "migrate.py",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "migrate.py",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "migrate.py",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "migrate.py"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "migrate.py"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "verify",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "verify",
+      "name": "Verify the migration",
+      "description": "counts reconcile, fields round-trip, diff clean",
+      "prompt": "Verify the migration against scope. Step 1: confirm the module runs and produces both a dry-run preview and a diff report. Step 2: confirm coverage — every source record is either loaded or in the rejected list with a reason; loaded + rejected equals the source count. Step 3: confirm the field map applied with no silent data loss, and that destination records pass the validation rules. Step 4: confirm reconciliation — counts match and the chosen key fields round-trip (spot-check 5 records source↔destination), and the diff report has no unexplained mismatches. Step 5: confirm idempotency — a re-run via the upsert key creates no duplicates. Write PASS/FAIL per criterion to {{workPath}}/verify.md and task notes; on failure, name the records and loop back to build.\n\nThe deliverable `{{workPath}}/verify.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "migrate.py",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "migrate.py",
+            "sniff": "nonempty"
+          },
+          {
+            "kind": "esmImports",
+            "file": "migrate.py"
+          },
+          {
+            "kind": "sourceParses",
+            "file": "migrate.py"
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Run migrate.py in dry-run and load modes (or trace it) and verify every criterion from {{workPath}}/scope.md: a dry-run preview precedes any write, every source record is loaded or rejected-with-reason (loaded+rejected = source count), the field map applied with no silent loss, destination records validate, counts reconcile and key fields round-trip (spot-check 5), the diff report has no unexplained mismatches, and a re-run via the upsert key creates no duplicates. Write PASS/FAIL per criterion; on any failure, name the records and loop back to build.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "migrate.py"
+        }
+      ],
+      "next": "build",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

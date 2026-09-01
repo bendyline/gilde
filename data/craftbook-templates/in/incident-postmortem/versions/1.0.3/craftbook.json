@@ -1,0 +1,288 @@
+{
+  "id": "incident-postmortem",
+  "name": "Incident Postmortem",
+  "description": "Write a blameless incident postmortem after a production outage or degradation — a structured, factual document covering the impact, a precise timeline (detection → diagnosis → mitigation → resolution), the root cause and contributing factors via a five-whys analysis, what went well and what went poorly, and concrete, owned, dated action items that prevent recurrence. A researcher assembles the verified timeline and evidence from logs/alerts/chat, a copywriter writes the blameless narrative and root-cause analysis, and a reviewer checks the timeline is accurate, the analysis reaches a true root cause, and every action item is specific and owned. Use this for outage retrospectives, severity-incident reviews, and any 'what happened and how do we prevent it' writeup.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Assemble the timeline (researcher) — build a verified, timestamped factual timeline → gated on artifact `{{workPath}}/timeline.md` (markdown-notes)\n2. Write the postmortem (copywriter) — blameless narrative, root-cause, and owned action items → gated on artifact `{{workPath}}/postmortem.md` (markdown-report)\n3. Review for accuracy and blamelessness (reviewer) — check root cause, timeline fidelity, and action quality → gated on artifact `{{workPath}}/review.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "timeline",
+  "triggers": [
+    "write a postmortem",
+    "incident retrospective",
+    "outage writeup",
+    "root cause analysis",
+    "post-incident review"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "timeline",
+      "name": "Assemble the timeline",
+      "description": "build a verified, timestamped factual timeline",
+      "prompt": "1. Gather the raw record of the incident from every available source: alerts, monitoring graphs, deploy log, incident chat, error logs, and any commands run. 2. Reconstruct a precise, timestamped timeline of key moments: first impact, detection/alert, acknowledgement, diagnosis milestones, the mitigation action, full resolution, and the all-clear. 3. Quantify the impact factually: duration, who/what was affected, magnitude (error rate, users, revenue if known). 4. Note the detection method (alert vs customer report) and time-to-detect / time-to-mitigate. 5. Keep this BLAMELESS and factual — what happened and when, not who is at fault. 6. Good looks like: a chronological, timestamped timeline whose every entry is backed by evidence, plus a quantified impact statement. Write an acceptance-criteria checklist ('timeline is timestamped and chronological', 'impact is quantified with duration and scope', 'detection and mitigation times are stated', 'analysis must reach a true root cause via five-whys', 'every action item must be specific, owned, and dated', 'tone stays blameless') plus the timeline and impact to the notes file via write_task_note AND to {{workPath}}/timeline.md.\n\nThe deliverable `{{workPath}}/timeline.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "researcher",
+      "advanceWhen": {
+        "file": "{{workPath}}/timeline.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/timeline.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/timeline.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "timeline",
+        "maxAttempts": 3
+      },
+      "next": "write",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "write",
+      "name": "Write the postmortem",
+      "description": "blameless narrative, root-cause, and owned action items",
+      "prompt": "1. Open {{workPath}}/timeline.md and write the postmortem with standard sections: Summary, Impact, Timeline, Root Cause, Contributing Factors, What Went Well, What Went Poorly, and Action Items. 2. In Root Cause, run a five-whys (or equivalent) from the symptom down to the systemic cause — not 'human made a mistake' but the system that allowed the mistake to cause an outage. 3. Keep the entire document BLAMELESS: describe systems and decisions, never blame individuals. 4. Make each Action Item concrete, with an explicit owner and a due date, and tied to a contributing factor — preventing recurrence, not vague 'be more careful'. 5. Lead with a tight executive Summary (what happened, impact, status) readable in 30 seconds. 6. Good looks like: a factual, blameless document where the root cause is systemic, the timeline matches {{workPath}}/timeline.md, and every action item is specific/owned/dated. Write the postmortem to {{workPath}}/postmortem.md.\n\nBefore working, open the artifact input `{{workPath}}/timeline.md` with `read_artifact`; do not look for it in the workspace.\n\nThe deliverable `{{workPath}}/postmortem.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "consumes": [
+        {
+          "file": "{{workPath}}/timeline.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/postmortem.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/postmortem.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/postmortem.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 3
+      },
+      "next": "review",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "review",
+      "name": "Review for accuracy and blamelessness",
+      "description": "check root cause, timeline fidelity, and action quality",
+      "prompt": "1. Open {{workPath}}/postmortem.md and cross-check its Timeline against {{workPath}}/timeline.md — every entry must be accurate and evidence-backed, nothing invented or reordered. 2. Pressure-test the Root Cause: does the five-whys actually reach a SYSTEMIC cause, or does it stop at 'someone erred'? If it stops short, it fails. 3. Verify the document is genuinely blameless — flag any individual-blaming language. 4. Audit each Action Item: is it specific, does it have an owner and a due date, and would it actually reduce recurrence of THIS class of incident? 5. Confirm Impact is quantified and the Summary is tight and accurate. 6. Write a PASS/FAIL per acceptance criterion with specifics; any failure routes back to the write phase. Write findings to {{workPath}}/review.md.\n\nBefore working, open the artifact inputs `{{workPath}}/timeline.md`, `{{workPath}}/postmortem.md` with `read_artifact`; do not look for them in the workspace.\n\nThe deliverable `{{workPath}}/review.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/timeline.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/postmortem.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/review.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/postmortem.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/postmortem.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "review",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open {{workPath}}/postmortem.md and verify it against the criteria in {{workPath}}/timeline.md, PASS/FAIL each. Confirm: (a) it has Summary, Impact, Timeline, Root Cause, Contributing Factors, What Went Well/Poorly, and Action Items sections; (b) the timeline is chronological, timestamped, and matches the assembled evidence; (c) impact is quantified (duration + scope); (d) the root-cause analysis reaches a systemic cause via five-whys, not individual blame; (e) the document is blameless throughout; (f) every action item is specific, owned, and dated, and addresses a contributing factor. Any FAIL routes back to the write phase.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/postmortem.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/postmortem.md",
+          "artifact": true
+        }
+      ],
+      "next": "write",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

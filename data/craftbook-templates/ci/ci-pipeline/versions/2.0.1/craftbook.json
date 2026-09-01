@@ -1,0 +1,585 @@
+{
+  "id": "ci-pipeline",
+  "name": "CI Pipeline from Scratch",
+  "description": "Set up continuous integration the way it survives contact with a real repo: every stage grounded in a command that actually exists, and no claim that local reading cannot back. First INVENTORY: read package.json and the repo layout, record the scripts that genuinely exist with their exact lines quoted, and decide the stages — install, lint, typecheck, test, build, whichever subset is real here — plus caching keyed to the lockfile and the triggers the work calls for. The cardinal sin this book exists to prevent is the invented command: a `run:` line calling a script the repo does not have turns the whole pipeline red on its first push, so nothing enters the plan without a quoted manifest line behind it. A release or publish stage is planned only when the repo shows one — publish config, a release script, a tag convention — and when present it is gated behind the green test/build stages and the tag trigger so publishing can never run before the checks pass. Then AUTHOR the real workflow file(s) at the conventional location for the detected host (`.github/workflows/ci.yml` for GitHub Actions by default): minimal, cached, actions pinned to major versions, gating merges on green, with no fabricated secrets or inputs. Then VERIFY by reading the workflow back and matching EVERY command it invokes to the quoted manifest line that provides it — and by being plain that CI cannot be executed locally, so the notes must say what reading verified and what only a live run on the host can prove. Finally an independent reviewer checks the same ground truth — commands exist, stages ordered, triggers match, nothing invented — and a REVISE verdict routes the work back automatically with concrete findings. Works identically whether the run edits the project directly or drafts a change proposal for the user to apply.",
+  "plan": "Inventory the repo's real commands and decide the stages -> author the workflow at the conventional location, cached and merge-gating -> verify every invoked command against the manifests, honest about what only a live CI run can prove -> enforced independent review.",
+  "entryStepId": "inventory",
+  "triggers": [
+    "set up ci",
+    "create a ci pipeline",
+    "github actions workflow",
+    "build a ci/cd pipeline",
+    "add automated testing on push",
+    "set up a release pipeline",
+    "ci/cd for releases",
+    "publish on tag workflow",
+    "github actions release",
+    "automate the release"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "inventory",
+      "name": "Inventory the repo",
+      "description": "Read the real scripts and layout, then plan stages, caching, and triggers — never a command that does not exist.",
+      "prompt": "Learn what this repo actually needs before writing a line of YAML. Read `package.json` (and any workspace manifests) with `read_file` and record the scripts that genuinely exist — their exact names and the exact lines. Read the repo layout with `list_dir`: the lockfile (which package manager), the language, build outputs, and any existing workflow files. NEVER invent a command: a stage enters your plan only when a matching script or standard invocation exists in the repo — install, lint, typecheck, test, build, in whatever subset is real here, and nothing for tools the repo does not use. Decide caching from the lockfile and package manager, and the triggers the task calls for (typically pushes to the default branch and pull requests). Plan a release or publish stage ONLY when the repo shows one — a publish configuration, a release script, an existing tag convention; when nothing shows one, say so and leave it out. Note the CI host the repo points at (existing workflow files, hosting hints); default to GitHub Actions when nothing says otherwise.\n\nWrite `{{workPath}}/ci-plan.md` with exactly these sections: `## Detected commands` (each script name with the exact line quoted from `package.json`), `## Pipeline stages` (the stages in order and why each exists here), `## Caching` (what is cached and what it is keyed on), `## Triggers` (the events and why). Cite the real files with backtick paths.\n\nObservable handoff: write the completed result to `{{workPath}}/ci-plan.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "devops engineer",
+      "capabilityFloor": "small",
+      "advanceWhen": {
+        "file": "{{workPath}}/ci-plan.md",
+        "minBytes": 500,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "author"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/ci-plan.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/ci-plan.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/ci-plan.md",
+            "pattern": "^##\\s+Detected commands",
+            "flags": "im",
+            "label": "Detected commands section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/ci-plan.md",
+            "pattern": "^##\\s+Pipeline stages",
+            "flags": "im",
+            "label": "Pipeline stages section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/ci-plan.md",
+            "pattern": "^##\\s+Caching",
+            "flags": "im",
+            "label": "Caching section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/ci-plan.md",
+            "pattern": "^##\\s+Triggers",
+            "flags": "im",
+            "label": "Triggers section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/ci-plan.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "inventory",
+        "maxAttempts": 4
+      },
+      "next": "author",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "author",
+      "name": "Author the workflow",
+      "description": "Write the real workflow file(s) at the conventional location — minimal, cached, pinned, gating merges on green.",
+      "prompt": "Read `{{workPath}}/ci-plan.md` and write the REAL workflow file(s) with `write_file` at the conventional location for the detected host — for GitHub Actions, `.github/workflows/ci.yml` unless the repo already has its own convention. Keep it minimal and fast: the planned stages in order, dependency caching wired to the lockfile, and the workflow triggering on the planned pushes and pull requests so merges gate on green. Pin every action to a major version (for example `actions/checkout@v4`); do not invent action names, inputs, or secrets. Every `run:` line must invoke a command the plan detected — nothing else. Add a release or publish job ONLY if ci-plan.md called for one, and gate it behind the green build/test stages and the tag trigger so a publish can never run before the checks pass; if the plan named no release stage, do not add one.\n\nThen write `{{workPath}}/ci-notes.md` with exactly these sections: `## Files written` (the real path of every workflow file, backtick path per line), `## Stages` (each job and step, and the detected command it runs), `## Choices explained` (caching, triggers, pinning, and anything you deliberately left out — including a release job when the repo showed no evidence for one). Before working, open `{{workPath}}/ci-plan.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/ci-notes.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "devops engineer",
+      "capabilityFloor": "small",
+      "consumes": [
+        {
+          "file": "{{workPath}}/ci-plan.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/ci-notes.md",
+        "minBytes": 500,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "verify"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/ci-notes.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/ci-notes.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/ci-notes.md",
+            "pattern": "^##\\s+Files written",
+            "flags": "im",
+            "label": "Files written section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/ci-notes.md",
+            "pattern": "^##\\s+Stages",
+            "flags": "im",
+            "label": "Stages section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/ci-notes.md",
+            "pattern": "^##\\s+Choices explained",
+            "flags": "im",
+            "label": "Choices explained section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/ci-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "author",
+        "maxAttempts": 4
+      },
+      "next": "verify",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "workspace"
+        ]
+      }
+    },
+    {
+      "id": "verify",
+      "name": "Verify against the manifests",
+      "description": "Read the workflow back and match every invoked command to the manifest line that provides it; honest about what only a live run proves.",
+      "prompt": "Verify the workflow the only honest way available without a CI run: read it back and check every claim against the repo. Open each workflow file named in `{{workPath}}/ci-notes.md` with `read_file`, and for EVERY command it invokes, find and quote the `package.json` line (or manifest entry) that provides it — a `run:` line with no matching script is a defect: fix it now at the workflow's real site, not in prose. Confirm the triggers match `{{workPath}}/ci-plan.md`. Confirm every action reference is pinned to a major version, and every secret the workflow references is a standard one (`GITHUB_TOKEN`) or one the user explicitly named — an invented secret is a defect. Be plain about the limit of this verification: CI cannot be executed locally, so state what reading verified and what only a real run on the host can prove — never claim the pipeline ran.\n\nWrite `{{workPath}}/verification.md` with exactly these sections: `## Workflow files` (each file checked, backtick paths), `## Commands verified against package.json` (each workflow command with the quoted manifest line that provides it), `## Result` (what reading verified, what only a live CI run can prove, and any defects found and fixed). Before working, open `{{workPath}}/ci-plan.md`, `{{workPath}}/ci-notes.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/verification.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "devops engineer",
+      "capabilityFloor": "small",
+      "consumes": [
+        {
+          "file": "{{workPath}}/ci-plan.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/ci-notes.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/verification.md",
+        "minBytes": 500,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/verification.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/verification.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Workflow files",
+            "flags": "im",
+            "label": "Workflow files section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Commands verified against package\\.json",
+            "flags": "im",
+            "label": "Commands verified section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Result",
+            "flags": "im",
+            "label": "Result section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/verification.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate the deliverable",
+      "description": "Independently grade the observable deliverable and route it to finish, repair, or user escalation.",
+      "prompt": "Review `{{workPath}}/verification.md`, `{{workPath}}/ci-plan.md`, `{{workPath}}/ci-notes.md` against every criterion below. Inspect the underlying evidence files named by the workflow; do not grade from the author's summary alone.\n\n1. Every command the workflow invokes exists in the repo — open package.json (and any other manifests) and check each run: line yourself; a script the repo does not have fails this criterion.\n2. The stages are ordered sensibly (dependencies installed before lint/test/build) and dependency caching is wired to the real lockfile.\n3. The triggers match ci-plan.md, and a release or publish job exists only where the plan showed repo evidence for one — gated behind the green stages and the tag trigger when present.\n4. Nothing is invented: every action is pinned to a major version, no fabricated action inputs, and no secrets beyond standard ones or those the user explicitly named.\n5. verification.md is honest about the limit of local verification — what reading proved versus what only a live CI run can prove — and the accounts reconcile across ci-plan.md, ci-notes.md, and verification.md.\n\nOpen `{{workPath}}/verification.md`, `{{workPath}}/ci-plan.md`, `{{workPath}}/ci-notes.md` with `read_artifact`. Write the evidence-backed review to `{{workPath}}/review.md` in the artifacts drawer with `write_artifact`.\n\nList the findings as a markdown table with columns `| Severity | File | Line | Problem | Fix |` (severities: critical/major/minor/nit; empty table only on PASS). Give each criterion a PASS or FAIL with a concrete path, excerpt, measurement, or observed behavior. End with exactly `Verdict: PASS` or `Verdict: REVISE`. The gate ENFORCES the verdict: a well-formed REVISE is rejected and routed back to `repair` automatically, carrying your findings — so list every finding in the table with a concrete fix. On PASS, `advance_task_step` to `finish`. Never write PASS while a criterion is unmet.",
+      "suggestedRole": "devops reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/verification.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/ci-plan.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/ci-notes.md",
+          "artifact": true
+        }
+      ],
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/review.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit PASS or REVISE verdict",
+            "artifact": true
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkFixReview",
+            "scope": "standard",
+            "inputs": {
+              "reviewPath": "{{workPath}}/review.md",
+              "fixStepId": "repair"
+            }
+          }
+        ],
+        "onReject": "evaluate",
+        "maxAttempts": 4
+      },
+      "next": "finish",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "repair",
+      "name": "Repair the deliverable",
+      "description": "Fix only the concrete gaps from the latest independent review.",
+      "prompt": "Read `{{workPath}}/review.md` with `read_artifact` and repair every failed criterion in `{{workPath}}/verification.md`, `{{workPath}}/ci-plan.md`, `{{workPath}}/ci-notes.md`. Make changes on each file's declared surface (`write_artifact` for artifact inputs, `write_file` for workspace inputs), not in task notes or a reply. Preserve evidence that already passed. Re-run or re-check anything the reviewer found unproven. Ensure `{{workPath}}/verification.md` is genuinely updated this turn so the repair is observable, then hand it back for independent evaluation.",
+      "suggestedRole": "devops engineer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/verification.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/ci-plan.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/ci-notes.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/verification.md",
+        "minBytes": 500,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/verification.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/verification.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Workflow files",
+            "flags": "im",
+            "label": "Workflow files section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Commands verified against package\\.json",
+            "flags": "im",
+            "label": "Commands verified section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Result",
+            "flags": "im",
+            "label": "Result section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/verification.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "repair",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "workspace"
+        ]
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All deterministic and reviewer criteria passed.",
+      "prompt": "The independent review passed. Read `{{workPath}}/review.md` with `read_artifact`, then use `write_task_note` to record a concise DONE summary with the final deliverable paths (`{{workPath}}/verification.md`, `{{workPath}}/ci-plan.md`, `{{workPath}}/ci-notes.md`) and the evidence that each acceptance criterion passed. Report DONE without starting new work.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "needs-user",
+      "name": "Escalate unresolved concerns",
+      "description": "The bounded repair loop ended without a defensible pass.",
+      "prompt": "The deliverable did not pass after 3 review rounds. Do not claim success. Read `{{workPath}}/review.md` with `read_artifact`, then use `write_task_note` to record DONE_WITH_CONCERNS: the unmet criteria, what was attempted, the affected paths, and the smallest user decision or missing input needed to continue.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "diffpackCapable": true,
+  "capabilityFloor": "small",
+  "version": "2.0.1",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26236"
+}

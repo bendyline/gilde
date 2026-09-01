@@ -1,0 +1,275 @@
+{
+  "id": "press-release",
+  "name": "Press Release",
+  "description": "Write a professional, AP-style press release ready to send to journalists: it first locks the news angle, the five W's, the approved quote(s), and the boilerplate, then drafts the release in the standard format — dateline, inverted-pyramid lede, supporting body, quotes, boilerplate, and media contact — then a review pass enforces newsworthiness, factual accuracy, and house style. Covers press release, news announcement, PR writing, media release, product launch announcement, and corporate communications. The scope-first ordering is essential: a small model that pins the angle and quotes before drafting avoids the soft, promotional release that buries the news and no editor will run.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. News scope (planner) — lock the angle, five W's, approved quotes, and boilerplate → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Draft the release (copywriter) — write the release in standard inverted-pyramid format → gated on `press-release.md` (markdown-doc)\n3. Editorial review (reviewer) — enforce newsworthiness, accuracy, and AP-style format → gated on `press-release.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "write a press release",
+    "news announcement",
+    "media release",
+    "product launch pr",
+    "press announcement"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "News scope",
+      "description": "lock the angle, five W's, approved quotes, and boilerplate",
+      "prompt": "1) State the NEWS in one sentence — the actual announcement (launch, funding, partnership, milestone) and why it is newsworthy NOW. 2) Capture the five W's: who, what, when, where, why-it-matters. 3) Draft or confirm 1-2 attributable quotes (speaker name + title) that add insight, not fluff. 4) Write the company boilerplate (2-3 sentences) and the media contact line (name, email). 5) Decide the headline (active, specific, <=12 words) and subhead. Write an acceptance-criteria checklist (e.g. 'lede answers who/what/when/where in the first 1-2 sentences'; 'inverted pyramid — most important first'; 'at least one attributed quote'; 'includes dateline, boilerplate, contact, and the ### end mark'; 'factual, non-promotional tone'). Use write_task_note for the news brief + checklist, and write the same to the produces path. No release prose yet.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "draft",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "draft",
+      "name": "Draft the release",
+      "description": "write the release in standard inverted-pyramid format",
+      "prompt": "Write the press release in standard format. 1) Headline (active, specific) and an optional subhead. 2) Dateline: CITY, State, Month Day, Year — then the lede sentence answering who/what/when/where. 3) Body in inverted pyramid: most newsworthy facts first, supporting detail after, in short paragraphs. 4) Integrate the approved quote(s) with proper attribution. 5) Boilerplate paragraph ('About [Company]'). 6) Media contact block. 7) End with a centered '###'. Keep the tone factual and journalistic — report the news, do not sell it. Output as markdown. Save to the produces path and note which checklist items pass.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "press-release.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "press-release.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "press-release.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "draft",
+        "maxAttempts": 3
+      },
+      "next": "review",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace"
+      }
+    },
+    {
+      "id": "review",
+      "name": "Editorial review",
+      "description": "enforce newsworthiness, accuracy, and AP-style format",
+      "prompt": "Review and edit the release in place against the checklist. 1) Read the lede alone: does it convey the news and answer who/what/when/where? If it buries the news, rewrite it. 2) Confirm inverted-pyramid structure — could an editor cut from the bottom and still have a coherent story? 3) Strip promotional adjectives and marketing hype; keep it factual. 4) Verify every fact, name, title, and date; flag anything unverifiable. 5) Confirm all structural elements are present: headline, dateline, quote, boilerplate, contact, ###. Rewrite weak passages directly. Save the polished release to the produces path and note any criteria still unmet.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "press-release.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "press-release.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "press-release.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "review",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace"
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Read press-release.md and grade against the checklist. Check EACH and write PASS/FAIL: (a) the lede answers who/what/when/where in the first 1-2 sentences; (b) inverted-pyramid structure (most important first); (c) at least one properly attributed quote; (d) dateline, boilerplate, media contact, and a closing ### are all present; (e) factual, non-promotional tone with no unverified claims; (f) headline is active and specific. A release that reads like an ad or buries the news FAILS — loop back to draft.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"draft\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "press-release.md"
+        }
+      ],
+      "next": "draft",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

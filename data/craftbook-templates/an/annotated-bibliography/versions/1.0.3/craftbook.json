@@ -1,0 +1,279 @@
+{
+  "id": "annotated-bibliography",
+  "name": "Annotated Bibliography",
+  "description": "Build a formal annotated bibliography for a research topic: a planner locks the scope, the citation style, and the annotation rubric (summary + evaluation + relevance), then a researcher locates each source and writes a consistent, properly-formatted annotation that summarizes, critically evaluates, and situates it for the research question. The ordering matters because annotations written without a fixed rubric vary wildly in depth and a bibliography assembled without a citation style is inconsistent; locking style and the three-part annotation rubric first yields a uniform, scholarly, reusable artifact. Use this for annotated bibliographies, a sourced reference list with summaries, research source logs, literature foundations for a paper, and 'list and evaluate my sources' requests.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the bibliography (planner) — topic, citation style, and annotation rubric → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Locate & evaluate sources (researcher) — find each source, draft its three-part annotation → gated on artifact `{{workPath}}/sources.md` (markdown-notes)\n3. Write the bibliography (copywriter) — formatted, ordered, uniformly-annotated bibliography → gated on `bibliography.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "annotated bibliography",
+    "list and evaluate sources",
+    "sourced reference list with summaries",
+    "research source log",
+    "bibliography with annotations"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the bibliography",
+      "description": "topic, citation style, and annotation rubric",
+      "prompt": "1. State the research question/topic and the inclusion criteria (source types, recency, minimum count — aim 6+). 2. Lock the citation style exactly (APA, MLA, Chicago, or a stated custom format) with a one-line example of a correctly-formatted entry. 3. Lock the annotation rubric: each annotation must have (a) a 2-4 sentence summary of the source, (b) a critical evaluation of its credibility/method/bias, and (c) a relevance note tying it to the research question. 4. Decide ordering (alphabetical by author, or thematic). 5. Write an acceptance-criteria checklist (e.g. 'every entry is formatted in the locked citation style', 'every annotation has all three rubric parts', 'sources meet the inclusion criteria', 'entries are ordered as specified', 'minimum source count met'). 6. Record decisions. Call write_task_note with the style example, rubric, and checklist; write the same to {{workPath}}/scope.md.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "research",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "research",
+      "name": "Locate & evaluate sources",
+      "description": "find each source, draft its three-part annotation",
+      "prompt": "1. Find sources meeting the inclusion criteria, prioritizing primary and authoritative works on the topic. 2. For each, record in {{workPath}}/sources.md: the full bibliographic data needed for the locked citation style, plus a draft three-part annotation (summary, critical evaluation, relevance) per the rubric. 3. In the evaluation part, judge the source honestly — author authority, method or evidence quality, recency, and any bias or limitation — not just praise. 4. Verify each source actually exists and the bibliographic details are correct; flag any you cannot confirm. 5. Ensure you exceed the minimum count and cover the topic without padding with weak sources. Good looks like a sources file where each entry already has correct citation data and a complete three-part annotation. Do not format the final document yet.\n\nThe deliverable `{{workPath}}/sources.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "researcher",
+      "advanceWhen": {
+        "file": "{{workPath}}/sources.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/sources.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/sources.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "research",
+        "maxAttempts": 3
+      },
+      "next": "write",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "write",
+      "name": "Write the bibliography",
+      "description": "formatted, ordered, uniformly-annotated bibliography",
+      "prompt": "1. Write bibliography.md as an ordered list of entries: each a citation formatted exactly in the locked style, followed by its annotation containing all three rubric parts (summary, evaluation, relevance). 2. Apply the citation style precisely and consistently — punctuation, author order, italics/markers as the style requires. 3. Keep annotation length and depth uniform across entries. 4. Order entries as specified (alphabetical/thematic). 5. Draw everything from {{workPath}}/sources.md; do not invent or alter citation data. 6. On a loop-back, fix only the named gaps. 7. Call write_task_note with the bibliography path and entry count.\n\nBefore working, open the artifact input `{{workPath}}/sources.md` with `read_artifact`; do not look for it in the workspace.",
+      "suggestedRole": "copywriter",
+      "consumes": [
+        {
+          "file": "{{workPath}}/sources.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "bibliography.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "bibliography.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "bibliography.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open bibliography.md and check EACH criterion PASS/FAIL: (1) every entry is formatted in the locked citation style and is consistent (check 3 against the style example in {{workPath}}/scope.md); (2) every annotation contains all three rubric parts — summary, critical evaluation, and relevance; (3) the evaluation part genuinely assesses credibility/method/bias rather than only summarizing; (4) sources meet the inclusion criteria and the minimum count is met; (5) entries are ordered as specified; (6) citation data matches {{workPath}}/sources.md with nothing fabricated. An entry missing a rubric part, or with a malformed/invented citation, FAILS.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "bibliography.md"
+        }
+      ],
+      "next": "write",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

@@ -1,0 +1,139 @@
+{
+  "id": "translate-content",
+  "name": "Translate Content",
+  "description": "Translate the project's new and changed content into the designated language as sidecar files under translations/<language>/, mirroring the source structure and never modifying originals.",
+  "entryStepId": "translate",
+  "triggers": [
+    "translate the content",
+    "translate everything",
+    "update the translations"
+  ],
+  "command": "translate-content",
+  "runModes": {
+    "scheduled": "supported",
+    "nightShift": "recommended"
+  },
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "language": {
+        "type": "string",
+        "description": "Target language — a language name or BCP-47 tag (e.g. Nederlands, de, pt-BR).",
+        "projectProperty": "content.language"
+      },
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer for this run's intermediate files. Defaults to this task's own folder so concurrent runs never overwrite each other; override with a stable name only when runs should deliberately share working files.",
+        "default": "{{task.dir}}"
+      }
+    },
+    "required": [
+      "language"
+    ]
+  },
+  "steps": [
+    {
+      "id": "translate",
+      "name": "Translate changed content",
+      "prompt": "You are running the incremental translation pass into **{{language}}**.\n\n1. List the project's content files (markdown, text, and documents converted to markdown). Skip code, lockfiles, binaries, and anything under `translations/`.\n2. For each content file, check whether a sidecar already exists at `translations/{{language}}/<same relative path>` and whether the source changed since it was written (compare content, not timestamps — if the existing translation still matches the source's current content, skip it).\n3. Translate each new or changed file into {{language}} and write the result to `translations/{{language}}/<same relative path>` with `write_file`. Preserve meaning, tone, register, markdown structure, links, and code blocks. Never translate product names, code identifiers, or content inside code fences. NEVER modify a source file.\n4. After every translation sidecar is written, finish by calling `write_artifact` for `{{workPath}}/run-note.md`: list which files you translated this pass, which you skipped as unchanged, and anything you could not translate (with the reason).\n\nIf no content has changed since the last pass, still write the run-note artifact saying so. Keep the note factual and short. Write the run note last: it triggers completion, and the completion gate requires at least one sidecar under `translations/{{language}}/` plus a substantive run note.",
+      "suggestedRole": "Translator",
+      "advanceWhen": {
+        "file": "{{workPath}}/run-note.md",
+        "minBytes": 80,
+        "requireChange": true,
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "fileCount",
+            "ext": [
+              "md",
+              "markdown",
+              "txt"
+            ],
+            "min": 1,
+            "dir": "translations/{{language}}"
+          },
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/run-note.md",
+            "bytes": 80,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/run-note.md",
+            "pattern": "translated|skipped|unchanged|could not translate",
+            "flags": "i",
+            "label": "run note reports the pass outcome",
+            "artifact": true
+          }
+        ],
+        "onReject": "translate",
+        "maxAttempts": 4
+      },
+      "next": "done",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "workspace"
+        ]
+      }
+    },
+    {
+      "id": "done",
+      "name": "Done",
+      "prompt": "The translation sidecars and run-note artifact cleared the completion gate. Call `write_task_note` with the target language, translated and skipped counts, the sidecar root, and confirmation that source files stayed untouched. Then finish the task.",
+      "suggestedRole": "Translator",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.1.2",
+  "releasedAt": "2026-09-01T20:00:00Z"
+}

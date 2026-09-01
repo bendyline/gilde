@@ -1,0 +1,249 @@
+{
+  "schemaVersion": 1,
+  "title": "Snapshot-driven code review with a gated artifact report",
+  "objective": "Measure the snapshot-review class under volume: read a staged change-set snapshot from the artifacts drawer, ground findings in the actual diff, catch every seeded defect, raise nothing against the constructs that only look like defects, and produce a severity-ranked, file-cited report artifact whose verdict follows from the findings.",
+  "tags": [],
+  "prompt": "A change-set snapshot for review rev-eval-1 is staged in this project's artifacts drawer: reviews/rev-eval-1/manifest.json and reviews/rev-eval-1/changes.diff. Run the code-review craftbook against it and write the gated report artifact to reviews/rev-eval-1/report.md with write_artifact. The diff is the change set under review; the matching source files are in the workspace, and docs/review-conventions.md is the house style this codebase is reviewed against. Also leave the machine-readable finding list at the workspace path review-output/findings.json with write_file - a JSON array with one record per finding, each record naming the file (the path as it appears in the diff), the line, a severity of critical, major, minor or nit, a category, and a recommendation - so the follow-up fix pass can pick it up. Do not change any source file: review-output/findings.json is the only workspace file you write.",
+  "setup": {
+    "projectName": "Code Review Eval",
+    "about": "A small payments service. A seven-file change set is staged for review in the artifacts drawer; the house style it is reviewed against is documented in docs/review-conventions.md.",
+    "worker": {
+      "name": "Rex",
+      "role": "Reviewer"
+    },
+    "files": [
+      {
+        "path": "src/payment.js",
+        "content": "const db = require('./db');\n\nasync function chargeCustomer(req) {\n  const amount = req.body.amount;\n  const customerId = req.body.customerId;\n  // TODO: validate amount server-side\n  const rows = await db.query(\"SELECT * FROM customers WHERE id = '\" + customerId + \"'\");\n  const customer = rows[0];\n  console.log('charging', customerId, amount);\n  const receipt = await db.query(\n    \"INSERT INTO charges (customer_id, amount) VALUES ('\" + customerId + \"', \" + amount + \") RETURNING id\",\n  );\n  return { chargeId: receipt[0].id, customer: customer.name };\n}\n\nmodule.exports = { chargeCustomer };\n"
+      },
+      {
+        "path": "src/util.js",
+        "content": "function formatCents(cents) {\n  return `$${(cents / 100).toFixed(2)}`;\n}\n\nmodule.exports = { formatCents };\n",
+        "modelInput": false
+      },
+      {
+        "path": "src/pagination.js",
+        "content": "const DEFAULT_PAGE_SIZE = 25;\n\nfunction pageOf(items, page, pageSize = DEFAULT_PAGE_SIZE) {\n  const start = (page - 1) * pageSize;\n  const end = start + pageSize + 1;\n  return items.slice(start, end);\n}\n\nfunction pageCount(items, pageSize = DEFAULT_PAGE_SIZE) {\n  return Math.ceil(items.length / pageSize);\n}\n\nmodule.exports = { pageOf, pageCount, DEFAULT_PAGE_SIZE };\n",
+        "modelInput": false
+      },
+      {
+        "path": "src/settings.js",
+        "content": "const fs = require('fs');\n\nfunction loadSettings(path) {\n  try {\n    return { ok: true, settings: JSON.parse(fs.readFileSync(path, 'utf8')) };\n  } catch (err) {\n    return { ok: true, settings: {} };\n  }\n}\n\nmodule.exports = { loadSettings };\n",
+        "modelInput": false
+      },
+      {
+        "path": "src/export.js",
+        "content": "const fs = require('fs/promises');\n\nasync function exportCharges(db, outPath) {\n  const handle = await fs.open(outPath, 'w');\n  const rows = await db.query('SELECT id, customer_id, amount FROM charges ORDER BY id');\n  for (const row of rows) {\n    await handle.write(`${row.id},${row.customer_id},${row.amount}\\n`);\n  }\n  await handle.close();\n}\n\nmodule.exports = { exportCharges };\n",
+        "modelInput": false
+      },
+      {
+        "path": "src/customer.js",
+        "content": "// `== null` is the one loose comparison the house style allows: it matches\n// null and undefined together and nothing else, which is exactly what an\n// optional field needs. See docs/review-conventions.md.\nfunction displayName(customer) {\n  if (customer.nickname == null) return customer.legalName;\n  return customer.nickname;\n}\n\nfunction billingEmail(customer) {\n  return customer.billingEmail == null ? customer.email : customer.billingEmail;\n}\n\nmodule.exports = { displayName, billingEmail };\n",
+        "modelInput": false
+      },
+      {
+        "path": "src/audit.js",
+        "content": "const logger = require('./logger');\n\n// Audit writes are best-effort: they must never delay or break the charge\n// that triggered them, so this call is deliberately not awaited. The\n// attached .catch is what keeps a rejected write from becoming an\n// unhandled rejection. See docs/review-conventions.md.\nfunction recordAudit(db, event) {\n  db.insertAudit(event).catch((err) => logger.warn('audit write skipped', err));\n}\n\nmodule.exports = { recordAudit };\n",
+        "modelInput": false
+      },
+      {
+        "path": "src/errors.js",
+        "content": "const logger = require('./logger');\n\n// Express selects error middleware by ARITY: a handler is only registered\n// as an error handler when it declares exactly four parameters. `req` and\n// `next` are required by that signature even though this terminal handler\n// uses neither. See docs/review-conventions.md.\nfunction errorHandler(err, req, res, next) {\n  logger.error('unhandled request error', err);\n  res.status(500).json({ error: 'internal_error' });\n}\n\nfunction register(app) {\n  app.use(errorHandler);\n}\n\nmodule.exports = { errorHandler, register };\n",
+        "modelInput": false
+      },
+      {
+        "path": "src/logger.js",
+        "content": "function warn(message, err) {\n  process.stderr.write(`[warn] ${message}: ${err && err.message}\\n`);\n}\n\nfunction error(message, err) {\n  process.stderr.write(`[error] ${message}: ${err && err.stack}\\n`);\n}\n\nmodule.exports = { warn, error };\n",
+        "modelInput": false
+      },
+      {
+        "path": "docs/review-conventions.md",
+        "content": "# Review conventions\n\nThe house rules this codebase is reviewed against.\n\n- Every SQL statement uses placeholders. A request value is never\n  concatenated or interpolated into a query string.\n- Every acquired resource (file handle, connection, lock) is released on\n  every path out of the function, including the error path.\n- A caught error is either handled or re-thrown. A catch block never\n  reports success.\n- Slice and range bounds are half-open: `slice(start, start + size)`.\n- Debug logging does not ship.\n\n## Deliberate patterns - correct as written\n\nThese three shapes look like common smells and are not. They are house\nstyle, and a review must not raise them as findings.\n\n- `== null` is the one loose comparison the style allows. It matches null\n  and undefined together and nothing else, which is precisely what an\n  optional field needs. It is not to be tightened to `===`.\n- Best-effort background writes (audit, telemetry) are deliberately not\n  awaited, so they cannot delay or break the request that triggered them.\n  A `.catch` handler attached at the call site is the required form; a\n  promise carrying a `.catch` is not a floating promise.\n- Express selects error middleware by arity: a handler is only registered\n  as an error handler when it declares exactly four parameters. The\n  parameters such a handler does not use are required by that signature\n  and stay.\n"
+      },
+      {
+        "path": "reviews/rev-eval-1/manifest.json",
+        "surface": "artifact",
+        "content": "{\n  \"version\": 1,\n  \"reviewId\": \"rev-eval-1\",\n  \"kind\": \"commit\",\n  \"createdAt\": \"2026-07-29T09:00:00Z\",\n  \"branch\": \"main\",\n  \"headSha\": \"3d0c1a2\",\n  \"baseRef\": \"HEAD\",\n  \"files\": [\n    {\n      \"path\": \"src/payment.js\",\n      \"kind\": \"modified\",\n      \"additions\": 8,\n      \"deletions\": 2\n    },\n    {\n      \"path\": \"src/audit.js\",\n      \"kind\": \"added\",\n      \"additions\": 11,\n      \"deletions\": 0\n    },\n    {\n      \"path\": \"src/customer.js\",\n      \"kind\": \"added\",\n      \"additions\": 13,\n      \"deletions\": 0\n    },\n    {\n      \"path\": \"src/errors.js\",\n      \"kind\": \"added\",\n      \"additions\": 16,\n      \"deletions\": 0\n    },\n    {\n      \"path\": \"src/export.js\",\n      \"kind\": \"added\",\n      \"additions\": 12,\n      \"deletions\": 0\n    },\n    {\n      \"path\": \"src/pagination.js\",\n      \"kind\": \"added\",\n      \"additions\": 13,\n      \"deletions\": 0\n    },\n    {\n      \"path\": \"src/settings.js\",\n      \"kind\": \"added\",\n      \"additions\": 11,\n      \"deletions\": 0\n    }\n  ],\n  \"totalFiles\": 7,\n  \"filesTruncated\": false,\n  \"diffFile\": \"changes.diff\",\n  \"diffChars\": 4396,\n  \"diffTruncated\": false,\n  \"notes\": []\n}\n"
+      },
+      {
+        "path": "reviews/rev-eval-1/changes.diff",
+        "surface": "artifact",
+        "content": "diff --git a/src/payment.js b/src/payment.js\nindex 3d0c1a2..9f4b7e1 100644\n--- a/src/payment.js\n+++ b/src/payment.js\n@@ -1,12 +1,16 @@\n const db = require('./db');\n \n async function chargeCustomer(req) {\n   const amount = req.body.amount;\n   const customerId = req.body.customerId;\n-  const rows = await db.query('SELECT * FROM customers WHERE id = $1', [customerId]);\n+  // TODO: validate amount server-side\n+  const rows = await db.query(\"SELECT * FROM customers WHERE id = '\" + customerId + \"'\");\n   const customer = rows[0];\n-  const receipt = await db.query('INSERT INTO charges (customer_id, amount) VALUES ($1, $2) RETURNING id', [customerId, amount]);\n+  console.log('charging', customerId, amount);\n+  const receipt = await db.query(\n+    \"INSERT INTO charges (customer_id, amount) VALUES ('\" + customerId + \"', \" + amount + \") RETURNING id\",\n+  );\n   return { chargeId: receipt[0].id, customer: customer.name };\n }\n \n module.exports = { chargeCustomer };\ndiff --git a/src/audit.js b/src/audit.js\nnew file mode 100644\nindex 0000000..297df83\n--- /dev/null\n+++ b/src/audit.js\n@@ -0,0 +1,11 @@\n+const logger = require('./logger');\n+\n+// Audit writes are best-effort: they must never delay or break the charge\n+// that triggered them, so this call is deliberately not awaited. The\n+// attached .catch is what keeps a rejected write from becoming an\n+// unhandled rejection. See docs/review-conventions.md.\n+function recordAudit(db, event) {\n+  db.insertAudit(event).catch((err) => logger.warn('audit write skipped', err));\n+}\n+\n+module.exports = { recordAudit };\ndiff --git a/src/customer.js b/src/customer.js\nnew file mode 100644\nindex 0000000..c722780\n--- /dev/null\n+++ b/src/customer.js\n@@ -0,0 +1,13 @@\n+// `== null` is the one loose comparison the house style allows: it matches\n+// null and undefined together and nothing else, which is exactly what an\n+// optional field needs. See docs/review-conventions.md.\n+function displayName(customer) {\n+  if (customer.nickname == null) return customer.legalName;\n+  return customer.nickname;\n+}\n+\n+function billingEmail(customer) {\n+  return customer.billingEmail == null ? customer.email : customer.billingEmail;\n+}\n+\n+module.exports = { displayName, billingEmail };\ndiff --git a/src/errors.js b/src/errors.js\nnew file mode 100644\nindex 0000000..7107b89\n--- /dev/null\n+++ b/src/errors.js\n@@ -0,0 +1,16 @@\n+const logger = require('./logger');\n+\n+// Express selects error middleware by ARITY: a handler is only registered\n+// as an error handler when it declares exactly four parameters. `req` and\n+// `next` are required by that signature even though this terminal handler\n+// uses neither. See docs/review-conventions.md.\n+function errorHandler(err, req, res, next) {\n+  logger.error('unhandled request error', err);\n+  res.status(500).json({ error: 'internal_error' });\n+}\n+\n+function register(app) {\n+  app.use(errorHandler);\n+}\n+\n+module.exports = { errorHandler, register };\ndiff --git a/src/export.js b/src/export.js\nnew file mode 100644\nindex 0000000..01f5dcf\n--- /dev/null\n+++ b/src/export.js\n@@ -0,0 +1,12 @@\n+const fs = require('fs/promises');\n+\n+async function exportCharges(db, outPath) {\n+  const handle = await fs.open(outPath, 'w');\n+  const rows = await db.query('SELECT id, customer_id, amount FROM charges ORDER BY id');\n+  for (const row of rows) {\n+    await handle.write(`${row.id},${row.customer_id},${row.amount}\\n`);\n+  }\n+  await handle.close();\n+}\n+\n+module.exports = { exportCharges };\ndiff --git a/src/pagination.js b/src/pagination.js\nnew file mode 100644\nindex 0000000..008b78a\n--- /dev/null\n+++ b/src/pagination.js\n@@ -0,0 +1,13 @@\n+const DEFAULT_PAGE_SIZE = 25;\n+\n+function pageOf(items, page, pageSize = DEFAULT_PAGE_SIZE) {\n+  const start = (page - 1) * pageSize;\n+  const end = start + pageSize + 1;\n+  return items.slice(start, end);\n+}\n+\n+function pageCount(items, pageSize = DEFAULT_PAGE_SIZE) {\n+  return Math.ceil(items.length / pageSize);\n+}\n+\n+module.exports = { pageOf, pageCount, DEFAULT_PAGE_SIZE };\ndiff --git a/src/settings.js b/src/settings.js\nnew file mode 100644\nindex 0000000..b7c463b\n--- /dev/null\n+++ b/src/settings.js\n@@ -0,0 +1,11 @@\n+const fs = require('fs');\n+\n+function loadSettings(path) {\n+  try {\n+    return { ok: true, settings: JSON.parse(fs.readFileSync(path, 'utf8')) };\n+  } catch (err) {\n+    return { ok: true, settings: {} };\n+  }\n+}\n+\n+module.exports = { loadSettings };\n"
+      },
+      {
+        "path": "tests/code-review-oracle.mjs",
+        "content": "// Precision/recall oracle for the snapshot code review.\n//\n// Run by the harness with the reviewed workspace as cwd. It grades the two\n// halves of a real review separately, because recall alone is passed by a\n// review that flags everything:\n//\n//   RECALL    - each of the four seeded defects in the change set is\n//               reported, against the right file and as the right class.\n//   PRECISION - no finding repeats one of the three shotgun smells the\n//               change set deliberately baits, and no finding is raised\n//               against a file outside the change set.\n//\n// Two rules keep this from punishing correct work.\n//\n// First, defect classes are matched by the ordinary vocabulary of the\n// class, never by wording this fixture invented: \"26 items per page\",\n// \"the end index is one too high\" and \"half-open range\" all count as the\n// pagination defect. The bar is \"a real review of this class\", not this\n// scenario's phrasing.\n//\n// Second, the precision half is scoped to the SMELL, not to the file.\n// src/customer.js, src/audit.js and src/errors.js are baited with a\n// documented house-style construct that must not be flagged - but they\n// are still ordinary code, and a reviewer may legitimately find\n// something else in them (a missing res.headersSent guard in the error\n// handler, say, or a synchronous throw escaping the best-effort audit\n// call). Failing those would punish the exact deep reading this eval is\n// trying to reward, so only a finding that IS the baited smell counts\n// against precision. Whole-file scope is reserved for the two files that\n// are not in the change set at all, where any finding is out of scope by\n// the book's own rule.\n//\n// Precision is graded on the finding records only: a report that\n// discusses a correct construct and explicitly clears it is good\n// reviewing, and is not penalised here.\nimport { readFileSync } from 'node:fs';\n\n/**\n * Fail with the message ALONE on stderr.\n *\n * A thrown Error would work, but the harness feeds this script's stderr\n * into the model's repair nudge verbatim, and an uncaught throw pads that\n * nudge with a Node stack trace and a version banner. The actionable\n * sentence is what the next attempt needs; the stack is noise that pushes\n * it out of view on a small model.\n */\nfunction fail(message) {\n  console.error(message);\n  process.exit(1);\n}\n\n\nconst FINDINGS = 'review-output/findings.json';\n\nlet raw;\ntry {\n  raw = readFileSync(FINDINGS, 'utf8');\n} catch {\n  fail(FINDINGS + ' does not exist - the machine-readable finding list is required');\n}\n\nlet findings;\ntry {\n  findings = JSON.parse(raw.replace(/^\\uFEFF/, ''));\n} catch (err) {\n  fail(FINDINGS + ' is not valid JSON: ' + err.message);\n}\nif (!Array.isArray(findings)) {\n  const nested =\n    findings && typeof findings === 'object'\n      ? Object.values(findings).find((value) => Array.isArray(value))\n      : null;\n  if (!nested) fail(FINDINGS + ' must be an array of finding records');\n  findings = nested;\n}\nfindings = findings.filter((finding) => finding && typeof finding === 'object');\n\n// Every PROSE string anywhere in the record, nested objects and arrays\n// included - a reviewer who nests the explanation under `detail` or\n// splits it across an array is saying the same thing. Citation and\n// identifier fields are excluded: they are addresses, not description,\n// and letting them through means a line number or a path fragment can\n// satisfy a defect-class matcher by coincidence.\nconst CITATION_KEYS = new Set([\n  'file',\n  'path',\n  'filename',\n  'location',\n  'line',\n  'lines',\n  'endline',\n  'startline',\n  'column',\n  'col',\n  'id',\n  '#',\n]);\nconst collectStrings = (value, out) => {\n  if (typeof value === 'string') out.push(value);\n  else if (Array.isArray(value)) for (const item of value) collectStrings(item, out);\n  else if (value && typeof value === 'object') {\n    for (const [key, item] of Object.entries(value)) {\n      if (CITATION_KEYS.has(key.toLowerCase())) continue;\n      collectStrings(item, out);\n    }\n  }\n  return out;\n};\nconst text = (finding) => collectStrings(finding, []).join(' ').toLowerCase();\n\nconst fileOf = (finding) =>\n  String(finding.file ?? finding.path ?? finding.filename ?? finding.location ?? '')\n    .replace(/\\\\/g, '/')\n    .replace(/^\\.\\//, '')\n    .replace(/^[ab]\\//, '')\n    .replace(/\\s*\\([^()]*\\)\\s*$/, '')\n    .replace(/[:#]\\s*L?\\d+(?:\\s*-\\s*L?\\d+)?\\s*$/, '')\n    .trim();\n\n// Basenames are unique across every seeded file, so a bare `payment.js`\n// citation resolves the same as `src/payment.js`.\nconst onFile = (path) => {\n  const base = path.slice(path.lastIndexOf('/') + 1);\n  const full = new RegExp('(^|/)' + path.replace(/\\./g, '\\\\.') + '$');\n  const bare = new RegExp('^' + base.replace(/\\./g, '\\\\.') + '$');\n  return findings.filter((finding) => {\n    const cited = fileOf(finding);\n    return full.test(cited) || bare.test(cited);\n  });\n};\n\nconst REQUIRED = [\n  {\n    file: 'src/payment.js',\n    label: 'the customer and charge queries build SQL by string concatenation from req.body',\n    match: (t) =>\n      /injection|sqli\\b|parameteri|parametri|placeholder|prepared statement|\\bbind\\b|\\bbinding\\b|bound parameter|concatenat|interpolat|escap|sanitiz|quoting/.test(\n        t,\n      ) ||\n      (/\\bsql\\b|\\bquery\\b|\\bqueries\\b|statement/.test(t) &&\n        /untrusted|user[- ](?:input|supplied|controlled|data)|req\\.body|request (?:value|data|input|body)|unsafe|unsanitiz|unvalidated|string (?:concat|building|built)|built from|splic/.test(\n          t,\n        )),\n  },\n  {\n    file: 'src/pagination.js',\n    label: 'pageOf is off by one on its slice end bound, so pages overlap by a row',\n    match: (t) =>\n      /off.?by.?one|\\bslice\\b|\\bbound(?:ary|aries|s)?\\b|half.?open|exclusive|inclusive|overlap|duplicat|repeat|reappear|one too many|one (?:extra|more)|too many|extra (?:item|row|record|element|entry|result)|\\+\\s?1\\b|pagesize \\+|\\+ pagesize|increment|\\b26\\b|end (?:index|bound|offset|position)|last (?:item|row|record|element)/.test(\n        t,\n      ),\n  },\n  {\n    file: 'src/settings.js',\n    label: 'loadSettings swallows the parse error and still reports ok: true',\n    match: (t) =>\n      /swallow|silent|suppress|\\bmask|\\bhid(?:e|es|den|ing)|\\bignor|empty catch|catch block|\\bok\\b|\\btrue\\b|success|succeed|re-?throw|rethrow|propagat|bubble|surfac|indistinguishable|no indication|cannot tell|unaware|misleading|misreport|false (?:success|positive)|as if|pretend/.test(\n        t,\n      ),\n  },\n  {\n    file: 'src/export.js',\n    label: 'exportCharges leaks the file handle when the query or a write throws',\n    match: (t) =>\n      /leak|\\bclos(?:e|es|ed|ing)\\b|\\bfinally\\b|clean.?up|releas|dispos|\\bhandle\\b|descriptor|\\bfd\\b|resource|left open|remains open|stays open|still open|dangling|exhaust|unclosed/.test(\n        t,\n      ),\n  },\n];\n\nconst missing = REQUIRED.filter(\n  (required) => !onFile(required.file).some((finding) => required.match(text(finding))),\n);\nif (missing.length > 0) {\n  const reported = findings.map((finding) => fileOf(finding) || '?').join(', ') || '(nothing)';\n  fail(\n    'RECALL SHORTFALL - the change set holds four separate defects and these were not reported: ' +\n      missing.map((entry) => entry.file + ' (' + entry.label + ')').join('; ') +\n      '. Files carrying a reported finding: ' +\n      reported +\n      '. Re-walk changes.diff hunk by hunk; every defect above is visible in the added lines.',\n  );\n}\n\n// Baited smells. Each of these three files carries a construct that looks\n// like a common lint smell and is documented house style in\n// docs/review-conventions.md. Only a finding that raises THAT construct\n// is a precision failure; any other observation about the file is fair\n// review work and passes.\nconst BAITED = [\n  {\n    file: 'src/customer.js',\n    smell: 'loose equality',\n    matches: (t) =>\n      /[=!]==?|loose equal|strict equal|\\bequality\\b|double equals|triple equals|coerc|nullish|\\?\\?/.test(\n        t,\n      ),\n    why: '`== null` is the documented house idiom for a null-or-undefined check (docs/review-conventions.md) and is not to be tightened',\n  },\n  {\n    file: 'src/audit.js',\n    smell: 'floating / unawaited promise',\n    matches: (t) =>\n      /floating|un-?awaited|not awaited|missing await|no await|without await|should (?:be )?await|add (?:an )?await|\\bawait\\b|fire.?and.?forget|dangling promise|unhandled (?:promise )?rejection/.test(\n        t,\n      ) &&\n      // A reviewer who spots that a SYNCHRONOUS throw from insertAudit\n      // still escapes into the charge path has found something real, not\n      // the bait. That finding is welcome.\n      !/synchronous|synchronously|thenable|non-?promise|not (?:return )?a promise|does not return|returns undefined|before the promise/.test(\n        t,\n      ),\n    why: 'the audit write is deliberately not awaited and carries a .catch, which is the required form for a best-effort write (docs/review-conventions.md)',\n  },\n  {\n    file: 'src/errors.js',\n    smell: 'unused parameters',\n    matches: (t) =>\n      /unused|not used|never used|un-?referenced|no-unused-vars|underscore|_req|_next|dead (?:parameter|argument)|(?:remove|drop|omit) (?:the )?(?:`?req`?|`?next`?|parameter|argument)|unnecessary (?:parameter|argument)/.test(\n        t,\n      ),\n    why: \"Express registers error middleware by arity, so the four-parameter signature and the parameters it does not use are required (docs/review-conventions.md)\",\n  },\n];\n\n// Not in manifest.json's seven-file list and not in changes.diff. The\n// book says to discuss only files in the change set, so any finding here\n// is out of scope whatever it says.\nconst OUT_OF_SCOPE = [\n  { file: 'src/util.js', why: 'it is not one of the seven files in manifest.json' },\n  { file: 'src/logger.js', why: 'it is not one of the seven files in manifest.json' },\n];\n\nconst nameOf = (finding) =>\n  String(finding.category ?? finding.finding ?? finding.title ?? 'unnamed');\n\nconst wrong = [];\nfor (const bait of BAITED) {\n  for (const finding of onFile(bait.file)) {\n    if (!bait.matches(text(finding))) continue;\n    wrong.push(bait.file + ' (' + nameOf(finding) + ' - ' + bait.smell + ') - ' + bait.why);\n  }\n}\nfor (const out of OUT_OF_SCOPE) {\n  for (const finding of onFile(out.file)) {\n    wrong.push(out.file + ' (' + nameOf(finding) + ') - ' + out.why);\n  }\n}\nif (wrong.length > 0) {\n  fail(\n    'PRECISION SHORTFALL - drop these records from ' +\n      FINDINGS +\n      ': ' +\n      wrong.join('; ') +\n      '. A review that raises everything is not usable. Re-read docs/review-conventions.md, ' +\n      'which names the shapes that are deliberate house style, and re-read manifest.json for ' +\n      'which files are actually under review. Discussing a construct in report.md and clearing ' +\n      'it is fine - listing it as a finding is not. Any OTHER defect you find in these files is ' +\n      'welcome; only the constructs named above are off limits.',\n  );\n}\n\nconsole.log(\n  'CODEREVIEW_ORACLE ok - all 4 seeded defects reported (src/payment.js, src/pagination.js, ' +\n    'src/settings.js, src/export.js) and none of the 3 baited house-style smells or 2 ' +\n    'out-of-scope files carries a finding.',\n);\n",
+        "surface": "harness",
+        "modelInput": false
+      }
+    ]
+  },
+  "mocks": [],
+  "success": {
+    "summary": "reviews/rev-eval-1/report.md exists in the artifacts drawer with Summary/Findings/Verdict sections, a severity table citing the flawed files, and a request-changes verdict; review-output/findings.json holds one record per finding carrying at least file, line, severity, category and recommendation (extra context such as a title or a cwe is welcome), lists every seeded defect (unparameterized SQL, the off-by-one page bound, the swallowed settings error, the leaked export file handle), repeats none of the three documented house-style smells, and raises nothing against the two files outside the change set.",
+    "deliverables": [
+      {
+        "path": "reviews/rev-eval-1/report.md",
+        "kind": "markdown-report",
+        "artifact": true,
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "reviews/rev-eval-1/report.md",
+            "pattern": "##\\s+Summary",
+            "label": "Summary section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "reviews/rev-eval-1/report.md",
+            "pattern": "##\\s+Findings",
+            "label": "Findings section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "reviews/rev-eval-1/report.md",
+            "pattern": "Verdict:\\s*request-changes",
+            "label": "request-changes verdict (SQL concat is at least major)",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "reviews/rev-eval-1/report.md",
+            "pattern": "src/payment\\.js",
+            "label": "cites the flawed file",
+            "artifact": true
+          },
+          {
+            "kind": "tableShape",
+            "file": "reviews/rev-eval-1/report.md",
+            "requiredColumns": [
+              "Severity",
+              "File",
+              "Finding"
+            ],
+            "minRows": 1,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "review-output/findings.json",
+        "kind": "json",
+        "minBytes": 300,
+        "checks": [
+          {
+            "kind": "sniff",
+            "file": "review-output/findings.json",
+            "sniff": "json-valid"
+          },
+          {
+            "kind": "recordSchema",
+            "file": "review-output/findings.json",
+            "format": "json",
+            "minRows": 4,
+            "fields": [
+              {
+                "name": "file",
+                "type": "nonempty",
+                "required": true
+              },
+              {
+                "name": "line",
+                "type": "^\\d+(\\s*-\\s*\\d+)?$",
+                "required": true
+              },
+              {
+                "name": "severity",
+                "type": "^([Cc]ritical|[Mm]ajor|[Mm]inor|[Nn]it|CRITICAL|MAJOR|MINOR|NIT)$",
+                "required": true
+              },
+              {
+                "name": "category",
+                "type": "nonempty",
+                "required": true
+              },
+              {
+                "name": "recommendation",
+                "type": "nonempty",
+                "required": true
+              }
+            ],
+            "allowExtraFields": true
+          },
+          {
+            "kind": "nodeScriptPasses",
+            "script": "tests/code-review-oracle.mjs",
+            "timeoutMs": 30000,
+            "requiredOutput": [
+              {
+                "pattern": "CODEREVIEW_ORACLE ok",
+                "label": "every seeded defect reported, and no correct-as-written construct reported"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "taskNotes": {
+      "requireCraftbookTask": true,
+      "checks": [
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "Verdict:",
+          "flags": "i"
+        }
+      ]
+    },
+    "unchangedFixtures": [
+      "src/payment.js",
+      "src/util.js",
+      "src/pagination.js",
+      "src/settings.js",
+      "src/export.js",
+      "src/customer.js",
+      "src/audit.js",
+      "src/errors.js",
+      "src/logger.js",
+      "docs/review-conventions.md"
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "reviews/rev-eval-1/report.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "grounding",
+        "description": "Findings reference code that actually appears in changes.diff; nothing is invented and cited lines exist."
+      },
+      {
+        "name": "precision",
+        "description": "The three documented house-style constructs (the `== null` check, the unawaited best-effort audit write with its .catch, the four-parameter Express error handler) are not raised as findings, and the two files outside the change set (src/util.js, src/logger.js) carry no findings at all; if a house-style construct is discussed it is to clear it. A different, real defect found in one of those three files is good review work and counts in its favour, not against it."
+      },
+      {
+        "name": "severity-judgment",
+        "description": "The SQL string concatenation, the off-by-one page bound, the swallowed settings error and the leaked export file handle are rated critical or major; the console.log and TODO are minor or nit - severities proportionate to impact."
+      },
+      {
+        "name": "actionability",
+        "description": "Every finding carries a concrete, minimal recommendation (e.g. return to parameterized queries, close the handle in a finally), not generic advice."
+      },
+      {
+        "name": "verdict-consistency",
+        "description": "The verdict follows mechanically from the findings table: any critical or major finding yields request-changes."
+      }
+    ],
+    "contextNote": "The report is an artifacts-drawer file and review-output/findings.json is the single workspace file the reviewer writes - no source file may change. Some of the reviewed code only looks wrong: docs/review-conventions.md records which shapes are deliberate house style. src/util.js and src/logger.js are in the workspace as context but are not in the change set - manifest.json's seven files are."
+  },
+  "qualityFocus": [
+    "evidence-grounded review",
+    "review precision",
+    "file citations",
+    "artifact deliverable discipline"
+  ]
+}

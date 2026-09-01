@@ -1,0 +1,274 @@
+{
+  "id": "receipt-ocr-ledger",
+  "name": "Receipts to Expense Ledger",
+  "description": "Turn a folder of receipt photos/PDFs into a clean expense ledger: OCR each receipt, extract vendor, date, line items, tax, and total, assign an expense category, and reconcile that each extracted total matches its line items. Locks the per-receipt field schema, the category set, and the math/reconciliation rules FIRST, then OCRs and extracts each receipt into rows, then verifies every receipt was processed, totals reconcile, currencies/dates are normalized, and low-confidence reads are flagged for review. Defining the schema and the total-equals-line-items check before extraction is what keeps an expense ledger trustworthy for reimbursement or tax.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the ledger (planner) — per-receipt schema, categories, reconciliation rules → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. OCR and extract (developer) — read each receipt, extract fields, categorize, reconcile → gated on `ledger.json` (json)\n3. Verify the ledger (reviewer) — coverage, reconciliation, normalization, review flags → gated on artifact `{{workPath}}/verify.md` (markdown-notes)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "scan my receipts",
+    "receipts to a spreadsheet",
+    "extract receipt totals",
+    "expense report from receipts",
+    "OCR receipts into a ledger"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the ledger",
+      "description": "per-receipt schema, categories, reconciliation rules",
+      "prompt": "Define the ledger contract before reading receipts. Step 1: identify the receipts folder and the file types (jpg, png, pdf). Step 2: define the per-receipt schema (file, vendor, date, currency, line items[{desc, amount}], subtotal, tax, total, category, confidence, needs_review). Step 3: define the closed expense-category set (e.g. Meals, Travel, Supplies, Software, Other) — every receipt gets exactly one. Step 4: define the math/reconciliation rule — sum(line items) + tax should equal total within a small tolerance; a mismatch sets needs_review. Step 5: define normalization (dates → ISO, amounts numeric to two decimals, a single output currency or a currency column) and the confidence threshold below which a row is flagged. Step 6: write an acceptance-criteria checklist ('every receipt file produces a row', 'amounts numeric and dates ISO', 'total reconciles to line items + tax within tolerance else flagged', 'category is in-set', 'low-confidence reads flagged for review', 'a grand total across receipts is reported'). Call write_task_note with schema + categories + rules + checklist and write {{workPath}}/scope.md. No OCR yet.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "extract",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "extract",
+      "name": "OCR and extract",
+      "description": "read each receipt, extract fields, categorize, reconcile",
+      "prompt": "Process every receipt into a ledger row to the locked schema. Step 1: list the folder and, for each receipt, use the available OCR/vision capability to read the text. Step 2: extract vendor, date, line items, subtotal, tax, and total; normalize dates to ISO and amounts to numbers. Step 3: assign exactly one in-set category from the vendor/items. Step 4: reconcile — check sum(line items)+tax ≈ total within tolerance; on mismatch or low OCR confidence, set needs_review with a note rather than silently trusting it. Step 5: write all rows to the output file (JSON), confirm it parses, and compute a grand total across receipts. Do not skip any receipt; if one is unreadable, still emit a row flagged needs_review. Call write_task_note with the output path, the receipt count, and how many are flagged.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "ledger.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "ledger.json",
+            "bytes": 2
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "ledger.json"
+            }
+          }
+        ],
+        "onReject": "extract",
+        "maxAttempts": 3
+      },
+      "next": "verify",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "verify",
+      "name": "Verify the ledger",
+      "description": "coverage, reconciliation, normalization, review flags",
+      "prompt": "Verify the ledger against scope. Step 1: confirm the file parses and there is one row per receipt file in the folder — none skipped. Step 2: confirm amounts are numeric to two decimals and dates are ISO. Step 3: confirm reconciliation ran — rows where line items + tax do not match the total within tolerance are flagged needs_review, and clean rows actually balance (re-check 3 by hand). Step 4: confirm categories are all in-set and low-confidence/unreadable receipts are flagged rather than silently accepted. Step 5: confirm the grand total equals the sum of the row totals. Write PASS/FAIL per criterion to {{workPath}}/verify.md and task notes; on failure, name the receipts and loop back to extract.\n\nThe deliverable `{{workPath}}/verify.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "ledger.json",
+            "bytes": 2
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "ledger.json"
+            }
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open ledger.json and verify every criterion from {{workPath}}/scope.md: one row per receipt file (none skipped, unreadable ones flagged), amounts numeric to two decimals and dates ISO, reconciliation flags rows where line items + tax do not match the total within tolerance while clean rows balance (re-check 3 by hand), categories all in-set, low-confidence reads flagged, and the grand total equals the sum of row totals. Write PASS/FAIL per criterion; on any failure, name the receipts and loop back to extract.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"extract\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "ledger.json"
+        }
+      ],
+      "next": "extract",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

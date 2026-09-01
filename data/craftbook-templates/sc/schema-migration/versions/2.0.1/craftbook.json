@@ -1,0 +1,619 @@
+{
+  "id": "schema-migration",
+  "name": "Schema / Type Migration",
+  "description": "Change a data model, schema, or type across a codebase while the data stays alive at every moment - expand/contract is THE method, and each claim is mechanically verified. First PLAN from the real files: read the actual schema and data files and every accessor that touches the current shape, document the current and target shapes with fields taken from those files, and lay the work out as expand (readers accept both shapes), migrate (transform the stored data), contract (drop the old shape and retire the dual-read) - with per-stage data safety and a per-stage rollback. Then MIGRATE at the real sites the plan names, running the suite between stages so every green is a recorded receipt: expand must be green before the data moves, and the data must be fully transformed before contract lands. Then VERIFY that no record was stranded - the old shape is gone exactly where contract says, every record is readable in the target shape with its values intact, and the whole suite is green. Finally an independent reviewer grades the chain against fixed criteria, and their REVISE verdict routes the work back automatically with concrete findings. Needs a project whose tests run via `npm run test`. Works identically whether the run edits the project directly or drafts a change proposal for the user to apply.",
+  "plan": "Plan expand/migrate/contract from the real schema and data files (per-stage data safety and rollback) -> execute at the real sites with the suite green between stages and reads accepting both shapes while the data moves -> verify every record readable, the old shape gone where contract says, and the suite green -> enforced independent review.",
+  "entryStepId": "plan-migration",
+  "triggers": [
+    "migrate a schema",
+    "change a type everywhere",
+    "multi-file migration",
+    "rename a model across the codebase",
+    "type migration"
+  ],
+  "commands": [
+    {
+      "scope": "script",
+      "name": "test",
+      "reason": "every migration stage must keep reads working - receipts"
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "scope": {
+        "type": "string",
+        "title": "What to migrate",
+        "description": "The schema or shape change to make: the current shape, the target shape, and where the data lives. Leave empty when the task description already carries it.",
+        "default": ""
+      },
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "plan-migration",
+      "name": "Plan the expand/contract migration",
+      "description": "Document the current and target shapes from the real files and stage the work as expand, migrate, contract - with per-stage data safety and rollback.",
+      "prompt": "The migration: {{scope}}\n\nPlan from the REAL files before changing anything. Read the actual schema definitions and the actual data files, and find every accessor that touches the current shape with real searches over the tree - never from memory. Document the current shape and the exact target shape with field names and types taken from those files. Then lay the work out as expand/contract stages - the data must stay readable through every stage: first EXPAND (readers accept both the old and the new shape), then MIGRATE (transform the stored data to the new shape), then CONTRACT (drop the old shape and retire the dual-read). For each stage, state what keeps every existing record readable while that stage is in flight, and the concrete rollback if it goes wrong. If the current shape cannot be determined from the real files, record what is missing honestly and stop.\n\nWrite `{{workPath}}/migration-plan.md` with exactly these sections: `## Current shape` (from the real files, cited with backtick paths), `## Target shape` (exact fields and types), `## Stages` (expand, migrate, contract - what each touches, in order), `## Data safety` (why no record becomes unreadable at any stage), `## Rollback per stage`.\n\nObservable handoff: write the completed result to `{{workPath}}/migration-plan.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "migration planner",
+      "capabilityFloor": "medium",
+      "advanceWhen": {
+        "file": "{{workPath}}/migration-plan.md",
+        "minBytes": 700,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "migrate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/migration-plan.md",
+            "bytes": 700,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/migration-plan.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/migration-plan.md",
+            "pattern": "^##\\s+Current shape",
+            "flags": "im",
+            "label": "Current shape section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/migration-plan.md",
+            "pattern": "^##\\s+Target shape",
+            "flags": "im",
+            "label": "Target shape section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/migration-plan.md",
+            "pattern": "^##\\s+Stages",
+            "flags": "im",
+            "label": "Stages section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/migration-plan.md",
+            "pattern": "^##\\s+Data safety",
+            "flags": "im",
+            "label": "Data safety section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/migration-plan.md",
+            "pattern": "^##\\s+Rollback per stage",
+            "flags": "im",
+            "label": "Rollback per stage section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/migration-plan.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "plan-migration",
+        "maxAttempts": 4
+      },
+      "next": "migrate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "migrate",
+      "name": "Execute the stages",
+      "description": "Apply expand, migrate, contract at the real sites with the suite run between stages; reads accept both shapes until the plan retires the dual-read.",
+      "prompt": "Read `{{workPath}}/migration-plan.md` and execute its stages in order at the real sites it names - the schema definition, the accessors, and the data transform - using `read_file` plus `write_file`/`replace_in_file`. Run the suite with `run_package_script` (`test`) between stages: expand must be green before the data moves, and the data must be fully transformed before contract drops the old shape. During expand, reads accept BOTH shapes, and the plan's contract stage says exactly when that dual-read retires - do not leave it behind as permanent fallback code, and do not remove it before the data has moved. Transform the stored data with a real, repeatable step (a script you ran, or an explicit recorded edit), never by retyping records from memory. If the command needs first-use approval, say so and wait rather than guessing. If a stage cannot keep the suite green, return the tree to the last green stage and record what blocked you honestly.\n\nWrite `{{workPath}}/change-notes.md` with exactly these sections: `## Stages executed` (each stage with its suite result), `## Files touched` (backtick path per line), `## Data transformed` (which records moved, how, and how you know none were lost), `## Deviations` (where execution departed from the plan and why, or 'none'). Before working, open `{{workPath}}/migration-plan.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/change-notes.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "software engineer",
+      "capabilityFloor": "medium",
+      "consumes": [
+        {
+          "file": "{{workPath}}/migration-plan.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/change-notes.md",
+        "minBytes": 700,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "verify"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/change-notes.md",
+            "bytes": 700,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/change-notes.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/change-notes.md",
+            "pattern": "^##\\s+Stages executed",
+            "flags": "im",
+            "label": "Stages executed section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/change-notes.md",
+            "pattern": "^##\\s+Files touched",
+            "flags": "im",
+            "label": "Files touched section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/change-notes.md",
+            "pattern": "^##\\s+Data transformed",
+            "flags": "im",
+            "label": "Data transformed section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/change-notes.md",
+            "pattern": "^##\\s+Deviations",
+            "flags": "im",
+            "label": "Deviations section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/change-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "migrate",
+        "maxAttempts": 4
+      },
+      "next": "verify",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "workspace"
+        ]
+      }
+    },
+    {
+      "id": "verify",
+      "name": "Prove no record was stranded",
+      "description": "Check every record is in the target shape with values intact, the old shape is gone where contract says, and the whole suite is green.",
+      "prompt": "Prove the migration with fresh eyes. Open the migrated data with `read_file` and check every record is in the target shape and none was lost - count records against the pre-migration state recorded in `{{workPath}}/change-notes.md`, and spot-check that values survived exactly. Search the real code for leftover reads of the old shape: the old field access must be gone exactly where the plan's contract stage says it should be gone. Re-run the whole suite with `run_package_script` (`test`) - it must be green. Anything you could not actually run or open gets labeled unverified, never claimed.\n\nWrite `{{workPath}}/verification.md` with exactly these sections: `## Old shape check` (the search you ran for leftover old-shape reads and what it found), `## Data integrity` (record counts and the spot-checked values), `## Suite` (the full-suite result), `## Result` (migrated with no record stranded, or what remains unverified and why). Before working, open `{{workPath}}/change-notes.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/verification.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "software engineer",
+      "capabilityFloor": "medium",
+      "consumes": [
+        {
+          "file": "{{workPath}}/change-notes.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/verification.md",
+        "minBytes": 500,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/verification.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/verification.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Old shape check",
+            "flags": "im",
+            "label": "Old shape check section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Data integrity",
+            "flags": "im",
+            "label": "Data integrity section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Suite",
+            "flags": "im",
+            "label": "Suite section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Result",
+            "flags": "im",
+            "label": "Result section",
+            "artifact": true
+          },
+          {
+            "kind": "commandEvidence",
+            "script": "test",
+            "expect": "pass",
+            "label": "the whole suite is green after the migration (verified run receipt)"
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate the deliverable",
+      "description": "Independently grade the observable deliverable and route it to finish, repair, or user escalation.",
+      "prompt": "Review `{{workPath}}/verification.md`, `{{workPath}}/migration-plan.md`, `{{workPath}}/change-notes.md` against every criterion below. Inspect the underlying evidence files named by the workflow; do not grade from the author's summary alone.\n\n1. Every record stayed readable at every stage: the plan's expand stage genuinely accepted both shapes, and the recorded stage order never left data unreadable in between.\n2. The contract stage landed only after the data moved: change-notes.md shows the transform completed (with a green suite) before the old shape was dropped.\n3. Accessors changed at real sites: every path under Files touched exists and the change there matches the plan - open the touched files; do not grade from change-notes.md alone.\n4. Data integrity is proven, not asserted: verification.md counts records against the pre-migration state and spot-checks that values survived exactly.\n5. No old-shape read is left outside what the plan deliberately retains: the verification search is quoted and its result matches the contract stage.\n6. Rollback per stage is genuine: each stage names a concrete restore path a person could actually follow, not a vague promise.\n\nOpen `{{workPath}}/verification.md`, `{{workPath}}/migration-plan.md`, `{{workPath}}/change-notes.md` with `read_artifact`. Write the evidence-backed review to `{{workPath}}/review.md` in the artifacts drawer with `write_artifact`.\n\nList the findings as a markdown table with columns `| Severity | File | Line | Problem | Fix |` (severities: critical/major/minor/nit; empty table only on PASS). Give each criterion a PASS or FAIL with a concrete path, excerpt, measurement, or observed behavior. End with exactly `Verdict: PASS` or `Verdict: REVISE`. The gate ENFORCES the verdict: a well-formed REVISE is rejected and routed back to `repair` automatically, carrying your findings — so list every finding in the table with a concrete fix. On PASS, `advance_task_step` to `finish`. Never write PASS while a criterion is unmet.",
+      "suggestedRole": "migration reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/verification.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/migration-plan.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/change-notes.md",
+          "artifact": true
+        }
+      ],
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/review.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit PASS or REVISE verdict",
+            "artifact": true
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkFixReview",
+            "scope": "standard",
+            "inputs": {
+              "reviewPath": "{{workPath}}/review.md",
+              "fixStepId": "repair"
+            }
+          }
+        ],
+        "onReject": "evaluate",
+        "maxAttempts": 4
+      },
+      "next": "finish",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "repair",
+      "name": "Repair the deliverable",
+      "description": "Fix only the concrete gaps from the latest independent review.",
+      "prompt": "Read `{{workPath}}/review.md` with `read_artifact` and repair every failed criterion in `{{workPath}}/verification.md`, `{{workPath}}/migration-plan.md`, `{{workPath}}/change-notes.md`. Make changes on each file's declared surface (`write_artifact` for artifact inputs, `write_file` for workspace inputs), not in task notes or a reply. Preserve evidence that already passed. Re-run or re-check anything the reviewer found unproven. Ensure `{{workPath}}/verification.md` is genuinely updated this turn so the repair is observable, then hand it back for independent evaluation.",
+      "suggestedRole": "software engineer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/verification.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/migration-plan.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/change-notes.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/verification.md",
+        "minBytes": 500,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/verification.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/verification.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Old shape check",
+            "flags": "im",
+            "label": "Old shape check section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Data integrity",
+            "flags": "im",
+            "label": "Data integrity section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Suite",
+            "flags": "im",
+            "label": "Suite section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verification.md",
+            "pattern": "^##\\s+Result",
+            "flags": "im",
+            "label": "Result section",
+            "artifact": true
+          },
+          {
+            "kind": "commandEvidence",
+            "script": "test",
+            "expect": "pass",
+            "label": "the whole suite is green after the migration (verified run receipt)"
+          }
+        ],
+        "onReject": "repair",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "workspace"
+        ]
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All deterministic and reviewer criteria passed.",
+      "prompt": "The independent review passed. Read `{{workPath}}/review.md` with `read_artifact`, then use `write_task_note` to record a concise DONE summary with the final deliverable paths (`{{workPath}}/verification.md`, `{{workPath}}/migration-plan.md`, `{{workPath}}/change-notes.md`) and the evidence that each acceptance criterion passed. Report DONE without starting new work.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "needs-user",
+      "name": "Escalate unresolved concerns",
+      "description": "The bounded repair loop ended without a defensible pass.",
+      "prompt": "The deliverable did not pass after 3 review rounds. Do not claim success. Read `{{workPath}}/review.md` with `read_artifact`, then use `write_task_note` to record DONE_WITH_CONCERNS: the unmet criteria, what was attempted, the affected paths, and the smallest user decision or missing input needed to continue.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "diffpackCapable": true,
+  "capabilityFloor": "medium",
+  "version": "2.0.1",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26236"
+}

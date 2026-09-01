@@ -1,0 +1,216 @@
+{
+  "id": "summarize-long",
+  "name": "Summarize a Long Document",
+  "description": "Distill a long document into a faithful, well-structured summary at a chosen depth: it first scopes the audience, the target length and format (TL;DR line, executive summary, or bulleted key points), and what the reader must take away, then writes the summary capturing every major point and decision in proportion, with nothing invented and nothing critical dropped. Covers summarize, TL;DR, executive summary, condense a document, key takeaways, and abstract writing. Scoping audience and depth before summarizing is the point: a small model that knows who it is for and how long it should be avoids both the bloated near-copy and the lossy summary that omits the document's actual conclusion.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Summary scope (planner) — lock audience, depth, format, and required takeaways → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Write the summary (copywriter) — write the faithful summary to the locked depth and format → gated on `summary.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "summarize this document",
+    "write a tldr",
+    "executive summary",
+    "condense this",
+    "key takeaways"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Summary scope",
+      "description": "lock audience, depth, format, and required takeaways",
+      "prompt": "1) Identify the audience and why they need the summary (decision, briefing, study). 2) Choose the format and depth: a one-line TL;DR, a 3-5 sentence executive summary, a bulleted key-points list, or a layered combination — and set a target length (e.g. <=200 words). 3) Skim the document and list its major sections/arguments and, critically, its main conclusion or recommendation (this MUST appear in the summary). 4) Decide what is in-scope vs droppable detail. Write an acceptance-criteria checklist (e.g. 'captures the document's main conclusion'; 'covers every major point in proportion to its weight'; 'within target length'; 'no claim absent from the source'; 'matches the chosen format'; 'understandable without the original'). Use write_task_note for the scope + section map + checklist, and write the same to the produces path. No summary prose yet.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "summarize",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "summarize",
+      "name": "Write the summary",
+      "description": "write the faithful summary to the locked depth and format",
+      "prompt": "Write the summary to the scoped format and length. 1) Lead with the single most important point or conclusion. 2) Cover every major section/argument in proportion to its importance — do not over-weight the intro or skip the conclusion. 3) Write in your own words; do not copy long passages. 4) Include nothing not present in the source — no inference presented as the document's claim. 5) Make it stand alone: a reader who never sees the original should grasp the key content. 6) Output the chosen format in markdown (e.g. a 'TL;DR:' line then an 'Executive summary' paragraph then 'Key points' bullets, as scoped). Save to the produces path and note the final word count.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "summary.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "summary.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "summary.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "summarize",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace"
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Read summary.md against the source and the scope. Check EACH criterion and write PASS/FAIL: (a) the document's main conclusion/recommendation is present; (b) every major point is covered in proportion (no critical section dropped); (c) within the target length; (d) no claim that is absent from or misrepresents the source; (e) matches the chosen format; (f) understandable on its own. A summary that drops the conclusion or invents claims FAILS — loop back to summarize and name the gaps.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"summarize\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "summary.md"
+        }
+      ],
+      "next": "summarize",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

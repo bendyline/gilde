@@ -1,0 +1,280 @@
+{
+  "id": "ebook-compile",
+  "name": "Ebook Compile",
+  "description": "Compile a collection of notes, articles, or chapter drafts into a coherent, readable ebook — with a title page, table of contents, consistently formatted chapters, and front/back matter — output as a single navigable HTML book. Outlines the chapter structure and through-line FIRST (so disparate notes become a real book, not a pile), writes/edits each chapter to a consistent voice and adds connective tissue, then builds the compiled HTML with a linked TOC and chapter navigation. Use for turning a blog backlog, course notes, or drafts into a downloadable ebook.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Outline the book (planner) — chapter order, through-line, and front/back matter → gated on artifact `{{workPath}}/outline.md` (markdown-notes)\n2. Write and edit chapters (copywriter) — edit each chapter to one voice + add connective transitions → gated on artifact `{{workPath}}/write.md` (markdown-notes)\n3. Build the ebook (developer) — compile index.html: title page, linked TOC, chapter nav → gated on `index.html` (html-page)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "outline",
+  "triggers": [
+    "compile an ebook",
+    "make an ebook",
+    "turn my notes into a book",
+    "ebook from articles",
+    "build a book",
+    "create an ebook"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "outline",
+      "name": "Outline the book",
+      "description": "chapter order, through-line, and front/back matter",
+      "prompt": "Turn the raw material into a book structure. Step 1: survey the source {{workPath}}/articles and identify the central through-line or argument that will make them cohere. Step 2: group and order the material into chapters/parts that build logically; cut or merge redundant pieces. Step 3: plan the front matter (title page, optional preface/intro, table of contents) and back matter (conclusion, about, resources). Step 4: for each chapter note its title, the source pieces it draws from, and the transition that links it to the next. Step 5: write an acceptance-criteria checklist ('has a title page + linked table of contents', 'chapters are ordered to a clear through-line', 'each chapter opens and closes cleanly with transitions', 'consistent heading levels throughout', 'front and back matter present'). Write the chapter map + checklist via write_task_note AND to {{workPath}}/outline.md. No chapter prose or HTML yet.\n\nThe deliverable `{{workPath}}/outline.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/outline.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/outline.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/outline.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "outline",
+        "maxAttempts": 3
+      },
+      "next": "write",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "write",
+      "name": "Write and edit chapters",
+      "description": "edit each chapter to one voice + add connective transitions",
+      "prompt": "Write/edit the chapters so the book reads as one work. Step 1: for each chapter in order, shape the source material into clean prose with a consistent voice, tense, and terminology (disparate notes often clash — unify them). Step 2: give each chapter a clear opening that orients the reader and a close that lands the point and transitions to the next chapter. Step 3: write the preface/intro that sets up the through-line and the conclusion that ties it together. Step 4: standardize formatting decisions — heading levels, how lists/quotes/code appear — so they are uniform across chapters. Step 5: keep the reader's journey in mind: no chapter should feel like an orphaned blog post. Write the per-chapter edited text + front/back matter via write_task_note AND to {{workPath}}/write.md.\n\nThe deliverable `{{workPath}}/write.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "{{workPath}}/write.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/write.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/write.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 3
+      },
+      "next": "build",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "build",
+      "name": "Build the ebook",
+      "description": "compile index.html: title page, linked TOC, chapter nav",
+      "prompt": "Compile the book as a single self-contained index.html (inline CSS, no external assets). Step 1: build a title page (title, subtitle, author) as the opening screen. Step 2: build a Table of Contents with in-page anchor links to every chapter. Step 3: render each chapter in order with a stable id, consistent heading hierarchy, comfortable reading width and line-height, and the unified formatting from the edit phase. Step 4: add chapter navigation — previous/next links and a back-to-TOC link at each chapter boundary — and use page-break-before per chapter so it also prints/exports as a clean book. Step 5: include the front matter (preface) and back matter (conclusion, about/resources). Drop in the edited prose verbatim; do not re-edit the voice here. On a loop-back, fix ONLY the named gaps. Write the path + chapter count via write_task_note.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 800
+          },
+          {
+            "kind": "htmlLint",
+            "file": "index.html"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "QA the ebook against the locked criteria. Step 1: open/render index.html and click through the TOC links and chapter navigation. Step 2: check EACH acceptance criterion: title page present, a linked table of contents whose links all resolve to the right chapters, chapters ordered to the through-line, each chapter opens/closes with transitions, heading levels and formatting are consistent across chapters, and front + back matter are present. Step 3: read two non-adjacent chapters and confirm the voice is unified (not obviously stitched from clashing sources). Step 4: confirm chapter page-breaks work for print/export. Write PASS/FAIL per criterion with the offending chapter on any FAIL.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "index.html"
+        }
+      ],
+      "next": "build",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

@@ -1,0 +1,250 @@
+{
+  "id": "record-a-relative",
+  "name": "Record a Relative",
+  "description": "Bank an elder's interview while the telling is fresh: file the transcript, pull the people, places, and dates into the family record with their source, and write the follow-up questions — because the questions you didn't ask are the ones that vanish. Locks the extraction rules FIRST (every fact carries its quote, uncertain stays uncertain), then files the transcript, then updates the tree and surfaces the conflicts. Use for filing a family interview, recording a relative's stories, pulling facts into the tree, and 'we interviewed grandma'.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the extraction (genealogist) — target branch, extraction rules, fact-sourcing checklist → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. File the transcript (archivist) — speaker-labeled transcript with a header, under interviews/\n3. Extract the facts (genealogist) — facts with quotes into the tree, conflicts surfaced, follow-ups → gated on artifact `{{workPath}}/report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "file the interview with oma",
+    "we interviewed grandma",
+    "pull the family facts from the transcript",
+    "record a relative",
+    "bank the elder interview"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the extraction",
+      "description": "target branch, extraction rules, fact-sourcing checklist",
+      "prompt": "Aim the interview at the tree before extracting a single fact. Step 1: read tree.json from the workspace — the people, the branches, the facts already recorded and the ones marked uncertain. Step 2: identify the relative who was interviewed and which branch facts this interview can confirm, correct, or newly supply. Step 3: lock the extraction rules — every fact carries the teller's quote or the transcript line behind it; a fact that conflicts with the tree is surfaced as a conflict, never silently overwritten; uncertain stays uncertain ('she thought it was 1954' is recorded as thought, not fact). Step 4: write the acceptance-criteria checklist from those rules, plus 'the transcript is filed under interviews/' and 'follow-up questions written for the gaps the interview opened'. Call write_task_note with the relative + target branch + checklist and write {{workPath}}/scope.md.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "genealogist",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "file",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "file",
+      "name": "File the transcript",
+      "description": "speaker-labeled transcript with a header, under interviews/",
+      "prompt": "Get the interview on file where the family can find it in fifty years. Step 1: if a transcript file was provided, start from it; otherwise produce one from the recording through the project's transcription capabilities. Step 2: label the speakers and add a header — who was interviewed, by whom, when and where. Step 3: save it in the interviews/ folder named for the relative and the date (for example interviews/oma-2026-07.md). Keep the telling verbatim — the phrasing is part of the record. Step 4: call write_task_note with the path.",
+      "suggestedRole": "archivist",
+      "next": "extract",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "extract",
+      "name": "Extract the facts",
+      "description": "facts with quotes into the tree, conflicts surfaced, follow-ups",
+      "prompt": "Pull the facts into the record with their sources. Step 1: walk the transcript and list every person, place, date, and event it attests — each with the quote behind it. Step 2: compare against tree.json: which facts confirm the tree, which are new, and which conflict with what is recorded — update the tree through the project's family-record capabilities for confirmations and additions, and surface every conflict for the owner instead of picking a winner. Step 3: write {{workPath}}/report.md: the facts captured (each with its quote), the conflicts with the existing tree stated plainly, and the follow-up questions to ask while asking is still possible. Step 4: call write_task_note with the fact count, the conflict count, and the top follow-up question.\n\nThe deliverable `{{workPath}}/report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "genealogist",
+      "advanceWhen": {
+        "file": "{{workPath}}/report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/report.md",
+            "bytes": 1200,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "extract",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open {{workPath}}/report.md beside the interview transcript and tree.json and verify every criterion from {{workPath}}/scope.md: every fact in the report carries a quote that actually appears in the transcript (spot-check five — a quote that isn't there is fabrication), every date and name in the report exists in the transcript or the tree, conflicts with the tree are surfaced as conflicts rather than silently resolved, uncertain memories are recorded as uncertain, and the follow-up questions are real questions aimed at real gaps. Write PASS/FAIL per criterion; on any failure, name the gap and loop back to extract.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/report.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"extract\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/report.md",
+          "artifact": true
+        }
+      ],
+      "next": "extract",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

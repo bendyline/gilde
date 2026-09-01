@@ -1,0 +1,716 @@
+{
+  "id": "flaky-test-fix",
+  "name": "Fix a Flaky Test",
+  "description": "Deflake a test the way a senior engineer would: by removing the nondeterminism, never by hiding it. First REPRODUCE statistically — run the real suite repeatedly with `run_package_script` until the intermittent failure is recorded in run receipts the gates can verify, and note the failure signature and the conditions it appears under (full suite versus alone, ordering, concurrency, timing). Then ISOLATE the mechanism with a targeted experiment — run the test alone versus in the suite, reorder, repeat — until you can name the defect site: the shared state, missing await, unseeded randomness, time dependence, or leaked resource that lets one run differ from the next. Then FIX at that real site with isolation or cleanup that covers every test — and never delete the test, skip it, weaken its assertion, widen a timeout, or wrap it in retries: those make the dashboard green while the bug ships. Finally PROVE stability: three consecutive green suite runs, read from real run receipts rather than the author's claims, then an independent reviewer checks that the mechanism itself was removed and a REVISE verdict routes the work back automatically with concrete findings. Needs a project whose tests run via `npm run test`. Works identically whether the run edits the project directly or drafts a change proposal for the user to apply.",
+  "plan": "Reproduce the flake with recorded suite runs -> isolate the nondeterminism mechanism with a targeted experiment -> remove it at the real site (never skip, retry, or widen timeouts) -> prove stability with three consecutive green runs -> enforced independent review.",
+  "entryStepId": "reproduce",
+  "triggers": [
+    "fix this flaky test",
+    "deflake",
+    "test fails intermittently",
+    "fails in CI but passes locally",
+    "intermittent test failure"
+  ],
+  "runModes": {
+    "nightShift": "supported"
+  },
+  "commands": [
+    {
+      "scope": "script",
+      "name": "test",
+      "reason": "Statistical reproduction and the consecutive-green stability proof read real run receipts — the gates verify recorded runs, not claims."
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "scope": {
+        "type": "string",
+        "title": "Flaky test to fix",
+        "description": "The flaky test, failure message, or suite area to chase. Leave empty when the task description already carries it.",
+        "default": ""
+      },
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "reproduce",
+      "name": "Reproduce the flake with recorded runs",
+      "description": "Run the suite repeatedly until the intermittent failure is a recorded fact, and characterize when it appears.",
+      "prompt": "The flaky test to fix: {{scope}}\n\nEstablish the flake as a recorded fact before theorizing. Find how this project runs its tests (`list_package_scripts`, then read the test layout). Run the suite with `run_package_script` (`test`) repeatedly — several runs if needed — until the intermittent failure is recorded, and keep the passing runs on record too: the pass/fail mix IS the evidence. Note the exact failure signature (test name, assertion, message) and the conditions it appears under — full suite versus alone, ordering, concurrency, timing, environment. If the command needs first-use approval, say so and wait rather than guessing. If the failure refuses to appear after many runs, record every run honestly and what you varied between them; do not fabricate a failing run.\n\nWrite `{{workPath}}/flake-evidence.md` with exactly these sections: `## Symptom` (which test fails, and how often out of how many runs), `## Runs observed` (each run and its outcome, with the failing output quoted from a real run), `## Failure signature` (the exact assertion and message), `## Suspected class` (ordering, shared state, timing, or environment — with the observation that points there). Cite the real test and source files with backtick paths.\n\nObservable handoff: write the completed result to `{{workPath}}/flake-evidence.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "debugging engineer",
+      "capabilityFloor": "medium",
+      "advanceWhen": {
+        "file": "{{workPath}}/flake-evidence.md",
+        "minBytes": 500,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "isolate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/flake-evidence.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/flake-evidence.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/flake-evidence.md",
+            "pattern": "^##\\s+Symptom",
+            "flags": "im",
+            "label": "Symptom section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/flake-evidence.md",
+            "pattern": "^##\\s+Runs observed",
+            "flags": "im",
+            "label": "Runs observed section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/flake-evidence.md",
+            "pattern": "^##\\s+Failure signature",
+            "flags": "im",
+            "label": "Failure signature section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/flake-evidence.md",
+            "pattern": "^##\\s+Suspected class",
+            "flags": "im",
+            "label": "Suspected class section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/flake-evidence.md",
+            "minCitations": 2,
+            "artifact": true
+          },
+          {
+            "kind": "commandEvidence",
+            "script": "test",
+            "expect": "fail",
+            "label": "at least one recorded failing run of the suite"
+          }
+        ],
+        "onReject": "reproduce",
+        "maxAttempts": 4
+      },
+      "next": "isolate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "isolate",
+      "name": "Isolate the mechanism",
+      "description": "Pin the nondeterminism with a targeted experiment and name the defect site. No fixes yet.",
+      "prompt": "Read `{{workPath}}/flake-evidence.md`, then pin the MECHANISM with a targeted experiment, not a guess. Good experiments: run the failing test alone versus in the full suite; temporarily reorder or comment out neighboring tests (and restore them afterwards); repeat runs to confirm the pattern is what you think it is. Read the test and the code under test until you can name the defect site precisely — the shared module state, missing await, unseeded randomness, time or filesystem dependence, or leaked resource that makes the outcome depend on anything besides the code under test. Check siblings: which neighboring tests share the same hazard? Undo every temporary experiment edit before finishing, and make no fix in this phase. If the experiments stay inconclusive, record what each one showed and ruled out — an honest unknown beats a confident guess.\n\nWrite `{{workPath}}/diagnosis.md` with exactly these sections: `## Mechanism` (the nondeterminism, named concretely), `## Experiment` (what you ran and what each variation showed), `## Defect site` (file and symbol, with backtick paths), `## Siblings checked` (neighboring tests that share or escape the hazard). Every path you cite must be real. Before working, open `{{workPath}}/flake-evidence.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/diagnosis.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "root-cause analyst",
+      "capabilityFloor": "medium",
+      "consumes": [
+        {
+          "file": "{{workPath}}/flake-evidence.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/diagnosis.md",
+        "minBytes": 600,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "fix"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/diagnosis.md",
+            "bytes": 600,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/diagnosis.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/diagnosis.md",
+            "pattern": "^##\\s+Mechanism",
+            "flags": "im",
+            "label": "Mechanism section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/diagnosis.md",
+            "pattern": "^##\\s+Experiment",
+            "flags": "im",
+            "label": "Experiment section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/diagnosis.md",
+            "pattern": "^##\\s+Defect site",
+            "flags": "im",
+            "label": "Defect site section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/diagnosis.md",
+            "pattern": "^##\\s+Siblings checked",
+            "flags": "im",
+            "label": "Siblings checked section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/diagnosis.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "isolate",
+        "maxAttempts": 4
+      },
+      "next": "fix",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "fix",
+      "name": "Remove the nondeterminism",
+      "description": "Make the outcome deterministic at the real site — isolation, cleanup, awaits, seeding — never masking.",
+      "prompt": "Read `{{workPath}}/diagnosis.md` and remove the nondeterminism at the defect site it names. There is no prescribed output path for source changes — edit the actual files from the diagnosis with `read_file` plus `write_file`/`replace_in_file`. The right shapes: cleanup or isolation that runs for EVERY test (a beforeEach/afterEach reset, a fresh instance per test), an explicit await on work that was racing, seeded or injected randomness and time, releasing leaked resources. NEVER delete or skip the flaky test, never weaken its assertion, and never mask the flake with retries or widened timeouts — the test must still assert exactly what it asserted. A one-off reset inside the failing test alone is not cleanup; future tests inherit the same hazard, so fix it at the level every test shares. Cover the sibling hazards the diagnosis flagged. Re-run the suite with `run_package_script` (`test`) while you work.\n\nWrite `{{workPath}}/fix-notes.md` with exactly these sections: `## Problem` (one paragraph naming the mechanism), `## Change` (what you altered and why the outcome can no longer depend on order, timing, or luck), `## Files touched` (backtick path per line), `## Regression coverage` (why the flake cannot silently return — what fails if the cleanup is removed), `## Risk` (anything unverified, honestly), `## How to verify` (the exact commands a person runs). Before working, open `{{workPath}}/diagnosis.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/fix-notes.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "software engineer",
+      "capabilityFloor": "medium",
+      "consumes": [
+        {
+          "file": "{{workPath}}/diagnosis.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/fix-notes.md",
+        "minBytes": 700,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "validate-stability"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/fix-notes.md",
+            "bytes": 700,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/fix-notes.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Problem",
+            "flags": "im",
+            "label": "Problem section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Change",
+            "flags": "im",
+            "label": "Change section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Files touched",
+            "flags": "im",
+            "label": "Files touched section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Regression coverage",
+            "flags": "im",
+            "label": "Regression coverage section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Risk",
+            "flags": "im",
+            "label": "Risk section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+How to verify",
+            "flags": "im",
+            "label": "How to verify section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/fix-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "fix",
+        "maxAttempts": 4
+      },
+      "next": "validate-stability",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "workspace"
+        ]
+      }
+    },
+    {
+      "id": "validate-stability",
+      "name": "Prove stability",
+      "description": "Three consecutive green suite runs, read from real receipts — one green run means nothing for a flake.",
+      "prompt": "Prove the fix holds under repetition — one green run means nothing for a flake. Run the full suite with `run_package_script` (`test`) at least THREE times in a row; every run must be green, and the runs must be real receipts, not claims. If any run fails, the mechanism is not gone: record the failure honestly and route back through the evidence rather than re-rolling until you get lucky. Compare against `{{workPath}}/flake-evidence.md`: the once-flaky test must be present and passing in every run.\n\nWrite `{{workPath}}/validation.md` with exactly these sections: `## Runs` (each run and its result, in order), `## Result` (stability confirmed with the receipts, or what remains unstable and why). Before working, open `{{workPath}}/flake-evidence.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/validation.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "software engineer",
+      "capabilityFloor": "medium",
+      "consumes": [
+        {
+          "file": "{{workPath}}/flake-evidence.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/validation.md",
+        "minBytes": 300,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/validation.md",
+            "bytes": 300,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/validation.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Runs",
+            "flags": "im",
+            "label": "Runs section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Result",
+            "flags": "im",
+            "label": "Result section",
+            "artifact": true
+          },
+          {
+            "kind": "commandEvidence",
+            "script": "test",
+            "expect": "pass",
+            "minRuns": 3,
+            "label": "three consecutive green suite runs (verified run receipts)"
+          }
+        ],
+        "onReject": "validate-stability",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate the deliverable",
+      "description": "Independently grade the observable deliverable and route it to finish, repair, or user escalation.",
+      "prompt": "Review `{{workPath}}/validation.md`, `{{workPath}}/flake-evidence.md`, `{{workPath}}/diagnosis.md`, `{{workPath}}/fix-notes.md` against every criterion below. Inspect the underlying evidence files named by the workflow; do not grade from the author's summary alone.\n\n1. flake-evidence.md records real runs with at least one genuine failure quoted from run output and names the conditions the failure appeared under — not a summary of a hunch.\n2. diagnosis.md names a concrete nondeterminism mechanism and a defect site that exists in this codebase, supported by a targeted experiment whose causal story actually explains the observed pass/fail pattern.\n3. The change removes the mechanism at that site — open the touched files and check it is isolation, cleanup, awaited work, or seeded inputs at the level every test shares, not a one-off patch inside the failing test.\n4. No masking: the once-flaky test still exists and still asserts what it asserted — open the test file and compare its assertion against flake-evidence.md's failure signature; it gained no skip, retry loop, or widened timeout.\n5. validation.md's three consecutive green runs are backed by real run receipts with the once-flaky test present and passing — judged from the recorded runs, not the author's claims.\n6. fix-notes.md names every touched file with paths that exist, explains why the flake cannot silently return, and states residual risk honestly.\n\nOpen `{{workPath}}/validation.md`, `{{workPath}}/flake-evidence.md`, `{{workPath}}/diagnosis.md`, `{{workPath}}/fix-notes.md` with `read_artifact`. Write the evidence-backed review to `{{workPath}}/review.md` in the artifacts drawer with `write_artifact`.\n\nList the findings as a markdown table with columns `| Severity | File | Line | Problem | Fix |` (severities: critical/major/minor/nit; empty table only on PASS). Give each criterion a PASS or FAIL with a concrete path, excerpt, measurement, or observed behavior. End with exactly `Verdict: PASS` or `Verdict: REVISE`. The gate ENFORCES the verdict: a well-formed REVISE is rejected and routed back to `repair` automatically, carrying your findings — so list every finding in the table with a concrete fix. On PASS, `advance_task_step` to `finish`. Never write PASS while a criterion is unmet.",
+      "suggestedRole": "test reliability reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/validation.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/flake-evidence.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/diagnosis.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/fix-notes.md",
+          "artifact": true
+        }
+      ],
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/review.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit PASS or REVISE verdict",
+            "artifact": true
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkFixReview",
+            "scope": "standard",
+            "inputs": {
+              "reviewPath": "{{workPath}}/review.md",
+              "fixStepId": "repair"
+            }
+          }
+        ],
+        "onReject": "evaluate",
+        "maxAttempts": 4
+      },
+      "next": "finish",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "repair",
+      "name": "Repair the deliverable",
+      "description": "Fix only the concrete gaps from the latest independent review.",
+      "prompt": "Read `{{workPath}}/review.md` with `read_artifact` and repair every failed criterion in `{{workPath}}/validation.md`, `{{workPath}}/flake-evidence.md`, `{{workPath}}/diagnosis.md`, `{{workPath}}/fix-notes.md`. Make changes on each file's declared surface (`write_artifact` for artifact inputs, `write_file` for workspace inputs), not in task notes or a reply. Preserve evidence that already passed. Re-run or re-check anything the reviewer found unproven. Ensure `{{workPath}}/validation.md` is genuinely updated this turn so the repair is observable, then hand it back for independent evaluation.",
+      "suggestedRole": "software engineer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/validation.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/flake-evidence.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/diagnosis.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/fix-notes.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/validation.md",
+        "minBytes": 300,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/validation.md",
+            "bytes": 300,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/validation.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Runs",
+            "flags": "im",
+            "label": "Runs section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Result",
+            "flags": "im",
+            "label": "Result section",
+            "artifact": true
+          },
+          {
+            "kind": "commandEvidence",
+            "script": "test",
+            "expect": "pass",
+            "minRuns": 3,
+            "label": "three consecutive green suite runs (verified run receipts)"
+          }
+        ],
+        "onReject": "repair",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "workspace"
+        ]
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All deterministic and reviewer criteria passed.",
+      "prompt": "The independent review passed. Read `{{workPath}}/review.md` with `read_artifact`, then use `write_task_note` to record a concise DONE summary with the final deliverable paths (`{{workPath}}/validation.md`, `{{workPath}}/flake-evidence.md`, `{{workPath}}/diagnosis.md`, `{{workPath}}/fix-notes.md`) and the evidence that each acceptance criterion passed. Report DONE without starting new work.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "needs-user",
+      "name": "Escalate unresolved concerns",
+      "description": "The bounded repair loop ended without a defensible pass.",
+      "prompt": "The deliverable did not pass after 3 review rounds. Do not claim success. Read `{{workPath}}/review.md` with `read_artifact`, then use `write_task_note` to record DONE_WITH_CONCERNS: the unmet criteria, what was attempted, the affected paths, and the smallest user decision or missing input needed to continue.",
+      "suggestedRole": "project lead",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "diffpackCapable": true,
+  "capabilityFloor": "medium",
+  "version": "1.0.1",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26236"
+}

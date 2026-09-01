@@ -1,0 +1,250 @@
+{
+  "id": "practice-session",
+  "name": "Log the Practice Session",
+  "description": "Close out today's practice properly: log what was actually worked with honest minutes and tempo marks, and set up tomorrow's session so the next sit-down starts with intent instead of noodling. Locks the honest picture of the session FIRST, then logs it into the practice record, then writes tomorrow's targeted plan. Use for logging a practice session, ending today's practice, planning tomorrow's practice, and 'log my practice'.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the session (coach) — honest picture of today: pieces, minutes, tempos, trouble spots → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Log the session (coach) — today's entry into the practice record, piece states updated\n3. Write the close-out (coach) — today in two lines, streak state, tomorrow's targeted plan → gated on artifact `{{workPath}}/report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "log my practice",
+    "log today's session",
+    "just finished practicing",
+    "set up tomorrow's practice",
+    "close out the practice session"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the session",
+      "description": "honest picture of today: pieces, minutes, tempos, trouble spots",
+      "prompt": "Get the honest picture of today's session before logging a minute of it. Step 1: read practice.json and repertoire.json from the workspace — the streak, the pieces in rotation, and where each one stands. Step 2: confirm with the owner what actually happened today: which pieces, honest minutes (the ones at the instrument, not the ones planned), tempo marks reached, and the spots that fought back. Step 3: write an acceptance-criteria checklist ('today's session is logged with date, minutes, and piece', 'trouble spots recorded by bar or passage, not vibes', 'piece states in the repertoire updated where today changed them', 'tomorrow's plan targets the trouble spots with concrete tempo marks'). Call write_task_note with the minutes + pieces + checklist and write {{workPath}}/scope.md.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "coach",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "log",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "log",
+      "name": "Log the session",
+      "description": "today's entry into the practice record, piece states updated",
+      "prompt": "Log today exactly as it went. Step 1: record the session through the project's practice capabilities — date, minutes, piece(s), tempo marks, and what felt solid versus mushy, in the owner's own words. Step 2: update the piece states in the repertoire where today moved them — forward or backward; honest beats flattering. Step 3: confirm the log landed by reading practice.json back — today's entry must be there with its date, minutes, and piece. Call write_task_note with the entry as logged.",
+      "suggestedRole": "coach",
+      "next": "report",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "report",
+      "name": "Write the close-out",
+      "description": "today in two lines, streak state, tomorrow's targeted plan",
+      "prompt": "Close the day and open tomorrow. Step 1: write today in two honest lines — what got the minutes and how it went. Step 2: state the streak — how many days running, and what today did to it. Step 3: write tomorrow's plan: the specific passages to hit (by bar number), the metronome mark to start at and the mark to reach for, and one thing to leave alone because it is already working. Step 4: keep it encouraging and true — a coach's note, not a report card. Write {{workPath}}/report.md and call write_task_note with tomorrow's top target.\n\nThe deliverable `{{workPath}}/report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "coach",
+      "advanceWhen": {
+        "file": "{{workPath}}/report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/report.md",
+            "bytes": 1000,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open {{workPath}}/report.md and practice.json and verify every criterion from {{workPath}}/scope.md: today's entry is in the log with date, minutes, and piece matching what the owner reported; trouble spots are recorded by bar or passage; repertoire states moved where today moved them; and tomorrow's plan names specific passages with metronome marks. Write PASS/FAIL per criterion; on any failure, name the gap and loop back to report.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/report.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/report.md",
+          "artifact": true
+        }
+      ],
+      "next": "report",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

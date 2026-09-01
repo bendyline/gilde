@@ -1,0 +1,285 @@
+{
+  "id": "chart-pack",
+  "name": "Chart Pack from Data",
+  "description": "Build a single interactive HTML page of charts that answers a defined set of questions about a dataset. Scopes the questions and the right chart type per question FIRST (so you don't make a pretty chart that answers nothing), then analyzes the data into chart-ready series, then builds one self-contained HTML page rendering every chart with titles, axis labels, and a one-line takeaway caption each. Use this for a dashboard of charts, a visualization pack, a metrics page, or turning a CSV into graphs and plots.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the questions (planner) — lock the questions and the chart type that answers each → gated on artifact `{{workPath}}/question-scope.md` (markdown-notes)\n2. Analyze into chart-ready series (data-analyst) — aggregate the data into the exact series each chart needs → gated on `data/series.json` (json)\n3. Build the chart page (developer) — render every chart in one self-contained index.html → gated on `index.html` (html-page)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "question-scope",
+  "triggers": [
+    "make charts from data",
+    "chart pack",
+    "visualize this dataset",
+    "graphs from a csv",
+    "build a charts page"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "question-scope",
+      "name": "Scope the questions",
+      "description": "lock the questions and the chart type that answers each",
+      "prompt": "Decide WHAT the chart pack must answer before any analysis. Step 1: list 4-8 specific questions a reader has about this data (e.g. 'how did revenue trend by month?', 'which 5 categories are largest?', 'how are values distributed?'). Step 2: for EACH question pick the chart type that answers it best and say why (trend over time -> line; part-to-whole -> bar/stacked, not pie unless <=5 slices; distribution -> histogram; comparison -> grouped bar; relationship -> scatter). Step 3: name the exact columns and aggregation each chart needs. Step 4: write an acceptance-criteria checklist ('one chart per question', 'every chart has a title + axis labels', 'every chart has a one-line takeaway caption', 'chart type matches the question'). Call write_task_note and write the question->chart mapping + checklist to {{workPath}}/question-scope.md.\n\nThe deliverable `{{workPath}}/question-scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/question-scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/question-scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/question-scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "question-scope",
+        "maxAttempts": 3
+      },
+      "next": "analyze",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "analyze",
+      "name": "Analyze into chart-ready series",
+      "description": "aggregate the data into the exact series each chart needs",
+      "prompt": "Transform the raw data into the precise series each scoped chart needs. Step 1: for each chart, group/aggregate the columns named in the scope (sum, count, average, bucketed histogram) and produce ordered (label, value) arrays. Step 2: sort sensibly (time ascending, categories by magnitude) and cap to a readable count (top-N + 'other' if needed). Step 3: write the computed takeaway caption for each chart from the numbers ('March was the peak at 4.2k, up 38% from Feb'). Step 4: emit the series as data/series.json keyed by chart id so the build phase reads it directly. Call write_task_note with the series summary and the captions.",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "data/series.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "data/series.json",
+            "bytes": 2
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "data/series.json"
+            }
+          }
+        ],
+        "onReject": "analyze",
+        "maxAttempts": 3
+      },
+      "next": "build",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "build",
+      "name": "Build the chart page",
+      "description": "render every chart in one self-contained index.html",
+      "prompt": "Build a single self-contained index.html that renders every scoped chart from data/series.json. Step 1: use inline <canvas>/SVG drawing or a single inlined chart library — no external network asset that could fail offline; if you embed the series, keep it in sync with the JSON. Step 2: render each chart with its title, labeled axes, readable ticks, and a legend where needed. Step 3: place the one-line takeaway caption under each chart. Step 4: lay the charts out responsively in a grid that reads top-to-bottom in the scoped order. Step 5: ensure no console errors and that charts have real data, not placeholders. On a loop-back, fix only the named gaps. Call write_task_note with the path and chart count.",
+      "suggestedRole": "developer",
+      "consumes": [
+        {
+          "file": "data/series.json"
+        }
+      ],
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 800
+          },
+          {
+            "kind": "htmlLint",
+            "file": "index.html"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open index.html (render it if a browser capability exists, else trace the source). Verify: there is one chart per scoped question; each chart has a title, labeled axes, and a takeaway caption; the chart type matches the question from the scope; charts render real values from the series, not placeholders; and there are no console errors. Spot-check two charts' values against data/series.json. Write PASS/FAIL per criterion; any FAIL loops back to build.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "index.html"
+        }
+      ],
+      "next": "build",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

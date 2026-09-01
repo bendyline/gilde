@@ -1,0 +1,277 @@
+{
+  "id": "pre-departure-countdown",
+  "name": "Pre-Departure Countdown",
+  "description": "Audit a trip's readiness in the final stretch before departure: verify documents and bookings, close the packing gaps against the packing roster, sweep home-prep tasks, and produce a day-by-day countdown checklist to the departure date — so the last week runs on a list, not on 3am worry. Locks the audit areas and the days remaining FIRST, then audits each area against the trip record, then writes the countdown. Use for pre-trip checks, departure prep, 'are we ready for the trip', and travel countdown checklists.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the countdown (planner) — days remaining, audit areas, readiness criteria → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Audit readiness (reviewer) — check each area, grow the packing roster, list open items → gated on artifact `{{workPath}}/audit.md` (markdown-notes)\n3. Write the countdown (copywriter) — day-by-day checklist to departure → gated on artifact `{{workPath}}/report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "are we ready for the trip",
+    "pre departure checklist",
+    "trip countdown",
+    "before we leave",
+    "departure prep"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the countdown",
+      "description": "days remaining, audit areas, readiness criteria",
+      "prompt": "Define the audit before checking anything. Step 1: read trip.json and packing.json from the workspace — the destination, the departure date and days remaining, the planned days, and the packing roster's packed/unpacked split. Step 2: fix the audit areas — documents (passports/IDs valid, visas if needed), bookings (transport, lodging, the first day's plan), packing (the roster, plus anything the itinerary implies that isn't on it), money and phones (cards that work there, plans that roam), and home prep (mail, plants, locks, who has a key). Step 3: agree the readiness criterion per area — what 'checked' concretely means. Step 4: write an acceptance-criteria checklist ('every area audited with its criterion', 'every itinerary-implied item is on the packing roster', 'every open item lands on a specific countdown day', 'the checklist ends at walk-out-the-door'). Call write_task_note with days-remaining + areas + checklist and write {{workPath}}/scope.md.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "audit",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "audit",
+      "name": "Audit readiness",
+      "description": "check each area, grow the packing roster, list open items",
+      "prompt": "Audit each area against its criterion. Step 1: walk documents, bookings, money/phones, and home prep with the owner — record each as ready or open-with-what's-missing. Step 2: read the itinerary's planned days and derive what they imply for packing (boots for the walking day, adapters, medications for the length of the trip); add anything missing to the packing roster through the project's trip capabilities. Step 3: list the packing roster's remaining unpacked items. Step 4: for every open item, capture the concrete closing action and how long it takes (some need a week — expedited documents; some need an hour). Step 5: write the audit results to {{workPath}}/audit.md and call write_task_note with ready/open counts per area.\n\nThe deliverable `{{workPath}}/audit.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/audit.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/audit.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/audit.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "audit",
+        "maxAttempts": 3
+      },
+      "next": "countdown",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "countdown",
+      "name": "Write the countdown",
+      "description": "day-by-day checklist to departure",
+      "prompt": "Write the day-by-day countdown from the audit. Step 1: place every open item and every unpacked-item batch onto a specific day between now and departure, longest-lead-time first, packing finishing the day before, not the morning of. Step 2: keep each day's load honest — a few items a day beats a heroic final evening. Step 3: write the departure-day section — the walk-out list (documents in hand, phone charged, home-prep final steps) in the order they happen. Step 4: top the page with the trip, the departure date, and the days remaining, so the list orients anyone who picks it up. Step 5: keep it one page. Write {{workPath}}/report.md and call write_task_note with the report path and the heaviest day.\n\nThe deliverable `{{workPath}}/report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "{{workPath}}/report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/report.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "countdown",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open {{workPath}}/report.md and {{workPath}}/audit.md and verify every criterion from {{workPath}}/scope.md: every audit area appears as ready or open, every itinerary-implied packing item made it onto the roster (spot-check two planned days), every open item and unpacked batch sits on a specific countdown day with lead times respected (nothing week-long scheduled for the last day), and the departure-day walk-out list is present and ordered. Write PASS/FAIL per criterion; on any failure, name the gap and loop back to countdown.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/report.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"countdown\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/report.md",
+          "artifact": true
+        }
+      ],
+      "next": "countdown",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

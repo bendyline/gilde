@@ -1,0 +1,518 @@
+{
+  "id": "comprehensive-codebase-review",
+  "name": "Comprehensive Codebase Review",
+  "description": "The definitive deep, consultant-level review of an entire codebase and its architecture. Before any review turn runs, the runtime brings the project's static index and AI index as up to date as they can get and publishes an honest coverage snapshot the report must cite. The review then harvests every indexed finding (per-file AI reviews, Boekwachter issues, security findings, dependency advisories), assesses the architecture and module boundaries, sweeps for duplicated code and logic, dead code, hygiene problems, embarrassments, and lightweight security issues — verifying every lead in real source — and clusters it all into systemic themes. The deliverable is a prioritized consultant report with a per-dimension scorecard, file-and-line-cited findings, quick wins vs strategic recommendations, and a machine-readable findings file, gated so no fabricated citation survives.\n\nWhat makes this the deep review rather than a long one: it starts from evidence the runtime prepared. On entering the first step, an `ensureIndexFresh` hook re-scans the static index, drives the AI tiers (embeddings, summaries, per-file reviews) with a bounded wait, and lands `review/index-readiness.json` in the task's working folder — including what could NOT be made fresh (no Boekwachter on the crew, indexing paused or disabled), so a quiet issue list is never mistaken for a clean codebase. Every phase gates on an artifact, the final report is checked structurally AND against fabrication (every cited file must exist in the workspace), and an evaluate loop repairs named gaps before the task can finish.\n\nDeliverables land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source, and the review never modifies the codebase.\n\nPhases:\n\n1. Survey the system (reviewer) — index freshness snapshot + whole-system map → gated on artifact `{{workPath}}/review/system-map.md`\n2. Harvest indexed findings (reviewer) — every existing AI-review, security, and dependency lead in one place → gated on artifact `{{workPath}}/review/indexed-findings.md`\n3. Assess the architecture (reviewer) — boundaries, coupling, pattern consistency, duplicated logic, verified in source → gated on artifact `{{workPath}}/review/architecture.md`\n4. Sweep quality and hygiene (reviewer) — duplication, dead code, embarrassments, lightweight security, verified in source → gated on artifact `{{workPath}}/review/hygiene.md`\n5. Synthesize themes (reviewer) — root-cause clusters ranked by blast radius; quick wins vs strategic work → gated on artifact `{{workPath}}/review/themes.md`\n6. Write the consultant report (reviewer) — scorecard, cited findings, recommendations + machine-readable findings JSON → gated on artifact `{{workPath}}/codebase-review.md` including an anti-fabrication check\n\nThe gates never advance with an unmet criterion, and loop back to the owning phase to fix named gaps. For a dedicated deep dive on one dimension afterwards, the report points at the specialist books: Deep Security Review, Codebase Refactoring Review, Reliability & Resilience Review, Documentation Drift Review.\n",
+  "entryStepId": "survey",
+  "triggers": [
+    "comprehensive codebase review",
+    "deep codebase review",
+    "review my whole codebase",
+    "consultant level code review",
+    "deep dive on code quality and architecture",
+    "full audit of the codebase",
+    "what is wrong with this codebase"
+  ],
+  "runModes": {
+    "scheduled": "supported",
+    "nightShift": "recommended"
+  },
+  "toolsets": [
+    {
+      "toolsetId": "builtin.code-intel",
+      "autoAllow": true,
+      "reason": "map the repo, rank indexed file-health leads, and verify every finding in real symbols"
+    },
+    {
+      "toolsetId": "builtin.security-intel",
+      "autoAllow": true,
+      "reason": "harvest static security findings, attack surface, and dependency advisories for the lightweight security pass"
+    },
+    {
+      "toolsetId": "builtin.git",
+      "autoAllow": true,
+      "reason": "read-only churn and fix-frequency evidence for prioritizing findings"
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      },
+      "focus": {
+        "type": "string",
+        "title": "Review focus",
+        "default": "overall code health, architecture, and maintainability",
+        "description": "Optional area to emphasize, e.g. architecture, duplication, security, tests, or a specific subsystem."
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "survey",
+      "name": "Survey the system",
+      "description": "read the runtime's index-freshness snapshot and map the whole system before judging any of it",
+      "prompt": "You are opening a comprehensive, consultant-level review of this entire codebase, weighted toward `{{focus}}`. You never modify project source in this craftbook — every deliverable is an artifact.\n\n**The runtime already ran the index-freshness pass.** On entering this step it re-scanned the static index, drove the AI index tiers with a bounded wait, and published the honest result to the artifact `{{workPath}}/review/index-readiness.json`. Step 1: call `read_artifact` on that file. Record its static state, search readiness, AI-tier coverage (summaries and per-file reviews: reviewed vs eligible), and EVERY entry in its `notes` array — those caveats (no Boekwachter on the crew, indexing paused or disabled, catch-up still running) are coverage limits your final report must state. If the file does not exist, say plainly that index freshness could not be verified and derive coverage from `map_repo` instead — never invent numbers.\n\nStep 2: map the system. Call `map_repo` and record languages, top areas, file counts, indexed health rollup, and worst files. Read the top-level manifests and docs (`read_file` on the package/build manifests and README) to state what the system IS: its purpose, runtime shape, entry points, external dependencies, and how it is built and tested. Step 3: if git history is available, use read-only `run_git` queries (log, shortlog, churn on the worst areas) for change-frequency evidence; missing history is not a failure. Step 4: name the 4-8 areas the deep phases will cover and anything deliberately out of scope.\n\nWrite the artifact `{{workPath}}/review/system-map.md` with `write_artifact`: the system's purpose and shape, the area inventory, churn hot spots, your review plan — and a section headed exactly `## Index coverage` quoting the readiness numbers and caveats. No findings yet; this phase orients the review.",
+      "suggestedRole": "reviewer",
+      "onEnter": [
+        {
+          "name": "ensureIndexFresh",
+          "scope": "standard",
+          "inputs": {
+            "outFile": "{{workPath}}/review/index-readiness.json",
+            "waitBudgetSeconds": 180
+          }
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/review/system-map.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/review/system-map.md",
+            "bytes": 150,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/review/system-map.md",
+            "pattern": "(?:^|\\n)#{1,4}\\s+Index coverage",
+            "flags": "i",
+            "label": "an '## Index coverage' section quoting the readiness snapshot",
+            "artifact": true
+          }
+        ],
+        "onReject": "survey",
+        "maxAttempts": 3
+      },
+      "next": "harvest",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "harvest",
+      "name": "Harvest indexed findings",
+      "description": "pull every existing AI-review, security, and dependency lead into one evidence base",
+      "prompt": "Collect everything gezel's indexes already know about this codebase before forming your own opinions. Step 1: call `list_file_issues` across the repo and record the totals by severity and category, the reviewed-vs-eligible coverage it reports, and the worst files; call `file_review` on the 5-10 lowest-health files for the indexed rationale. Step 2: call `security_scan` once to refresh the dependency inventory and run any installed scanners, then `security_overview` for the posture and candidate systemic themes, `scan_findings` for the static security leads by severity, and `list_dependencies` for advisory-bearing packages. Step 3: cross-reference with the churn hot spots from the system map — a low-health, high-churn file outranks a low-health frozen one.\n\nWrite the artifact `{{workPath}}/review/indexed-findings.md` with `write_artifact`: the counts and coverage per source, then the top leads grouped by dimension (architecture, duplication, hygiene, security, tests), each with its file path and one line of indexed rationale. Label everything here a LEAD, not a finding — nothing is a finding until a later phase verifies it in real source. Note which sources were empty and why (the readiness snapshot's caveats say whether an empty issue list means a clean codebase or an unstaffed AI tier).\n\nBefore working, open the artifact input `{{workPath}}/review/system-map.md` with `read_artifact`; do not look for it in the workspace.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review/system-map.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/review/indexed-findings.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/review/indexed-findings.md",
+            "bytes": 150,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/review/indexed-findings.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "harvest",
+        "maxAttempts": 3
+      },
+      "next": "architecture",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "architecture",
+      "name": "Assess the architecture",
+      "description": "boundaries, coupling, dependency direction, pattern consistency, and duplicated logic — verified in source",
+      "prompt": "Judge the architecture the way a consultant would: by how the pieces actually depend on each other, not by the directory names. Step 1: from the system map, identify the intended layers/modules and their boundaries. Step 2: verify them — use `outline_file` before reading any large file, `read_symbol` for the load-bearing units, and `find_references` to see real dependency direction; flag boundary leaks (a lower layer importing upward, UI reaching into storage, cross-module reach-ins). Step 3: assess pattern consistency with `search_code`: how many different ways does this codebase do error handling, data access, configuration, validation? Each extra way is a finding. Step 4: hunt duplicated LOGIC across modules (the same responsibility implemented twice), oversized orchestration files, god objects, and unclear ownership — start from the worst-health files in the indexed leads and confirm or explicitly reject each. Step 5: for every CONFIRMED problem record file:line evidence, why it hurts (change amplification, blast radius, onboarding cost), a bounded remediation seam, and effort/risk. Note what you checked and found SOUND — that list is half the report's credibility.\n\nWrite the evidence to the artifact `{{workPath}}/review/architecture.md` with `write_artifact`. Do not modify source.\n\nBefore working, open the artifact inputs `{{workPath}}/review/system-map.md` and `{{workPath}}/review/indexed-findings.md` with `read_artifact`; do not look for them in the workspace.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review/system-map.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/review/indexed-findings.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/review/architecture.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/review/architecture.md",
+            "bytes": 150,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/review/architecture.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "architecture",
+        "maxAttempts": 3
+      },
+      "next": "hygiene",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "hygiene",
+      "name": "Sweep quality and hygiene",
+      "description": "duplicated code, dead code, embarrassments, and lightweight security problems — verified in source",
+      "prompt": "Sweep for the problems that make a codebase embarrassing to hand to a new engineer. Step 1: copy-paste duplication — use `search_code` and `grep_files` for distinctive repeated fragments and near-identical functions; confirm each pair by reading both sides. Step 2: dead weight — exports with no references (`find_references`), unreachable branches, leftover scratch/experiment files, and committed junk (`find_files` for logs, editor droppings, build outputs, `.env`-style files that should not be in the tree). Step 3: embarrassments — clusters of TODO/FIXME/HACK/XXX, commented-out code blocks, debug prints left in production paths, misspellings in public names, wildly inconsistent naming. Cluster them; five scattered TODOs are noise, thirty in one module are a finding. Step 4: lightweight security — verify the harvested leads and grep for hardcoded secrets/tokens, ad-hoc environment reads, string-built queries or shell commands reaching user input, and debug/permissive flags left on. Confirm in source; severity honestly (a hardcoded token is high; a TODO is info). This is the LIGHTWEIGHT pass — recommend the Deep Security Review craftbook in the report for anything that needs a real audit. Step 5: test posture — where are the tests thin relative to the risk you have seen? For every confirmed finding: file:line, why it matters, the concrete fix. Record what came out CLEAN too.\n\nWrite the evidence to the artifact `{{workPath}}/review/hygiene.md` with `write_artifact`. Do not modify source.\n\nBefore working, open the artifact input `{{workPath}}/review/indexed-findings.md` with `read_artifact`; do not look for it in the workspace.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review/indexed-findings.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/review/hygiene.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/review/hygiene.md",
+            "bytes": 150,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/review/hygiene.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "hygiene",
+        "maxAttempts": 3
+      },
+      "next": "synthesize",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "synthesize",
+      "name": "Synthesize themes",
+      "description": "cluster every confirmed finding into root-cause themes; rank; split quick wins from strategic work",
+      "prompt": "Step back from individual findings and produce the analysis only a whole-codebase review can: the systemic picture. Step 1: re-read your evidence artifacts (`{{workPath}}/review/architecture.md`, `{{workPath}}/review/hygiene.md`, `{{workPath}}/review/indexed-findings.md`) with `read_artifact`. Step 2: cluster every CONFIRMED finding by ROOT CAUSE, not by file — e.g. 'there is no shared validation layer so each route re-implements it', 'module boundaries are undocumented so logic duplicates across areas'. For each theme state the root cause, the blast radius (how much of the system it touches and how many findings it explains), and the single change that would prevent the whole class. Step 3: rank themes by blast radius × severity, weighted toward `{{focus}}`. Step 4: split the remediation into QUICK WINS (safe, bounded, this-week fixes: delete the dead files, remove the debug prints, extract one duplicated helper) and STRATEGIC WORK (sequenced refactors with migration boundaries and the tests that must protect behavior). Step 5: assign each confirmed finding a severity (critical, high, medium, low, info) and the theme it belongs to — this taxonomy feeds the final report and its machine-readable findings file. A healthy codebase with few material findings should say so plainly rather than inventing themes.\n\nWrite the artifact `{{workPath}}/review/themes.md` with `write_artifact`.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review/architecture.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/review/hygiene.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/review/themes.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/review/themes.md",
+            "bytes": 150,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/review/themes.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "synthesize",
+        "maxAttempts": 3
+      },
+      "next": "report",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "report",
+      "name": "Write the consultant report",
+      "description": "the definitive deliverable: scorecard, cited findings, recommendations, and a machine-readable findings file",
+      "prompt": "Write the final deliverable as TWO artifacts, in this order.\n\nStep 1: write `{{workPath}}/codebase-review-findings.json` with `write_artifact` — a JSON array where each confirmed finding is an object with: `file` (a REAL workspace path — the gate verifies every one exists), `line` (a number; REQUIRED for critical and high findings), `severity` (one of critical, high, medium, low, info), `dimension` (architecture, duplication, hygiene, security, tests, or docs), `title`, `remediation` (a concrete fix), and `theme` (the systemic theme it belongs to). No fabricated paths, no vague remediations.\n\nStep 2: write `{{workPath}}/codebase-review.md` with `write_artifact`, using these exact section headings:\n\n`## Executive summary` — 3-6 sentences an owner reads first: overall judgment, the finding counts by severity, the top systemic themes, and the single most valuable next action. The tone must match the open severity — never 'excellent health' over an open critical/high.\n`## Scorecard` — a markdown table with columns `Dimension`, `Grade`, `Evidence` grading at least five dimensions (architecture, code quality & duplication, hygiene, security posture, tests) A-F, each grade justified by one line of evidence from your phases.\n`## Index coverage and method` — the readiness snapshot's numbers and caveats, what each phase examined, and the limits of this review.\n`## Systemic themes` — each theme with its root cause and blast radius, ranked. This is the heart of the review.\n`## Findings` — each finding as `### [SEVERITY] title — file:line` with the evidence, the consequence, and the remediation, ordered by severity then blast radius.\n`## Quick wins` — the safe, bounded fixes worth doing this week.\n`## Strategic recommendations` — the sequenced larger work: seams, migration order, and the behavior-preserving tests required first.\n`## Verified sound` — what you checked and found solid, so coverage is auditable.\n`## Not assessed` — what this review did not cover (runtime performance, deployment, anything the index caveats excluded).\n`## Suggested deeper reviews` — which specialist craftbooks to run next (Deep Security Review, Codebase Refactoring Review, Reliability & Resilience Review, Documentation Drift Review) and why, based on what you found.\n\nThe gate re-reads both artifacts: it verifies every cited file exists, every finding is complete, the scorecard table is real, and the themes analyze root cause and blast radius. On a loop-back, fix ONLY the gaps it names without dropping findings that already passed.\n\nBefore working, open the artifact input `{{workPath}}/review/themes.md` with `read_artifact`; do not look for it in the workspace.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/review/themes.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/codebase-review.md",
+        "minBytes": 500,
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/codebase-review.md",
+            "bytes": 2500,
+            "artifact": true
+          },
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/codebase-review-findings.json",
+            "bytes": 2,
+            "artifact": true
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkCodebaseReviewReport",
+            "scope": "standard",
+            "inputs": {
+              "file": "{{workPath}}/codebase-review.md",
+              "findings": "{{workPath}}/codebase-review-findings.json"
+            }
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Grade `{{workPath}}/codebase-review.md` against the standard a paying client would hold a consultant to. Check EACH criterion and write PASS/FAIL with a one-line reason: (1) the executive summary gives a real judgment an owner can act on, consistent with the open severity; (2) the scorecard grades are grounded in the report's own evidence, not vibes; (3) index coverage and its caveats are stated, and 'Not assessed' is honest — a quiet report is never passed off as a clean codebase; (4) every finding was verified in source and cites a real file (critical/high pinned to a line); (5) systemic themes are root-cause clusters with blast radius, not a re-grouped file list; (6) quick wins are genuinely safe and bounded, and strategic recommendations name seams, sequence, and behavior-preserving tests; (7) severities are calibrated — no inflation to look thorough, no deflation to look kind; (8) the suggested deeper reviews follow from what was actually found; (9) no project source was modified. \n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/codebase-review.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually read like a definitive review). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/codebase-review.md",
+          "artifact": true
+        }
+      ],
+      "next": "report",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: the overall judgment, the finding counts by severity, the top systemic themes, and the deliverable paths (`{{workPath}}/codebase-review.md`, `{{workPath}}/codebase-review-findings.json`, with the phase evidence under `{{workPath}}/review/`). Note that nothing in the workspace was modified. Then report DONE.",
+      "suggestedRole": "reviewer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.1",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26235"
+}

@@ -1,0 +1,233 @@
+{
+  "id": "cookbook-layout",
+  "name": "Lay Out the Cookbook",
+  "description": "Assemble the heirloom: every tested recipe in its chapter, the provenance kept beside the food — whose recipe it was, what table it came from — chapter intros in the family's voice, print-ready pages. The book that exists because someone finally sat down and made it. Locks the inclusion rule FIRST — tested recipes in, untested listed for the next round, never silently dropped — then lays out the chapters, then proofs every eligible recipe made it in with its story intact. Use for laying out the family cookbook, the heirloom recipe book, 'print the cookbook', and a recipe book for the grandchildren.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the book (kitchen-master) — inclusion rule from the shelf, chapter order, page rules → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Lay out the book (designer) — cover, chapters, one recipe per page with provenance → gated on `book/cookbook.html` (html-page)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "lay out the cookbook",
+    "make the family cookbook",
+    "print the recipe book",
+    "heirloom cookbook",
+    "put the recipes into a book"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the book",
+      "description": "inclusion rule from the shelf, chapter order, page rules",
+      "prompt": "Read the shelf before laying out a page. Step 1: read recipes.json from the workspace and the recipe files under recipes/ — which recipes are tested and which still pending. Step 2: lock the inclusion rule: tested recipes go in; untested ones go on a short 'still to test' page at the back — listed, never silently dropped. Step 3: settle the chapter order with the owner — by course, by season, or by the family line each recipe came down — and the page rules: one recipe per page, the provenance line under every title, a short chapter intro in the family's voice, print styles throughout. Step 4: write an acceptance-criteria checklist ('every tested recipe appears in its chapter with its provenance line', 'untested recipes listed at the back, not dropped', 'the family's phrasings preserved, not rewritten into recipe-site prose', 'chapters ordered as agreed', 'the book prints cleanly, one recipe per page'). Call write_task_note with the tested/untested counts + chapter order + checklist and write {{workPath}}/scope.md.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "kitchen-master",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "layout",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "layout",
+      "name": "Lay out the book",
+      "description": "cover, chapters, one recipe per page with provenance",
+      "prompt": "Lay out the cookbook as one print-ready HTML file at book/cookbook.html. Step 1: the cover and a contents page listing the chapters. Step 2: each chapter opens with a short intro in the family's voice — two or three sentences that sound like the kitchen, not a food blog. Step 3: one recipe per page: the title, the provenance line right under it — whose recipe, where it came from — then ingredients and the method in the family's own phrasing from the recipe files, preserved word for word where it matters. Step 4: the 'still to test' page at the back listing the untested recipes by name. Step 5: print styles throughout — an @page rule, page breaks so every recipe starts fresh, type set for reading at arm's length in a working kitchen. Call write_task_note with the recipe count and the chapter list.",
+      "suggestedRole": "designer",
+      "advanceWhen": {
+        "file": "book/cookbook.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "book/cookbook.html",
+            "bytes": 8000
+          },
+          {
+            "kind": "htmlLint",
+            "file": "book/cookbook.html"
+          },
+          {
+            "kind": "cssMinBytes",
+            "bytes": 650,
+            "file": "book/cookbook.html"
+          },
+          {
+            "kind": "contains",
+            "file": "book/cookbook.html",
+            "pattern": "@page|@media\\s+print|page-break|break-after",
+            "flags": "i",
+            "label": "print CSS"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "book/cookbook.html"
+            }
+          }
+        ],
+        "onReject": "layout",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open book/cookbook.html against recipes.json and the recipes/ files and verify every criterion from {{workPath}}/scope.md: every tested recipe appears in its chapter with its provenance line — spot-check three against the shelf, a recipe that lost its story has lost the point — untested recipes are listed at the back and none silently dropped, the family's phrasings survive in the methods, chapters run in the agreed order, and the page styling would print one recipe per page. Write PASS/FAIL per criterion; on any failure, name the recipe and the gap and loop back to layout.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"layout\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "book/cookbook.html"
+        }
+      ],
+      "next": "layout",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

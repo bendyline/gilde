@@ -1,0 +1,277 @@
+{
+  "id": "receipt-intake",
+  "name": "Receipt Intake",
+  "description": "Empty the shoebox inbox properly: every waiting receipt becomes a dated, categorized ledger entry that names its source file, likely duplicates get flagged instead of double-counted, and the genuinely ambiguous ones become owner questions instead of guesses. Locks the intake rules FIRST, then works the inbox receipt by receipt, then reports the totals and the question list — the year-round habit that makes April an afternoon. Use for receipt intake, emptying the receipt inbox, 'get these into the ledger', and monthly shoebox catch-ups.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the intake (clerk) — inbox listing, ledger categories, intake rules locked → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Work the inbox (data-analyst) — one entry per receipt, duplicates flagged, questions parked → gated on artifact `{{workPath}}/intake.md` (markdown-notes)\n3. Write the intake report (copywriter) — counts, totals by category, the question list → gated on artifact `{{workPath}}/report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "process the receipt inbox",
+    "get these receipts into the ledger",
+    "empty the shoebox",
+    "log this month's receipts",
+    "receipt intake"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the intake",
+      "description": "inbox listing, ledger categories, intake rules locked",
+      "prompt": "Define the intake before recording a single entry. Step 1: list the receipt notes waiting in inbox/ and read ledger.json from the workspace — the existing categories, the recent entries, and how entries are shaped. Step 2: lock the intake rules — one ledger entry per receipt; every entry records the source file it came from; a receipt that looks like one already in the ledger (same vendor, date, and amount) is flagged as a likely duplicate, never silently entered again; a receipt whose category is genuinely unclear becomes a question for the owner instead of a guess. Step 3: write an acceptance-criteria checklist ('every inbox receipt produced an entry, a duplicate flag, or an owner question', 'every new entry carries date, amount, category, and source', 'amounts copied exactly from the receipt, never rounded or invented', 'the report totals what was processed and lists every question'). Call write_task_note with the inbox count + rules + checklist and write {{workPath}}/scope.md. No entries yet.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "clerk",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "extract",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "extract",
+      "name": "Work the inbox",
+      "description": "one entry per receipt, duplicates flagged, questions parked",
+      "prompt": "Work the inbox against the locked rules, one receipt at a time. Step 1: read each receipt note in inbox/ and pull the vendor, date, and exact amount, and pick the most sensible category from the ledger's existing set. Step 2: record each clear receipt as a ledger entry through the project's ledger capabilities — date, amount, category, and the source file it came from. Step 3: where a receipt matches an existing entry on vendor, date, and amount, flag it as a likely duplicate and do not enter it again; where the category is genuinely ambiguous, park it as an owner question with your best two candidate categories instead of guessing. Step 4: keep a running log in {{workPath}}/intake.md — per receipt: what it was, what you did (entered, flagged, question), and why. Call write_task_note with the entered/flagged/question counts.\n\nThe deliverable `{{workPath}}/intake.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "{{workPath}}/intake.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/intake.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/intake.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "extract",
+        "maxAttempts": 3
+      },
+      "next": "report",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "report",
+      "name": "Write the intake report",
+      "description": "counts, totals by category, the question list",
+      "prompt": "Write the intake report from the run log. Step 1: open with the headline — how many receipts came in, how many became entries, how many were flagged or parked as questions. Step 2: give the totals of what was entered this run, by category, computed from the entries themselves. Step 3: list every owner question with the receipt it belongs to and your best candidate answers, so the owner can clear the list in one pass. Step 4: note anything that looked off — a likely duplicate, an amount that seems wrong for its vendor, a receipt too faded to trust — plainly and without alarm. Step 5: keep it short and warm; this is a chore done well, not an audit. Write {{workPath}}/report.md and call write_task_note with the entered/flagged/question counts.\n\nThe deliverable `{{workPath}}/report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "{{workPath}}/report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/report.md",
+            "bytes": 1000,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open {{workPath}}/report.md, {{workPath}}/intake.md, and the ledger and verify every criterion from {{workPath}}/scope.md: every inbox receipt is accounted for as an entry, a duplicate flag, or an owner question; every new entry carries date, amount, category, and its source file; every entered amount matches its receipt exactly (spot-check three against the inbox notes); the report's totals trace to the entries; and every owner question appears in the report. Write PASS/FAIL per criterion; on any failure, name the gap and loop back to report.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/report.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/report.md",
+          "artifact": true
+        }
+      ],
+      "next": "report",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

@@ -1,0 +1,277 @@
+{
+  "id": "annual-document-review",
+  "name": "Annual Document Review",
+  "description": "Walk a life binder's document roster once a year: inventory what is present and missing, confirm each present document is still current (right beneficiaries, right address, not expired), record the review so staleness tracking resets, and produce a prioritized to-do for the gaps. Locks the currency criteria per document kind FIRST, then verifies each record, then reports — so the binder's completeness claim is re-earned annually instead of rotting silently. Use for annual life-binder reviews, estate document checkups, 'is our paperwork still right', and insurance/beneficiary reviews.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the review (reviewer) — inventory the roster, currency criteria per document kind → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Verify each document (reviewer) — walk the roster with the owner, record reviews, list gaps → gated on artifact `{{workPath}}/verify.md` (markdown-notes)\n3. Write the binder report (copywriter) — binder health report with a ranked to-do → gated on artifact `{{workPath}}/report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "annual document review",
+    "review the binder",
+    "check our documents",
+    "is our paperwork current",
+    "beneficiary review"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the review",
+      "description": "inventory the roster, currency criteria per document kind",
+      "prompt": "Define the review before checking anything. Step 1: read documents.json from the workspace and inventory the roster — which documents are present, which are missing, and when each present one was last reviewed. Step 2: define the currency criteria per document kind — e.g. a will is current if it reflects today's family situation and executor; insurance is current if coverage amounts and beneficiaries are right; contact lists and password locations are current if verified within the year; anything expired or superseded is not current. Step 3: define what counts as done for a missing document — a concrete next step (who to call, what to draft), not just 'get one'. Step 4: write an acceptance-criteria checklist ('every roster record verified with the owner or explicitly deferred', 'every verified document gets its review recorded so staleness resets', 'every missing document has a named next step', 'the report ranks gaps by consequence, not alphabetically'). Call write_task_note with the inventory counts + criteria + checklist and write {{workPath}}/scope.md.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "verify",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "verify",
+      "name": "Verify each document",
+      "description": "walk the roster with the owner, record reviews, list gaps",
+      "prompt": "Verify the roster against the locked criteria. Step 1: walk each present document with the owner — ask the kind-specific currency questions from the scope and record the answer. Step 2: for each document confirmed current, record the review through the project's binder capabilities (or note the update for documents.json) so the reviewedAt tracking resets. Step 3: for each document that fails its criteria, record what specifically is out of date. Step 4: for each missing document, confirm the next step with the owner and capture it. Step 5: write the structured results — verified, out-of-date (with why), missing (with next step) — to {{workPath}}/verify.md, and call write_task_note with the counts per bucket.\n\nThe deliverable `{{workPath}}/verify.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/verify.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/verify.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/verify.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 3
+      },
+      "next": "report",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "report",
+      "name": "Write the binder report",
+      "description": "binder health report with a ranked to-do",
+      "prompt": "Write the binder health report from the verification. Step 1: open with the headline — how many documents are in place and current, out of the full roster. Step 2: list what was verified current this review, one line each. Step 3: give the ranked to-do — out-of-date and missing documents ordered by consequence (what happens to the family if this one is needed and wrong), each with its concrete next step and who acts. Step 4: note the next review date one year out. Step 5: keep the tone calm and practical — the binder exists to make a hard day easier, and the report should read that way. Write {{workPath}}/report.md and call write_task_note with the report path and the to-do count.\n\nThe deliverable `{{workPath}}/report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "{{workPath}}/report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/report.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open {{workPath}}/report.md and {{workPath}}/verify.md and verify every criterion from {{workPath}}/scope.md: every roster record was verified or explicitly deferred, every verified document had its review recorded (spot-check two against the roster), every missing or out-of-date document carries a concrete named next step, and the to-do is ranked by consequence with a stated rationale. Write PASS/FAIL per criterion; on any failure, name the gap and loop back to report.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/report.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/report.md",
+          "artifact": true
+        }
+      ],
+      "next": "report",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

@@ -1,0 +1,277 @@
+{
+  "id": "playtest-report",
+  "name": "Playtest Report",
+  "description": "Playtest like it matters: a structured pass over the mechanics, the edge inputs, and the score loop, every finding written with its repro steps — a ranked fix list, not vibes. Locks the test plan FIRST — what to try and what correct looks like — then plays through it taking notes, then writes the findings with a ranked issue table. Use for playtesting a game before sharing it, 'is the game actually solid', bug hunts on an arcade page, pre-release game QA, and turning playtest feelings into a fix list.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Write the test plan (reviewer) — mechanics list, edge inputs, what the score loop should do → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Play through the plan (reviewer) — structured playthrough notes, observed versus expected, with repros → gated on artifact `{{workPath}}/playtest.md` (markdown-notes)\n3. Write the findings (copywriter) — ranked issue table, repros attached, honest verdict → gated on artifact `{{workPath}}/report.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "playtest the game",
+    "is the game solid",
+    "test the arcade game before i share it",
+    "find the bugs in the game",
+    "playtest report"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Write the test plan",
+      "description": "mechanics list, edge inputs, what the score loop should do",
+      "prompt": "Plan the playtest before playing a frame. Step 1: read index.html from the workspace and list the mechanics — movement, actions, collisions, scoring, lives or health, game over, restart — and how the score is kept between rounds. Step 2: write the edge-input list — keys mashed and held, action during game over, restarting mid-motion, playing again three times in a row, anything a ten-year-old with a keyboard would do in the first minute. Step 3: state what correct looks like per item — especially the score loop: what the score should read after a restart, and what should carry over versus reset. Step 4: write an acceptance-criteria checklist ('every mechanic exercised', 'every edge input tried', 'every finding has repro steps', 'findings ranked by player impact', 'the score loop gets an explicit verdict'). Call write_task_note with the plan size + checklist and write {{workPath}}/scope.md.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "test",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "test",
+      "name": "Play through the plan",
+      "description": "structured playthrough notes, observed versus expected, with repros",
+      "prompt": "Work the plan against the code and write down what actually happens. Step 1: walk each mechanic and each edge input through the game's logic, tracing the code path the input takes; record observed versus expected for every item — passes too, not just failures. Step 2: for every mismatch, write the repro then and there: the exact steps, what happens, what should happen; a finding without a repro is a rumor. Step 3: give the score loop special care — trace a full round, game over, and restart, and record exactly what the score does at each point. Step 4: write the structured notes to {{workPath}}/playtest.md and call write_task_note with the pass/fail counts.\n\nThe deliverable `{{workPath}}/playtest.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/playtest.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/playtest.md",
+            "bytes": 800,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/playtest.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "test",
+        "maxAttempts": 3
+      },
+      "next": "report",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "report",
+      "name": "Write the findings",
+      "description": "ranked issue table, repros attached, honest verdict",
+      "prompt": "Write the playtest report at {{workPath}}/report.md. Step 1: open with the honest one-paragraph verdict — what state the game is in and whether it is ready to share. Step 2: the issue table — a Markdown table with columns Issue, Severity, and Repro, one row per finding, ranked by player impact (what ruins a session outranks what merely looks off). Step 3: under the table, give each finding its detail — the full repro steps, what happens, what should happen, and where in the code the trail leads. Step 4: state the score-loop verdict explicitly, and close with what passed cleanly so the good news is on record too. Write {{workPath}}/report.md and call write_task_note with the finding count and the top-ranked issue.\n\nThe deliverable `{{workPath}}/report.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "{{workPath}}/report.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/report.md",
+            "bytes": 1200,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open {{workPath}}/report.md and {{workPath}}/playtest.md against {{workPath}}/scope.md and verify every criterion: every mechanic and edge input from the plan appears in the notes with observed versus expected; every finding in the report carries repro steps a stranger could follow — re-trace one against the code to check it is real, a finding that does not reproduce is worse than none; the table ranks by player impact with severities that match the prose; and the score loop has its explicit verdict. Write PASS/FAIL per criterion; on any failure, name the finding or the gap and loop back to report.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/report.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/report.md",
+          "artifact": true
+        }
+      ],
+      "next": "report",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

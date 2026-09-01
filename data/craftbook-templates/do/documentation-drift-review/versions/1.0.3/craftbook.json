@@ -1,0 +1,279 @@
+{
+  "id": "documentation-drift-review",
+  "name": "Documentation Drift Review",
+  "description": "Review project documentation against the code, configuration, commands, API surface, and shipped behavior to find stale or misleading guidance. Uses the indexed docs and source map to verify examples and references instead of proofreading in isolation, then leaves a prioritized morning report with exact doc locations, source-of-truth evidence, corrected text, owners, and a prevention plan. Use for a weekly docs-health sweep, documentation accuracy review, stale README audit, or finding runbook and API-documentation drift.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Inventory documentation contracts (reviewer) — map docs to the source-of-truth surfaces they claim to describe → gated on artifact `{{workPath}}/docs/traceability.md` (markdown-notes)\n2. Verify documented behavior (reviewer) — check commands, examples, links, schemas, defaults, and architecture claims → gated on artifact `{{workPath}}/docs/evidence.md` (markdown-notes)\n3. Write the documentation drift report (reviewer) — prioritized corrections and prevention work for morning triage → gated on artifact `{{workPath}}/documentation-drift-review.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "inventory",
+  "triggers": [
+    "documentation drift review",
+    "find stale docs",
+    "weekly docs review",
+    "check docs against code",
+    "audit the readme and runbooks",
+    "nightly documentation sweep"
+  ],
+  "toolsets": [
+    {
+      "toolsetId": "builtin.code-intel",
+      "autoAllow": true,
+      "reason": "compare documented behavior with indexed symbols, configs, routes, and entrypoints"
+    },
+    {
+      "toolsetId": "builtin.code-execution",
+      "autoAllow": true,
+      "reason": "safely verify documented package commands and examples when available"
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "inventory",
+      "name": "Inventory documentation contracts",
+      "description": "map docs to the source-of-truth surfaces they claim to describe",
+      "prompt": "Call `map_repo`, `list_file_issues`, and `search_code` to inventory user/admin/developer docs: README and setup guides, API references, CLI help/examples, configuration/environment-variable docs, architecture/decision docs, runbooks, migration/release guides, and inline examples. Build a traceability matrix mapping each important claim to its source of truth (package script, schema, route, exported symbol, config default, CLI definition, or runtime behavior). Prioritize high-harm docs used during install, deploy, recovery, security, and API integration. Record index coverage, generated docs that should not be hand-edited, and the verification plan in `{{workPath}}/docs/traceability.md`.\n\nThe deliverable `{{workPath}}/docs/traceability.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/docs/traceability.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/docs/traceability.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/docs/traceability.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "inventory",
+        "maxAttempts": 3
+      },
+      "next": "verify",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "verify",
+      "name": "Verify documented behavior",
+      "description": "check commands, examples, links, schemas, defaults, and architecture claims",
+      "prompt": "Verify the high-priority claims against real source. Use `outline_file`/`read_symbol` for definitions and `find_references`/`search_code` for renamed concepts. Compare documented commands to package scripts/CLI help, env vars and defaults to schemas/config readers, API examples to route schemas and status codes, file paths to the workspace, and architecture statements to current dependencies/entrypoints. Run safe documented commands or examples when practical and capture exit codes; otherwise mark them statically verified or not verified. Check internal links and code/file references. For each confirmed drift item record doc file:line, exact stale claim, source-of-truth file:line or command evidence, reader impact, severity, corrected wording, and likely owner. Record true positives, false positives, and verified-current docs in `{{workPath}}/docs/evidence.md`.\n\nThe deliverable `{{workPath}}/docs/evidence.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/docs/evidence.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/docs/evidence.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/docs/evidence.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 3
+      },
+      "next": "report",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "report",
+      "name": "Write the documentation drift report",
+      "description": "prioritized corrections and prevention work for morning triage",
+      "prompt": "Write `{{workPath}}/documentation-drift-review.md` with `## Verdict`, `## Coverage`, `## Drift findings`, `## Verified current`, `## Not verified`, `## Corrections by owner`, and `## Prevention`. Every finding must cite the doc file:line and source-of-truth evidence, explain the reader harm, and include corrected text or an exact update. Rank broken install/deploy/recovery/security/API guidance above tone or grammar. Distinguish stale docs from missing docs and generated docs. Recommend durable prevention such as tested snippets, generated reference sections, link checks, or ownership near source—only where it addresses an observed class of drift. On a loop-back, repair only named gaps.\n\nThe deliverable `{{workPath}}/documentation-drift-review.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/documentation-drift-review.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/documentation-drift-review.md",
+            "bytes": 1800,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/documentation-drift-review.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Grade `{{workPath}}/documentation-drift-review.md`: (1) high-harm doc classes are covered; (2) every drift finding cites doc file:line plus source-of-truth file:line or command evidence; (3) commands, examples, links, API/config/default claims, and architecture references were checked where relevant; (4) findings include reader impact and exact corrected text; (5) stale, missing, generated, verified-current, and not-verified docs are distinguished; (6) ownership and priority are actionable; (7) prevention recommendations address observed drift patterns. PASS all or loop back.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/documentation-drift-review.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/documentation-drift-review.md",
+          "artifact": true
+        }
+      ],
+      "next": "report",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

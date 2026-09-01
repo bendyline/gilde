@@ -1,0 +1,252 @@
+{
+  "schemaVersion": 1,
+  "title": "Repo-wide rename sweep with reconciled counts",
+  "objective": "The craftbook drives a complete mechanical rename of fetchUserData to loadUser across a small repo whose sites include a re-export and a template-literal log string, with a changelog legitimately excluded as history - verified mechanically by a residual scan, behavior probes on every site, and a green suite.",
+  "tags": [
+    "code",
+    "codemod",
+    "rename",
+    "tactical-fleet"
+  ],
+  "prompt": "Use the Codemod Sweep craftbook for this: rename fetchUserData to loadUser across the whole repo - the export, the re-export, every import and call site, and log strings that mention the old name. CHANGELOG.md is history and keeps the old name. The brief is in source/rename-brief.md. No behavior change.",
+  "setup": {
+    "projectName": "Profile Cards",
+    "about": "A tiny profile-rendering module with an in-memory user store. Tests run with `npm run test` (node --test).",
+    "files": [
+      {
+        "path": "package.json",
+        "content": "{\n  \"name\": \"profile-cards\",\n  \"private\": true,\n  \"version\": \"1.0.0\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test\"\n  }\n}\n"
+      },
+      {
+        "path": "src/api.js",
+        "content": "const USERS = new Map([\n  [1, { id: 1, name: 'Ada' }],\n  [2, { id: 2, name: 'Grace' }],\n]);\n\nexport function fetchUserData(id) {\n  const user = USERS.get(id);\n  if (!user) throw new Error(`no user ${id}`);\n  return { ...user };\n}\n"
+      },
+      {
+        "path": "src/index.js",
+        "content": "export { fetchUserData } from './api.js';\n"
+      },
+      {
+        "path": "src/log.js",
+        "content": "export const lines = [];\n\nexport function logLine(line) {\n  lines.push(line);\n}\n"
+      },
+      {
+        "path": "src/profile.js",
+        "content": "import { fetchUserData } from './api.js';\nimport { logLine } from './log.js';\n\nexport function profileSummary(id) {\n  const user = fetchUserData(id);\n  logLine(`fetchUserData resolved user ${user.id}`);\n  return `${user.name} (#${user.id})`;\n}\n"
+      },
+      {
+        "path": "tests/profile.test.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { test } from 'node:test';\nimport { fetchUserData } from '../src/index.js';\nimport { lines } from '../src/log.js';\nimport { profileSummary } from '../src/profile.js';\n\ntest('profileSummary renders the user line', () => {\n  assert.equal(profileSummary(1), 'Ada (#1)');\n});\n\ntest('profileSummary logs the lookup', () => {\n  profileSummary(2);\n  assert.ok(lines.some((line) => line.includes('resolved user 2')));\n});\n\ntest('the re-export serves the same function', () => {\n  assert.equal(fetchUserData(1).name, 'Ada');\n});\n"
+      },
+      {
+        "path": "CHANGELOG.md",
+        "content": "# Changelog\n\n## 1.2.0\n\n- fetchUserData now copies the record before returning it, so callers can\n  mutate the result safely.\n\n## 1.0.0\n\n- Initial release with fetchUserData and the profile summary renderer.\n"
+      },
+      {
+        "path": "source/rename-brief.md",
+        "content": "# Rename brief: fetchUserData -> loadUser\n\nThe function does not fetch anything remote any more, so the name misleads.\nRename `fetchUserData` to `loadUser` everywhere it appears: the export, the\nre-export, every import and call site, and log strings that mention the old\nname - the log lines should follow the rename too.\n\nDo not rewrite history: `CHANGELOG.md` keeps the old name, because it records\nwhat past releases were actually called.\n\nNo behavior change: same records returned, same summary strings, same number\nof log lines.\n"
+      },
+      {
+        "path": "tests/verify-sweep.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { execFileSync } from 'node:child_process';\nimport { readFileSync, readdirSync, statSync } from 'node:fs';\nimport { join, relative } from 'node:path';\nimport { pathToFileURL } from 'node:url';\n\nconst root = process.cwd();\n\n// 1) Residual scan: zero mentions of the old name outside the excluded\n//    history (CHANGELOG.md), the briefing material (source/), and\n//    harness-owned files.\nconst SKIP_FILES = new Set(['CHANGELOG.md', 'task-notes.md', 'task-graph.md', 'tests/verify-sweep.mjs']);\nconst SKIP_DIRS = new Set(['node_modules', 'source']);\nconst hits = [];\nfunction scan(dir) {\n  for (const entry of readdirSync(dir)) {\n    if (entry.startsWith('.')) continue;\n    const full = join(dir, entry);\n    const rel = relative(root, full).split('\\\\').join('/');\n    const stat = statSync(full);\n    if (stat.isDirectory()) {\n      if (SKIP_DIRS.has(entry)) continue;\n      scan(full);\n      continue;\n    }\n    if (SKIP_FILES.has(rel)) continue;\n    if (!/\\.(js|mjs|cjs|json|md|txt)$/.test(entry)) continue;\n    if (/\\bfetchUserData\\b/.test(readFileSync(full, 'utf8'))) hits.push(rel);\n  }\n}\nscan(root);\nassert.deepEqual(hits, [], `the old name survives outside the exclusions in: ${hits.join(', ')}`);\nconsole.log('CODEMOD_ORACLE residual scan clean');\n\n// 2) Every site behaves under the new name, including the tricky ones.\nconst api = await import(pathToFileURL(join(root, 'src/api.js')).href);\nassert.equal(typeof api.loadUser, 'function', 'src/api.js must export loadUser');\nassert.equal(api.fetchUserData, undefined, 'src/api.js still exports the old name');\nconst index = await import(pathToFileURL(join(root, 'src/index.js')).href);\nassert.equal(typeof index.loadUser, 'function', 'src/index.js must re-export loadUser');\nassert.equal(index.fetchUserData, undefined, 'src/index.js still re-exports the old name');\nassert.equal(index.loadUser(1).name, 'Ada', 'the re-exported loadUser must return the same records');\nconst { profileSummary } = await import(pathToFileURL(join(root, 'src/profile.js')).href);\nconst { lines } = await import(pathToFileURL(join(root, 'src/log.js')).href);\nassert.equal(profileSummary(1), 'Ada (#1)', 'profileSummary behavior must be unchanged');\nassert.ok(\n  lines.some((line) => line.includes('loadUser resolved user 1')),\n  'the log string must follow the rename',\n);\nassert.ok(\n  !lines.some((line) => line.includes('fetchUserData')),\n  'a log string still mentions the old name',\n);\nconsole.log('CODEMOD_ORACLE behavior ok');\n\n// 3) History kept: the excluded changelog still records the old name.\nassert.ok(\n  /\\bfetchUserData\\b/.test(readFileSync(join(root, 'CHANGELOG.md'), 'utf8')),\n  'CHANGELOG.md must keep the historical name',\n);\nconsole.log('CODEMOD_ORACLE history kept');\n\n// 4) The suite is green after the sweep, and the seeded test file survives.\nreadFileSync(join(root, 'tests/profile.test.mjs'));\nfunction runSuite(cwd) {\n  try {\n    execFileSync(process.execPath, ['--test'], { cwd, stdio: 'pipe', timeout: 30000 });\n    return 0;\n  } catch (err) {\n    return typeof err.status === 'number' ? err.status : 1;\n  }\n}\nassert.equal(runSuite(root), 0, 'the suite must be green after the sweep');\nconsole.log('CODEMOD_ORACLE suite green');\nconsole.log('CODEMOD_ORACLE done');\n",
+        "surface": "harness"
+      }
+    ],
+    "craftbookParams": {
+      "scope": "Rename fetchUserData to loadUser everywhere, including log strings that mention it; CHANGELOG.md keeps the historical name; no behavior change. See source/rename-brief.md."
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "Zero references to the old name remain outside the excluded changelog and brief, every site (including the re-export and the log string) behaves under the new name, the suite is green, and every fleet artifact exists with counts that reconcile.",
+    "deliverables": [
+      {
+        "path": "{{task.dir}}/sites.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/sites.md",
+            "pattern": "^##\\s+Pattern[\\s\\S]*^##\\s+Sites found[\\s\\S]*^##\\s+Exclusions",
+            "flags": "im",
+            "label": "sites sections in order"
+          },
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/sites.md",
+            "pattern": "src/index\\.js",
+            "label": "found the re-export site"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{task.dir}}/sites.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/change-notes.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/change-notes.md",
+            "pattern": "^##\\s+Sites changed[\\s\\S]*^##\\s+Files touched[\\s\\S]*^##\\s+Invariants held",
+            "flags": "im",
+            "label": "change-notes sections in order"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{task.dir}}/change-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/verification.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 450,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/verification.md",
+            "pattern": "^##\\s+Residual scan[\\s\\S]*^##\\s+Counts reconciled[\\s\\S]*^##\\s+Suite[\\s\\S]*^##\\s+Result",
+            "flags": "im",
+            "label": "verification sections in order"
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/review.md",
+        "kind": "markdown-report",
+        "artifact": true,
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit reviewer verdict"
+          }
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "kind": "notContains",
+        "file": "src/api.js",
+        "pattern": "\\bfetchUserData\\b",
+        "label": "the old name is gone from the definition site"
+      },
+      {
+        "kind": "notContains",
+        "file": "src/index.js",
+        "pattern": "\\bfetchUserData\\b",
+        "label": "the old name is gone from the re-export site"
+      },
+      {
+        "kind": "notContains",
+        "file": "src/profile.js",
+        "pattern": "\\bfetchUserData\\b",
+        "label": "the old name is gone from the call site and its log string"
+      },
+      {
+        "kind": "notContains",
+        "file": "tests/profile.test.mjs",
+        "pattern": "\\bfetchUserData\\b",
+        "label": "the old name is gone from the test call sites"
+      },
+      {
+        "kind": "contains",
+        "file": "CHANGELOG.md",
+        "pattern": "\\bfetchUserData\\b",
+        "label": "the excluded changelog keeps the historical name"
+      },
+      {
+        "kind": "sourceParses",
+        "file": "src/api.js"
+      },
+      {
+        "kind": "sourceParses",
+        "file": "src/profile.js"
+      },
+      {
+        "kind": "nodeRuns",
+        "file": "tests/profile.test.mjs"
+      },
+      {
+        "kind": "nodeScriptPasses",
+        "script": "tests/verify-sweep.mjs",
+        "timeoutMs": 60000,
+        "requiredOutput": [
+          {
+            "pattern": "CODEMOD_ORACLE residual scan clean",
+            "label": "zero un-excluded sites remain"
+          },
+          {
+            "pattern": "CODEMOD_ORACLE behavior ok",
+            "label": "every site behaves under the new name"
+          },
+          {
+            "pattern": "CODEMOD_ORACLE suite green",
+            "label": "suite green after the sweep"
+          }
+        ]
+      }
+    ],
+    "taskNotes": {
+      "minBytes": 120,
+      "checks": [
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "\\bDONE\\b[\\s\\S]*(npm\\s+run\\s+test|node\\s+--test)",
+          "flags": "i",
+          "label": "DONE note names the real test command"
+        }
+      ]
+    },
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    },
+    "unchangedFixtures": [
+      "CHANGELOG.md",
+      "source/rename-brief.md",
+      "package.json",
+      "src/log.js"
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "{{task.dir}}/verification.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "Enumeration completeness",
+        "description": "Every site was found by real searches before any edit - the definition, the re-export, the imports and call sites, and the log string - with the changelog excluded for a stated reason rather than missed."
+      },
+      {
+        "name": "Invariant discipline",
+        "description": "The change stayed mechanical: nothing changed beyond the declared rename, the excluded files are untouched, and behavior is identical."
+      },
+      {
+        "name": "Reconciled verification",
+        "description": "The residual re-scan is quoted with its result, the found/changed/excluded counts add up exactly, and the suite run backing the green claim is real."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "sweep completeness",
+    "count reconciliation",
+    "behavior invariants"
+  ]
+}

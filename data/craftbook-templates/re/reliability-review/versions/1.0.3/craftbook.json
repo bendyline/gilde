@@ -1,0 +1,281 @@
+{
+  "id": "reliability-review",
+  "name": "Reliability & Resilience Review",
+  "description": "Review a codebase for production reliability and resilience risks across asynchronous work, external dependencies, state transitions, resource lifecycles, and recovery paths. Uses the repository and per-file indexes to map failure domains, verifies likely issues in source and tests, and leaves a prioritized morning report covering timeouts, retries, idempotency, cancellation, concurrency, backpressure, cleanup, graceful shutdown, observability, and disaster recovery. Use for a weekly reliability sweep, resilience review, failure-mode audit, or pre-production hardening review.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Map failure domains (reviewer) — inventory stateful and asynchronous boundaries plus their reliability contract → gated on artifact `{{workPath}}/reliability/failure-map.md` (markdown-notes)\n2. Verify failure handling (reviewer) — trace representative failures through source and tests → gated on artifact `{{workPath}}/reliability/evidence.md` (markdown-notes)\n3. Write the reliability report (reviewer) — ranked failure-mode report with concrete hardening work → gated on artifact `{{workPath}}/reliability-review.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "model",
+  "triggers": [
+    "reliability review",
+    "resilience audit",
+    "review failure modes",
+    "weekly production hardening",
+    "find reliability risks",
+    "nightly reliability sweep"
+  ],
+  "toolsets": [
+    {
+      "toolsetId": "builtin.code-intel",
+      "autoAllow": true,
+      "reason": "map failure domains and verify indexed reliability leads in source"
+    },
+    {
+      "toolsetId": "builtin.code-execution",
+      "autoAllow": true,
+      "reason": "run safe existing tests or focused diagnostic scripts when available"
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "model",
+      "name": "Map failure domains",
+      "description": "inventory stateful and asynchronous boundaries plus their reliability contract",
+      "prompt": "Call `map_repo`, `list_file_issues`, and targeted `search_code` queries for queues/jobs, timers, promises, subprocesses, network/database/filesystem calls, caches, locks, transactions, startup/shutdown, and persistence. Build a failure-domain map: critical user journeys, state owners, external dependencies, retry boundaries, resource lifecycles, and recovery expectations. For each boundary define the reliability contract: timeout, retry/backoff/jitter, idempotency, cancellation, concurrency limit/backpressure, cleanup, error propagation, monitoring, and recovery. Record index coverage and areas not statically observable. Write the map and prioritized audit plan to `{{workPath}}/reliability/failure-map.md`.\n\nThe deliverable `{{workPath}}/reliability/failure-map.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/reliability/failure-map.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/reliability/failure-map.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/reliability/failure-map.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "model",
+        "maxAttempts": 3
+      },
+      "next": "verify",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "verify",
+      "name": "Verify failure handling",
+      "description": "trace representative failures through source and tests",
+      "prompt": "For each high-impact boundary, inspect the relevant symbols and callers with `file_review`, `outline_file`, `read_symbol`, and `find_references`. Trace representative failures: slow/hung dependency, transient failure, duplicate delivery, partial write, cancellation, concurrent mutation, process restart, disk full/corrupt state, and shutdown during work. Locate tests and run safe existing checks when practical. Confirm whether timeouts are bounded; retries have caps/backoff/jitter and do not multiply side effects; operations are idempotent; cancellations and errors propagate; resources/timers/listeners/subprocesses are released; transactions or durable journals protect multi-step state; startup and shutdown are safe; and operators get useful signals. Record confirmed issues and verified-safe controls with real file:line/test/command evidence in `{{workPath}}/reliability/evidence.md`.\n\nThe deliverable `{{workPath}}/reliability/evidence.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/reliability/evidence.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/reliability/evidence.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/reliability/evidence.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "verify",
+        "maxAttempts": 3
+      },
+      "next": "report",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "report",
+      "name": "Write the reliability report",
+      "description": "ranked failure-mode report with concrete hardening work",
+      "prompt": "Write `{{workPath}}/reliability-review.md` with `## Verdict`, `## Coverage and assumptions`, `## Failure-domain scorecard`, `## Findings`, `## Verified controls`, `## Not verified`, and `## Hardening sequence`. Each finding must cite real file:line or test/command evidence, state the initiating failure, propagation path, user/operator impact, likelihood, severity, and a concrete remediation plus the failure-injection/regression test to add. Rank by impact × likelihood × recoverability. Distinguish a missing control from a merely untested control. Do not demand distributed-systems machinery for local, low-risk code. On a loop-back, fix only named gaps.\n\nThe deliverable `{{workPath}}/reliability-review.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{workPath}}/reliability-review.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/reliability-review.md",
+            "bytes": 1800,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reliability-review.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Grade `{{workPath}}/reliability-review.md`: (1) critical failure domains and contracts are mapped; (2) findings cite real source/test/command evidence; (3) timeouts, retries/backoff, idempotency, cancellation, concurrency/backpressure, cleanup, partial writes, restart, and shutdown were considered where relevant; (4) propagation and user/operator impact are explained; (5) each remediation includes a failure-injection or regression test; (6) verified controls and unverified areas are explicit; (7) priorities reflect impact, likelihood, and recoverability without overengineering. PASS all or loop back.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/reliability-review.md` with `read_artifact`, not `read_file`.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"report\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/reliability-review.md",
+          "artifact": true
+        }
+      ],
+      "next": "report",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

@@ -1,0 +1,219 @@
+{
+  "id": "data-dictionary",
+  "name": "Data Dictionary",
+  "description": "Document a dataset's schema as a clear, complete data dictionary so others can use it without guessing. Inspects the data FIRST to derive each column's real type, value domain, null rate, units, and relationships from the actual values (not assumptions), then writes a readable dictionary with one entry per column plus dataset-level context. Use this for documenting a schema, building a data dictionary, a column glossary, a table reference, or onboarding docs for a dataset.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Inspect the schema (data-analyst) — derive each column's real type, domain, and relationships from values → gated on artifact `{{workPath}}/inspect.md` (markdown-notes)\n2. Write the dictionary (copywriter) — produce a readable per-column dictionary with dataset context → gated on `data-dictionary.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "inspect",
+  "triggers": [
+    "document a dataset",
+    "build a data dictionary",
+    "describe the columns",
+    "schema documentation",
+    "column glossary"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "inspect",
+      "name": "Inspect the schema",
+      "description": "derive each column's real type, domain, and relationships from values",
+      "prompt": "Profile the dataset to learn each column's TRUE characteristics from the data itself. Step 1: list every column. Step 2: for each, derive the data type, the value domain (range for numerics, the enumerated set for low-cardinality categoricals, format/pattern for strings like dates or IDs), the null/blank rate, the unit of measure, and an example value. Step 3: infer the likely meaning of each column and flag any whose name is ambiguous. Step 4: identify keys (unique columns), likely foreign keys, and any computed/derived columns. Step 5: write an acceptance-criteria checklist ('one entry per column', 'each entry has type + description + example', 'enumerated columns list their allowed values', 'keys and relationships are documented', 'units are stated where relevant'). Call write_task_note and write the per-column profile + checklist to {{workPath}}/inspect.md.\n\nThe deliverable `{{workPath}}/inspect.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "{{workPath}}/inspect.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/inspect.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/inspect.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "inspect",
+        "maxAttempts": 3
+      },
+      "next": "write",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "write",
+      "name": "Write the dictionary",
+      "description": "produce a readable per-column dictionary with dataset context",
+      "prompt": "Write the data dictionary from the inspection profile — only describe what the data actually shows. Step 1: open with a dataset overview: what it is, the grain (one row = ?), the source, and the row/column counts. Step 2: produce a Markdown table with one row per column: Column, Type, Description, Allowed values / range, Nullable, Unit, Example. Step 3: write plain-English descriptions a newcomer understands; expand ambiguous names. Step 4: add a short 'Keys & relationships' section and a 'Notes / caveats' section (quirks, deprecated columns, derived fields). Step 5: ensure every column from the inspection appears. Write the dictionary to data-dictionary.md and call write_task_note with the path and column count. On a loop-back, fix only the named gaps.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "data-dictionary.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "data-dictionary.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "data-dictionary.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Read data-dictionary.md and cross-check it against {{workPath}}/inspect.md and the dataset. Verify: there is exactly one entry per column (count them against the data); each entry has a type, a plain description, and an example; enumerated columns list their allowed values; nullability and units are stated where relevant; and keys/relationships are documented. Spot-check 3 columns' types and value domains against the actual data. Write PASS/FAIL per criterion; any FAIL loops back to write.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "data-dictionary.md"
+        }
+      ],
+      "next": "write",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

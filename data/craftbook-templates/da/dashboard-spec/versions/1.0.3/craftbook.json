@@ -1,0 +1,219 @@
+{
+  "id": "dashboard-spec",
+  "name": "Dashboard Specification",
+  "description": "Specify a dashboard from the questions it must answer, before anyone builds it — the artifact that prevents a chart-salad dashboard nobody uses. Scopes the audience, the decisions, and the questions FIRST, then designs the dashboard layout: which widgets/charts answer which question, their metric definitions, filters, refresh, and visual hierarchy. The output is a build-ready spec, not the dashboard itself. Use this for planning a dashboard, a BI/reporting spec, a metrics dashboard design, deciding what charts a dashboard needs, or a dashboard requirements doc.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the questions (planner) — lock the audience, decisions, and questions the dashboard answers → gated on artifact `{{workPath}}/question-scope.md` (markdown-notes)\n2. Design the dashboard (designer) — produce a build-ready layout: widgets, metrics, filters, hierarchy → gated on `dashboard-spec.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "question-scope",
+  "triggers": [
+    "spec a dashboard",
+    "plan a metrics dashboard",
+    "dashboard requirements",
+    "what charts should my dashboard have",
+    "bi dashboard design"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "question-scope",
+      "name": "Scope the questions",
+      "description": "lock the audience, decisions, and questions the dashboard answers",
+      "prompt": "Establish why the dashboard exists before designing widgets. Step 1: name the primary audience and the recurring decisions they make. Step 2: list the 5-10 specific questions the dashboard must answer for those decisions, ordered by importance. Step 3: for each question, name the metric(s) that answer it and define each metric precisely (numerator/denominator, time window). Step 4: identify the filters/segments users need (date range, team, region) and the refresh cadence. Step 5: write an acceptance-criteria checklist ('every widget traces to a listed question', 'each metric has a precise definition', 'top question is most prominent', 'required filters are listed', 'no orphan chart that answers no question'). Call write_task_note and write the audience + questions + metric definitions + checklist to {{workPath}}/question-scope.md.\n\nThe deliverable `{{workPath}}/question-scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/question-scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/question-scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/question-scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "question-scope",
+        "maxAttempts": 3
+      },
+      "next": "design",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "design",
+      "name": "Design the dashboard",
+      "description": "produce a build-ready layout: widgets, metrics, filters, hierarchy",
+      "prompt": "Design the dashboard as a build-ready specification (a spec, not the live dashboard). Step 1: choose the widget per question — KPI tile for a single headline number, line for trend, bar for comparison, table for detail — and justify each choice. Step 2: lay out the screen in priority order: a top KPI strip for the headline numbers, then trend and breakdown sections; describe the grid/wireframe in markdown. Step 3: for each widget specify title, chart type, the exact metric + its definition, dimensions/filters it responds to, and the data source/field. Step 4: specify global filters, default date range, and refresh cadence. Step 5: confirm every widget maps to a scoped question and there are no orphans. Write the full spec to dashboard-spec.md and call write_task_note with the widget count. On a loop-back, fix only the named gaps.",
+      "suggestedRole": "designer",
+      "advanceWhen": {
+        "file": "dashboard-spec.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "dashboard-spec.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "dashboard-spec.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "design",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Read dashboard-spec.md and check it against {{workPath}}/question-scope.md. Verify: every widget traces explicitly to a listed question (and no orphan widget answers nothing); each widget names a chart type with a justification; each metric has a precise definition (numerator/denominator/window); the layout puts the top question most prominently; and required global filters, default date range, and refresh cadence are specified. Confirm a developer could build it without re-asking what a metric means. Write PASS/FAIL per criterion; any FAIL loops back to design.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"design\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "dashboard-spec.md"
+        }
+      ],
+      "next": "design",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

@@ -1,0 +1,283 @@
+{
+  "id": "status-report",
+  "name": "Recurring Status Report",
+  "description": "Produce a recurring (weekly/biweekly) status report by gathering signals from the team's tools and writing a tight, skimmable update for stakeholders. Scopes the report template and the exact data sources FIRST (sections, audience, reporting window, RAG/health convention), then a developer gathers the raw signals from issue trackers, PRs, metrics, and notes into a facts file, then a copywriter writes the polished report strictly from those gathered facts. Scoping the template before gathering is what keeps every recurring issue consistent and prevents the model from padding with prose. Use for weekly status updates, sprint reports, project health reports, stakeholder updates, and exec summaries.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the report (planner) — lock the template, sources, window, and health convention → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Gather signals (developer) — pull raw facts from each named source into a facts file → gated on artifact `{{workPath}}/gather.md` (markdown-notes)\n3. Write the report (copywriter) — compose the polished report from gathered facts → gated on `report.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "weekly status report",
+    "project update",
+    "sprint report",
+    "status update",
+    "stakeholder report"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the report",
+      "description": "lock the template, sources, window, and health convention",
+      "prompt": "Define the report contract BEFORE gathering anything. (1) Lock the section template — e.g. Headline / Health (RAG: Green-Amber-Red with the rule for each color) / Shipped this period / In progress / Blockers & risks / Next period / Metrics. (2) Name the EXACT data sources for each section (which repo, which board, which metric dashboard, which notes file) so gathering is unambiguous. (3) Set the reporting window (the date range this issue covers) and the audience (exec vs team — drives length and jargon). (4) Set length targets per section (e.g. Blockers ≤ 3 bullets). Write an acceptance-criteria checklist ('every section from the template is present', 'health has a justifying one-liner', 'every claim traces to a gathered fact', 'covers only the reporting window', 'skimmable in under two minutes') plus the template + source map to {{workPath}}/scope.md via write_task_note AND the produces path.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "gather",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "gather",
+      "name": "Gather signals",
+      "description": "pull raw facts from each named source into a facts file",
+      "prompt": "Collect the raw material for each section from the sources named in scope. For each source pull the items inside the reporting window only: merged PRs / closed issues (shipped), open in-progress items, anything labelled blocked or at-risk, and the current value (and prior value if available) for each tracked metric. Record everything as a flat, attributed list in {{workPath}}/gather.md — one bullet per fact, each tagged with its source and the template section it feeds — NOT prose. Do not editorialize or summarize here; capturing accurate raw facts is the whole job. If a source is empty or unreachable, note that explicitly rather than guessing. Write the facts file via write_task_note and end with a per-section fact count.\n\nThe deliverable `{{workPath}}/gather.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "{{workPath}}/gather.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/gather.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/gather.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "gather",
+        "maxAttempts": 3
+      },
+      "next": "write",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "write",
+      "name": "Write the report",
+      "description": "compose the polished report from gathered facts",
+      "prompt": "Write report.md following the locked template exactly, using ONLY facts from {{workPath}}/gather.md. Lead with a one-sentence headline and the health RAG plus its justifying one-liner. Turn the gathered bullets into tight, scannable prose — short bullets over paragraphs, numbers where they exist, and a stated next step for every blocker. Respect the per-section length caps; cut, don't pad. Every claim must trace to a gathered fact — invent nothing. End with the Next-period section as concrete intended outcomes. On a loop-back, fix only the sections the reviewer flagged. Write the report path and a confirmation that all template sections are present to notes via write_task_note.\n\nBefore working, open the artifact input `{{workPath}}/gather.md` with `read_artifact`; do not look for it in the workspace.",
+      "suggestedRole": "copywriter",
+      "consumes": [
+        {
+          "file": "{{workPath}}/gather.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "report.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "report.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "QA report.md against the locked criteria. (1) Confirm every template section from {{workPath}}/scope.md is present and in order; FAIL on any missing section. (2) Confirm the health RAG has a justifying one-liner consistent with the gathered blockers/metrics. (3) Trace 4-5 specific claims back to {{workPath}}/gather.md; FAIL any claim with no supporting fact. (4) Check the window: nothing reported outside the locked date range. (5) Check skimmability and length caps — short bullets, no padding, readable in under two minutes. Write PASS/FAIL per criterion with the specific offending lines.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "report.md"
+        }
+      ],
+      "next": "write",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

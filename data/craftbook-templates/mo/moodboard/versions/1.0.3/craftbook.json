@@ -1,0 +1,221 @@
+{
+  "id": "moodboard",
+  "name": "Visual Moodboard",
+  "description": "Compose a visual moodboard that captures a direction — palette, textures, type vibe, imagery, and reference tiles — from a written brief, so a team can align on a look before any production work begins. Lock the brief and the explicit dimensions of the mood (e.g. 'warm/editorial/handmade' vs 'cool/technical/precise') FIRST, then assemble a coherent grid of generated or sourced tiles plus a swatch strip and keyword callouts. Covers moodboards, style boards, visual direction, design inspiration, brand mood, and look-and-feel exploration.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Moodboard brief (visual-designer) — lock the mood dimensions, palette, and tile plan → gated on artifact `{{workPath}}/brief.md` (markdown-notes)\n2. Assemble the board (image-generator) — compose the coherent tile grid into one deliverable → gated on `index.html` (html-page)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "brief",
+  "triggers": [
+    "make a moodboard",
+    "create a style board",
+    "visual direction board",
+    "design inspiration board",
+    "look and feel board"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "brief",
+      "name": "Moodboard brief",
+      "description": "lock the mood dimensions, palette, and tile plan",
+      "prompt": "1) Distill the direction into 3-5 mood keywords (e.g. warm, editorial, handmade, calm). 2) Lock a palette with hex swatches and the type vibe (serif/sans, weight, feeling). 3) Plan the tile grid: enumerate the tiles you'll include — e.g. 2-3 imagery tiles, a texture tile, a typography specimen tile, a palette strip — and what each should evoke. 4) Note explicit anti-references (what this is NOT) so the board has a point of view. 5) Write an acceptance-criteria checklist: 'board expresses the 3-5 keywords', 'palette swatches show exact hex', 'a typography specimen is present', 'tiles are cohesive (one direction, not a scrapbook)', 'at least 6 tiles'. 6) Record brief + checklist via write_task_note AND to {{workPath}}/brief.md. No assembly yet.\n\nThe deliverable `{{workPath}}/brief.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "visual-designer",
+      "advanceWhen": {
+        "file": "{{workPath}}/brief.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/brief.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/brief.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "brief",
+        "maxAttempts": 3
+      },
+      "next": "assemble",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "assemble",
+      "name": "Assemble the board",
+      "description": "compose the coherent tile grid into one deliverable",
+      "prompt": "1) Read brief.md. 2) Generate or compose each planned tile to express the locked keywords and palette — imagery tiles via the image-generation capability (or curated solid/gradient/texture blocks if no image model is available), a swatch strip rendering the exact hex values, and a type specimen tile showing the chosen pairing with sample words. 3) Assemble everything into ONE deliverable: a single index.html grid (preferred — easy to render and tweak) laying out at least 6 cohesive tiles with the keyword list as a caption. 4) Keep the direction tight: every tile should feel like the same world. 5) Reference any generated files from assets/ if produced. 6) write_task_note the board path and tile count. Good looks like: someone could brief a designer from this board alone.",
+      "suggestedRole": "image-generator",
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 1,
+        "sniff": "html-complete"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 800
+          },
+          {
+            "kind": "htmlLint",
+            "file": "index.html"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          }
+        ],
+        "onReject": "assemble",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "1) Open index.html and confirm it renders a grid of at least 6 tiles (PASS/FAIL). 2) Check it expresses the 3-5 mood keywords from brief.md — is the direction legible and cohesive, not a random scrapbook (PASS/FAIL)? 3) Confirm a palette swatch strip shows the exact hex values and a typography specimen is present. 4) Verify any referenced image files actually load. 5) Write PASS/FAIL per criterion. Incoherent/off-brief → loop back to assemble.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"assemble\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "index.html"
+        }
+      ],
+      "next": "assemble",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

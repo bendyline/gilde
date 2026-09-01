@@ -1,0 +1,216 @@
+{
+  "id": "forecast-model",
+  "name": "Simple Forecast / Trend Model",
+  "description": "Build a simple, defensible forecast of a time series (revenue, demand, signups, usage) with the assumptions and method stated up front and the projection plus a confidence band as the output. Scopes the series, horizon, method, and assumptions FIRST (so the forecast isn't an unexplained black box), then builds the projection with a baseline and an interval, then reviews it for sanity against history and overfitting. Use this for forecasting a metric, projecting a trend, estimating future demand, a simple time-series projection, or a 'what will this be next quarter' estimate.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the forecast (data-analyst) — lock the series, horizon, method, and assumptions → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Build the forecast (developer) — compute the projection with a baseline and an uncertainty band → gated on `data/forecast.json` (json)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "forecast this metric",
+    "project a trend",
+    "estimate future demand",
+    "time series forecast",
+    "what will next quarter be"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the forecast",
+      "description": "lock the series, horizon, method, and assumptions",
+      "prompt": "Frame the forecast before computing it. Step 1: identify the metric, its time grain (daily/weekly/monthly), and how much history you have. Step 2: inspect the history for trend, seasonality, and level shifts, and note them. Step 3: pick a method appropriate to the data and JUSTIFY it (linear/exponential trend, simple moving average, naive-seasonal, simple exponential smoothing) — prefer the simplest method the data supports; avoid overfitting short series. Step 4: state the forecast horizon and the key assumptions (no regime change, seasonality repeats). Step 5: write an acceptance-criteria checklist ('method is justified by the observed pattern', 'forecast covers the stated horizon', 'output includes a confidence/uncertainty band', 'assumptions are stated', 'projection is continuous with recent history'). Call write_task_note and write the method choice + assumptions + checklist to {{workPath}}/scope.md.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "build",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "build",
+      "name": "Build the forecast",
+      "description": "compute the projection with a baseline and an uncertainty band",
+      "prompt": "Compute the forecast with the scoped method. Step 1: fit the chosen method to the history (e.g. fit a trend line, compute smoothing, or seasonal-naive). Step 2: project the metric over the full horizon and produce point forecasts per period. Step 3: compute an uncertainty band (e.g. +/- from the residual standard error, or a simple high/low scenario) so the output is a range, not just a line. Step 4: emit data/forecast.json with history, point forecast per period, and the band; if helpful, also render a small inline line chart of history + forecast in index.html. Step 5: ensure the forecast joins smoothly to the last actual value (no implausible jump). On a loop-back, fix only the named gaps. Call write_task_note with the projected values and the band.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "data/forecast.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "data/forecast.json",
+            "bytes": 2
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "data/forecast.json"
+            }
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Open data/forecast.json and review it for plausibility and rigor against {{workPath}}/scope.md. Step 1: confirm the chosen method is justified by the observed pattern, the forecast covers the full stated horizon, and the assumptions are stated. Step 2: confirm the projection is continuous with recent actuals (no implausible jump) and the trend direction matches the history. Step 3: confirm the output includes an uncertainty band (not just a point line) that widens with the horizon or is at least present and reasonable. Step 4: re-compute one forecast period by hand from the method and confirm the model agrees. Step 5: watch for overfit or absurd extrapolation — a short, noisy series projected into a steep unbounded curve. Write PASS/FAIL per criterion; any FAIL loops back to build.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "data/forecast.json"
+        }
+      ],
+      "next": "build",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

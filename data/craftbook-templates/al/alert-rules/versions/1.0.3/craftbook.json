@@ -1,0 +1,213 @@
+{
+  "id": "alert-rules",
+  "name": "Monitoring Alert Rules",
+  "description": "Author a set of monitoring/alerting rules as a deployable config (Prometheus alerting rules, Grafana/Alertmanager YAML, or a CloudWatch-style spec): the right signals, thresholds, severities, for-durations, and routing labels. Scopes the SLOs and alert philosophy FIRST (what to alert on, symptom-vs-cause, thresholds and burn windows, severity ladder, noise budget), then a developer writes the rules config to that spec, then a reviewer validates for completeness, dedupe, and anti-flapping. Scoping thresholds and severities before writing YAML is what produces actionable, low-noise alerts instead of a wall of CPU-over-80% pages. Use for alerting rules, Prometheus alerts, SLO monitoring, on-call paging rules, and reducing alert fatigue.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the alerts (planner) — lock signals, thresholds, severities, and routing → gated on artifact `{{workPath}}/scope.md` (markdown-notes)\n2. Build the rules (developer) — write the alerting-rules config to the locked spec → gated on `alerts.yaml` (yaml-spec)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "write alert rules",
+    "prometheus alerts",
+    "monitoring rules",
+    "set up alerting",
+    "SLO alerts"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the alerts",
+      "description": "lock signals, thresholds, severities, and routing",
+      "prompt": "Define the alerting philosophy before writing config. (1) List the services/SLOs to cover and, for each, the symptom-level signals that matter (latency p99, error rate, saturation, availability) — prefer alerting on user-facing symptoms over raw causes. (2) For every signal lock a threshold, an evaluation/for-duration (to suppress transient spikes), and a severity from a fixed ladder (page = wake someone, ticket = next business day, info = dashboard-only). (3) Define routing labels (team/service/severity) and which severities page. (4) State a noise budget (e.g. no more than N page-level rules) and require a runbook link annotation on every page-level alert. (5) Pick the output format (Prometheus alerting-rules YAML by default). Write an acceptance-criteria checklist ('every SLO has at least one symptom alert', 'every alert has expr + for + severity + summary + runbook annotation', 'no duplicate/overlapping alerts', 'page-level alerts within the noise budget', 'config is valid YAML for the target system') plus the table of signals/thresholds to {{workPath}}/scope.md via write_task_note AND the produces path. No YAML yet.\n\nThe deliverable `{{workPath}}/scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "build",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "build",
+      "name": "Build the rules",
+      "description": "write the alerting-rules config to the locked spec",
+      "prompt": "Write alerts.yaml as a valid alerting-rules config for the target system using the locked signals. For EACH alert author: a clear alert name, the metric expression (expr) implementing the threshold, a for: duration (non-zero, to suppress flapping), labels (severity + routing), and annotations (a one-line summary with templated context, a description, and a runbook_url for page-level alerts). Group related alerts. Keep thresholds and for-durations exactly as scoped. Ensure the file parses as YAML and matches the target's schema (e.g. groups[].rules[].alert/expr/for/labels/annotations for Prometheus). Cover every scoped SLO with at least one symptom-level alert, add no alerts that weren't scoped, avoid duplicate/overlapping rules, and do not exceed the page-level noise budget. On a loop-back fix only the flagged rules. Write the path and an alert count (by severity) to notes via write_task_note.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "alerts.yaml",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "alerts.yaml",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "alerts.yaml",
+            "sniff": "nonempty"
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Validate alerts.yaml against every locked criterion. (1) Parse the YAML — invalid YAML or non-conformance to the target system's rule schema (e.g. groups[].rules[]) is an immediate FAIL. (2) Confirm every scoped SLO is covered by at least one symptom-level alert; FAIL on any missing SLO. (3) Check each alert carries expr, a non-zero for: duration, a severity from the ladder, routing labels, a summary, and — for page-level alerts — a runbook_url annotation. (4) Scan for duplicate or overlapping rules (two firing on the same condition) and flag them. (5) Confirm page-level alerts stay within the noise budget, and sanity-check 2-3 thresholds and for-durations against the scope. Write PASS/FAIL per criterion with the specific offending rule names.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"build\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "alerts.yaml"
+        }
+      ],
+      "next": "build",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

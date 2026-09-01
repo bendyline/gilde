@@ -1,0 +1,226 @@
+{
+  "id": "tailor-resume",
+  "name": "Tailor Résumé to a Posting",
+  "description": "Adapt an EXISTING résumé to a specific job posting — a fit map of must-hit requirements first, then a tailored variant that re-orders and re-words real experience without inventing any. Distinct from building a résumé from scratch (see Résumé / CV): this book starts from a base résumé plus a posting and produces the targeted variant along with honest gap notes for the cover letter and interview. Use per serious application in a job search.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Map the fit (planner) — must-hit requirements classified strong / partial / gap against the base résumé → gated on artifact `{{workPath}}/fit-map.md` (markdown-notes)\n2. Tailor the résumé (copywriter) — the tailored variant — re-ordered, re-worded, nothing invented → gated on `resume-tailored.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "fit-map",
+  "triggers": [
+    "tailor my resume",
+    "adapt my resume to this job",
+    "resume for this posting",
+    "tailor cv to a posting"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "fit-map",
+      "name": "Map the fit",
+      "description": "must-hit requirements classified strong / partial / gap against the base résumé",
+      "prompt": "Map the posting against the real résumé before touching a word. Step 1: locate the base résumé and the job posting in the workspace or project documents; if either is missing, ask for it briefly and stop until provided. Step 2: extract the posting's must-hit requirements and keywords — the skills, experience markers, and phrases a screener will scan for. Step 3: classify EVERY must-hit item against the base résumé: strong-match (already evidenced), partial (evidenced but buried or under-worded), or GAP (not evidenced — and it stays a gap; inventing experience is forbidden). Step 4: decide the tailoring moves for each strong/partial item — which bullet moves up, which summary line changes, which keyword gets woven where. Step 5: write an explicit '## Gaps' section listing every unmet requirement with how to address it honestly in the cover letter or interview instead. Step 6: close with an acceptance-criteria checklist ('every must-hit addressed or consciously in Gaps', 'no invented experience', 'page count unchanged or lower', 'summary rewritten for THIS role'). Write the fit map + checklist via write_task_note AND to {{workPath}}/fit-map.md.\n\nThe deliverable `{{workPath}}/fit-map.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/fit-map.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/fit-map.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/fit-map.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fit-map.md",
+            "pattern": "(?i)^#+\\s.*gap",
+            "flags": "m",
+            "label": "has an explicit Gaps section",
+            "artifact": true
+          }
+        ],
+        "onReject": "fit-map",
+        "maxAttempts": 3
+      },
+      "next": "tailor",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "tailor",
+      "name": "Tailor the résumé",
+      "description": "the tailored variant — re-ordered, re-worded, nothing invented",
+      "prompt": "Produce the tailored variant as resume-tailored.md, working strictly from the base résumé and the fit map. Step 1: rewrite the professional summary to target this posting, weaving must-hit keywords naturally. Step 2: re-order experience bullets so the most relevant impact leads each role; re-word partial matches to surface the evidence the posting asks for — same facts, sharper framing. Step 3: cut or compress roles and bullets irrelevant to this posting rather than exceeding the base résumé's page count. Step 4: NEVER invent experience, titles, dates, or metrics — a gap identified in the fit map stays a gap. Step 5: keep the base résumé's format conventions (headings, date style) so the variant is drop-in. On a loop-back, fix ONLY the named issues. Write a short note confirming keyword coverage and page parity via write_task_note.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "resume-tailored.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "resume-tailored.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "resume-tailored.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "tailor",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "QA the tailored résumé against the base and the fit map. Step 1: diff-read resume-tailored.md against the base résumé — FAIL immediately on any claim, title, date, or metric that the base does not support. Step 2: check keyword coverage — every strong/partial must-hit from the fit map appears naturally in the variant. Step 3: confirm the page count did not grow and the summary targets the posting's role. Step 4: confirm the Gaps section items were NOT smuggled into the résumé. Write PASS/FAIL per criterion with the specific line for any FAIL.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"tailor\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "resume-tailored.md"
+        }
+      ],
+      "next": "tailor",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

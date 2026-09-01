@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "title": "Receipt Intake smoke eval",
+  "objective": "Task-specific eval for the Receipt Intake craftbook: five pre-extracted receipt notes in inbox/ become honest ledger entries, with the duplicate flagged and the ambiguous one parked as an owner question.",
+  "tags": [
+    "data"
+  ],
+  "prompt": "i dropped this months recipts into inbox/ — can you get them into the shoebox and flag anything that looks off?",
+  "setup": {
+    "projectName": "Tax Shoebox — Receipt Intake Eval",
+    "about": "Self-contained eval project for receipt-intake. The intake rail has already pre-extracted each snapped receipt photo into a plain-text note under inbox/ (vendor, date, total, and any handwriting). The ledger lives at ledger.json in the workspace; the run's write-up goes to tasks/eval/report.md.",
+    "missionObjectives": "Use the Receipt Intake craftbook/template, read the seeded local fixtures only, and finish with an updated ledger.json plus tasks/eval/report.md — no network calls, real credentials, or live services.",
+    "files": [
+      {
+        "path": "inbox/receipt-01.txt",
+        "content": "INTAKE NOTE (pre-extracted from photo receipt-01.jpg)\n\nVendor: Office Depot\nDate: 2026-07-03\nTotal: $84.12\nItems: copy paper x2, toner cartridge\nPayment: VISA ending 4412\n"
+      },
+      {
+        "path": "inbox/receipt-02.txt",
+        "content": "INTAKE NOTE (pre-extracted from photo receipt-02.jpg)\n\nVendor: Cascade Air\nDate: 2026-07-08\nTotal: $412.60\nE-ticket receipt, PDX-DEN round trip, client site visit\n"
+      },
+      {
+        "path": "inbox/receipt-03.txt",
+        "content": "INTAKE NOTE (pre-extracted from photo receipt-03.jpg)\n\nVendor: The Wired Bean\nDate: 2026-07-10\nTotal: $18.40\nHandwritten on the back: 'w/ Sam - project?'\nExtraction note: could be a personal coffee or a client meeting - unclear from the receipt\n"
+      },
+      {
+        "path": "inbox/receipt-04.txt",
+        "content": "INTAKE NOTE (pre-extracted from photo receipt-04.jpg)\n\nVendor: Staples\nDate: 2026-07-15\nTotal: $37.95\nItems: shipping boxes, packing tape\n"
+      },
+      {
+        "path": "inbox/receipt-05.txt",
+        "content": "INTAKE NOTE (pre-extracted from photo receipt-05.jpg)\n\nVendor: Office Depot\nDate: 2026-06-21\nTotal: $129.99\nItems: office chair mat\nExtraction note: found loose in the bag - may have been snapped in an earlier batch\n"
+      },
+      {
+        "path": "ledger.json",
+        "content": "[\n  { \"date\": \"2026-06-02\", \"vendor\": \"Peak Web Hosting\", \"amountCents\": 2400, \"category\": \"software\", \"source\": \"inbox/2026-06-02-peakweb.txt\" },\n  { \"date\": \"2026-06-09\", \"vendor\": \"Blue Line Transit\", \"amountCents\": 550, \"category\": \"travel\", \"source\": \"inbox/2026-06-09-bluelinetransit.txt\" },\n  { \"date\": \"2026-06-21\", \"vendor\": \"Office Depot\", \"amountCents\": 12999, \"category\": \"office-supplies\", \"source\": \"inbox/2026-06-21-officedepot.txt\" },\n  { \"date\": \"2026-06-28\", \"vendor\": \"The Wired Bean\", \"amountCents\": 1620, \"category\": \"meals\", \"source\": \"inbox/2026-06-28-wiredbean.txt\" },\n  { \"date\": \"2026-07-01\", \"vendor\": \"Peak Web Hosting\", \"amountCents\": 2400, \"category\": \"software\", \"source\": \"inbox/2026-07-01-peakweb.txt\" }\n]\n"
+      }
+    ],
+    "worker": {
+      "name": "Nora",
+      "role": "Clerk"
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "The ledger gains schema-clean entries whose amounts match the receipts exactly, and tasks/eval/report.md surfaces the duplicate and the owner question instead of guessing.",
+    "deliverables": [
+      {
+        "path": "tasks/eval/report.md",
+        "kind": "markdown-report",
+        "minBytes": 600,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/report.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/report.md",
+            "pattern": "question|unsure|unclear|flag",
+            "flags": "i",
+            "label": "ambiguous receipt surfaced as an owner question, not a guess"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/report.md",
+            "pattern": "duplicate|already (in|entered|logged)|double[- ]?count",
+            "flags": "i",
+            "label": "the repeat Office Depot receipt is flagged as a likely duplicate"
+          }
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "kind": "recordSchema",
+        "file": "ledger.json",
+        "fields": [
+          {
+            "name": "date",
+            "type": "iso-date"
+          },
+          {
+            "name": "amountCents",
+            "type": "integer"
+          },
+          {
+            "name": "category",
+            "type": "nonempty"
+          },
+          {
+            "name": "source",
+            "type": "nonempty"
+          }
+        ],
+        "minRows": 8
+      },
+      {
+        "kind": "contains",
+        "file": "ledger.json",
+        "pattern": "\\b8412\\b",
+        "label": "Office Depot 2026-07-03 entered at exactly 8412 cents"
+      },
+      {
+        "kind": "contains",
+        "file": "ledger.json",
+        "pattern": "\\b41260\\b",
+        "label": "Cascade Air flight entered at exactly 41260 cents"
+      },
+      {
+        "kind": "contains",
+        "file": "ledger.json",
+        "pattern": "\\b3795\\b",
+        "label": "Staples entered at exactly 3795 cents"
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "tasks/eval/report.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "completeness",
+        "description": "Every inbox receipt is accounted for as an entry, a duplicate flag, or an owner question."
+      },
+      {
+        "name": "categorization",
+        "description": "Categories come from the ledger's existing set and fit each receipt sensibly."
+      },
+      {
+        "name": "conservation",
+        "description": "Amounts and dates match the receipt notes exactly — nothing rounded, renumbered, or invented."
+      },
+      {
+        "name": "judgment",
+        "description": "The ambiguous and duplicate receipts become flags and questions, never silent guesses."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "value conservation",
+    "duplicate detection",
+    "owner questions over guesses"
+  ]
+}

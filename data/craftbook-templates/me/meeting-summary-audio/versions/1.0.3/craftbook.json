@@ -1,0 +1,220 @@
+{
+  "id": "meeting-summary-audio",
+  "name": "Meeting Recording to Minutes & Actions",
+  "description": "Turn a meeting recording into structured minutes plus a clear action-item list — who agreed to do what by when — derived from the audio. Transcribes the recording FIRST (with speaker labels so attribution is possible), then summarizes into decisions, discussion, and assigned action items with owners and due dates. The transcribe-then-summarize ordering is essential: you cannot reliably attribute decisions and owners without first knowing who said what, and minutes without owners are useless.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Transcribe the meeting (developer) — STT with speaker labels + timestamps → gated on artifact `{{workPath}}/transcript.md` (markdown-doc)\n2. Summarize into minutes & actions (copywriter) — decisions, discussion, action items with owners + dates → gated on `minutes.md` (markdown-doc)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "transcribe",
+  "triggers": [
+    "meeting minutes from recording",
+    "summarize this meeting",
+    "action items from a call",
+    "turn a recording into notes",
+    "who agreed to what"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "transcribe",
+      "name": "Transcribe the meeting",
+      "description": "STT with speaker labels + timestamps",
+      "prompt": "Get an attributable transcript BEFORE summarizing. Step 1: record the source (path, duration, and attendee names if known). Step 2: run speech-to-text over the WHOLE recording with diarization, labeling speakers (map to real names where you can infer them from introductions). Step 3: timestamp utterances so decisions/actions can cite a moment. Step 4: lightly clean filler for readability but keep commitments verbatim. Step 5: write the labeled transcript to `{{workPath}}/transcript.md` via write_task_note AND the produces path, and note its final timestamp vs the duration so coverage is checkable. On a loop-back, fix only flagged attribution/coverage gaps.\n\nThe deliverable `{{workPath}}/transcript.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "{{workPath}}/transcript.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/transcript.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/transcript.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "transcribe",
+        "maxAttempts": 3
+      },
+      "next": "summarize",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "summarize",
+      "name": "Summarize into minutes & actions",
+      "description": "decisions, discussion, action items with owners + dates",
+      "prompt": "Write the minutes from the transcript. Step 1: lead with meeting metadata (title, date if known, attendees). Step 2: write a 'Decisions' section — each decision a tight bullet, with who made/agreed it. Step 3: write a 'Discussion' section summarizing key points by topic (not a re-transcription). Step 4: write an 'Action Items' section as a checklist where EVERY item has an explicit owner and a due date (write 'owner: TBD' / 'due: TBD' only if truly unstated — never silently drop the field). Step 5: add an 'Open Questions' section for anything unresolved. Do not invent commitments not in the transcript; attribute owners only when the transcript supports it. Write it all to `minutes.md` with clear headers. write_task_note the path and the action-item count. On a loop-back, fix only the flagged sections.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "minutes.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "minutes.md",
+            "bytes": 500
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkContains",
+            "scope": "standard",
+            "inputs": {
+              "file": "minutes.md",
+              "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+              "flags": "i"
+            }
+          }
+        ],
+        "onReject": "summarize",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Check the minutes against the recording. Step 1: confirm `minutes.md` has Decisions, Discussion, Action Items, and Open Questions sections with metadata up top (PASS/FAIL). Step 2: confirm EVERY action item has an owner and a due-date field (explicit or TBD) — no item missing the fields. Step 3: spot-check 3 decisions/actions against the transcript — each is real and attributed correctly, nothing invented. Step 4: confirm the summary is condensed (not a re-transcription) yet covers the major topics. Step 5: confirm transcript coverage reached the end of the recording. Write PASS/FAIL per criterion.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"summarize\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "minutes.md"
+        }
+      ],
+      "next": "summarize",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}

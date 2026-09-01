@@ -1,0 +1,317 @@
+{
+  "id": "report-pdf",
+  "name": "Formatted PDF Report",
+  "description": "Produce a polished PDF report without turning the work into a web-development project. The workflow locks the audience, source facts, section order, and acceptance criteria; a copywriter writes the full source as ordinary Markdown in report.md; then the same content specialist uses DocBlocks to convert the Markdown directly to PDF, preview the pages, repair the source if needed, and save {{workPath}}/report.pdf in the project's artifacts drawer.\n\nThe source of truth remains report.md. HTML, CSS, browser print APIs, hand-built PDF syntax, and raw binary writes are explicitly out of scope. The DocBlocks toolset is pre-authorized for the active craftbook, so a Developer is not needed merely to format or export the report.\n\nWorking files under {{workPath}}/, reviews/, and reports/ live in the project artifacts drawer and must be read and written with the artifact tools. User-facing source files remain in the workspace.",
+  "entryStepId": "outline",
+  "triggers": [
+    "formatted report",
+    "make a pdf report",
+    "create a pdf",
+    "export this report to pdf",
+    "quarterly report",
+    "printable document",
+    "report with cover page"
+  ],
+  "toolsets": [
+    {
+      "toolsetId": "docblocks",
+      "sourceId": "bundled",
+      "autoAllow": true,
+      "reason": "convert report.md directly to PDF, preview the rendered pages, and save the finished file without a prompt per call"
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "outline",
+      "name": "Outline the report",
+      "description": "Lock the audience, source facts, section order, and acceptance criteria.",
+      "prompt": "Plan the report before writing it. 1. Identify the audience, the decision or takeaway the report must support, and every source file or user-provided fact the report may use. 2. Lock the section order: title block, executive summary, body sections, recommendations/conclusion, and appendix or references when needed. 3. For each body section, state its purpose and the facts, figures, or tables it must contain; never invent a missing metric. 4. Decide whether the user requested Letter or A4 pages. 5. Write a numbered acceptance checklist that includes source fidelity, complete section coverage, a stand-alone executive summary, captioned/referenced tables or figures, explicit recommendations, and a real saved PDF in the artifacts drawer. Write the outline and checklist to {{workPath}}/outline.md and call write_task_note with the audience, page size, and section count. Do not write HTML, CSS, or body prose.\n\nStore `{{workPath}}/outline.md` in the artifacts drawer with `write_artifact`, then verify it with `read_artifact`; do not write this working file to the workspace.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/outline.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/outline.md",
+            "bytes": 180,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/outline.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "outline",
+        "maxAttempts": 3
+      },
+      "next": "write",
+      "toolPolicy": {
+        "disallowToolsets": [
+          "docblocks"
+        ],
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "write",
+      "name": "Write the Markdown report",
+      "description": "Write the complete report.md source to the locked outline.",
+      "prompt": "Write the complete report to report.md as ordinary Markdown. Follow {{workPath}}/outline.md exactly: 1. Start with one H1 title and a short metadata block for author/date when known. 2. Write a concise executive summary that stands alone. 3. Write every body section in order with clear H2/H3 headings and real prose grounded only in the supplied sources. 4. Use Markdown tables for structured comparisons and Markdown images only for existing, workspace-readable assets; give every table or figure a caption and refer to it in the prose. 5. End with the explicit recommendations/conclusion and any references or appendix from the outline. 6. Check every acceptance criterion and repair the Markdown before advancing. Do not create report.html, CSS, OOXML, or PDF bytes yourself. Call write_task_note with the report.md path, word count, and section count.\n\nOpen `{{workPath}}/outline.md` from the artifacts drawer with `read_artifact` before working.",
+      "suggestedRole": "copywriter",
+      "consumes": [
+        {
+          "file": "{{workPath}}/outline.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "report.md",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "report.md",
+            "bytes": 1000
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "(?:^|\\n)#\\s+\\S",
+            "label": "an H1 report title"
+          },
+          {
+            "kind": "contains",
+            "file": "report.md",
+            "pattern": "(?:^|\\n)##\\s+\\S",
+            "label": "at least one report section"
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "publish",
+      "toolPolicy": {
+        "disallowToolsets": [
+          "docblocks"
+        ],
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "publish",
+      "name": "Publish the PDF",
+      "description": "Convert report.md with DocBlocks, preview every page, and save {{workPath}}/report.pdf.",
+      "prompt": "Publish report.md as a real PDF with the pre-authorized DocBlocks tools. 1. Call list_roots first; identify the read-enabled project workspace root and the write-enabled project artifacts root. If no write root exists, report the exact blocker instead of substituting HTML. 2. Optionally call get_authoring_context with targetFormat \"pdf\" and goal \"visual-polish\" when theme or target details would help; plain Markdown needs no preflight. 3. Call convert_document with source `{ \"kind\": \"file\", \"rootId\": <workspace root id>, \"path\": \"report.md\" }`, one PDF target using the Letter/A4 choice from {{workPath}}/outline.md, a restrained theme when appropriate, `autoTemplates: true`, and the report title. 4. Call preview_document on the returned PDF artifact URI and inspect all pages (paginate if there are more than 20): title present, headings and tables intact, no clipped or nearly empty pages, readable hierarchy. If visual QA fails, fix report.md and convert again; never patch generated PDF bytes. 5. Call save_artifact with that artifact URI and destination `{ \"rootId\": <artifacts root id>, \"path\": \"{{workPath}}/report.pdf\", \"ifExists\": \"error\" }`. On a loop-back where {{workPath}}/report.pdf already exists, replace it only with `ifExists: \"replace\"` plus the current expectedSha256 from the earlier save result. 6. Call write_task_note with the saved path, page count, theme, and preview result. Do not build HTML or use a browser PDF printer.\n\nOpen `{{workPath}}/outline.md` from the artifacts drawer with `read_artifact` before working.",
+      "suggestedRole": "copywriter",
+      "consumes": [
+        {
+          "file": "{{workPath}}/outline.md",
+          "artifact": true
+        },
+        {
+          "file": "report.md"
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/report.pdf",
+        "minBytes": 1,
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/report.pdf",
+            "bytes": 1000,
+            "artifact": true
+          }
+        ],
+        "onReject": "publish",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Review the saved PDF against the locked content and layout criteria.",
+      "prompt": "Review the saved artifact {{workPath}}/report.pdf against every criterion in {{workPath}}/outline.md. Use list_roots to identify the artifacts root and preview_document with source `{ \"kind\": \"file\", \"rootId\": <artifacts root id>, \"path\": \"{{workPath}}/report.pdf\" }`; inspect all pages. Confirm the PDF opens, the title and executive summary are present, sections follow the outline, supplied facts are preserved without invention, tables/figures are legible and captioned, there are no clipped or accidental blank pages, and the report closes with explicit recommendations. Write PASS/FAIL for every criterion and name the page/section for any failure.\n\nThen route:\n\n- Every criterion PASSES → call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- Any criterion FAILS → write the exact gaps to task notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"write\" })` so the Markdown source is repaired and republished.\n\nNever route to finish while any criterion is unmet. After about three unproductive loops, stop with DONE_WITH_CONCERNS for the user.\n\nOpen `{{workPath}}/outline.md`, `{{workPath}}/report.pdf` from the artifacts drawer with `read_artifact` before working.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/outline.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/report.pdf",
+          "artifact": true
+        }
+      ],
+      "next": "write",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All content and PDF checks passed.",
+      "prompt": "Every acceptance criterion passed. Call write_task_note with a short DONE summary naming report.md as the source and artifacts/report.pdf as the finished deliverable, plus the page count and confirmation that visual preview passed. Then report DONE.\n\nOpen `{{workPath}}/report.pdf` from the artifacts drawer with `read_artifact` before working.",
+      "suggestedRole": "copywriter",
+      "consumes": [
+        {
+          "file": "report.md"
+        },
+        {
+          "file": "{{workPath}}/report.pdf",
+          "artifact": true
+        }
+      ],
+      "terminal": true,
+      "toolPolicy": {
+        "disallowToolsets": [
+          "docblocks"
+        ],
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.1.3",
+  "releasedAt": "2026-09-01T20:00:00Z",
+  "minGezelVersion": "1.26233"
+}
