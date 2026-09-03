@@ -443,6 +443,24 @@ function main() {
     if (kind === 'chat-model' && !version.ollama && !version.llamaCpp && !version.mlx && !version.ds4) {
       c.error(manifestPath, '', 'chat-model-no-engine-source', 'no ollama / llamaCpp / mlx / ds4 source - the runtime skips the item');
     }
+    if (kind === 'knowledge-catalog') {
+      const hf = version.huggingface ?? {};
+      if (!/^[0-9a-f]{40}$/.test(String(hf.revision ?? ''))) {
+        c.error(manifestPath, '/huggingface/revision', 'knowledge-catalog-revision', 'huggingface.revision must be a 40-hex commit sha - the pin is the trust root');
+      }
+      if (typeof hf.path !== 'string' || hf.path.startsWith('/') || hf.path.split('/').some((seg) => seg === '' || seg === '..')) {
+        c.error(manifestPath, '/huggingface/path', 'knowledge-catalog-path', 'huggingface.path must be a relative path inside the dataset repo');
+      }
+      if (!/^[0-9a-f]{64}$/.test(String(version.sha256 ?? ''))) {
+        c.error(manifestPath, '/sha256', 'knowledge-catalog-sha256', 'sha256 must be 64 lowercase hex characters');
+      }
+      if (!(Number.isInteger(version.archiveBytes) && version.archiveBytes >= 65536)) {
+        c.error(manifestPath, '/archiveBytes', 'knowledge-catalog-archive-bytes', 'archiveBytes must be an integer of at least 65536 - a real .gezk is never smaller');
+      }
+      if (typeof version.formatVersion !== 'string') {
+        c.error(manifestPath, '/formatVersion', 'knowledge-catalog-format-version', 'formatVersion (the gezk format the archive was built for) is required');
+      }
+    }
     if (kind === 'video-model' && !(Array.isArray(version.source?.files) && version.source.files.length > 0)) {
       c.error(manifestPath, '/source/files', 'video-model-no-source-files', 'empty source.files - the runtime skips the item');
     }

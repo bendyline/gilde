@@ -14,8 +14,8 @@ authoring/<family>/                                            generator inputs
 ```
 
 - `<kind-dir>` is one of: `chat-models`, `image-models`, `video-models`,
-  `toolsets`, `connector-types`, `project-types`, `gezel-templates`,
-  `craftbook-templates`. The community tier mirrors this under
+  `knowledge-catalogs`, `toolsets`, `connector-types`, `project-types`,
+  `gezel-templates`, `craftbook-templates`. The community tier mirrors this under
   `data/community/toolsets/`.
 - `<id>`: lowercase, matches `[a-z0-9][a-z0-9-]*`. The item's directory
   name must equal the `id` field inside its manifests.

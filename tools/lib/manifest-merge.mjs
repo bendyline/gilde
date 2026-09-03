@@ -477,6 +477,45 @@ function mergeIdentityAndVersion(kind, identity, version, availableVersions) {
       availableVersions,
     };
   }
+  if (kind === 'knowledge-catalog') {
+    return {
+      schemaVersion: 1,
+      kind: 'knowledge-catalog',
+      id: identity.id,
+      name: identity.name,
+      description: identity.description,
+      tags: identity.tags,
+      maintainer: identity.maintainer,
+      ...(identity.logo !== undefined ? { logo: identity.logo } : {}),
+      ...(identity.license !== undefined ? { license: identity.license } : {}),
+      ...(identity.licenseClass !== undefined ? { licenseClass: identity.licenseClass } : {}),
+      ...(identity.licenseShortName !== undefined
+        ? { licenseShortName: identity.licenseShortName }
+        : {}),
+      ...(identity.licenseUrl !== undefined ? { licenseUrl: identity.licenseUrl } : {}),
+      ...(identity.recoScore !== undefined ? { recoScore: identity.recoScore } : {}),
+      ...(minGezelVersion !== undefined ? { minGezelVersion } : {}),
+      publisherId: identity.publisherId,
+      language: identity.language,
+      ...(identity.category ? { category: identity.category } : {}),
+      ...(identity.upstream !== undefined ? { upstream: identity.upstream } : {}),
+      version: version.version,
+      releasedAt: version.releasedAt,
+      formatVersion: version.formatVersion,
+      huggingface: version.huggingface,
+      sha256: version.sha256,
+      archiveBytes: version.archiveBytes,
+      uncompressedBytes: version.uncompressedBytes,
+      documents: version.documents,
+      chunks: version.chunks,
+      embeddingProfile: version.embeddingProfile,
+      topics: version.topics,
+      ...(version.sourceSnapshot ? { sourceSnapshot: version.sourceSnapshot } : {}),
+      ...(version.parquet ? { parquet: version.parquet } : {}),
+      ...(version.notes !== undefined ? { notes: version.notes } : {}),
+      availableVersions,
+    };
+  }
   if (kind === 'video-model') {
     return {
       schemaVersion: 1,

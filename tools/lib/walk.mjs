@@ -13,6 +13,7 @@ export const KINDS = [
   'chat-model',
   'image-model',
   'video-model',
+  'knowledge-catalog',
 ];
 
 export const KIND_DIR = {
@@ -24,6 +25,7 @@ export const KIND_DIR = {
   'chat-model': 'chat-models',
   'image-model': 'image-models',
   'video-model': 'video-models',
+  'knowledge-catalog': 'knowledge-catalogs',
 };
 
 export const DIR_KIND = Object.fromEntries(Object.entries(KIND_DIR).map(([k, d]) => [d, k]));
