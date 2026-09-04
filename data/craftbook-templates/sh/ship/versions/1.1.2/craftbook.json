@@ -1,0 +1,346 @@
+{
+  "id": "ship",
+  "name": "Ship",
+  "description": "End-to-end release procedure for an already-published feature branch. Six normal\nsteps + one halt step the branches divert to on failure:\n\n1. **Preflight** — verify branch, clean tree, upstream, and commit scope\n2. **Run tests** — project's primary test command\n3. **Self-review pass** — last walk through the published diff\n4. **Open PR** — create the PR from the published branch\n5. **Wait for CI** — poll until green or failure\n6. **Summary** — final DONE\n7. **Halt** (branched target) — DONE_WITH_CONCERNS on any failure\n\nThe branches are the load-bearing piece. If tests fail, PR creation fails,\nCI fails, or the poll times out, the recipe routes to `halt` rather than\nblasting through. The upstream procedure encoded that safety property in\nimperative if/else; the craftbook schema makes it explicit.\n\nScripts:\n- `run-tests.ts` — wraps `run_package_script` with the right test command\n- `open-pr.ts` — calls `github_pr_create` for the already-published branch\n- `wait-checks.ts` — polls `github_check_status` until settled\n\n## Applicability\n\nThe craftbook declares two manifest-level `requirements` so the launcher\nand command registry only offer it where it can actually run:\n\n- **github** — the project must be connected to a GitHub repo (the\n  `open-pr` and `wait-checks` scripts call `github_pr_create` /\n  `github_check_status` directly; without a connected repo they cannot\n  create or observe the pull request).\n- **non-main-branch** — the project's checkout must be on a branch\n  other than `main` / `master`. Preflight re-checks this snapshot, requires\n  a clean tree and an existing upstream, and stops instead of inventing a\n  push capability when the branch has not yet been published.\n\nRequires the github toolset configured. Both gates evaluate via\n`unmetCraftbookRequirements` in `@bendyline/gezel` and are surfaced\nthrough `/api/projects/:id/craftbooks` so the Commands panel hides the\ncraftbook in projects that do not qualify rather than letting the user\nlaunch it and watch PR creation fail.\n",
+  "basedOn": {
+    "name": "gstack",
+    "url": "https://github.com/garrytan/gstack"
+  },
+  "entryStepId": "preflight",
+  "triggers": [
+    "ship this",
+    "ship it",
+    "open a pr",
+    "open the pr",
+    "release this"
+  ],
+  "requirements": [
+    {
+      "kind": "github"
+    },
+    {
+      "kind": "non-main-branch"
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "branch": {
+        "type": "string",
+        "title": "Published source branch",
+        "description": "Exact non-main branch to ship. It must already exist on the connected GitHub remote; preflight verifies the checkout and upstream before any PR is created."
+      }
+    },
+    "required": [
+      "branch"
+    ]
+  },
+  "steps": [
+    {
+      "id": "preflight",
+      "name": "Preflight",
+      "description": "Confirm the working tree is shippable: the checked-out branch matches the requested branch, has an upstream, is clean, and contains the intended commits.",
+      "prompt": "Before creating a pull request, verify the exact state with read-only repository tools:\n\n1. Call `run_git({ subcommand: \"status\", args: [\"--short\", \"--branch\"] })` and confirm the checked-out branch is exactly `{{branch}}`, is not `main`/`master`, and has no uncommitted changes.\n2. Call `run_git({ subcommand: \"rev-parse\", args: [\"--abbrev-ref\", \"--symbolic-full-name\", \"@{upstream}\"] })` to prove the branch is already published. This craftbook creates a PR but does not push.\n3. Call `run_git({ subcommand: \"log\", args: [\"-n\", \"10\", \"--oneline\", \"--decorate\"] })` and confirm the recent commits match the intended scope.\n\nIf the branch is wrong, dirty, on trunk, missing an upstream, or contains unexpected commits, write the exact blocker to task notes and report DONE_WITH_CONCERNS without advancing. Otherwise write the verified branch, upstream, clean status, ahead/behind state, and commit scope to task notes, then advance.",
+      "suggestedRole": "developer",
+      "next": "run-tests",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "run-tests",
+      "name": "Run tests",
+      "description": "Run the project's test command. Branches on failure to a triage step; on success advances to the review pass.",
+      "prompt": "Advance this step to execute its `run-tests` on-exit script exactly once. The script picks the project's primary test command and returns `{ passed: boolean, summary: string }`; the task routes automatically to self-review on success or to the halt step on failure. Do not call the script manually. If the task routes to halt, report DONE_WITH_CONCERNS with the recorded test failure and let the user fix it before re-running the craftbook.",
+      "suggestedRole": "developer",
+      "onExit": {
+        "name": "run-tests",
+        "autoAdvanceWhen": {
+          "op": "equals",
+          "field": "passed",
+          "value": true
+        }
+      },
+      "next": "review-pass",
+      "branches": [
+        {
+          "when": {
+            "op": "equals",
+            "field": "passed",
+            "value": false
+          },
+          "goto": "halt"
+        },
+        {
+          "when": {
+            "op": "exists",
+            "field": "passed",
+            "negate": true
+          },
+          "goto": "halt"
+        }
+      ],
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "review-pass",
+      "name": "Self-review pass",
+      "description": "Walk your own diff before opening the PR. Last chance to catch obvious mistakes.",
+      "prompt": "Call `run_git({ subcommand: \"diff\", args: [\"@{upstream}...\"] })` and review the exact change set that will enter the pull request. Look for:\n\n- Debug prints or console logging left in\n- Commented-out code\n- Filenames that do not match the intended rename\n- Tests or migrations missing from the published branch\n- Changes outside the stated scope\n\nIf anything is wrong, write the concrete findings to task notes and report DONE_WITH_CONCERNS without advancing; the user must correct, commit, and publish the branch before rerunning. If the diff is clean, record that verdict in task notes and advance.",
+      "suggestedRole": "reviewer",
+      "next": "open-pr",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "open-pr",
+      "name": "Open PR",
+      "description": "Open a pull request for the already-published branch.",
+      "prompt": "Advance this step to execute its `open-pr` on-exit script exactly once for the verified `{{branch}}` branch. The script calls `github_pr_create`; it does not push. The task advances only when the script returns a PR URL and otherwise routes to the halt step. Do not call the script manually or retry a failed creation blindly.",
+      "suggestedRole": "developer",
+      "onExit": {
+        "name": "open-pr",
+        "inputs": {
+          "head": "{{branch}}"
+        },
+        "autoAdvanceWhen": {
+          "op": "exists",
+          "field": "url"
+        }
+      },
+      "next": "wait-checks",
+      "branches": [
+        {
+          "when": {
+            "op": "exists",
+            "field": "url",
+            "negate": true
+          },
+          "goto": "halt"
+        }
+      ],
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "none"
+      }
+    },
+    {
+      "id": "wait-checks",
+      "name": "Wait for CI",
+      "description": "Poll workflow runs / check status until the gate is green or fails.",
+      "prompt": "Advance this step to execute its `wait-checks` on-exit script exactly once for `{{branch}}` with the default ten-minute timeout. It polls `github_check_status` until the state settles. Do not call the script manually. The task routes automatically to summary on success and to halt on failure, timeout, or a missing result.",
+      "suggestedRole": "developer",
+      "onExit": {
+        "name": "wait-checks",
+        "inputs": {
+          "ref": "{{branch}}"
+        },
+        "autoAdvanceWhen": {
+          "op": "equals",
+          "field": "state",
+          "value": "success"
+        }
+      },
+      "next": "summary",
+      "branches": [
+        {
+          "when": {
+            "op": "equals",
+            "field": "state",
+            "value": "failure"
+          },
+          "goto": "halt"
+        },
+        {
+          "when": {
+            "op": "equals",
+            "field": "state",
+            "value": "timeout"
+          },
+          "goto": "halt"
+        },
+        {
+          "when": {
+            "op": "exists",
+            "field": "state",
+            "negate": true
+          },
+          "goto": "halt"
+        }
+      ],
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "summary",
+      "name": "Summary",
+      "description": "Stamp a final summary. PR opened, CI green, ready to merge.",
+      "prompt": "Write a one-paragraph DONE summary: PR number, URL, scope (one line), test result, CI verdict. Save to task notes. Report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "none"
+      }
+    },
+    {
+      "id": "halt",
+      "name": "Halted",
+      "description": "Something blocked the ship — tests, CI, or push. Report DONE_WITH_CONCERNS.",
+      "prompt": "Report DONE_WITH_CONCERNS with the specific failure surfaced upstream. Do not retry, do not push past — the user needs to see this and decide.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "none"
+      }
+    }
+  ],
+  "scripts": {
+    "run-tests": "import { defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'run-tests',\n  description:\n    'Run the project test command via run_package_script. Stamps {passed: boolean, summary: string}.',\n  inputs: {\n    scriptName: {\n      type: 'string',\n      description: 'Override the npm script name. Defaults to \"test\".',\n      default: 'test',\n    },\n  },\n  outputs: {\n    passed: { type: 'boolean', description: 'True iff the test command exited 0.' },\n    summary: { type: 'string', description: 'Last ~2KB of stdout/stderr.' },\n  },\n  requires: ['workspace.read'],\n});\n\ninterface PackageScriptResult {\n  exitCode: number;\n  stdout?: string;\n  stderr?: string;\n}\n\nasync function main(): Promise<void> {\n  const input = gezel.input as { scriptName?: string };\n  const scriptName = input.scriptName ?? 'test';\n  const raw = await gezel.mcp.call('run_package_script', { script: scriptName });\n  let parsed: PackageScriptResult | null = null;\n  if (typeof raw === 'string') {\n    try {\n      parsed = JSON.parse(raw) as PackageScriptResult;\n    } catch {\n      // The MCP tool returns a text blob, not always JSON. We treat\n      // \"non-zero exit code\" / \"failed\" / \"FAIL \" markers as failure.\n    }\n  }\n  const text = typeof raw === 'string' ? raw : JSON.stringify(raw);\n  const looksFailed =\n    parsed?.exitCode !== undefined\n      ? parsed.exitCode !== 0\n      : /(?:^|\\b)(?:fail|error|exit code [1-9]|✗)\\b/i.test(text);\n  const tail = text.length > 2048 ? text.slice(-2048) : text;\n  gezel.log(`pnpm ${scriptName}: ${looksFailed ? 'failed' : 'passed'}`);\n  gezel.output({ passed: !looksFailed, summary: tail });\n}\n\nawait main();\n",
+    "open-pr": "import { defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'open-pr',\n  description:\n    'Open a pull request for the current branch via the GitHub MCP tools. Stamps {number, url} on success.',\n  inputs: {\n    title: { type: 'string', description: 'PR title. Falls back to a derived placeholder.' },\n    body: { type: 'string', description: 'PR body. Markdown.' },\n    head: {\n      type: 'string',\n      description: 'Source branch. Defaults to the current branch (caller must resolve).',\n      required: true,\n    },\n    base: { type: 'string', description: 'Target branch.', default: 'main' },\n    draft: { type: 'boolean', description: 'Open as draft.', default: false },\n  },\n  outputs: {\n    number: { type: 'number', description: 'Created PR number.' },\n    url: { type: 'string', description: 'PR URL.' },\n  },\n  requires: ['network'],\n});\n\nasync function main(): Promise<void> {\n  const input = gezel.input as {\n    title?: string;\n    body?: string;\n    head: string;\n    base?: string;\n    draft?: boolean;\n  };\n  const title = input.title ?? `Ship: ${input.head}`;\n  const args: Record<string, unknown> = {\n    title,\n    head: input.head,\n    base: input.base ?? 'main',\n  };\n  if (input.body) args.body = input.body;\n  if (input.draft !== undefined) args.draft = input.draft;\n  const raw = await gezel.mcp.call('github_pr_create', args);\n  const text = typeof raw === 'string' ? raw : '';\n  const m = /Opened PR #(\\d+) — (\\S+)/.exec(text);\n  if (!m) {\n    throw new Error(`unexpected github_pr_create response: ${text.slice(0, 200)}`);\n  }\n  gezel.output({ number: Number(m[1]), url: m[2]! });\n}\n\nawait main();\n",
+    "wait-checks": "import { defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'wait-checks',\n  description:\n    'Poll github_check_status for a ref until it settles. Returns {state: success|failure|pending|timeout, checks[]}.',\n  inputs: {\n    ref: { type: 'string', description: 'Branch name or commit sha.', required: true },\n    timeoutMs: {\n      type: 'number',\n      description: 'How long to wait before giving up.',\n      default: 600_000,\n      integer: true,\n    },\n    pollIntervalMs: {\n      type: 'number',\n      description: 'How long between polls.',\n      default: 15_000,\n      integer: true,\n    },\n  },\n  outputs: {\n    state: { type: 'string', description: 'Final state: success / failure / timeout.' },\n    checks: { type: 'array', description: 'Per-check breakdown.', itemType: 'object' },\n  },\n  requires: ['network'],\n});\n\ninterface CheckBlock {\n  name: string;\n  status: string;\n  conclusion: string | null;\n  url?: string;\n}\n\nfunction parseChecks(text: string): { state: string; checks: CheckBlock[] } {\n  const lines = text.split('\\n');\n  const stateLine = lines[0] ?? '';\n  const stateMatch = /^State:\\s*(\\w+)/i.exec(stateLine);\n  const state = stateMatch?.[1]?.toLowerCase() ?? 'unknown';\n  const checks: CheckBlock[] = [];\n  for (let i = 1; i < lines.length; i++) {\n    const m = /^• (.+?) — (\\S+?)(?:\\s*\\/\\s*(\\S+))?$/.exec(lines[i] ?? '');\n    if (!m) continue;\n    checks.push({\n      name: m[1]!,\n      status: m[2]!,\n      conclusion: m[3] ?? null,\n    });\n  }\n  return { state, checks };\n}\n\nasync function main(): Promise<void> {\n  const input = gezel.input as { ref: string; timeoutMs?: number; pollIntervalMs?: number };\n  const deadline = Date.now() + (input.timeoutMs ?? 600_000);\n  const poll = input.pollIntervalMs ?? 15_000;\n  let lastState = 'unknown';\n  let lastChecks: CheckBlock[] = [];\n  while (Date.now() < deadline) {\n    const raw = await gezel.mcp.call('github_check_status', { ref: input.ref });\n    const text = typeof raw === 'string' ? raw : '';\n    const parsed = parseChecks(text);\n    lastState = parsed.state;\n    lastChecks = parsed.checks;\n    gezel.log(`checks for ${input.ref}: ${parsed.state} (${parsed.checks.length} check(s))`);\n    if (parsed.state === 'success' || parsed.state === 'failure') {\n      gezel.output({ state: parsed.state, checks: parsed.checks });\n      return;\n    }\n    await new Promise((r) => setTimeout(r, poll));\n  }\n  gezel.output({ state: 'timeout', checks: lastChecks });\n}\n\nawait main();\n"
+  },
+  "version": "1.1.2",
+  "releasedAt": "2026-09-04T13:46:25Z"
+}
