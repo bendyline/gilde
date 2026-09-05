@@ -1,0 +1,298 @@
+{
+  "id": "image-set-index",
+  "name": "Index & Describe an Image Set",
+  "description": "Given a folder of images, produce a structured index that describes each one (caption, tags, notable content) in a consistent schema, then validates coverage and consistency. For cataloguing, search, or alt-text generation over an image collection.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the index (planner) — fields per image + output schema + criteria → gated on artifact `image-index/schema.md` (markdown-notes)\n2. Describe each image (developer) — read each image, write structured descriptions → gated on `work/image-descriptions.json` (json)\n3. Assemble the index (developer) — write the index file in the chosen format → gated on `index.json` (json)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "scope",
+  "triggers": [
+    "index images",
+    "describe images",
+    "caption a folder",
+    "image catalog"
+  ],
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Scope the index",
+      "description": "fields per image + output schema + criteria",
+      "prompt": "Decide the index schema before describing anything. The final output is workspace `index.json` with an `images` array; define fields per image (filename, caption, tags, dominantColors, orientation, containsText, and qualityFlags), controlled vocabulary rules, and an **acceptance-criteria checklist** (\"every source image has exactly one record\", \"captions are 1-2 sentences\", \"tags use a consistent vocabulary\", \"the JSON parses\"). Save the schema + checklist to artifact `image-index/schema.md` with `write_artifact`; note the path in task notes.",
+      "suggestedRole": "planner",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      },
+      "advanceWhen": {
+        "file": "image-index/schema.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "image-index/schema.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "image-index/schema.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "image-index/schema.md",
+            "pattern": "filename[\\s\\S]*caption[\\s\\S]*tags",
+            "flags": "i",
+            "label": "core schema fields",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "image-index/schema.md",
+            "pattern": "every|coverage|exactly one",
+            "flags": "i",
+            "label": "coverage criterion",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "describe"
+    },
+    {
+      "id": "describe",
+      "name": "Describe each image",
+      "description": "read each image, write structured descriptions",
+      "prompt": "Read artifact `image-index/schema.md` with `read_artifact`, then list the source image folder with workspace tools. For each image, use the available image-reading or description capability to populate the schema. If the user supplied an authoritative metadata sidecar because image binaries or vision are unavailable, read it with `read_file`, preserve only its facts, and record that limitation. Keep vocabulary consistent and do not skip or invent images. Stage the complete per-image array as valid workspace JSON at `work/image-descriptions.json` with `write_file`.",
+      "suggestedRole": "developer",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace"
+      },
+      "consumes": [
+        {
+          "file": "image-index/schema.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "work/image-descriptions.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "work/image-descriptions.json",
+            "bytes": 300
+          },
+          {
+            "kind": "contains",
+            "file": "work/image-descriptions.json",
+            "pattern": "\"filename\"[\\s\\S]*\"caption\"[\\s\\S]*\"tags\"",
+            "flags": "i",
+            "label": "per-image fields"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "work/image-descriptions.json"
+            }
+          }
+        ],
+        "onReject": "describe",
+        "maxAttempts": 3
+      },
+      "next": "assemble"
+    },
+    {
+      "id": "assemble",
+      "name": "Assemble the index",
+      "description": "write the index file in the chosen format",
+      "prompt": "Read workspace `work/image-descriptions.json` with `read_file`, reconcile it against the complete source-folder or sidecar listing, and write the final JSON object to workspace `index.json` with `write_file`. Ensure the `images` array has exactly one record per source filename, every required field is present, and vocabulary is consistent. On a loop-back, fix only the named gaps (missing/extra records, malformed JSON, inconsistent tags). `write_task_note` the index path and an explicit coverage count (records vs source images).",
+      "suggestedRole": "developer",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      },
+      "consumes": [
+        {
+          "file": "work/image-descriptions.json"
+        }
+      ],
+      "advanceWhen": {
+        "file": "index.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.json",
+            "bytes": 500
+          },
+          {
+            "kind": "contains",
+            "file": "index.json",
+            "pattern": "\"images\"\\s*:",
+            "flags": "i",
+            "label": "images array"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.json"
+            }
+          }
+        ],
+        "onReject": "assemble",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Read workspace `index.json`, `work/image-descriptions.json`, and the source-folder listing with workspace tools, plus artifact `image-index/schema.md` with `read_artifact`. Check coverage and consistency: does every source image have exactly one record, do all required fields exist, do captions/tags follow the schema and a consistent vocabulary, and does the file parse? Spot-check descriptions against actual images when available. Write PASS/FAIL per criterion.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to notes, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"assemble\" })` to loop back. The builder fixes exactly those gaps.\n\nNever route to `finish` while any criterion is unmet. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right). After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      },
+      "consumes": [
+        {
+          "file": "index.json"
+        }
+      ],
+      "next": "assemble"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every criterion passed. Write a DONE summary: index path, format, image count, and a one-line note that coverage is complete and the schema is consistent.",
+      "suggestedRole": "developer",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      },
+      "terminal": true
+    }
+  ],
+  "version": "1.2.3",
+  "releasedAt": "2026-09-05T03:30:00Z"
+}

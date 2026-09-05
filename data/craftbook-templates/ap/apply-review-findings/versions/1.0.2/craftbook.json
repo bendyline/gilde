@@ -1,0 +1,602 @@
+{
+  "id": "apply-review-findings",
+  "name": "Apply Review Findings",
+  "description": "Close out a review the way the reviewer hoped someone would: every finding read, judged against the code as it stands TODAY, fixed at its real site or deferred with a reason a person can respect — and nothing silently dropped. First TRIAGE: read the findings (a findings JSON, a report with a findings table, or issue refs), open the cited code, and sort each finding — real, already fixed, stale, or out of scope — because reviews age and fixing a ghost is churn. Cluster the will-fix findings that belong together so one change closes them cleanly. Then FIX cluster by cluster: the smallest correct change per finding at the actual site, never a suppression or a cosmetic edit, with a per-finding disposition kept as the work happens. Then VALIDATE each addressed finding the way its report suggested — run what is runnable, probe what is probeable, and say plainly what could only be verified by reading. The enforced review then reconciles the ledger: the same finding ids must flow through triage, fix notes, and verification with consistent outcomes, because a finding lost between documents is a finding lost. Built for unattended work: findings arrive as a file or refs, dispositions come back as documents, and no runnable test suite is required. Works identically whether the run edits the project directly or drafts a change proposal for the user to apply.",
+  "plan": "Triage every finding against the current code (real, already fixed, stale, out of scope) -> fix cluster by cluster at the real sites with a per-finding disposition -> verify each addressed finding the way its report suggested -> enforced review reconciles the full ledger.",
+  "entryStepId": "triage",
+  "triggers": [
+    "apply the review findings",
+    "fix the findings",
+    "address the review",
+    "fix these issues"
+  ],
+  "runModes": {
+    "nightShift": "supported"
+  },
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "findingsPath": {
+        "type": "string",
+        "title": "Findings file",
+        "description": "Artifacts-drawer path of the review findings to apply (a findings JSON array or a markdown report with a findings table). Leave empty when issueRefs or the task description carries them.",
+        "default": ""
+      },
+      "issueRefs": {
+        "type": "string",
+        "title": "Issue refs",
+        "description": "Comma-separated issue refs to address (e.g. BW-3,BW-8). Leave empty when findingsPath carries the work.",
+        "default": ""
+      },
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "triage",
+      "name": "Triage the findings against current code",
+      "description": "Read every finding, judge it against the code as it stands now, and sort real work from ghosts.",
+      "prompt": "Findings file (artifacts drawer): \"{{findingsPath}}\". Issue refs: \"{{issueRefs}}\". When both are empty, the task description carries the findings.\n\nRead every finding before fixing anything. Use `read_artifact` for the findings file when one is named; otherwise take the findings from the refs or the task description. Then judge each finding against the code as it stands NOW — open the cited files with `read_file` — and sort it: REAL (the problem is present today), ALREADY FIXED (the code moved on), STALE (the cited site no longer exists or the finding no longer applies), or OUT OF SCOPE (real but not this task's to change — say whose it is). Reviews age; never fix a ghost. Give every finding a stable id — keep the ids the findings already carry, or number them F-1, F-2, ... in reading order — and carry those ids through every later document. Cluster the will-fix findings that belong together so one change closes them cleanly. If the findings source cannot be found or holds no findings, record that honestly and stop rather than inventing work.\n\nWrite `{{workPath}}/triage.md` with exactly these sections: `## Findings read` (every finding: id, one-line summary, the cited site as a backtick path), `## Will fix` (the ids, each with the problem confirmed in the current code), `## Deferred` (the ids with an honest reason: already fixed, stale, or out of scope — write None when everything is real), `## Clusters` (which will-fix ids travel together and why).\n\nObservable handoff: write the completed result to `{{workPath}}/triage.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "code reviewer",
+      "capabilityFloor": "small",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      },
+      "advanceWhen": {
+        "file": "{{workPath}}/triage.md",
+        "minBytes": 600,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "fix"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/triage.md",
+            "bytes": 600,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/triage.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/triage.md",
+            "pattern": "^##\\s+Findings read",
+            "flags": "im",
+            "label": "Findings read section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/triage.md",
+            "pattern": "^##\\s+Will fix",
+            "flags": "im",
+            "label": "Will fix section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/triage.md",
+            "pattern": "^##\\s+Deferred",
+            "flags": "im",
+            "label": "Deferred section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/triage.md",
+            "pattern": "^##\\s+Clusters",
+            "flags": "im",
+            "label": "Clusters section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/triage.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "triage",
+        "maxAttempts": 4
+      },
+      "next": "fix"
+    },
+    {
+      "id": "fix",
+      "name": "Fix cluster by cluster at the real sites",
+      "description": "The smallest correct change per finding, at the actual cited site, with a per-finding disposition ledger.",
+      "prompt": "Read `{{workPath}}/triage.md` and work the will-fix clusters one at a time, at the real sites. There is no prescribed output path for source changes — edit the actual files the findings point at with `read_file` plus `write_file`/`replace_in_file`. For each finding, make the smallest correct change that genuinely fixes what the finding describes — not a suppression, not a comment, not a workaround that leaves the problem alive. Keep surrounding behavior intact: a findings pass that breaks the neighborhood trades one review for another. Keep the per-finding ledger as you go. If a finding turns out unfixable as described, move it to a deferral with the honest reason instead of pretending — never claim a fix you did not make.\n\nWrite `{{workPath}}/fix-notes.md` with exactly these sections: `## Problem` (one paragraph: what this findings pass covered), `## Change` (per cluster: what you altered and why it closes those findings), `## Files touched` (backtick path per line), `## Per-finding disposition` (every id from triage: fixed at which path, or deferred with the reason), `## Risk` (what could break, honestly), `## How to verify` (per finding: the check its report suggested, or the closest runnable equivalent). Before working, open `{{workPath}}/triage.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/fix-notes.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "software engineer",
+      "capabilityFloor": "small",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note",
+          "workspace"
+        ]
+      },
+      "consumes": [
+        {
+          "file": "{{workPath}}/triage.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/fix-notes.md",
+        "minBytes": 700,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "validate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/fix-notes.md",
+            "bytes": 700,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/fix-notes.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Problem",
+            "flags": "im",
+            "label": "Problem section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Change",
+            "flags": "im",
+            "label": "Change section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Files touched",
+            "flags": "im",
+            "label": "Files touched section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Per-finding disposition",
+            "flags": "im",
+            "label": "Per-finding disposition section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Risk",
+            "flags": "im",
+            "label": "Risk section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+How to verify",
+            "flags": "im",
+            "label": "How to verify section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/fix-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "fix",
+        "maxAttempts": 4
+      },
+      "next": "validate"
+    },
+    {
+      "id": "validate",
+      "name": "Verify each finding the way its report suggested",
+      "description": "Re-check every addressed finding at its site, run what is runnable, and restate the deferrals.",
+      "prompt": "Re-check every addressed finding the way its report suggested. Read `{{workPath}}/fix-notes.md`, then verify each fixed finding at its site: re-read the changed code, and run what is runnable — the project's own scripts, or a small probe when a script-execution tool such as `run_nodejs_script` is wired this turn. When nothing is runnable, verify by reading and say so plainly — an unrun check is recorded as unverified, never claimed. Confirm the deferred findings still carry their reasons. Every finding id from triage must appear here with its outcome; a finding that vanished between documents is a finding dropped.\n\nWrite `{{workPath}}/validation.md` with exactly these sections: `## Per-finding verification` (every id: how it was re-checked and what was observed, with deferrals restated), `## Result` (closed versus deferred counts, what was verified by running versus by reading, and anything still owed). Before working, open `{{workPath}}/fix-notes.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/validation.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "software engineer",
+      "capabilityFloor": "small",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      },
+      "consumes": [
+        {
+          "file": "{{workPath}}/fix-notes.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/validation.md",
+        "minBytes": 450,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/validation.md",
+            "bytes": 450,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/validation.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Per-finding verification",
+            "flags": "im",
+            "label": "Per-finding verification section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Result",
+            "flags": "im",
+            "label": "Result section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/validation.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "validate",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate the deliverable",
+      "description": "Independently grade the observable deliverable and route it to finish, repair, or user escalation.",
+      "prompt": "Review `{{workPath}}/validation.md`, `{{workPath}}/triage.md`, `{{workPath}}/fix-notes.md` against every criterion below. Inspect the underlying evidence files named by the workflow; do not grade from the author's summary alone.\n\n1. Every finding from the source appears in triage.md's Findings read with an id and a cited site — count them against the findings source; a finding missing from the ledger is an automatic REVISE.\n2. Each Will fix finding is genuinely addressed at a real site: open the touched files and confirm the change fixes what the finding describes, not a suppression, comment, or cosmetic edit.\n3. Each Deferred finding carries an honest, specific reason (already fixed, stale, or out of scope) that holds up when you open the cited code.\n4. The ledger reconciles: the same ids flow through triage.md, fix-notes.md's Per-finding disposition, and validation.md's Per-finding verification with consistent outcomes — no finding silently dropped or relabeled between documents.\n5. validation.md re-checked each addressed finding the way its report suggested where runnable, and plainly labels anything verified only by reading — nothing claimed run that was not.\n6. Every path cited across the three documents exists in this project, and fix-notes.md's Files touched matches the changes actually made.\n\nOpen `{{workPath}}/validation.md`, `{{workPath}}/triage.md`, `{{workPath}}/fix-notes.md` with `read_artifact`. Write the evidence-backed review to `{{workPath}}/review.md` in the artifacts drawer with `write_artifact`.\n\nList the findings as a markdown table with columns `| Severity | File | Line | Problem | Fix |` (severities: critical/major/minor/nit; empty table only on PASS). Give each criterion a PASS or FAIL with a concrete path, excerpt, measurement, or observed behavior. End with exactly `Verdict: PASS` or `Verdict: REVISE`. The gate ENFORCES the verdict: a well-formed REVISE is rejected and routed back to `repair` automatically, carrying your findings — so list every finding in the table with a concrete fix. On PASS, `advance_task_step` to `finish`. Never write PASS while a criterion is unmet.",
+      "suggestedRole": "findings auditor",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      },
+      "consumes": [
+        {
+          "file": "{{workPath}}/validation.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/triage.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/fix-notes.md",
+          "artifact": true
+        }
+      ],
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/review.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit PASS or REVISE verdict",
+            "artifact": true
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkFixReview",
+            "scope": "standard",
+            "inputs": {
+              "reviewPath": "{{workPath}}/review.md",
+              "fixStepId": "repair"
+            }
+          }
+        ],
+        "onReject": "evaluate",
+        "maxAttempts": 4
+      },
+      "next": "finish"
+    },
+    {
+      "id": "repair",
+      "name": "Repair the deliverable",
+      "description": "Fix only the concrete gaps from the latest independent review.",
+      "prompt": "Read `{{workPath}}/review.md` with `read_artifact` and repair every failed criterion in `{{workPath}}/validation.md`, `{{workPath}}/triage.md`, `{{workPath}}/fix-notes.md`. Make changes on each file's declared surface (`write_artifact` for artifact inputs, `write_file` for workspace inputs), not in task notes or a reply. Preserve evidence that already passed. Re-run or re-check anything the reviewer found unproven. Ensure `{{workPath}}/validation.md` is genuinely updated this turn so the repair is observable, then hand it back for independent evaluation.",
+      "suggestedRole": "software engineer",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note",
+          "workspace"
+        ]
+      },
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/validation.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/triage.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/fix-notes.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/validation.md",
+        "minBytes": 450,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/validation.md",
+            "bytes": 450,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/validation.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Per-finding verification",
+            "flags": "im",
+            "label": "Per-finding verification section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Result",
+            "flags": "im",
+            "label": "Result section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/validation.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "repair",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All deterministic and reviewer criteria passed.",
+      "prompt": "The independent review passed. Read `{{workPath}}/review.md` with `read_artifact`, then use `write_task_note` to record a concise DONE summary with the final deliverable paths (`{{workPath}}/validation.md`, `{{workPath}}/triage.md`, `{{workPath}}/fix-notes.md`) and the evidence that each acceptance criterion passed. Report DONE without starting new work.",
+      "suggestedRole": "project lead",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      },
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true
+    },
+    {
+      "id": "needs-user",
+      "name": "Escalate unresolved concerns",
+      "description": "The bounded repair loop ended without a defensible pass.",
+      "prompt": "The deliverable did not pass after 3 review rounds. Do not claim success. Read `{{workPath}}/review.md` with `read_artifact`, then use `write_task_note` to record DONE_WITH_CONCERNS: the unmet criteria, what was attempted, the affected paths, and the smallest user decision or missing input needed to continue.",
+      "suggestedRole": "project lead",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      },
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true
+    }
+  ],
+  "diffpackCapable": true,
+  "capabilityFloor": "small",
+  "version": "1.0.2",
+  "releasedAt": "2026-09-05T03:30:00Z",
+  "minGezelVersion": "1.26236"
+}

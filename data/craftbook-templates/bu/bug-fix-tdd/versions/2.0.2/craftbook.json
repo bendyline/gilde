@@ -1,0 +1,730 @@
+{
+  "id": "bug-fix-tdd",
+  "name": "Reproduce-Then-Fix a Bug",
+  "description": "Fix a bug with the discipline a senior engineer would demand, and with each claim mechanically verified. First REPRODUCE: write a focused failing test in the project's real test layout and run the suite so the failure is recorded — a bug you cannot reproduce you cannot prove fixed, and this book's gates read the actual run receipts, not the author's summary. Then LOCATE the defect site and its causal chain before touching anything. Then make the SMALLEST change at that real site — never a prescribed scratch file — keeping the new test as a permanent regression guard. Then VALIDATE by re-running the original reproduction and the whole suite, which must now be green. Finally an independent reviewer grades the whole chain against fixed criteria and their REVISE verdict routes the work back automatically with concrete findings. Needs a project whose tests run via `npm run test`. Works identically whether the run edits the project directly or drafts a change proposal for the user to apply.",
+  "plan": "Reproduce with a failing test (verified red by a real run) -> locate the defect site and causal chain -> smallest fix at the real site -> validate red-to-green with the original reproduction -> enforced independent review.",
+  "entryStepId": "reproduce",
+  "triggers": [
+    "fix this bug",
+    "reproduce and fix",
+    "tdd bug fix",
+    "write a regression test",
+    "debug and fix"
+  ],
+  "commands": [
+    {
+      "scope": "script",
+      "name": "test",
+      "reason": "Red-then-green proof: the reproduction must actually fail against the current code, and the whole suite must pass after the fix. The gates verify real run receipts."
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "scope": {
+        "type": "string",
+        "title": "Bug to fix",
+        "description": "The bug report, failing behavior, or area to focus on. Leave empty when the task description already carries it.",
+        "default": ""
+      },
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "reproduce",
+      "name": "Reproduce with a failing test",
+      "description": "Establish the failure on the real code, as a running test that fails for the right reason.",
+      "prompt": "The bug to fix: {{scope}}\n\nEstablish the failure on the REAL code before changing anything. Read the bug description and the involved source. Find how this project runs its tests (`list_package_scripts`, then read the existing test layout). Write ONE focused test that captures the exact wrong behavior, in the project's real test layout and style — never a scratch file like `src/bug.test.js`. Then run the suite with `run_package_script` (`test`) and confirm it FAILS because of your new test, for the right reason — quote the failing assertion. If the command needs first-use approval, say so and wait rather than guessing. If you cannot reproduce the bug at all, record every attempt honestly; do not invent a cause.\n\nWrite `{{workPath}}/repro.md` with exactly these sections: `## Symptom` (what the user sees, in their words), `## Repro command` (the exact command you ran), `## Expected`, `## Actual`, `## Red evidence` (the failing test's path and the quoted failing output from the real run). Cite the real files involved with backtick paths.\n\nObservable handoff: write the completed result to `{{workPath}}/repro.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "debugging engineer",
+      "capabilityFloor": "small",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      },
+      "advanceWhen": {
+        "file": "{{workPath}}/repro.md",
+        "minBytes": 500,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "locate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/repro.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/repro.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/repro.md",
+            "pattern": "^##\\s+Symptom",
+            "flags": "im",
+            "label": "Symptom section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/repro.md",
+            "pattern": "^##\\s+Repro command",
+            "flags": "im",
+            "label": "Repro command section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/repro.md",
+            "pattern": "^##\\s+Expected",
+            "flags": "im",
+            "label": "Expected section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/repro.md",
+            "pattern": "^##\\s+Actual",
+            "flags": "im",
+            "label": "Actual section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/repro.md",
+            "pattern": "^##\\s+Red evidence",
+            "flags": "im",
+            "label": "Red evidence section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/repro.md",
+            "minCitations": 2,
+            "artifact": true
+          },
+          {
+            "kind": "commandEvidence",
+            "script": "test",
+            "expect": "fail",
+            "label": "the suite genuinely fails (red) with the new reproduction test"
+          }
+        ],
+        "onReject": "reproduce",
+        "maxAttempts": 4
+      },
+      "next": "locate"
+    },
+    {
+      "id": "locate",
+      "name": "Locate the defect",
+      "description": "Name the defect site and the causal chain from it to the symptom. No source edits.",
+      "prompt": "Read `{{workPath}}/repro.md`, then trace the failure to its source. Name the defect site precisely: file, symbol, and the first place state or logic goes wrong. Explain the causal chain from that site to the observed symptom, step by step. Check sibling cases: does the same defect pattern appear in neighboring code paths that just have no test yet? Do not edit any source in this phase.\n\nWrite `{{workPath}}/diagnosis.md` with exactly these sections: `## Defect site` (the file and symbol, with backtick paths), `## Causal chain`, `## Siblings checked` (which neighboring paths you inspected and what you found). Every path you cite must be real. Before working, open `{{workPath}}/repro.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/diagnosis.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "root-cause analyst",
+      "capabilityFloor": "small",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      },
+      "consumes": [
+        {
+          "file": "{{workPath}}/repro.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/diagnosis.md",
+        "minBytes": 600,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "fix"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/diagnosis.md",
+            "bytes": 600,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/diagnosis.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/diagnosis.md",
+            "pattern": "^##\\s+Defect site",
+            "flags": "im",
+            "label": "Defect site section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/diagnosis.md",
+            "pattern": "^##\\s+Causal chain",
+            "flags": "im",
+            "label": "Causal chain section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/diagnosis.md",
+            "pattern": "^##\\s+Siblings checked",
+            "flags": "im",
+            "label": "Siblings checked section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/diagnosis.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "locate",
+        "maxAttempts": 4
+      },
+      "next": "fix"
+    },
+    {
+      "id": "fix",
+      "name": "Make the smallest fix",
+      "description": "Change the real defect site, minimally, keeping the new test as a regression guard.",
+      "prompt": "Read `{{workPath}}/diagnosis.md` and make the SMALLEST correct change at the defect site it names. There is no prescribed output path for source changes — edit the actual files from the diagnosis with `read_file` plus `write_file`/`replace_in_file`. Never special-case the reproduction's exact input just to silence the test; fix the cause. Cover the sibling cases the diagnosis flagged, and keep (or strengthen) the reproduction test so it becomes the permanent regression guard. Re-run the focused test while you work.\n\nThen write `{{workPath}}/fix-notes.md` with exactly these sections: `## Problem` (one paragraph), `## Change` (what you altered and why it breaks the causal chain), `## Files touched` (backtick path per line), `## Regression coverage` (which test now guards this), `## Risk` (what could still go wrong; be honest about anything unverified), `## How to verify` (the exact commands a person runs to confirm). Before working, open `{{workPath}}/diagnosis.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/fix-notes.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "software engineer",
+      "capabilityFloor": "small",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note",
+          "workspace"
+        ]
+      },
+      "consumes": [
+        {
+          "file": "{{workPath}}/diagnosis.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/fix-notes.md",
+        "minBytes": 700,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "validate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/fix-notes.md",
+            "bytes": 700,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/fix-notes.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Problem",
+            "flags": "im",
+            "label": "Problem section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Change",
+            "flags": "im",
+            "label": "Change section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Files touched",
+            "flags": "im",
+            "label": "Files touched section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Regression coverage",
+            "flags": "im",
+            "label": "Regression coverage section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+Risk",
+            "flags": "im",
+            "label": "Risk section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/fix-notes.md",
+            "pattern": "^##\\s+How to verify",
+            "flags": "im",
+            "label": "How to verify section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/fix-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "fix",
+        "maxAttempts": 4
+      },
+      "next": "validate"
+    },
+    {
+      "id": "validate",
+      "name": "Validate red-to-green",
+      "description": "Re-run the original reproduction and the whole suite; record the real results.",
+      "prompt": "Prove the fix with fresh eyes. Read `{{workPath}}/repro.md` and re-run the EXACT reproduction command it records with `run_package_script` (the suite runs ONLY through `run_package_script` with script name \"test\"; `run_installed_script` is for named ops scripts and is NOT the test runner) — the previously failing test must now pass, and the whole suite must be green. Anything you could not actually run gets labeled unverified, never claimed. If something regressed, your fix was too broad — go back and narrow it before validating again.\n\nWrite `{{workPath}}/validation.md` with exactly these sections: `## Repro re-run` (the command and what happened to the once-failing test), `## Suite` (the full-suite result), `## Result` (red-to-green confirmed, or what remains unverified and why). Before working, open `{{workPath}}/repro.md` with `read_artifact`.\n\nObservable handoff: write the completed result to `{{workPath}}/validation.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.",
+      "suggestedRole": "software engineer",
+      "capabilityFloor": "small",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      },
+      "consumes": [
+        {
+          "file": "{{workPath}}/repro.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/validation.md",
+        "minBytes": 400,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/validation.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/validation.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Repro re-run",
+            "flags": "im",
+            "label": "Repro re-run section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Suite",
+            "flags": "im",
+            "label": "Suite section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Result",
+            "flags": "im",
+            "label": "Result section",
+            "artifact": true
+          },
+          {
+            "kind": "commandEvidence",
+            "script": "test",
+            "expect": "pass",
+            "label": "the whole suite is green after the fix (verified run receipt)"
+          }
+        ],
+        "onReject": "validate",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate the deliverable",
+      "description": "Independently grade the observable deliverable and route it to finish, repair, or user escalation.",
+      "prompt": "Review `{{workPath}}/validation.md`, `{{workPath}}/repro.md`, `{{workPath}}/diagnosis.md`, `{{workPath}}/fix-notes.md` against every criterion below. Inspect the underlying evidence files named by the workflow; do not grade from the author's summary alone.\n\n1. The failure was reproduced with recorded red evidence: repro.md quotes a real failing run of a test that lives in the project's actual test layout, or the run stopped honestly at needs-user.\n2. diagnosis.md names a defect site that exists in this codebase and a causal chain that actually explains the symptom.\n3. The change is at that defect site, is minimal, and covers the sibling cases the diagnosis flagged — open the touched files and check; do not grade from fix-notes.md alone.\n4. validation.md re-ran the original reproduction command and the once-failing test now passes with the whole suite green — judged from the recorded runs, not the author's summary.\n5. The reproduction test survives as a permanent regression guard: it exists in the test layout and would fail again if the fix were reverted.\n6. fix-notes.md names every touched file (paths that exist), states residual risk honestly, and gives runnable verification steps.\n\nOpen `{{workPath}}/validation.md`, `{{workPath}}/repro.md`, `{{workPath}}/diagnosis.md`, `{{workPath}}/fix-notes.md` with `read_artifact`. Write the evidence-backed review to `{{workPath}}/review.md` in the artifacts drawer with `write_artifact`.\n\nList the findings as a markdown table with columns `| Severity | File | Line | Problem | Fix |` (severities: critical/major/minor/nit; empty table only on PASS). Give each criterion a PASS or FAIL with a concrete path, excerpt, measurement, or observed behavior. End with exactly `Verdict: PASS` or `Verdict: REVISE`. The gate ENFORCES the verdict: a well-formed REVISE is rejected and routed back to `repair` automatically, carrying your findings — so list every finding in the table with a concrete fix. On PASS, `advance_task_step` to `finish`. Never write PASS while a criterion is unmet.",
+      "suggestedRole": "debugging reviewer",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact"
+      },
+      "consumes": [
+        {
+          "file": "{{workPath}}/validation.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/repro.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/diagnosis.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/fix-notes.md",
+          "artifact": true
+        }
+      ],
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/review.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit PASS or REVISE verdict",
+            "artifact": true
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkFixReview",
+            "scope": "standard",
+            "inputs": {
+              "reviewPath": "{{workPath}}/review.md",
+              "fixStepId": "repair"
+            }
+          }
+        ],
+        "onReject": "evaluate",
+        "maxAttempts": 4
+      },
+      "next": "finish"
+    },
+    {
+      "id": "repair",
+      "name": "Repair the deliverable",
+      "description": "Fix only the concrete gaps from the latest independent review.",
+      "prompt": "Read `{{workPath}}/review.md` with `read_artifact` and repair every failed criterion in `{{workPath}}/validation.md`, `{{workPath}}/repro.md`, `{{workPath}}/diagnosis.md`, `{{workPath}}/fix-notes.md`. Make changes on each file's declared surface (`write_artifact` for artifact inputs, `write_file` for workspace inputs), not in task notes or a reply. Preserve evidence that already passed. Re-run or re-check anything the reviewer found unproven. Ensure `{{workPath}}/validation.md` is genuinely updated this turn so the repair is observable, then hand it back for independent evaluation.",
+      "suggestedRole": "software engineer",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note",
+          "workspace"
+        ]
+      },
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/validation.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/repro.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/diagnosis.md",
+          "artifact": true
+        },
+        {
+          "file": "{{workPath}}/fix-notes.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/validation.md",
+        "minBytes": 400,
+        "sniff": "nonempty",
+        "requireChange": true,
+        "artifact": true,
+        "goto": "evaluate"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/validation.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/validation.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Repro re-run",
+            "flags": "im",
+            "label": "Repro re-run section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Suite",
+            "flags": "im",
+            "label": "Suite section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/validation.md",
+            "pattern": "^##\\s+Result",
+            "flags": "im",
+            "label": "Result section",
+            "artifact": true
+          },
+          {
+            "kind": "commandEvidence",
+            "script": "test",
+            "expect": "pass",
+            "label": "the whole suite is green after the fix (verified run receipt)"
+          }
+        ],
+        "onReject": "repair",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All deterministic and reviewer criteria passed.",
+      "prompt": "The independent review passed. Read `{{workPath}}/review.md` with `read_artifact`, then use `write_task_note` to record a concise DONE summary with the final deliverable paths (`{{workPath}}/validation.md`, `{{workPath}}/repro.md`, `{{workPath}}/diagnosis.md`, `{{workPath}}/fix-notes.md`) and the evidence that each acceptance criterion passed. Report DONE without starting new work.",
+      "suggestedRole": "project lead",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      },
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true
+    },
+    {
+      "id": "needs-user",
+      "name": "Escalate unresolved concerns",
+      "description": "The bounded repair loop ended without a defensible pass.",
+      "prompt": "The deliverable did not pass after 3 review rounds. Do not claim success. Read `{{workPath}}/review.md` with `read_artifact`, then use `write_task_note` to record DONE_WITH_CONCERNS: the unmet criteria, what was attempted, the affected paths, and the smallest user decision or missing input needed to continue.",
+      "suggestedRole": "project lead",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      },
+      "consumes": [
+        {
+          "file": "{{workPath}}/review.md",
+          "artifact": true
+        }
+      ],
+      "terminal": true
+    }
+  ],
+  "diffpackCapable": true,
+  "capabilityFloor": "small",
+  "version": "2.0.2",
+  "releasedAt": "2026-09-05T03:30:00Z",
+  "minGezelVersion": "1.26236"
+}

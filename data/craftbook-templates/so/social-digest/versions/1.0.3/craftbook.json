@@ -1,0 +1,239 @@
+{
+  "id": "social-digest",
+  "name": "Social Digest",
+  "description": "Read everything new on the synced social feeds since the lookback window opened, then compose a grounded morning digest: per-feed activity, notable mentions and replies, engagement movers, and 1-3 suggested next moves carrying one-click gezel-action blocks (fire the draft-social-post craftbook with a prefilled topic, or a reply task for a mention worth answering). Every number in the digest must trace to a synced record via the scan notes — no invented metrics. Runs happily with no connector bound: it reports from posts/index.json alone and names the missing corpus as a gap.",
+  "entryStepId": "scan",
+  "triggers": [
+    "social digest",
+    "what happened on our feeds",
+    "engagement digest",
+    "overnight social summary"
+  ],
+  "command": "social-digest",
+  "runModes": {
+    "scheduled": "supported",
+    "nightShift": "recommended"
+  },
+  "connectors": [
+    {
+      "typeId": "bluesky-posts",
+      "optional": true,
+      "reason": "Read the synced Bluesky posts, mentions, and engagement counts the digest reports on."
+    },
+    {
+      "typeId": "x-posts",
+      "optional": true,
+      "reason": "Read the synced X posts, mentions, and engagement counts the digest reports on."
+    },
+    {
+      "typeId": "instagram-media",
+      "optional": true,
+      "reason": "Read the synced Instagram records so captions and comments show up in the digest."
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      },
+      "lookbackHours": {
+        "type": "integer",
+        "default": 24,
+        "description": "How many hours back to scan for new records. Default 24."
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scan",
+      "name": "Scan the feeds",
+      "description": "Collect raw notes from every synced corpus record in the window — the only numbers the digest may cite.",
+      "prompt": "You are collecting the raw material for the overnight social digest. Look back {{lookbackHours}} hours (if that value reads as a raw {{...}} placeholder, use the default: 24).\n\n1. Call `list_artifacts` on `data/` in the project artifacts. Each subfolder there is one synced feed corpus (Bluesky, X, Instagram, ...); its `_meta.json` names the feed and the last sync. If there is no `data/` folder, nothing is synced: still write the notes artifact, open it with the line \"no synced corpus this run\", record what `posts/index.json` says we published lately, and never invent feed activity.\n2. Read every record inside the window with `read_artifact` — records are markdown files with frontmatter under each corpus, organized newest-first by folder. Collect per feed: posts by us, mentions and replies (author handle plus a short verbatim quote), and each record's engagement counts (`likes`, `reposts`, `replies`) together with its `metrics_updated_at` stamp.\n3. Read `posts/index.json` in the workspace with `read_file` so the digest can match feed records to the posts we shipped.\n4. Write your raw notes to the artifact `{{workPath}}/reports/social-digest-notes.md` with `write_artifact`: one section per feed, and every count copied verbatim next to the record path it came from (for example `data/bluesky/posts/2026-08/2026-08-02-meet-the-makers.md`). These notes are the only source of numbers the digest step may cite.\n\nWhen the notes artifact is written, call `advance_task_step` to move to compose.",
+      "suggestedRole": "omroeper",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      },
+      "advanceWhen": {
+        "file": "{{workPath}}/reports/social-digest-notes.md",
+        "minBytes": 150,
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/reports/social-digest-notes.md",
+            "bytes": 150,
+            "artifact": true
+          }
+        ],
+        "maxAttempts": 3
+      },
+      "next": "compose"
+    },
+    {
+      "id": "compose",
+      "name": "Compose the digest",
+      "description": "Write the morning digest from the scan notes, ending with 1-3 one-click actions.",
+      "prompt": "Write the digest from `{{workPath}}/reports/social-digest-notes.md` (read it with `read_artifact` first). Every number you cite must appear in those notes — no other source of numbers is allowed.\n\nWrite the digest to the artifact `{{workPath}}/reports/social-digest-<today YYYY-MM-DD>.md` with `write_artifact` (use today's real date in the filename), then write the exact same content to `{{workPath}}/reports/social-digest-latest.md` — the stable path the completion gate reads. Write the latest file last. Sections, in order:\n\n- `## What happened on each feed` — one short block per synced feed; when a feed has no corpus or no new activity, say so in one line.\n- `## Notable mentions & replies` — who said what: name each author, quote them briefly, and say whether the mention deserves a reply.\n- `## Engagement movers` — which of our posts moved: compare the engagement counts and their `metrics_updated_at` stamps from the notes, and call out over- and under-performers. Never invent a number.\n- `## Suggested next moves` — 1-3 concrete suggestions. When a suggestion is directly actionable, follow it with a ```gezel-action fenced YAML block so the user can fire it with one click in the morning. Rules for these blocks: one block per action; flat YAML keys (only `params` nests one level); each block carries a unique, stable `id` slug that stays the same when tomorrow's digest repeats the suggestion; keep `title` short and `reason` to a sentence or two; never invent craftbook ids — the only craftbook you may reference is `draft-social-post`, which ships alongside this workflow. Two kinds:\n\nTo suggest drafting a post (prefill the topic):\n```gezel-action\nkind: fire-craftbook\nid: draft-<short-topic-slug>\ntitle: Draft a post about <thing>\nreason: <why, one sentence grounded in the notes>\ncraftbookId: draft-social-post\nparams:\n  topic: <the suggested topic>\n```\n\nTo suggest replying to a mention (a bespoke task with a concrete prompt):\n```gezel-action\nkind: create-task\nid: reply-<author-slug>\ntitle: Reply to <author>\nreason: <why this mention matters, one sentence>\nprompt: Read <record path> in the project artifacts and draft a reply in our voice for the user to approve. Do not post it.\nrole: omroeper\n```\n\nWhen both digest files are written, call `advance_task_step` to move to evaluate.",
+      "suggestedRole": "omroeper",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      },
+      "advanceWhen": {
+        "file": "{{workPath}}/reports/social-digest-latest.md",
+        "minBytes": 400,
+        "requireChange": true,
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/reports/social-digest-latest.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reports/social-digest-latest.md",
+            "pattern": "```gezel-action",
+            "label": "digest carries at least one one-click action",
+            "artifact": true
+          },
+          {
+            "kind": "judge",
+            "file": "{{workPath}}/reports/social-digest-latest.md",
+            "rubric": "Every count or metric named in the digest appears verbatim in the scan notes; mentions name real authors from the notes; nothing is invented.",
+            "sourceFiles": [
+              "{{workPath}}/reports/social-digest-notes.md"
+            ],
+            "label": "no invented metrics",
+            "artifact": true
+          }
+        ],
+        "onReject": "compose",
+        "maxAttempts": 4
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the digest against every criterion. All pass — finish; any fail — loop back to compose with the named gaps.",
+      "prompt": "Open `{{workPath}}/reports/social-digest-latest.md` and `{{workPath}}/reports/social-digest-notes.md` with `read_artifact` and grade the digest. Check EACH criterion and write PASS/FAIL with a one-line reason:\n\n1. Every number in the digest appears in the notes (spot-check at least three).\n2. Each feed present in the notes is covered — or its silence is stated in one line.\n3. Mentions name their authors and quote them accurately.\n4. The engagement-movers section compares real counts from the notes, not impressions.\n5. There are 1-3 suggested next moves, and every ```gezel-action block is valid flat YAML with `kind`, `id`, `title`, `reason`, and — for fire-craftbook — `craftbookId: draft-social-post` only.\n6. The digest is tight enough to read over coffee: no padding, no repeated sections.\n\nThen route — this is the whole point of the loop:\n\n- **Every criterion PASSES →** call `advance_task_step({ ref, stepId: \"evaluate\", next: \"finish\" })`.\n- **Any criterion FAILS →** write the specific gaps to task notes with `write_task_note`, then call `advance_task_step({ ref, stepId: \"evaluate\", next: \"compose\" })` to loop back. The compose step fixes exactly those gaps.\n\nNever route to finish while a criterion is unmet. After ~3 unproductive loops, stop and report DONE_WITH_CONCERNS so the user can step in.",
+      "suggestedRole": "reviewer",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      },
+      "next": "compose"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "Stamp the summary note and stop.",
+      "prompt": "Write a one-paragraph DONE summary with `write_task_note`: the digest artifact paths (the dated file and `{{workPath}}/reports/social-digest-latest.md`), the headline in one line, how many mentions deserve a reply, and how many one-click actions the digest carries. Report DONE.",
+      "suggestedRole": "omroeper",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      },
+      "terminal": true
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-09-05T03:30:00Z",
+  "minGezelVersion": "1.26233"
+}
