@@ -32,6 +32,7 @@
  *
  *     "ollama":   { "tag": "qwen3.5:9b" },
  *     "llamaCpp": { "huggingfaceRepo": "...-GGUF", "filename": "...gguf", "quantization": "Q4_K_M" },
+ *     "ds4": { "huggingfaceRepo": "...", "filename": "...gguf", "visionEncoderFilename": "...gguf" },
  *     "mlx":      { "huggingfaceRepo": "mlx-community/...", "subdir": "6bit", "quantization": "6bit" }
  *   }
  *
@@ -162,6 +163,7 @@ async function buildLlamaCppBlock(cfg, pinCurrent = false, engine = 'llamaCpp') 
     shardsPrefix,
     quantization,
     mmprojFilename,
+    visionEncoderFilename,
     draftModelFilename,
     residentBytes,
   } = cfg;
@@ -193,6 +195,27 @@ async function buildLlamaCppBlock(cfg, pinCurrent = false, engine = 'llamaCpp') 
       throw new Error(`mmproj file ${mmprojFilename} is not LFS-backed; sha256 unavailable`);
     }
     mmproj = { filename: mmprojFilename, sha256: f.sha256, sizeBytes: f.sizeBytes };
+  }
+
+  let visionEncoder;
+  if (visionEncoderFilename) {
+    if (engine !== 'ds4') {
+      throw new Error('visionEncoderFilename is only valid for the ds4 source');
+    }
+    const f = tree.find((e) => e.path === visionEncoderFilename);
+    if (!f) {
+      throw new Error(`vision encoder ${visionEncoderFilename} not found in ${huggingfaceRepo}`);
+    }
+    if (!f.lfsBacked) {
+      throw new Error(
+        `vision encoder ${visionEncoderFilename} is not LFS-backed; sha256 unavailable`,
+      );
+    }
+    visionEncoder = {
+      filename: visionEncoderFilename,
+      sha256: f.sha256,
+      sizeBytes: f.sizeBytes,
+    };
   }
 
   let draftModel;
@@ -242,6 +265,7 @@ async function buildLlamaCppBlock(cfg, pinCurrent = false, engine = 'llamaCpp') 
       ...(quantization ? { quantization } : {}),
       ...(residentBytes ? { residentBytes } : {}),
       ...(mmproj ? { mmproj } : {}),
+      ...(visionEncoder ? { visionEncoder } : {}),
       ...(draftModel ? { draftModel } : {}),
     };
   }
@@ -262,6 +286,7 @@ async function buildLlamaCppBlock(cfg, pinCurrent = false, engine = 'llamaCpp') 
     ...(quantization ? { quantization } : {}),
     ...(residentBytes ? { residentBytes } : {}),
     ...(mmproj ? { mmproj } : {}),
+    ...(visionEncoder ? { visionEncoder } : {}),
     ...(draftModel ? { draftModel } : {}),
   };
 }
@@ -282,7 +307,7 @@ async function buildDs4Block(cfg, pinCurrent = false) {
   const base = await buildLlamaCppBlock(installCfg, pinCurrent, 'ds4');
   if (base.mmproj || base.draftModel) {
     throw new Error(
-      'ds4 config must not set `mmprojFilename` or `draftModelFilename` — ds4 has no sidecar path',
+      'ds4 config must not set `mmprojFilename` or `draftModelFilename`; use `visionEncoderFilename` for ds4 vision',
     );
   }
   return {
