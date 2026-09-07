@@ -1,0 +1,314 @@
+{
+  "id": "narrated-slideshow",
+  "name": "Animated Content Slideshow",
+  "description": "Turn source content into a real MP4 slideshow video and animated GIF without recruiting a Developer to build an HTML player. A planner locks the story and one message per scene. A copywriter writes {{sourceOutputPath}} as ordinary Markdown with one H1 per scene. A video specialist uses the pre-authorized DocBlocks toolset to perform one atomic MP4+GIF conversion, preview representative frames, repair the Markdown when needed, and save {{workPath}}/slideshow.mp4 and {{workPath}}/slideshow.gif in the artifacts drawer.\n\nThe source of truth is Markdown. DocBlocks selects compatible templates automatically; get_authoring_context is optional when exact animation, theme, or target guidance is useful. The rendered targets require the DocBlocks media runtime (Chromium and FFmpeg); if unavailable, report that blocker instead of substituting HTML.\n\nWorking files under {{workPath}}/, reviews/, and reports/ live in the project artifacts drawer and must be read and written with the artifact tools. User-facing source files remain in the workspace.\n\nPreview review checks content and available rendered evidence. Reconstructed Office/PDF views do not prove native layout; a media thumbnail does not prove full playback. The final handoff states these review limits.",
+  "entryStepId": "outline",
+  "triggers": [
+    "animated slideshow",
+    "turn this content into a video",
+    "make an animated gif from this content",
+    "content to mp4",
+    "markdown to video",
+    "explainer slideshow",
+    "make a video from slides"
+  ],
+  "toolsets": [
+    {
+      "toolsetId": "docblocks",
+      "sourceId": "bundled",
+      "autoAllow": true,
+      "reason": "convert {{sourceOutputPath}} to MP4 and animated GIF, preview frames, and save both rendered files without a prompt per call"
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      },
+      "sourceOutputPath": {
+        "type": "string",
+        "title": "Editable source path",
+        "description": "Workspace-relative Markdown source path. The default keeps each task separate; choose an existing path only when intentionally revising it.",
+        "default": "slideshows/task-{{task.num}}/slideshow.md"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "outline",
+      "name": "Outline the scenes",
+      "description": "Lock the audience, story arc, one message per scene, and media acceptance criteria.",
+      "prompt": "Plan the animated slideshow before authoring it. 1. Identify the audience, viewing context, aspect/orientation, and one takeaway. 2. Draft 6-12 scenes unless the user requests another length: each scene needs a title, one message, 2-4 short on-screen points, and an optional caption line. 3. Mark where an existing image or small table genuinely helps; do not invent or download unapproved assets. 4. Choose landscape or portrait and a restrained motion style. 5. Write acceptance criteria: every outlined scene appears once and in order, text stays readable at video size, source facts remain grounded, frames show a consistent theme, the MP4 plays, the GIF loops, and both real files are saved in artifacts. Write {{workPath}}/outline.md and call write_task_note with scene count, orientation, and takeaway. Do not build HTML or media bytes.\n\nStore `{{workPath}}/outline.md` in the artifacts drawer with `write_artifact`, then verify it with `read_artifact`; do not write this working file to the workspace.\n\nRead an exact workspace DOCX, PPTX, PDF, or XLSX source with `read_doc_as_markdown`; use `read_file` for text or Markdown. Keep the original file path in citations. Never interpret binary bytes as text or substitute a similarly named file.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/outline.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/outline.md",
+            "bytes": 180,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/outline.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "outline",
+        "maxAttempts": 3
+      },
+      "next": "write",
+      "toolPolicy": {
+        "disallowToolsets": [
+          "docblocks"
+        ],
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "write",
+      "name": "Write the Markdown slideshow",
+      "description": "Write {{sourceOutputPath}} with one H1 heading per scene.",
+      "prompt": "Write {{sourceOutputPath}} following {{workPath}}/outline.md. 1. Use exactly one `#` level-one heading per scene; each H1 is a deliberate scene boundary. Do not add `---` separators unless a visible horizontal rule is intended. 2. Under each H1, use 2-4 short bullet phrases, a compact table, or a brief caption—not paragraphs. 3. Bold the load-bearing fact or phrase. 4. Use only source-grounded facts and existing workspace assets with meaningful alt text. 5. Keep the first scene a title/setup and the final scene the takeaway or next action. 6. On loop-back, repair only the frames the reviewer names. Call write_task_note with the path and H1 scene count. Do not create HTML, JavaScript, MP4, GIF, or base64.\n\nOpen `{{workPath}}/outline.md` from the artifacts drawer with `read_artifact` before working. Use the explicit content layout on every scene that has body content: `# Scene title {[content]}`. This keeps lists and tables visible in the native video export; an unannotated metrics-table scene can become a title-only card even when its Markdown preview contains the table. Prefer short before/after bullets for small screens; use a compact table only when it remains readable. Do not remove source facts to make a layout fit.",
+      "suggestedRole": "copywriter",
+      "consumes": [
+        {
+          "file": "{{workPath}}/outline.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{sourceOutputPath}}",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{sourceOutputPath}}",
+            "bytes": 650
+          },
+          {
+            "kind": "contains",
+            "file": "{{sourceOutputPath}}",
+            "pattern": "(?:^|\\n)#\\s+\\S",
+            "label": "at least one H1 scene heading"
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "publish",
+      "toolPolicy": {
+        "disallowToolsets": [
+          "docblocks"
+        ],
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "publish",
+      "name": "Publish the video and GIF",
+      "description": "Convert the approved source, inspect and preview it, and save the real binary deliverables with review evidence.",
+      "prompt": "Publish the approved Markdown as real GIF and MP4 files. First call `list_roots` and read the approved `{{sourceOutputPath}}` with `read_file`; read `{{workPath}}/outline.md` with `read_artifact`. Use the read-enabled workspace root for the source and write-enabled artifacts root for outputs. Inspect the Markdown source with `inspect_document` and preview its scenes in batches of at most four.\n\nRender the two formats in SEPARATE `convert_document` calls so each has its own operation budget. Use source { \"kind\": \"file\", \"rootId\": <workspace root id>, \"path\": \"{{sourceOutputPath}}\" } and autoTemplates: true. For a landscape slideshow, start with targets: [{ \"format\": \"gif\", \"width\": 640, \"height\": 360, \"fps\": 6, \"animationsEnabled\": true, \"loop\": 0 }] and then targets: [{ \"format\": \"mp4\", \"width\": 960, \"height\": 540, \"fps\": 8, \"animationsEnabled\": true }]. For portrait, swap width and height. These are useful delivery defaults for animated text slides; honor an explicit user resolution/fps request within the tool's stated limits. On a runtime timeout retry the affected format once at lower dimensions/fps, then record the exact blocker. Use only fields listed in the tool schema; orientation is not an aspectRatio string and captions are controlled by captionStyle when requested.\n\nFor EACH successful conversion, call `get_conversion_report` with its returned artifactUri, then `preview_document` with source { \"kind\": \"artifact\", \"uri\": <returned URI> } and maxItems: 1. MP4/GIF support native first-frame previews, not document-text import: do not call `inspect_document` on video or GIF bytes. Review scene content/order from the Markdown previews and report first-frame/native metadata separately. A first frame cannot prove full-video timing, motion, looping, or the final scene.\n\nSave the GIF to `{{workPath}}/slideshow.gif` and MP4 to `{{workPath}}/slideshow.mp4` with `save_artifact` in the artifacts root, initially using ifExists: \"error\". If replacing a previously saved output, use its previously returned saved hash as expectedSha256; if the hash is unavailable, record the blocker instead of guessing. Save each successful artifact before another step/process takes over. Use only current-session artifact URIs; reopen saved media with file sources for later preview. If source content fails, leave precise task notes and route to write; do not rewrite Markdown during publishing. Once BOTH files are saved, note the paths, hashes, diagnostics and playback-review limits, then advance to evaluate. Never substitute HTML, renamed Markdown or fabricated binary files. Before converting, confirm body-bearing scenes use the explicit `{[content]}` heading layout. If a table/list scene lacks it, route that precise authoring repair to write. Source previews and native exports can choose different default layouts, so a source-preview PASS alone does not establish native content survival.",
+      "suggestedRole": "designer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/outline.md",
+          "artifact": true
+        },
+        {
+          "file": "{{sourceOutputPath}}"
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/slideshow.mp4",
+        "minBytes": 1,
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/slideshow.mp4",
+            "bytes": 1000,
+            "artifact": true
+          },
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/slideshow.gif",
+            "bytes": 1000,
+            "artifact": true
+          }
+        ],
+        "onReject": "publish",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Review saved-file integrity and content fidelity; document the limits of reconstructed or first-frame previews.",
+      "prompt": "Read `{{workPath}}/outline.md` with `read_artifact`, read `{{sourceOutputPath}}` with `read_file`, and read publishing notes with `read_task_notes`. Confirm the outlined scene count and order, supplied facts, short on-screen copy, and final next actions. Use `list_roots` and `inspect_document` on the Markdown source, with source previews when helpful. Reopen the saved `{{workPath}}/slideshow.mp4` and `{{workPath}}/slideshow.gif` using file sources from the artifacts root and `preview_document`; do not import media bytes through `inspect_document`. These native-extracted images show the first frame only. Check the recorded conversion options and save hashes, and distinguish source scene coverage from actual full playback. First-frame-only verification is a disclosed limitation, not by itself a content failure. Use `write_task_note` for the review, with explicit PASS/FAIL criteria, evidence, and any unverified playback properties. Route content defects to write and missing/corrupt outputs to publish. Advance only when the requested files exist and the supported checks pass; do not claim full animation or loop playback was visually reviewed. On PASS, call `advance_task_step` with next: \"finish\". Use next: \"write\" only for an identified source-content failure, or next: \"publish\" for an identified conversion/save failure.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/outline.md",
+          "artifact": true
+        }
+      ],
+      "next": "finish",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "Deliver the saved files with the recorded review evidence and limits.",
+      "prompt": "Read the review evidence with `read_task_notes`. Write a concise DONE summary naming the editable Markdown source `{{sourceOutputPath}}` and the saved deliverables `{{workPath}}/slideshow.gif`, `{{workPath}}/slideshow.mp4`. Include available native counts and the preview basis, and carry forward any native-layout or playback properties that remain unverified. Do not open binary files with `read_artifact` or claim an unavailable check passed.",
+      "suggestedRole": "designer",
+      "consumes": [
+        {
+          "file": "{{sourceOutputPath}}"
+        }
+      ],
+      "terminal": true,
+      "toolPolicy": {
+        "disallowToolsets": [
+          "docblocks"
+        ],
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.1.4",
+  "releasedAt": "2026-09-07T01:00:00Z",
+  "minGezelVersion": "1.26233"
+}

@@ -1,0 +1,315 @@
+{
+  "id": "report-pdf",
+  "name": "Formatted PDF Report",
+  "description": "Produce a polished PDF report without turning the work into a web-development project. The workflow locks the audience, source facts, section order, and acceptance criteria; a copywriter writes the full source as ordinary Markdown in {{sourceOutputPath}}; then the same content specialist uses DocBlocks to convert the Markdown directly to PDF, preview the pages, repair the source if needed, and save {{workPath}}/report.pdf in the project's artifacts drawer.\n\nThe source of truth remains {{sourceOutputPath}}. HTML, CSS, browser print APIs, hand-built PDF syntax, and raw binary writes are explicitly out of scope. The DocBlocks toolset is pre-authorized for the active craftbook, so a Developer is not needed merely to format or export the report.\n\nWorking files under {{workPath}}/, reviews/, and reports/ live in the project artifacts drawer and must be read and written with the artifact tools. User-facing source files remain in the workspace.\n\nPreview review checks content and available rendered evidence. Reconstructed Office/PDF views do not prove native layout; a media thumbnail does not prove full playback. The final handoff states these review limits.",
+  "entryStepId": "outline",
+  "triggers": [
+    "formatted report",
+    "make a pdf report",
+    "create a pdf",
+    "export this report to pdf",
+    "quarterly report",
+    "printable document",
+    "report with cover page"
+  ],
+  "toolsets": [
+    {
+      "toolsetId": "docblocks",
+      "sourceId": "bundled",
+      "autoAllow": true,
+      "reason": "convert {{sourceOutputPath}} directly to PDF, preview the rendered pages, and save the finished file without a prompt per call"
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      },
+      "sourceOutputPath": {
+        "type": "string",
+        "title": "Editable source path",
+        "description": "Workspace-relative Markdown source path. The default keeps each task separate; choose an existing path only when intentionally revising it.",
+        "default": "pdf/task-{{task.num}}/report.md"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "outline",
+      "name": "Outline the report",
+      "description": "Lock the audience, source facts, section order, and acceptance criteria.",
+      "prompt": "Plan the report before writing it. 1. Identify the audience, the decision or takeaway the report must support, and every source file or user-provided fact the report may use. 2. Lock the section order: title block, executive summary, body sections, recommendations/conclusion, and appendix or references when needed. 3. For each body section, state its purpose and the facts, figures, or tables it must contain; never invent a missing metric. 4. Decide whether the user requested Letter or A4 pages. 5. Write a numbered acceptance checklist that includes source fidelity, complete section coverage, a stand-alone executive summary, captioned/referenced tables or figures, explicit recommendations, and a real saved PDF in the artifacts drawer. Write the outline and checklist to {{workPath}}/outline.md and call write_task_note with the audience, page size, and section count. Do not write HTML, CSS, or body prose.\n\nStore `{{workPath}}/outline.md` in the artifacts drawer with `write_artifact`, then verify it with `read_artifact`; do not write this working file to the workspace.\n\nRead an exact workspace DOCX, PPTX, PDF, or XLSX source with `read_doc_as_markdown`; use `read_file` for text or Markdown. Keep the original file path in citations. Never interpret binary bytes as text or substitute a similarly named file.",
+      "suggestedRole": "planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/outline.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/outline.md",
+            "bytes": 180,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/outline.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "outline",
+        "maxAttempts": 3
+      },
+      "next": "write",
+      "toolPolicy": {
+        "disallowToolsets": [
+          "docblocks"
+        ],
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "write",
+      "name": "Write the Markdown report",
+      "description": "Write the complete {{sourceOutputPath}} source to the locked outline.",
+      "prompt": "Write the complete report to {{sourceOutputPath}} as ordinary Markdown. Follow {{workPath}}/outline.md exactly: 1. Start with one H1 title and a short metadata block for author/date when known. 2. Write a concise executive summary that stands alone. 3. Write every body section in order with clear H2/H3 headings and real prose grounded only in the supplied sources. 4. Use Markdown tables for structured comparisons and Markdown images only for existing, workspace-readable assets; give every table or figure a caption and refer to it in the prose. 5. End with the explicit recommendations/conclusion and any references or appendix from the outline. 6. Check every acceptance criterion and repair the Markdown before advancing. Do not create report.html, CSS, OOXML, or PDF bytes yourself. Call write_task_note with the {{sourceOutputPath}} path, word count, and section count.\n\nOpen `{{workPath}}/outline.md` from the artifacts drawer with `read_artifact` before working.",
+      "suggestedRole": "copywriter",
+      "consumes": [
+        {
+          "file": "{{workPath}}/outline.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{sourceOutputPath}}",
+        "minBytes": 1,
+        "sniff": "nonempty"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{sourceOutputPath}}",
+            "bytes": 1000
+          },
+          {
+            "kind": "contains",
+            "file": "{{sourceOutputPath}}",
+            "pattern": "(?:^|\\n)#\\s+\\S",
+            "label": "an H1 report title"
+          },
+          {
+            "kind": "contains",
+            "file": "{{sourceOutputPath}}",
+            "pattern": "(?:^|\\n)##\\s+\\S",
+            "label": "at least one report section"
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "publish",
+      "toolPolicy": {
+        "disallowToolsets": [
+          "docblocks"
+        ],
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "publish",
+      "name": "Publish the PDF",
+      "description": "Convert the approved source, inspect and preview it, and save the real binary deliverables with review evidence.",
+      "prompt": "Publish the approved Markdown as real binary files. 1. Call `list_roots` to identify the read-enabled workspace root and write-enabled artifacts root. If no write root exists, record the blocker. Read `{{workPath}}/outline.md` from the artifacts drawer with `read_artifact` and the approved `{{sourceOutputPath}}` from the workspace with `read_file`. 2. Call `convert_document` with source `{ \"kind\": \"file\", \"rootId\": <workspace root id>, \"path\": \"{{sourceOutputPath}}\" }` and `autoTemplates: true`. Use one PDF target with the Letter/A4 choice and title from the outline. Ordinary Markdown works with defaults; use discovery only to answer a specific style requirement. 3. Use each returned artifact URI with `inspect_document` and `preview_document`, passing source `{ \"kind\": \"artifact\", \"uri\": <returned URI> }`. Review content, tables, and any reported diagnostics; request at most four preview items at a time and paginate. Interpret `previewBasis` accurately. Office/PDF `reconstructed-import` previews show normalized content sections, not native pagination, fonts, clipping, or page breaks. Review all available sections with pagination and record this native-layout limit. Do not call these native page images or invent a native page count. An accurately disclosed preview limit alone does not fail content and saved-file checks. If content or source structure fails, write precise gaps to task notes and call `advance_task_step` with next `\"write\"`; do not edit the source during this publishing step. 4. Call `save_artifact` for `{{workPath}}/report.pdf` using the artifacts root and `ifExists: \"error\"`. For an existing output, inspect that saved file and use its `sourceSha256` as `expectedSha256` with `ifExists: \"replace\"`. Use only URIs returned by this session; reopen earlier saved binaries through file sources. Finally, write a task note with saved paths, hashes, available counts, diagnostics, preview basis, and review limits, then advance to evaluate. Never substitute HTML, renamed Markdown, or hand-written XML for the requested binary files.",
+      "suggestedRole": "copywriter",
+      "consumes": [
+        {
+          "file": "{{workPath}}/outline.md",
+          "artifact": true
+        },
+        {
+          "file": "{{sourceOutputPath}}"
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/report.pdf",
+        "minBytes": 1,
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/report.pdf",
+            "bytes": 1000,
+            "artifact": true
+          }
+        ],
+        "onReject": "publish",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Review saved-file integrity and content fidelity; document the limits of reconstructed or first-frame previews.",
+      "prompt": "Read `{{workPath}}/outline.md` from the artifacts drawer with `read_artifact` and the approved `{{sourceOutputPath}}` from the workspace with `read_file`. Read prior review/publishing evidence with `read_task_notes`. Call `list_roots` and reopen each saved binary in `{{workPath}}/report.pdf` with `inspect_document` and `preview_document`, using source `{ \"kind\": \"file\", \"rootId\": <artifacts root id>, \"path\": <saved path> }`. Artifact URIs from another session are not reusable. Confirm the binary opens, the supplied facts and requested content are preserved, section order and tables follow the approved source, and citations/next actions remain present. Interpret `previewBasis` accurately. Office/PDF `reconstructed-import` previews show normalized content sections, not native pagination, fonts, clipping, or page breaks. Review all available sections with pagination and record this native-layout limit. Do not call these native page images or invent a native page count. An accurately disclosed preview limit alone does not fail content and saved-file checks. Write PASS/FAIL per verifiable content and saved-file criterion, name exact gaps, and state any native-layout or playback property that remains unverified. If these checks pass, route to `finish`; for content/structure failures route to `write`; for conversion/save/copy failures with the source still approved route to `publish`. Never claim an unmet criterion passed. After three unproductive loops, record DONE_WITH_CONCERNS and the remaining gaps. On PASS, call `advance_task_step` with next: \"finish\". Use next: \"write\" only for an identified source-content failure, or next: \"publish\" for an identified conversion/save failure.",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/outline.md",
+          "artifact": true
+        }
+      ],
+      "next": "finish",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "Deliver the saved files with the recorded review evidence and limits.",
+      "prompt": "Read the review evidence with `read_task_notes`. Write a concise DONE summary naming the editable Markdown source `{{sourceOutputPath}}` and the saved deliverables `{{workPath}}/report.pdf`. Include available native counts and the preview basis, and carry forward any native-layout or playback properties that remain unverified. Do not open binary files with `read_artifact` or claim an unavailable check passed.",
+      "suggestedRole": "copywriter",
+      "consumes": [
+        {
+          "file": "{{sourceOutputPath}}"
+        }
+      ],
+      "terminal": true,
+      "toolPolicy": {
+        "disallowToolsets": [
+          "docblocks"
+        ],
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.1.4",
+  "releasedAt": "2026-09-07T01:00:00Z",
+  "minGezelVersion": "1.26233"
+}
