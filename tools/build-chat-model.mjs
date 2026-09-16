@@ -32,7 +32,11 @@
  *
  *     "ollama":   { "tag": "qwen3.5:9b" },
  *     "llamaCpp": { "huggingfaceRepo": "...-GGUF", "filename": "...gguf", "quantization": "Q4_K_M" },
- *     "ds4": { "huggingfaceRepo": "...", "filename": "...gguf", "visionEncoderFilename": "...gguf" },
+ *     "ds4": {
+ *       "huggingfaceRepo": "...", "filename": "...gguf",
+ *       "visionEncoder": { "huggingfaceRepo": "...", "filename": "...gguf" },
+ *       "mtp": { "exactSampling": true }
+ *     },
  *     "mlx":      { "huggingfaceRepo": "mlx-community/...", "subdir": "6bit", "quantization": "6bit" }
  *   }
  *
@@ -164,6 +168,7 @@ async function buildLlamaCppBlock(cfg, pinCurrent = false, engine = 'llamaCpp') 
     quantization,
     mmprojFilename,
     visionEncoderFilename,
+    visionEncoder: visionEncoderConfig,
     draftModelFilename,
     residentBytes,
   } = cfg;
@@ -198,21 +203,37 @@ async function buildLlamaCppBlock(cfg, pinCurrent = false, engine = 'llamaCpp') 
   }
 
   let visionEncoder;
-  if (visionEncoderFilename) {
+  if (visionEncoderFilename || visionEncoderConfig) {
     if (engine !== 'ds4') {
-      throw new Error('visionEncoderFilename is only valid for the ds4 source');
+      throw new Error('visionEncoder / visionEncoderFilename is only valid for the ds4 source');
     }
-    const f = tree.find((e) => e.path === visionEncoderFilename);
+    if (visionEncoderFilename && visionEncoderConfig) {
+      throw new Error('ds4 config must set only one of visionEncoder / visionEncoderFilename');
+    }
+    const encoderFilename = visionEncoderConfig?.filename ?? visionEncoderFilename;
+    const encoderRepo = visionEncoderConfig?.huggingfaceRepo ?? huggingfaceRepo;
+    const encoderRevision = pinCurrent
+      ? await fetchCommit(encoderRepo)
+      : visionEncoderConfig?.revision;
+    const encoderTree =
+      encoderRepo === huggingfaceRepo && encoderRevision === revision
+        ? tree
+        : await fetchTree(encoderRepo, encoderRevision);
+    const f = encoderTree.find((e) => e.path === encoderFilename);
     if (!f) {
-      throw new Error(`vision encoder ${visionEncoderFilename} not found in ${huggingfaceRepo}`);
+      throw new Error(`vision encoder ${encoderFilename} not found in ${encoderRepo}`);
     }
     if (!f.lfsBacked) {
       throw new Error(
-        `vision encoder ${visionEncoderFilename} is not LFS-backed; sha256 unavailable`,
+        `vision encoder ${encoderFilename} is not LFS-backed; sha256 unavailable`,
       );
     }
     visionEncoder = {
-      filename: visionEncoderFilename,
+      ...(encoderRepo !== huggingfaceRepo ? { huggingfaceRepo: encoderRepo } : {}),
+      ...(encoderRevision && (encoderRepo !== huggingfaceRepo || encoderRevision !== revision)
+        ? { revision: encoderRevision }
+        : {}),
+      filename: encoderFilename,
       sha256: f.sha256,
       sizeBytes: f.sizeBytes,
     };
@@ -295,15 +316,30 @@ async function buildLlamaCppBlock(cfg, pinCurrent = false, engine = 'llamaCpp') 
  * ds4 (DwarfStar) source block. The install payload is structurally identical
  * to llama.cpp's (HF repo + filename/shards + sha256 + size), so it reuses that
  * builder and then layers on the streaming/launch hints that only ds4 reads:
- * `residentBytes`, `cacheExpertsBytes`, `ssdStreaming`, `maxLaunchCtx`.
+ * `residentBytes`, `residentWeightBytes`, `cacheExpertsBytes`,
+ * `ssdStreaming`, `ssdStreamingSupported`, `prefillChunk`, `maxLaunchCtx`,
+ * model-embedded `mtp`, and
+ * the optional context-footprint slope.
  *
- * Those four are hand-measured per model, not derivable from the HF tree — a
+ * These are hand-measured per model, not derivable from the HF tree — a
  * model's resident footprint is the sum of its non-routed tensors, which you
  * read out of the GGUF, and the safe cache/context budgets follow from it. They
  * pass through from the config verbatim.
  */
 async function buildDs4Block(cfg, pinCurrent = false) {
-  const { residentBytes, cacheExpertsBytes, ssdStreaming, maxLaunchCtx, ...installCfg } = cfg;
+  const {
+    residentBytes,
+    residentWeightBytes,
+    kvBytesPerToken,
+    residentCtxTokens,
+    cacheExpertsBytes,
+    ssdStreaming,
+    ssdStreamingSupported,
+    prefillChunk,
+    maxLaunchCtx,
+    mtp,
+    ...installCfg
+  } = cfg;
   const base = await buildLlamaCppBlock(installCfg, pinCurrent, 'ds4');
   if (base.mmproj || base.draftModel) {
     throw new Error(
@@ -313,9 +349,15 @@ async function buildDs4Block(cfg, pinCurrent = false) {
   return {
     ...base,
     ...(residentBytes ? { residentBytes } : {}),
+    ...(residentWeightBytes ? { residentWeightBytes } : {}),
+    ...(kvBytesPerToken ? { kvBytesPerToken } : {}),
+    ...(residentCtxTokens ? { residentCtxTokens } : {}),
     ...(cacheExpertsBytes ? { cacheExpertsBytes } : {}),
     ...(ssdStreaming !== undefined ? { ssdStreaming } : {}),
+    ...(ssdStreamingSupported !== undefined ? { ssdStreamingSupported } : {}),
+    ...(prefillChunk ? { prefillChunk } : {}),
     ...(maxLaunchCtx ? { maxLaunchCtx } : {}),
+    ...(mtp ? { mtp } : {}),
   };
 }
 
