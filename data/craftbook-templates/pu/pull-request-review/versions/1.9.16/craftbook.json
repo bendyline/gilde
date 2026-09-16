@@ -1,0 +1,599 @@
+{
+  "id": "pull-request-review",
+  "name": "Pull Request Review",
+  "description": "Review a GitHub pull request from a complete, launch-time local mirror rather than a context-sized API response. The runtime resolves the PR, materializes one untruncated patch record per changed path, and publishes adaptive bounded batches plus compact scope metadata. Each child reviewer receives one exact batch. Service-observed full-read evidence and per-file observations gate its progress; the runtime publishes coverage shards, and a merge gate holds the run to the whole corpus. The final verdict stays local and cites verified code and checks.",
+  "basedOn": {
+    "name": "Gezel Code Review",
+    "url": "https://github.com/bendyline/gezel"
+  },
+  "entryStepId": "scope",
+  "triggers": [
+    "review this pr",
+    "review the current pr",
+    "review this pull request",
+    "pr review",
+    "review the github pull request"
+  ],
+  "requirements": [
+    {
+      "kind": "github"
+    }
+  ],
+  "toolsets": [
+    {
+      "toolsetId": "github",
+      "optional": true,
+      "autoAllow": true,
+      "reason": "read CI/check status and perform targeted PR verification"
+    }
+  ],
+  "connectors": [
+    {
+      "typeId": "github-pulls",
+      "reason": "materialize the selected pull request as a complete, chunk-readable local corpus"
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      },
+      "number": {
+        "type": "number",
+        "title": "Pull request number",
+        "description": "Optional PR number. Leave blank to use the open PR whose head matches the project's checked-out branch."
+      },
+      "focus": {
+        "type": "string",
+        "title": "Review focus",
+        "default": "general correctness",
+        "description": "Optional area to emphasize, e.g. security, performance, or tests."
+      },
+      "intensity": {
+        "type": "string",
+        "title": "Intensity",
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "default": "medium",
+        "squisq": {
+          "control": "segmented"
+        },
+        "description": "How deep to go on each changed-file batch. Coverage remains complete at every intensity."
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "scope",
+      "name": "Map the pull request corpus",
+      "description": "Read the launch-time PR overview and compact runtime scope evidence, capture CI/check status, and let the gate verify complete fanout batches mechanically.",
+      "prompt": "The runtime publishes complete PR batches and a compact scope summary at step entry, then advances automatically once the full-corpus batch gate approves. If this step is handed to you, deterministic setup or the gate failed. Read the named task diagnostic and {{workPath}}/pr-review/scope-data.json; never invent, rewrite, or truncate the manifest or batches. Ask for help if the source PR snapshot or runtime script is unavailable. Do not edit source or post to GitHub.",
+      "suggestedRole": "reviewer",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "disallowToolsets": [
+          "@playwright/mcp"
+        ],
+        "outputMedium": "task-note"
+      },
+      "onEnter": [
+        {
+          "name": "publishCorpusBatches",
+          "scope": "standard",
+          "inputs": {
+            "corpusDir": "{{corpusScope}}",
+            "outFile": "{{workPath}}/pr-review/batches.json"
+          }
+        },
+        {
+          "name": "summarizePullRequestCorpus",
+          "scope": "standard",
+          "inputs": {
+            "manifestFile": "{{corpusScope}}/attachments/001/pr-{{number}}-files.json",
+            "batchesFile": "{{workPath}}/pr-review/batches.json",
+            "outFile": "{{workPath}}/pr-review/scope-data.json"
+          },
+          "autoAdvanceOnSuccess": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/pr-review/batches.json",
+        "minBytes": 2,
+        "sniff": "json-valid",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "corpusBatches",
+            "file": "{{workPath}}/pr-review/batches.json",
+            "corpusDir": "{{corpusScope}}",
+            "artifact": true
+          }
+        ],
+        "onReject": "scope",
+        "maxAttempts": 3
+      },
+      "next": "scan"
+    },
+    {
+      "id": "scan",
+      "name": "Fan the batches out to the review crew",
+      "description": "Spawn one child reviewer per published batch. The runtime performs the fanout with no model turn; the crew is the work.",
+      "prompt": "The runtime spawns one child reviewer per entry in `{{workPath}}/pr-review/batches.json`, each in its own session holding only that batch's records. No turn is needed here.",
+      "suggestedRole": "reviewer",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "disallowToolsets": [
+          "@playwright/mcp"
+        ],
+        "outputMedium": "none"
+      },
+      "advanceWhen": {
+        "file": "{{workPath}}/pr-review/fanout.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "next": "collect",
+      "spawnFanout": true
+    },
+    {
+      "id": "collect",
+      "name": "Merge the batch ledgers",
+      "description": "Wait for the crew while the runtime deterministically rebuilds the run-wide ledger from exact per-batch coverage shards, then prove both corpus completeness and shard provenance.",
+      "prompt": "The runtime has rebuilt `{{workPath}}/pr-review-coverage.json` from every valid `coverage-N.json` shard currently on disk. Do not write or edit that ledger yourself — it is deliberately runtime-owned so a large pull request never has to pass hundreds of exact paths through one model tool call.\n\nCall `advance_task_step` now. The gate will compare the ledger against the complete connector corpus and independently prove that it is exactly the union of one valid shard per published batch. If reviewers are still working, it will reject and name the missing batches; on the fresh activation the runtime will rebuild the ledger again. Do not review files yourself or add paths to close the gap. A batch that remains stuck belongs in a task note, not a fabricated coverage claim.\n\nThe ledger and shards live in the project's artifacts drawer; the shipped workspace stays untouched.",
+      "suggestedRole": "reviewer",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "disallowToolsets": [
+          "@playwright/mcp"
+        ],
+        "outputMedium": "none"
+      },
+      "onEnter": [
+        {
+          "name": "mergeCorpusCoverage",
+          "scope": "standard",
+          "inputs": {
+            "batchesFile": "{{workPath}}/pr-review/batches.json",
+            "shardDir": "{{workPath}}/pr-review",
+            "outFile": "{{workPath}}/pr-review-coverage.json",
+            "pullRequest": "{{number}}"
+          }
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/pr-review-coverage.json",
+        "minBytes": 2,
+        "sniff": "json-valid",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "corpusCoverage",
+            "file": "{{workPath}}/pr-review-coverage.json",
+            "corpusDir": "{{corpusScope}}",
+            "artifact": true
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkCorpusCoverageProvenance",
+            "scope": "standard",
+            "inputs": {
+              "batchesFile": "{{workPath}}/pr-review/batches.json",
+              "shardDir": "{{workPath}}/pr-review",
+              "ledgerFile": "{{workPath}}/pr-review-coverage.json",
+              "pullRequest": "{{number}}"
+            }
+          }
+        ],
+        "onReject": "collect",
+        "maxAttempts": 6
+      },
+      "next": "report"
+    },
+    {
+      "id": "report",
+      "name": "Synthesize the review",
+      "description": "Synthesize every batch's observations into a cited report, re-verifying cross-file claims and keeping CI status distinct from code-review judgment.",
+      "prompt": "The coverage gate has proved that every changed path in PR #{{number}} was reviewed. At step entry, the runtime read EVERY exact observations-N.md shard from the published batch array and wrote the compact artifact `{{workPath}}/pr-review/synthesis-data.json`. Read `{{workPath}}/pr-review/scope-data.json`, the mirrored PR overview record, `{{workPath}}/pr-review-coverage.json`, and `{{workPath}}/pr-review/synthesis-data.json` with read_artifact. Do not recursively list or reread all shards: the deterministic index names every batch and supplies a bounded, severity-ranked `shortlist` for final verification. Work only from that shortlist; `omittedActionable` is lower-priority triage metadata, not an instruction to reopen every shard. If a shortlisted candidate has unknown severity, open THAT exact observations file for detail; never synthesize from a subset.\n\nThe script has already removed likely non-issues from the shortlist; do not reintroduce them from batch metadata. A Findings row is reserved for a confirmed defect introduced or materially worsened by this PR: never promote \"no issue\", \"no action needed\", \"acceptable as-is\", optional hardening, a TODO/comment request, an unverified hash/value, a \"needs central verification\" placeholder, a contingent claim, a style/consistency suggestion, or a hypothetical future schema change. Re-check every shortlisted critical or major candidate, and any shortlisted cross-file-dependent candidate, against the relevant checkout source with `stat` and narrowly ranged `read_file`/`read_files`. For source files over 8 KB always pass startLine/endLine; do not load a full giant source file. Verify definitions and route-level enforcement before alleging that an API or guard is missing, then drop unsupported claims. State a concrete trigger and definite failure mechanism; if the best description still needs \"may\", \"might\", \"could\", \"possibly\", \"likely\", \"potentially\", \"consider\", or \"undefined behavior\", omit it. Reconcile duplicates and keep at most the eight strongest confirmed findings; checks, limitations, and follow-up ideas belong in the summary or are omitted, not in the findings table. If `github_check_status` is available, call it once when earlier CI was pending; otherwise mark CI unknown rather than browsing or guessing. Do not repeat an existing PR comment unless it still needs action and you say it was already raised.\n\nCite every finding as `path:line` using a changed path and a new-side diff line, and name its originating B-number in Source. Any critical or major finding requires `request-changes`; `approve` is valid only when the table has no critical or major rows. CI success is evidence that the checked revision compiled/tested as configured, but it does not erase logic findings. CI unknown/pending is not itself a code defect.\n\nWrite `{{workPath}}/pr-review.md` in ONE concise `write_artifact` call using exactly this skeleton:\n\n```\n# Pull Request Review — PR #{{number}}: <title>\n\n## Summary\n<2–6 sentences: what changes, overall risk, existing-comment coverage, and CI/check status. Say \"No findings.\" when there are none.>\n\nCoverage: <reviewed count>/<changed-file count> changed files across <batch count> batches.\n\n## Findings\n| # | Severity | Source | File | Line | Finding | Recommendation |\n|---|----------|--------|------|------|---------|----------------|\n<zero to eight confirmed findings; Source is the exact B-number such as B12-2; severities: critical, major, minor, nit. Keep the header when there are no findings.>\n\n## Verdict\nVerdict: approve\n<or> Verdict: request-changes\n<one sentence of rationale consistent with the highest severity above>\n```\n\nDo not modify source and do not call `github_pr_comment`; the report is local. If the gate rejects, repair the named gap and rewrite the whole report. After the one successful whole-file `write_artifact` call, STOP. The runtime validates the report and advances automatically; `advance_task_step` is intentionally unavailable.\n\nThese deliverables live in the project's artifacts drawer — write them with `write_artifact` and read them back with `read_artifact`; the shipped workspace stays untouched. A pull-request review never modifies project source.",
+      "suggestedRole": "reviewer",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "disallowToolsets": [
+          "@playwright/mcp"
+        ],
+        "allowTools": [
+          "read_artifact",
+          "read_file",
+          "read_files",
+          "stat",
+          "github_check_status",
+          "write_artifact"
+        ],
+        "outputMedium": "artifact"
+      },
+      "onEnter": [
+        {
+          "name": "summarizePullRequestObservations",
+          "scope": "standard",
+          "inputs": {
+            "batchesFile": "{{workPath}}/pr-review/batches.json",
+            "shardDir": "{{workPath}}/pr-review",
+            "outFile": "{{workPath}}/pr-review/synthesis-data.json"
+          }
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/pr-review.md",
+        "minBytes": 500,
+        "artifact": true,
+        "requireChange": false
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/pr-review.md",
+            "bytes": 500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/pr-review.md",
+            "pattern": "#\\s+Pull Request Review\\s+[—-]\\s+PR\\s+#{{number}}",
+            "label": "PR-numbered title",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/pr-review.md",
+            "pattern": "Coverage:\\s*\\d+\\s*/\\s*\\d+\\s+changed files",
+            "label": "coverage summary",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/pr-review.md",
+            "pattern": "##\\s+Summary[\\s\\S]*##\\s+Findings[\\s\\S]*##\\s+Verdict",
+            "label": "required sections",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/pr-review.md",
+            "pattern": "Verdict:\\s*(approve|request-changes)",
+            "label": "verdict line",
+            "artifact": true
+          },
+          {
+            "kind": "notContains",
+            "file": "{{workPath}}/pr-review.md",
+            "pattern": "^\\|\\s*\\d+\\s*\\|[^\\n]*(?:no\\s+(?:defect|issue|finding|action\\s+needed)|acceptable\\s+as[- ]is|accept\\s+as[- ]is|worth\\s+noting|future\\s+optimization|pre[- ]existing|intentional\\s+limitation)",
+            "flags": "im",
+            "label": "findings contain only actionable defects",
+            "artifact": true
+          },
+          {
+            "kind": "notContains",
+            "file": "{{workPath}}/pr-review.md",
+            "pattern": "^\\|\\s*\\d+\\s*\\|[^\\n]*(?:needs?\\s+(?:central\\s+)?verification|central\\s+verification|not\\s+audited|contingent|undefined\\s+behavior|risk\\s+(?:is\\s+)?low|\\bmay\\b|\\bmight\\b|\\bcould\\b|potential(?:ly)?|possibly|likely|consider(?:ing)?|(?:style|quoting|backslash)\\s+(?:inconsistency|concern)|standardiz(?:e|ing)|if\\s+.{0,160}\\b(?:fails?|missing|empty|malformed|changes?|changed|removed|renamed)|hardening\\s+suggestion|best\\s+addressed\\s+in\\s+follow[- ]ups)",
+            "flags": "im",
+            "label": "findings use verified definite mechanisms",
+            "artifact": true
+          },
+          {
+            "kind": "notContains",
+            "file": "{{workPath}}/pr-review.md",
+            "pattern": "##\\s+Findings[\\s\\S]*\\|\\s*(?:critical|major)\\s*\\|[\\s\\S]*##\\s+Verdict[\\s\\S]*Verdict:\\s*approve",
+            "flags": "i",
+            "label": "verdict agrees with critical and major findings",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/pr-review.md",
+            "pattern": "\\|\\s*#\\s*\\|\\s*Severity\\s*\\|\\s*Source\\s*\\|\\s*File\\s*\\|\\s*Line\\s*\\|\\s*Finding\\s*\\|\\s*Recommendation\\s*\\|[\\s\\S]*\\|\\s*-+\\s*\\|",
+            "label": "findings table header (body rows are optional when there are no findings)",
+            "artifact": true
+          }
+        ],
+        "onReject": "report",
+        "maxAttempts": 4
+      },
+      "next": "done"
+    },
+    {
+      "id": "done",
+      "name": "Deliver the verdict",
+      "description": "The complete-coverage report passed its gates. Summarize the verdict and point the user to the local evidence files.",
+      "prompt": "Read the artifacts `{{workPath}}/pr-review.md` and `{{workPath}}/pr-review-coverage.json` with `read_artifact`, then write one final task note with `write_task_note`: `PR #{{number}} — Verdict: <approve|request-changes> — N findings (a critical, b major, c minor, d nit) — coverage X/X` plus a one-paragraph summary. Tell the user the full local review is at `{{workPath}}/pr-review.md` in the project's artifacts drawer, the coverage ledger is beside it at `{{workPath}}/pr-review-coverage.json`, the per-batch observations are under `{{workPath}}/pr-review/`, and nothing was posted to GitHub. Then call `advance_task_step` to complete the task.",
+      "suggestedRole": "reviewer",
+      "toolPolicy": {
+        "allowTools": [
+          "read_artifact",
+          "write_task_note",
+          "advance_task_step"
+        ],
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "disallowToolsets": [
+          "@playwright/mcp"
+        ],
+        "outputMedium": "task-note"
+      },
+      "gate": {
+        "at": "completion",
+        "scripts": [
+          {
+            "name": "checkTaskNoteContains",
+            "scope": "standard",
+            "inputs": {
+              "pattern": "PR\\s*#{{number}}\\s*[—-]\\s*Verdict:"
+            }
+          }
+        ],
+        "onReject": "done",
+        "maxAttempts": 3
+      },
+      "terminal": true
+    }
+  ],
+  "spawn": {
+    "overFile": "{{workPath}}/pr-review/batches.json",
+    "overArtifact": true,
+    "entryStepId": "open-batch",
+    "steps": [
+      {
+        "id": "open-batch",
+        "name": "Open exact patch records for batch {{batchNumber}}",
+        "description": "Read every exact assigned artifact record before review writing is available; the service gate verifies full delivered line-range evidence.",
+        "prompt": "You own ONLY batch {{batchNumber}} of PR #{{number}}. Your assigned patch records are exactly:\n{{records}}\n\nFIRST call `read_artifacts({ paths: {{records}} })`. These are project artifacts, not checkout files. If a record is partial or tool output is truncated, a later gate-repair turn will tell you which consecutive unread line ranges to open with `read_artifact`. Do not search, list, grep, write observations, or read any other batch. After each successful read call, STOP: the runtime ends the provider turn, checks durable full-read evidence, and advances automatically once every exact record is complete. `advance_task_step` is intentionally unavailable; do not narrate, repeat the read, or request lifecycle advancement. Do not claim a read happened until the tool returned it.",
+        "suggestedRole": "reviewer",
+        "retrieval": {
+          "mode": "off"
+        },
+        "toolPolicy": {
+          "allowTools": [
+            "read_artifact",
+            "read_artifacts"
+          ],
+          "disallowBuiltinToolsets": [
+            "ai-apps",
+            "archives",
+            "audio",
+            "browser-automation",
+            "code-execution",
+            "craftbooks",
+            "data-tables",
+            "doc-intel",
+            "documents",
+            "entity-intel",
+            "image-intel",
+            "images",
+            "role-delegation",
+            "role-delegation-escalation",
+            "tasks",
+            "team-management",
+            "videos",
+            "web",
+            "workspace-fs-read",
+            "workspace-fs-write"
+          ],
+          "disallowTools": [
+            "list_artifacts",
+            "grep_artifact",
+            "read_doc_as_markdown",
+            "write_artifact"
+          ],
+          "disallowToolsets": [
+            "@playwright/mcp"
+          ],
+          "outputMedium": "none"
+        },
+        "gate": {
+          "at": "completion",
+          "checks": [
+            {
+              "kind": "corpusReadEvidence",
+              "batchesFile": "{{workPath}}/pr-review/batches.json",
+              "batchNumber": "{{batchNumber}}",
+              "artifact": true
+            }
+          ],
+          "onReject": "open-batch",
+          "maxAttempts": 8
+        },
+        "next": "review-batch"
+      },
+      {
+        "id": "review-batch",
+        "name": "Review batch {{batchNumber}} of PR #{{number}}",
+        "description": "Continue from the verified open-batch read in the same task session, review one small slice of the pull-request corpus, checkpoint its observations, and let the runtime publish a coverage shard.",
+        "prompt": "You are continuing in the SAME task session that just completed open-batch for batch {{batchNumber}} of PR #{{number}} (changed-file ordinals {{start}}–{{end}}). The patch-record tool results from that step are preserved immediately above in this conversation. Other batches belong to other reviewers. Do not edit source or post to GitHub.\n\nExact artifact records that open-batch proved you fully read:\n{{records}}\n\nChanged paths in those records:\n{{paths}}\n\n1. Analyze the patch records already returned in this session. The service has proved full delivered reads, not your conclusions. Re-open only a specific artifact line range if you need to check a detail; do not search, list, or inspect other batches.\n2. Analyze each PATCH record for correctness, security, data loss, error handling, concurrency, compatibility, and test gaps, weighted by focus {{focus}} and intensity {{intensity}}. This child intentionally has no checkout-reader tools: do not look for workspace files or invent repository evidence. When a candidate depends on another file, record its exact dependency as “Needs central verification” and do not claim it is definitely a defect. The final reviewer has checkout tools and will verify such candidates after every shard lands. Avoid numbering non-issues or pre-existing unrelated quirks. If you cannot name a concrete failure mechanism and an actual changed line, record the uncertainty under Checks or as a central-verification limitation; do not turn an unknown external configuration into a numbered defect.\n3. Call `write_artifact` to write ONE whole-file artifact at {{workPath}}/pr-review/observations-{{batchNumber}}.md. Begin with a Markdown heading “Batch {{batchNumber}} — files {{start}}–{{end}}” (#, ##, or ###). Give EACH assigned path its own Markdown heading (## or ###) and say what was checked, with either concrete findings or “Verified OK”/“No patch available” and an honest limitation. Under a Findings heading, number ONLY actionable issues introduced or materially affected by this PR as B{{batchNumber}}-1 onward; cite each as `path:ACTUAL_INTEGER` where ACTUAL_INTEGER is the real new-side hunk line (for example `src/a.ts:42`), and give severity (critical/major/minor/nit), mechanism, and fix. A numbered finding must never say “no defect”, “no issue”, “no action needed”, “acceptable as-is”, “worth noting”, or describe only future hardening; put those under Checks without a B-number. Never output the literal text `new-side-line`, `line`, or another placeholder as the anchor. Put Verified OK checks and non-issues under a separate Checks heading without B-number or severity. Do not promote pre-existing unrelated quirks to PR findings. The write_artifact tool replaces the whole file; rewrite it if a gate names a gap.\n4. After the one successful whole-file `write_artifact` call, STOP. The runtime ends the provider turn, validates the observations artifact and one heading per assigned path, and advances automatically when it passes. `advance_task_step` is intentionally unavailable; do not narrate or repeat the write. After approval, the runtime writes coverage-{{batchNumber}}.json from the published batch; do not create or edit that bookkeeping file yourself.\n\nThese deliverables live in the project's artifacts drawer. The checkout stays untouched.",
+        "suggestedRole": "reviewer",
+        "retrieval": {
+          "mode": "off"
+        },
+        "toolPolicy": {
+          "allowTools": [
+            "read_artifact",
+            "read_artifacts",
+            "write_artifact"
+          ],
+          "disallowBuiltinToolsets": [
+            "ai-apps",
+            "archives",
+            "audio",
+            "browser-automation",
+            "code-execution",
+            "craftbooks",
+            "data-tables",
+            "documents",
+            "entity-intel",
+            "image-intel",
+            "images",
+            "role-delegation",
+            "role-delegation-escalation",
+            "tasks",
+            "team-management",
+            "videos",
+            "web",
+            "workspace-fs-read",
+            "workspace-fs-write"
+          ],
+          "disallowTools": [
+            "list_artifacts",
+            "grep_artifact",
+            "read_doc_as_markdown"
+          ],
+          "disallowToolsets": [
+            "@playwright/mcp"
+          ],
+          "outputMedium": "artifact"
+        },
+        "advanceWhen": {
+          "file": "{{workPath}}/pr-review/observations-{{batchNumber}}.md",
+          "minBytes": 200,
+          "artifact": true
+        },
+        "gate": {
+          "at": "completion",
+          "checks": [
+            {
+              "kind": "minBytes",
+              "file": "{{workPath}}/pr-review/observations-{{batchNumber}}.md",
+              "bytes": 200,
+              "artifact": true
+            },
+            {
+              "kind": "corpusBatchObservations",
+              "batchesFile": "{{workPath}}/pr-review/batches.json",
+              "batchNumber": "{{batchNumber}}",
+              "file": "{{workPath}}/pr-review/observations-{{batchNumber}}.md",
+              "artifact": true
+            }
+          ],
+          "onReject": "review-batch",
+          "maxAttempts": 4
+        },
+        "onExit": [
+          {
+            "name": "publishCorpusCoverageShard",
+            "scope": "standard",
+            "inputs": {
+              "batchesFile": "{{workPath}}/pr-review/batches.json",
+              "batchNumber": "{{batchNumber}}",
+              "outFile": "{{workPath}}/pr-review/coverage-{{batchNumber}}.json"
+            }
+          }
+        ],
+        "terminal": true
+      }
+    ]
+  },
+  "version": "1.9.16",
+  "releasedAt": "2026-09-16T00:00:00Z",
+  "minGezelVersion": "1.26258"
+}
