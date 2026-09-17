@@ -371,6 +371,7 @@ async function buildMlxBlock(cfg, pinCurrent = false) {
     chatTemplateFrom,
     residentBytes,
     disabledReason,
+    drafter,
   } = cfg;
   const sourceLabel = subdir ? `${huggingfaceRepo}/${subdir}` : huggingfaceRepo;
   console.log(`[hf] fetching tree for MLX source ${sourceLabel}…`);
@@ -391,6 +392,41 @@ async function buildMlxBlock(cfg, pinCurrent = false) {
     }
   }
   const approxSizeBytes = installFiles.reduce((s, f) => s + f.sizeBytes, 0);
+
+  let resolvedDrafter;
+  if (drafter) {
+    const draftRepo = drafter.huggingfaceRepo;
+    console.log(`[hf] fetching tree for MLX ${drafter.kind ?? 'mtp'} drafter ${draftRepo}…`);
+    const draftRevision = pinCurrent ? await fetchCommit(draftRepo) : undefined;
+    const draftTree = await fetchTree(draftRepo, draftRevision);
+    const draftFiles = selectMlxFiles(draftTree);
+    if (draftFiles.length === 0) {
+      throw new Error(`no MLX drafter files found in ${draftRepo}`);
+    }
+    const draftNonLfs = draftFiles.filter((f) => !f.lfsBacked);
+    if (draftNonLfs.length > 0) {
+      console.log(`[hf]   hashing ${draftNonLfs.length} non-LFS drafter file(s) for SHA-256…`);
+      for (const f of draftNonLfs) {
+        const { sha256, sizeBytes } = await fetchAndHash(draftRepo, f.repoPath, draftRevision);
+        f.sha256 = sha256;
+        f.sizeBytes = sizeBytes;
+        f.lfsBacked = true;
+      }
+    }
+    const draftApproxSizeBytes = draftFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
+    resolvedDrafter = {
+      huggingfaceRepo: draftRepo,
+      ...(draftRevision ? { revision: draftRevision } : {}),
+      kind: drafter.kind ?? 'mtp',
+      files: draftFiles.map((f) => ({
+        name: f.path,
+        sha256: f.sha256,
+        sizeBytes: f.sizeBytes,
+      })),
+      approxSizeBytes: draftApproxSizeBytes,
+      ...(drafter.residentBytes ? { residentBytes: drafter.residentBytes } : {}),
+    };
+  }
 
   // `chatTemplateFrom` names the repo that owns the CORRECT template; we
   // inline its bytes so the published manifest is self-contained and the
@@ -426,6 +462,7 @@ async function buildMlxBlock(cfg, pinCurrent = false) {
     ...(chatTemplate ? { chatTemplate } : {}),
     ...(resolvedOverride ? { chatTemplateOverride: resolvedOverride } : {}),
     ...(disabledReason ? { disabledReason } : {}),
+    ...(resolvedDrafter ? { drafter: resolvedDrafter } : {}),
   };
 }
 
