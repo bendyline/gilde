@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "title": "Nightly sweep drafts sealed proposals without touching the tree",
+  "objective": "The host triages two seeded findings into clusters and fans out drafting shards; each shard's edits land in a change proposal that seals on completion, the four-heading notes contract holds, and the workspace files stay byte-identical.",
+  "tags": [
+    "code",
+    "night-shift",
+    "proposals",
+    "fanout",
+    "tactical-fleet"
+  ],
+  "prompt": "Run the Nightly Fix Sweep for the two open findings described in the task. LEAD-1: src/greet.js builds the greeting with a stray double space when no title is given. LEAD-2: src/farewell.js says 'Godbye' instead of 'Goodbye'. Draft the fixes as proposals.",
+  "setup": {
+    "projectName": "Sweep Fixture",
+    "about": "A tiny greeting library with two known low-risk defects, used to exercise the nightly proposal sweep.",
+    "managedWorkspaceWritePolicy": "deny",
+    "files": [
+      {
+        "path": "src/greet.js",
+        "content": "export function greet(name, title) {\n  const prefix = title ? `${title} ` : ' ';\n  return `Hello, ${prefix}${name}!`;\n}\n"
+      },
+      {
+        "path": "src/farewell.js",
+        "content": "export function farewell(name) {\n  return `Godbye, ${name}.`;\n}\n"
+      },
+      {
+        "path": "source/findings.md",
+        "content": "# Open findings\n\n- LEAD-1 (minor, src/greet.js): greeting has a leading double space when no title is passed - `greet('Ada')` returns `Hello,  Ada!`. The no-title prefix should be empty.\n- LEAD-2 (minor, src/farewell.js): the farewell text misspells Goodbye as 'Godbye'.\n"
+      }
+    ],
+    "craftbookParams": {
+      "leads": "LEAD-1,LEAD-2"
+    }
+  },
+  "success": {
+    "summary": "Clusters were published, shards drafted, at least one proposal sealed with the four-heading notes, and the workspace was never modified.",
+    "deliverables": [
+      {
+        "path": "{{task.dir}}/clusters.json",
+        "kind": "json",
+        "artifact": true,
+        "minBytes": 2,
+        "checks": [
+          {
+            "kind": "recordSchema",
+            "file": "{{task.dir}}/clusters.json",
+            "artifact": true,
+            "minRows": 1,
+            "fields": [
+              {
+                "name": "slug",
+                "rule": "nonempty"
+              },
+              {
+                "name": "issueRefs",
+                "rule": "nonempty"
+              },
+              {
+                "name": "focus",
+                "rule": "nonempty"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "taskNotes": {
+      "minBytes": 120,
+      "requireCraftbookTask": true,
+      "checks": [
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "##\\s*Triage",
+          "label": "triage note present"
+        }
+      ]
+    },
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    },
+    "history": [
+      {
+        "kind": "project.diffpack.sealed",
+        "minEntries": 1
+      }
+    ],
+    "unchangedFixtures": [
+      "src/greet.js",
+      "src/farewell.js",
+      "source/findings.md"
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "{{task.dir}}/clusters.json",
+      "kind": "json"
+    },
+    "axes": [
+      {
+        "name": "Triage judgement",
+        "description": "Leads were judged against the current code and clustered sensibly; anything left out has an honest reason."
+      },
+      {
+        "name": "Proposal focus",
+        "description": "Each drafted proposal is the smallest correct change for its cluster, explained under Problem, Change, Risk, and How to verify."
+      },
+      {
+        "name": "Honesty about mode",
+        "description": "Notes never claim anything was fixed or applied; risk sections admit what could not be verified without running the code."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "proposal discipline",
+    "cluster judgement",
+    "untouched workspace"
+  ]
+}

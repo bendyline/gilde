@@ -92,9 +92,14 @@ const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // weekly-report.md, report.md.bak) while allowing sentence punctuation.
 // Keys ending in '/' are directory-prefix rules — their whole point is to
 // match with a filename continuing after them, so they skip the after-guard.
+// They still require a FILE to follow (a segment with an extension): prose
+// like "the meeting notes/transcript" or "survey the source notes/articles"
+// is English, not a path, and rewriting it produced prompts that pointed at
+// folders no run could ever contain (ebook-compile, meeting-notes-to-actions,
+// weekly-review — repaired by hand in their next versions).
 const pathRe = (p) =>
   p.endsWith('/')
-    ? new RegExp(`(?<![\\w/.-])${escapeRe(p)}`, 'g')
+    ? new RegExp(`(?<![\\w/.-])${escapeRe(p)}(?=[\\w.{}-]+(?:/[\\w.{}-]+)*\\.[A-Za-z0-9]+)`, 'g')
     : new RegExp(`(?<![\\w/.-])${escapeRe(p)}(?!\\w|-|\\.\\w)`, 'g');
 
 function firstSegment(p) {

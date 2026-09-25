@@ -1,0 +1,290 @@
+{
+  "schemaVersion": 1,
+  "title": "Apply review findings with a reconciled ledger",
+  "objective": "The craftbook drives a real findings pass: three seeded review findings (unvalidated numeric input, a swallowed error, a misleading error message) read from an artifacts-drawer findings file, triaged against the current code, fixed at their actual sites, and verified per finding - with behavior probes proving each one genuinely closed and the neighborhood suite still green.",
+  "tags": [
+    "code",
+    "review-findings",
+    "bug-fix",
+    "tactical-fleet"
+  ],
+  "prompt": "Use the Apply Review Findings craftbook: last week's code review left three findings in the artifacts drawer at reviews/findings.json. Triage them against the current code, fix what is real at the real sites, and account for every finding.",
+  "setup": {
+    "projectName": "Order Intake",
+    "about": "A tiny order-intake library (quantity parsing, config loading, discounts). Tests run with `npm run test` (node --test).",
+    "files": [
+      {
+        "path": "package.json",
+        "content": "{\n  \"name\": \"intake\",\n  \"private\": true,\n  \"version\": \"1.0.0\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test\"\n  }\n}\n",
+        "modelInput": false
+      },
+      {
+        "path": "src/quantity.js",
+        "content": "export function parseQuantity(raw) {\n  return parseInt(raw, 10);\n}\n\nexport function clampQuantity(qty, max) {\n  return Math.min(qty, max);\n}\n"
+      },
+      {
+        "path": "src/config.js",
+        "content": "import { readFileSync } from 'node:fs';\n\nexport function loadConfig(path) {\n  try {\n    return JSON.parse(readFileSync(path, 'utf8'));\n  } catch (err) {\n    return {};\n  }\n}\n"
+      },
+      {
+        "path": "src/discount.js",
+        "content": "export function applyDiscount(total, percent) {\n  if (percent < 0 || percent > 100) {\n    throw new Error('quantity out of range');\n  }\n  return Math.round(total * (1 - percent / 100) * 100) / 100;\n}\n"
+      },
+      {
+        "path": "tests/intake.test.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { test } from 'node:test';\nimport { parseQuantity } from '../src/quantity.js';\nimport { applyDiscount } from '../src/discount.js';\nimport { loadConfig } from '../src/config.js';\n\ntest('parseQuantity reads plain integers', () => {\n  assert.equal(parseQuantity('3'), 3);\n  assert.equal(parseQuantity('12'), 12);\n});\n\ntest('applyDiscount takes a percentage off', () => {\n  assert.equal(applyDiscount(100, 10), 90);\n  assert.equal(applyDiscount(80, 0), 80);\n});\n\ntest('loadConfig falls back to defaults for a missing file', () => {\n  assert.deepEqual(loadConfig('no-such-config.json'), {});\n});\n",
+        "modelInput": false
+      },
+      {
+        "path": "reviews/findings.json",
+        "content": "[\n  {\n    \"id\": \"RV-1\",\n    \"file\": \"src/quantity.js\",\n    \"severity\": \"major\",\n    \"title\": \"parseQuantity accepts invalid numeric input\",\n    \"detail\": \"parseInt returns NaN for non-numeric input, and negative or zero values pass through unchecked, so downstream order math silently corrupts. parseQuantity must return only positive integers and throw a RangeError naming the rejected value for anything else.\",\n    \"verify\": \"parseQuantity('abc'), parseQuantity('-2'), and parseQuantity('0') must throw; parseQuantity('3') must still return 3.\"\n  },\n  {\n    \"id\": \"RV-2\",\n    \"file\": \"src/config.js\",\n    \"severity\": \"major\",\n    \"title\": \"loadConfig swallows JSON syntax errors\",\n    \"detail\": \"The catch returns {} for every failure, so a corrupt config file silently behaves like an empty one and a bad deploy ships. Only a missing file may fall back to {}; a parse failure must propagate to the caller.\",\n    \"verify\": \"loadConfig on a file containing invalid JSON must throw; loadConfig on a missing path must still return {}.\"\n  },\n  {\n    \"id\": \"RV-3\",\n    \"file\": \"src/discount.js\",\n    \"severity\": \"minor\",\n    \"title\": \"applyDiscount raises a misleading error message\",\n    \"detail\": \"An out-of-range percent raises 'quantity out of range', so support keeps chasing phantom quantity bugs. The message must describe the discount percent that was rejected.\",\n    \"verify\": \"applyDiscount(100, 150) must throw with a message that mentions the discount or percent, not quantity.\"\n  }\n]\n",
+        "surface": "artifact"
+      },
+      {
+        "path": "tests/verify-findings.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { execFileSync } from 'node:child_process';\nimport { rmSync, writeFileSync } from 'node:fs';\nimport { join } from 'node:path';\nimport { parseQuantity } from '../src/quantity.js';\nimport { loadConfig } from '../src/config.js';\nimport { applyDiscount } from '../src/discount.js';\n\nconst root = process.cwd();\n\n// RV-1: parseQuantity accepts only positive integers, and still parses them.\nassert.equal(parseQuantity('3'), 3, \"parseQuantity('3') must still return 3\");\nassert.equal(parseQuantity('12'), 12, \"parseQuantity('12') must still return 12\");\nassert.throws(() => parseQuantity('abc'), \"parseQuantity('abc') must throw\");\nassert.throws(() => parseQuantity('-2'), \"parseQuantity('-2') must throw\");\nassert.throws(() => parseQuantity('0'), \"parseQuantity('0') must throw\");\nconsole.log('FINDINGS_ORACLE rv1 closed');\n\n// RV-2: a corrupt config raises; a missing config still falls back to {}.\nconst corruptPath = join(root, '.oracle-corrupt-config.json');\nwriteFileSync(corruptPath, '{ not json');\nassert.throws(() => loadConfig(corruptPath), 'a corrupt config must raise, not vanish into defaults');\nrmSync(corruptPath, { force: true });\nassert.deepEqual(loadConfig(join(root, 'no-such-config.json')), {}, 'a missing config must still fall back to {}');\nconsole.log('FINDINGS_ORACLE rv2 closed');\n\n// RV-3: the out-of-range message describes the discount, not the quantity.\nlet threw = false;\nlet message = '';\ntry {\n  applyDiscount(100, 150);\n} catch (err) {\n  threw = true;\n  message = String((err && err.message) || err);\n}\nassert.ok(threw, 'applyDiscount(100, 150) must throw');\nassert.match(message, /discount|percent/i, 'the error must describe the discount percent');\nassert.ok(!/quantity/i.test(message), 'the error must not blame quantity');\nassert.equal(applyDiscount(100, 10), 90, 'valid discounts must still work');\nassert.equal(applyDiscount(80, 0), 80, 'a zero discount must still be allowed');\nconsole.log('FINDINGS_ORACLE rv3 closed');\n\n// The neighborhood suite stays green after the findings pass.\nexecFileSync(process.execPath, ['--test'], { cwd: root, stdio: 'pipe', timeout: 30000 });\nconsole.log('FINDINGS_ORACLE suite green');\nconsole.log('FINDINGS_ORACLE done');\n",
+        "surface": "harness"
+      }
+    ],
+    "craftbookParams": {
+      "findingsPath": "reviews/findings.json"
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "All three seeded findings are genuinely closed at their real sites (validated quantity input, propagating config parse errors, an honest discount message), the neighborhood tests stay green, and the finding ids reconcile across triage, fix notes, and verification.",
+    "deliverables": [
+      {
+        "path": "{{task.dir}}/triage.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 600,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/triage.md",
+            "pattern": "^##\\s+Findings read[\\s\\S]*^##\\s+Will fix[\\s\\S]*^##\\s+Deferred[\\s\\S]*^##\\s+Clusters",
+            "flags": "im",
+            "label": "triage sections in order"
+          },
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/triage.md",
+            "pattern": "\\bRV-1\\b",
+            "label": "finding RV-1 triaged"
+          },
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/triage.md",
+            "pattern": "\\bRV-2\\b",
+            "label": "finding RV-2 triaged"
+          },
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/triage.md",
+            "pattern": "\\bRV-3\\b",
+            "label": "finding RV-3 triaged"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{task.dir}}/triage.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/fix-notes.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 700,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/fix-notes.md",
+            "pattern": "^##\\s+Problem[\\s\\S]*^##\\s+Change[\\s\\S]*^##\\s+Files touched[\\s\\S]*^##\\s+Per-finding disposition[\\s\\S]*^##\\s+Risk[\\s\\S]*^##\\s+How to verify",
+            "flags": "im",
+            "label": "fix-notes sections in order"
+          },
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/fix-notes.md",
+            "pattern": "\\bRV-1\\b",
+            "label": "disposition for RV-1"
+          },
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/fix-notes.md",
+            "pattern": "\\bRV-2\\b",
+            "label": "disposition for RV-2"
+          },
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/fix-notes.md",
+            "pattern": "\\bRV-3\\b",
+            "label": "disposition for RV-3"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{task.dir}}/fix-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/validation.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 450,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/validation.md",
+            "pattern": "^##\\s+Per-finding verification[\\s\\S]*^##\\s+Result",
+            "flags": "im",
+            "label": "validation sections in order"
+          },
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/validation.md",
+            "pattern": "\\bRV-1\\b",
+            "label": "verification for RV-1"
+          },
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/validation.md",
+            "pattern": "\\bRV-2\\b",
+            "label": "verification for RV-2"
+          },
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/validation.md",
+            "pattern": "\\bRV-3\\b",
+            "label": "verification for RV-3"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{task.dir}}/validation.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/review.md",
+        "kind": "markdown-report",
+        "artifact": true,
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit reviewer verdict"
+          }
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "kind": "notContains",
+        "file": "src/discount.js",
+        "pattern": "quantity out of range",
+        "label": "the misleading discount message is gone (RV-3)"
+      },
+      {
+        "kind": "notContains",
+        "file": "src/config.js",
+        "pattern": "catch\\s*(?:\\([^)]*\\))?\\s*\\{\\s*return\\s*\\{\\s*\\}",
+        "label": "the blanket error swallow is gone (RV-2)"
+      },
+      {
+        "kind": "sourceParses",
+        "file": "src/quantity.js"
+      },
+      {
+        "kind": "sourceParses",
+        "file": "src/config.js"
+      },
+      {
+        "kind": "sourceParses",
+        "file": "src/discount.js"
+      },
+      {
+        "kind": "nodeRuns",
+        "file": "tests/intake.test.mjs",
+        "timeoutMs": 30000
+      },
+      {
+        "kind": "nodeScriptPasses",
+        "script": "tests/verify-findings.mjs",
+        "timeoutMs": 60000,
+        "requiredOutput": [
+          {
+            "pattern": "FINDINGS_ORACLE rv1 closed",
+            "label": "invalid quantities are rejected (RV-1)"
+          },
+          {
+            "pattern": "FINDINGS_ORACLE rv2 closed",
+            "label": "corrupt configs raise, missing configs default (RV-2)"
+          },
+          {
+            "pattern": "FINDINGS_ORACLE rv3 closed",
+            "label": "the discount error names the discount (RV-3)"
+          },
+          {
+            "pattern": "FINDINGS_ORACLE suite green",
+            "label": "the neighborhood suite stays green"
+          }
+        ]
+      }
+    ],
+    "taskNotes": {
+      "minBytes": 120,
+      "checks": [
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "\\bDONE\\b[\\s\\S]*validation\\.md",
+          "flags": "i",
+          "label": "DONE note names the validation deliverable"
+        }
+      ]
+    },
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    },
+    "unchangedFixtures": [
+      "package.json",
+      "tests/intake.test.mjs"
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "{{task.dir}}/fix-notes.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "Triage honesty",
+        "description": "Every finding is judged against the code as it stands, with a defensible category and no invented or dropped findings."
+      },
+      {
+        "name": "Real closure",
+        "description": "Each fix lands at the actual cited site and genuinely resolves what the finding describes - validation added, errors propagated, messages made truthful - with the smallest correct change."
+      },
+      {
+        "name": "Ledger discipline",
+        "description": "The same finding ids flow through triage, fix notes, and verification with consistent outcomes, and verification honestly separates what was run from what was only read."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "per-finding accountability",
+    "smallest correct change",
+    "honest verification"
+  ]
+}
