@@ -1,0 +1,240 @@
+{
+  "schemaVersion": 1,
+  "title": "Deflake an order-dependent test with receipts",
+  "objective": "The craftbook drives a real deflake of a seeded order-dependence flake: statistical reproduction with recorded failing runs, a mechanism-level diagnosis, cleanup at the level every test shares (never skipping or weakening the test), and a stability proof - verified mechanically, including a five-run consecutive-green oracle, a late-probe order-robustness check, and a mutant restoring the original leaking order.",
+  "tags": [
+    "code",
+    "flaky-test",
+    "tests",
+    "tactical-fleet"
+  ],
+  "prompt": "Use the Fix a Flaky Test craftbook: our suite is red in CI but the failing test passes when people run it by itself, so it keeps getting waved through. The report is in source/flake-report.md. Find the nondeterminism, remove it for real, and prove the suite stays green.",
+  "setup": {
+    "projectName": "Flagship Flags",
+    "about": "A tiny feature-flags module and its test suite. Tests run with `npm run test` (node --test).",
+    "files": [
+      {
+        "path": "package.json",
+        "content": "{\n  \"name\": \"flagship\",\n  \"private\": true,\n  \"version\": \"1.0.0\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test\"\n  }\n}\n",
+        "modelInput": false
+      },
+      {
+        "path": "src/flags.js",
+        "content": "const flags = new Map();\n\nexport function enable(name) {\n  flags.set(name, true);\n}\n\nexport function disable(name) {\n  flags.delete(name);\n}\n\nexport function isEnabled(name) {\n  return flags.get(name) === true;\n}\n\nexport function enabledCount() {\n  return flags.size;\n}\n\nexport function resetFlags() {\n  flags.clear();\n}\n"
+      },
+      {
+        "path": "tests/flags.test.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { test } from 'node:test';\nimport { enable, disable, isEnabled, enabledCount } from '../src/flags.js';\n\ntest('enable turns a flag on', () => {\n  enable('beta-banner');\n  assert.equal(isEnabled('beta-banner'), true);\n});\n\ntest('disable turns a flag off again', () => {\n  enable('holiday-theme');\n  disable('holiday-theme');\n  assert.equal(isEnabled('holiday-theme'), false);\n});\n\ntest('unknown flags read as disabled', () => {\n  assert.equal(isEnabled('dark-mode'), false);\n});\n\ntest('a fresh session starts with no flags enabled', () => {\n  assert.equal(enabledCount(), 0);\n});\n"
+      },
+      {
+        "path": "source/flake-report.md",
+        "content": "# Flake report\n\nThe suite has been red in CI all week, and every developer who ran the failing test by itself saw it pass - so it kept getting waved through.\n\n    npm run test\n    not ok 4 - a fresh session starts with no flags enabled\n      AssertionError: 1 !== 0\n\nRunning the full suite fails on that test consistently; running just that one test with `--test-name-pattern \"fresh session\"` is green every time. Nobody has touched `src/flags.js` in weeks.\n\nConstraints:\n\n- The pristine-session test guards a real invariant (feature sessions must start clean). Do not delete or weaken it.\n- The app depends on `src/flags.js` exactly as it is - fix the tests' hygiene, not the module's API.\n",
+        "modelInput": true
+      },
+      {
+        "path": "tests/verify-deflake.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { execFileSync } from 'node:child_process';\nimport { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';\nimport { join } from 'node:path';\nimport { enable, isEnabled, resetFlags, enabledCount } from '../src/flags.js';\n\nconst root = process.cwd();\nconst ORACLE_FILE = 'verify-deflake.mjs';\n\n// 1) The flags module still means what it meant.\nresetFlags();\nenable('oracle-probe');\nassert.equal(isEnabled('oracle-probe'), true, 'enable must still work');\nassert.equal(enabledCount(), 1, 'enabledCount must still count');\nresetFlags();\nassert.equal(enabledCount(), 0, 'resetFlags must still clear');\nconsole.log('DEFLAKE_ORACLE flags semantics ok');\n\nfunction runSuite(cwd) {\n  try {\n    execFileSync(process.execPath, ['--test'], { cwd, stdio: 'pipe', timeout: 30000 });\n    return 0;\n  } catch (err) {\n    return typeof err.status === 'number' ? err.status : 1;\n  }\n}\n\nfunction copyTree(dest) {\n  rmSync(dest, { recursive: true, force: true });\n  mkdirSync(dest, { recursive: true });\n  cpSync(join(root, 'src'), join(dest, 'src'), { recursive: true });\n  cpSync(join(root, 'tests'), join(dest, 'tests'), { recursive: true });\n  rmSync(join(dest, 'tests', ORACLE_FILE), { force: true });\n  cpSync(join(root, 'package.json'), join(dest, 'package.json'));\n  return dest;\n}\n\n// 2) Five consecutive green runs of the real suite.\nfor (let run = 1; run <= 5; run += 1) {\n  assert.equal(runSuite(root), 0, `full-suite run ${run} of 5 must be green`);\n}\nconsole.log('DEFLAKE_ORACLE stable 5x');\n\n// 3) The pristine-session assertion survives, unweakened and unskipped.\nconst testFiles = readdirSync(join(root, 'tests')).filter(\n  (name) => name !== ORACLE_FILE && /\\.(mjs|cjs|js)$/.test(name),\n);\nconst combined = testFiles\n  .map((name) => readFileSync(join(root, 'tests', name), 'utf8'))\n  .join('\\n');\nassert.match(\n  combined,\n  /enabledCount\\s*\\(\\s*\\)\\s*(?:,\\s*0|===\\s*0)/,\n  'the pristine-session assertion (enabledCount() must be 0) has to survive',\n);\nassert.ok(\n  !/\\.skip\\s*\\(|\\.todo\\s*\\(|\\.only\\s*\\(|\\{\\s*skip\\s*:|\\{\\s*todo\\s*:/.test(combined),\n  'no test may be skipped, stubbed as todo, or narrowed with only',\n);\nconsole.log('DEFLAKE_ORACLE assertion intact');\n\n// 4) Order robustness: tests appended at the END of the suite must inherit\n// the cleanup. The first probe enables a flag and never cleans up; the\n// second expects a pristine session anyway. Only hygiene that covers every\n// test (beforeEach/afterEach-style) passes both - a one-off reset inside\n// the seeded failing test, or a reorder, fails here. Aliased imports keep\n// the probe valid whatever the model did to the file's own imports.\nconst hostFile = testFiles.find((name) =>\n  /enabledCount/.test(readFileSync(join(root, 'tests', name), 'utf8')),\n);\nassert.ok(hostFile, 'no test file references enabledCount');\nconst probeRoot = copyTree(join(root, '.oracle-probe'));\nconst probeTests =\n  readFileSync(join(probeRoot, 'tests', hostFile), 'utf8') +\n  \"\\n\\nimport { test as zzTest } from 'node:test';\\nimport zzAssert from 'node:assert/strict';\\nimport { enable as zzEnable, isEnabled as zzIsEnabled, enabledCount as zzEnabledCount } from '../src/flags.js';\\n\\nzzTest('zz probe enables a flag of its own', () => {\\n  zzEnable('zz-probe-flag');\\n  zzAssert.equal(zzIsEnabled('zz-probe-flag'), true);\\n});\\n\\nzzTest('zz probe still gets a pristine session', () => {\\n  zzAssert.equal(zzEnabledCount(), 0);\\n});\\n\";\nwriteFileSync(join(probeRoot, 'tests', hostFile), probeTests);\nassert.equal(\n  runSuite(probeRoot),\n  0,\n  'a test appended after the suite must still see a pristine session - cleanup has to cover every test, not only the seeded order',\n);\nconsole.log('DEFLAKE_ORACLE order robust');\n\n// 5) Mutant: restore the ORIGINAL leaking test file - the suite must fail\n// again, proving the seeded defect is still detectable and the green suite\n// comes from removed nondeterminism, not from a neutered module or dodge.\nconst ORIGINAL_TEST_FILE = `import assert from 'node:assert/strict';\nimport { test } from 'node:test';\nimport { enable, disable, isEnabled, enabledCount } from '../src/flags.js';\n\ntest('enable turns a flag on', () => {\n  enable('beta-banner');\n  assert.equal(isEnabled('beta-banner'), true);\n});\n\ntest('disable turns a flag off again', () => {\n  enable('holiday-theme');\n  disable('holiday-theme');\n  assert.equal(isEnabled('holiday-theme'), false);\n});\n\ntest('unknown flags read as disabled', () => {\n  assert.equal(isEnabled('dark-mode'), false);\n});\n\ntest('a fresh session starts with no flags enabled', () => {\n  assert.equal(enabledCount(), 0);\n});\n`;\nconst mutantRoot = copyTree(join(root, '.oracle-mutant'));\nwriteFileSync(join(mutantRoot, 'tests', 'flags.test.mjs'), ORIGINAL_TEST_FILE);\nassert.notEqual(\n  runSuite(mutantRoot),\n  0,\n  'restoring the original leaking order must make the suite fail again - the seeded defect stopped being detectable',\n);\nconsole.log('DEFLAKE_ORACLE mutant caught');\nconsole.log('DEFLAKE_ORACLE done');\n",
+        "surface": "harness"
+      }
+    ],
+    "craftbookParams": {
+      "workPath": "tasks/eval",
+      "scope": "The test 'a fresh session starts with no flags enabled' in tests/flags.test.mjs fails whenever the whole suite runs and passes by itself; see source/flake-report.md. Make the suite deterministic without weakening that test."
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "The order-dependence mechanism is removed with hygiene that covers every test, the pristine-session assertion survives unweakened, five consecutive suite runs are green, a late-appended probe still sees a pristine session, and restoring the original test file makes the suite fail again.",
+    "deliverables": [
+      {
+        "path": "tasks/eval/flake-evidence.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/flake-evidence.md",
+            "pattern": "^##\\s+Symptom[\\s\\S]*^##\\s+Runs observed[\\s\\S]*^##\\s+Failure signature[\\s\\S]*^##\\s+Suspected class",
+            "flags": "im",
+            "label": "flake-evidence sections in order"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "tasks/eval/flake-evidence.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/diagnosis.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 600,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/diagnosis.md",
+            "pattern": "^##\\s+Mechanism[\\s\\S]*^##\\s+Experiment[\\s\\S]*^##\\s+Defect site[\\s\\S]*^##\\s+Siblings checked",
+            "flags": "im",
+            "label": "diagnosis sections in order"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/diagnosis.md",
+            "pattern": "tests/flags\\.test\\.mjs|src/flags\\.js",
+            "label": "names the real site of the shared-state hazard"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "tasks/eval/diagnosis.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/fix-notes.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 700,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/fix-notes.md",
+            "pattern": "^##\\s+Problem[\\s\\S]*^##\\s+Change[\\s\\S]*^##\\s+Files touched[\\s\\S]*^##\\s+Regression coverage[\\s\\S]*^##\\s+Risk[\\s\\S]*^##\\s+How to verify",
+            "flags": "im",
+            "label": "fix-notes sections in order"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "tasks/eval/fix-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/validation.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 300,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/validation.md",
+            "pattern": "^##\\s+Runs[\\s\\S]*^##\\s+Result",
+            "flags": "im",
+            "label": "validation sections in order"
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/review.md",
+        "kind": "markdown-report",
+        "artifact": true,
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit reviewer verdict"
+          }
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "kind": "notContains",
+        "file": "tests/flags.test.mjs",
+        "pattern": "\\.skip\\s*\\(|\\.todo\\s*\\(|\\.only\\s*\\(|\\{\\s*skip\\s*:|\\{\\s*todo\\s*:",
+        "label": "the flaky test is not skipped, stubbed, or narrowed"
+      },
+      {
+        "kind": "sourceParses",
+        "file": "tests/flags.test.mjs"
+      },
+      {
+        "kind": "nodeRuns",
+        "file": "tests/flags.test.mjs",
+        "timeoutMs": 30000
+      },
+      {
+        "kind": "nodeScriptPasses",
+        "script": "tests/verify-deflake.mjs",
+        "timeoutMs": 60000,
+        "requiredOutput": [
+          {
+            "pattern": "DEFLAKE_ORACLE flags semantics ok",
+            "label": "the flags module still behaves"
+          },
+          {
+            "pattern": "DEFLAKE_ORACLE stable 5x",
+            "label": "five consecutive green suite runs"
+          },
+          {
+            "pattern": "DEFLAKE_ORACLE assertion intact",
+            "label": "the pristine-session assertion survives unweakened"
+          },
+          {
+            "pattern": "DEFLAKE_ORACLE order robust",
+            "label": "a late-appended test still sees a pristine session"
+          },
+          {
+            "pattern": "DEFLAKE_ORACLE mutant caught",
+            "label": "restoring the original order makes the suite fail again"
+          }
+        ]
+      }
+    ],
+    "taskNotes": {
+      "minBytes": 120,
+      "checks": [
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "\\bDONE\\b[\\s\\S]*(npm\\s+run\\s+test|node\\s+--test|consecutive)",
+          "flags": "i",
+          "label": "DONE note cites the stability proof"
+        }
+      ]
+    },
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    },
+    "unchangedFixtures": [
+      "package.json",
+      "src/flags.js",
+      "source/flake-report.md"
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "tasks/eval/fix-notes.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "Mechanism-level diagnosis",
+        "description": "The nondeterminism is named as a concrete mechanism (shared module state leaking across tests) and pinned with a real experiment, not guessed from the symptom."
+      },
+      {
+        "name": "No masking",
+        "description": "The flake is removed with cleanup or isolation that covers every test; the flaky test keeps its exact assertion and gains no skip, retry, or widened timeout."
+      },
+      {
+        "name": "Receipt-backed stability",
+        "description": "Stability is proven with consecutive green runs recorded as real receipts, and anything unverified is stated plainly instead of claimed."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "statistical reproduction",
+    "mechanism removal over masking",
+    "consecutive-green receipts"
+  ]
+}

@@ -8,7 +8,7 @@
         "name": "Reproduce and bound the failure",
         "description": "Establish a stable failing case, expected behavior, environment, and blast radius.",
         "suggestedRole": "debugging engineer",
-        "prompt": "Read the request, relevant code, existing tests, logs, and configuration. Reproduce the problem with the smallest safe case you can run. Record exact inputs, expected and actual results, environment details, frequency, and whether the failure is deterministic. If it cannot be reproduced, document the attempts and the missing observation needed; do not invent a cause or edit production code.",
+        "prompt": "Read the request, relevant code, existing tests, logs, and configuration. Reproduce the problem with the smallest safe case you can run. Record exact inputs, expected and actual results, environment details, frequency, and whether the failure is deterministic. If it cannot be reproduced, document the attempts and the missing observation needed; do not invent a cause or edit production code.\n\nUse this exact H2 skeleton in the output. Do not rename or remove a heading while revising another section:\n\n## Symptom\n## Minimal reproduction\n## Expected\n## Actual\n## Evidence",
         "output": {
           "path": "investigations/reproduction.md",
           "minBytes": 700,
@@ -41,7 +41,7 @@
         "name": "Prove the root cause",
         "description": "Test competing hypotheses and identify the causal mechanism before modifying code.",
         "suggestedRole": "root-cause analyst",
-        "prompt": "Use `investigations/reproduction.md` to form at least two plausible hypotheses. Trace the relevant execution and data paths with workspace search and file-reading tools. For each hypothesis, run a discriminating experiment and record its predicted versus observed outcome. Name the first bad state or decision, explain how it produces the symptom, and check for sibling cases. Do not change source code in this phase.",
+        "prompt": "Use `investigations/reproduction.md` to form at least two plausible hypotheses. Trace the relevant execution and data paths with workspace search and file-reading tools. For each hypothesis, run a discriminating experiment and record its predicted versus observed outcome. Name the first bad state or decision, explain how it produces the symptom, and check for sibling cases. Do not change source code in this phase.\n\nUse this exact H2 skeleton in the output. Do not rename or remove a heading while revising another section:\n\n## Hypotheses\n## Experiments\n## Root cause\n## Causal chain\n## Blast radius",
         "output": {
           "path": "investigations/root-cause-analysis.md",
           "minBytes": 1000,
@@ -74,7 +74,7 @@
         "name": "Implement the smallest fix and verify it",
         "description": "Correct the proven mechanism and demonstrate both regression coverage and non-regression.",
         "suggestedRole": "software engineer",
-        "prompt": "Read both investigation files. Implement the smallest maintainable change that breaks the documented causal chain. Add or strengthen a regression test that fails on the old behavior and passes with the fix. Run the focused test, relevant neighboring tests, and any proportionate static checks. Record exact changed paths and exact verification commands with exit results. If the environment prevents a check, label it unverified and explain what is needed to run it.",
+        "prompt": "Start by reading these exact workspace files: `investigations/reproduction.md` and `investigations/root-cause-analysis.md`. They are workspace files, not artifacts; do not search the artifacts drawer for them. If either file is missing, stop without editing and record the missing evidence. Once both are read and the evidence supports a change, immediately call the appropriate workspace edit tool and make the smallest maintainable change that breaks the documented causal chain. Do not narrate a plan or repeatedly reconsider equivalent fixes instead of acting. Add or strengthen a regression test that fails on the old behavior and passes with the fix. If an existing test already demonstrates that regression, preserve it; do not rewrite it merely to create churn. Run the focused test, relevant neighboring tests, and any proportionate static checks. Record exact changed paths and exact verification commands with exit results. If the environment prevents a check, label it unverified and explain what is needed to run it. Inspect `package.json` before verification. When it exposes an appropriate named test script, call `list_package_scripts` and then execute that script with `run_package_script`; do not substitute a prose claim or a host-side check. Record the exact command and observed exit result in the report. If no named script exists, state that explicitly and use the narrowest available execution tool. Cite at least two distinct inspected workspace paths in the report using backticks; include `src/cart-total.js` and `tests/cart-total.test.mjs`.\n\nObservable handoff: write the completed result to `{{workPath}}/reports/root-cause-investigation.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.\n\nThe primary report is an artifact, not a workspace file: use `write_artifact` for `{{workPath}}/reports/root-cause-investigation.md`, never `write_file` for that path. Use this exact H2 skeleton in the report. Do not rename or remove a heading while revising another section:\n\n## Root cause\n## Fix\n## Changed files\n## Regression coverage\n## Verification\n## Rollback",
         "output": {
           "path": "reports/root-cause-investigation.md",
           "minBytes": 1200,
@@ -103,6 +103,14 @@
               "pattern": "^##\\s+Rollback",
               "label": "Rollback section"
             }
+          ],
+          "additionalChecks": [
+            {
+              "kind": "citationsResolve",
+              "file": "{{workPath}}/reports/root-cause-investigation.md",
+              "minCitations": 2,
+              "artifact": true
+            }
           ]
         }
       }
@@ -124,6 +132,90 @@
         "A regression test and neighboring checks have concrete, credible results with no fabricated execution evidence.",
         "The report identifies changed files, residual risk, and a viable rollback."
       ]
+    }
+  },
+  "steps": {
+    "fix-and-verify": {
+      "prompt": "Start by reading these exact workspace files: `investigations/reproduction.md` and `investigations/root-cause-analysis.md`. They are workspace files, not artifacts; do not search the artifacts drawer for them. If either file is missing, stop without editing and record the missing evidence. Once both are read and the evidence supports a change, immediately call the appropriate workspace edit tool and make the smallest maintainable change that breaks the documented causal chain. Do not narrate a plan or repeatedly reconsider equivalent fixes instead of acting. Add or strengthen a regression test that fails on the old behavior and passes with the fix. If an existing test already demonstrates that regression, preserve it; do not rewrite it merely to create churn. Run the focused test, relevant neighboring tests, and any proportionate static checks. Record exact changed paths and exact verification commands with exit results. If the environment prevents a check, label it unverified and explain what is needed to run it. Inspect `package.json` before verification. When it exposes an appropriate named test script, call `list_package_scripts` and then execute that script with `run_package_script`; do not substitute a prose claim or a host-side check. Record the exact command and observed exit result in the report. If no named script exists, state that explicitly and use the narrowest available execution tool. Cite at least two distinct inspected workspace paths in the report using backticks; include `src/cart-total.js` and `tests/cart-total.test.mjs`.\n\nObservable handoff: write the completed result to `{{workPath}}/reports/root-cause-investigation.md` in the project's artifacts drawer with `write_artifact`. Do not merely describe what the file would contain. Re-read it with `read_artifact` before finishing this phase and repair any incomplete sections.\n\nThe primary report is an artifact, not a workspace file: use `write_artifact` for `{{workPath}}/reports/root-cause-investigation.md`, never `write_file` for that path. Use this exact H2 skeleton in the report. Do not rename or remove a heading while revising another section:\n\n## Root cause\n## Fix\n## Changed files\n## Regression coverage\n## Verification\n## Rollback",
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "bytes": 1200,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "sniff": "nonempty",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "pattern": "^##\\s+Root cause",
+            "flags": "im",
+            "label": "Root cause section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "pattern": "^##\\s+Fix",
+            "flags": "im",
+            "label": "Fix section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "pattern": "^##\\s+Changed files",
+            "flags": "im",
+            "label": "Changed files section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "pattern": "^##\\s+Regression coverage",
+            "flags": "im",
+            "label": "Regression coverage section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "pattern": "^##\\s+Verification",
+            "flags": "im",
+            "label": "Verification section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "pattern": "^##\\s+Rollback",
+            "flags": "im",
+            "label": "Rollback section",
+            "artifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{workPath}}/reports/root-cause-investigation.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ],
+        "onReject": "fix-and-verify",
+        "maxAttempts": 3
+      }
+    },
+    "reproduce": {
+      "prompt": "Read the request, relevant code, existing tests, logs, and configuration. Reproduce the problem with the smallest safe case you can run. Record exact inputs, expected and actual results, environment details, frequency, and whether the failure is deterministic. If it cannot be reproduced, document the attempts and the missing observation needed; do not invent a cause or edit production code.\n\nUse this exact H2 skeleton in the output. Do not rename or remove a heading while revising another section:\n\n## Symptom\n## Minimal reproduction\n## Expected\n## Actual\n## Evidence"
+    },
+    "diagnose": {
+      "prompt": "Use `investigations/reproduction.md` to form at least two plausible hypotheses. Trace the relevant execution and data paths with workspace search and file-reading tools. For each hypothesis, run a discriminating experiment and record its predicted versus observed outcome. Name the first bad state or decision, explain how it produces the symptom, and check for sibling cases. Do not change source code in this phase.\n\nUse this exact H2 skeleton in the output. Do not rename or remove a heading while revising another section:\n\n## Hypotheses\n## Experiments\n## Root cause\n## Causal chain\n## Blast radius"
     }
   }
 }

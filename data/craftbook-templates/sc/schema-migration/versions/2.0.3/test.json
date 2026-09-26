@@ -1,0 +1,226 @@
+{
+  "schemaVersion": 1,
+  "title": "Expand/contract data migration with no record stranded",
+  "objective": "The craftbook drives an expand/contract migration of a JSON user store from a flat name field to a nested profile shape: a plan grounded in the real files, accessors changed at their real sites with the suite green between stages, the data transformed with every value surviving exactly, and the old shape fully retired - verified mechanically, including a pure-nested-record probe proving the dual-read did not linger.",
+  "tags": [
+    "code",
+    "schema-migration",
+    "expand-contract",
+    "tactical-fleet"
+  ],
+  "prompt": "Use the Schema / Type Migration craftbook for this: migrate our user records from the flat name field to the nested profile shape described in source/migration-brief.md. No record may be lost, the accessors in src/users.js must keep working at every stage, and when it is done nothing may read the flat field any more.",
+  "setup": {
+    "projectName": "Crew Roster",
+    "about": "A tiny user-roster module backed by a JSON data file. Tests run with `npm run test` (node --test).",
+    "files": [
+      {
+        "path": "package.json",
+        "content": "{\n  \"name\": \"crew-roster\",\n  \"private\": true,\n  \"version\": \"1.0.0\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test\"\n  }\n}\n"
+      },
+      {
+        "path": "data/users.json",
+        "content": "[\n  { \"id\": 1, \"name\": \"Ada Lovelace\", \"email\": \"ada@example.com\" },\n  { \"id\": 2, \"name\": \"Grace Hopper\", \"email\": \"grace@example.com\" },\n  { \"id\": 3, \"name\": \"Annie Easley\", \"email\": \"annie@example.com\" }\n]\n"
+      },
+      {
+        "path": "src/users.js",
+        "content": "import { readFileSync } from 'node:fs';\n\nconst DB_URL = new URL('../data/users.json', import.meta.url);\n\nexport function loadUsers() {\n  return JSON.parse(readFileSync(DB_URL, 'utf8'));\n}\n\nexport function fullName(user) {\n  return user.name;\n}\n\nexport function byFullName(users, wanted) {\n  return users.find((user) => user.name === wanted);\n}\n"
+      },
+      {
+        "path": "tests/users.test.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { test } from 'node:test';\nimport { byFullName, fullName, loadUsers } from '../src/users.js';\n\ntest('loads every user record', () => {\n  assert.equal(loadUsers().length, 3);\n});\n\ntest('fullName renders the display name', () => {\n  assert.deepEqual(loadUsers().map(fullName), [\n    'Ada Lovelace',\n    'Grace Hopper',\n    'Annie Easley',\n  ]);\n});\n\ntest('byFullName finds a user by display name', () => {\n  assert.equal(byFullName(loadUsers(), 'Grace Hopper').email, 'grace@example.com');\n});\n"
+      },
+      {
+        "path": "source/migration-brief.md",
+        "content": "# Migration brief: nested profile shape\n\nWe sort and filter by last name now, so the flat `name` field has to go.\n\nCurrent record shape in `data/users.json`:\n\n    { \"id\": 1, \"name\": \"Ada Lovelace\", \"email\": \"ada@example.com\" }\n\nTarget record shape:\n\n    { \"id\": 1, \"profile\": { \"first\": \"Ada\", \"last\": \"Lovelace\" }, \"email\": \"ada@example.com\" }\n\nRules:\n\n- Every existing record must survive the migration exactly - same people, same\n  emails, names split on the single space between first and last name.\n- The accessors in `src/users.js` must keep working for their callers at every\n  stage: `fullName` and `byFullName` keep returning the same display names as\n  today.\n- When the migration is done, nothing reads the flat `name` field any more.\n"
+      },
+      {
+        "path": "tests/verify-migration.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { execFileSync } from 'node:child_process';\nimport { readFileSync } from 'node:fs';\nimport { join } from 'node:path';\nimport { pathToFileURL } from 'node:url';\n\nconst root = process.cwd();\n\n// 1) The data moved to the target shape with no record stranded.\nconst records = JSON.parse(readFileSync(join(root, 'data/users.json'), 'utf8'));\nassert.ok(Array.isArray(records), 'data/users.json must stay a JSON array');\nassert.equal(records.length, 3, 'all three records must survive the migration');\nconst expected = new Map([\n  ['ada@example.com', ['Ada', 'Lovelace']],\n  ['grace@example.com', ['Grace', 'Hopper']],\n  ['annie@example.com', ['Annie', 'Easley']],\n]);\nfor (const record of records) {\n  assert.ok(record && typeof record === 'object', 'each record must stay an object');\n  assert.ok(!('name' in record), `record ${record.id} still carries the flat name field`);\n  const want = expected.get(record.email);\n  assert.ok(want, `record ${record.id} lost or changed its email`);\n  assert.equal(record.profile?.first, want[0], `record ${record.id} must keep its first name exactly`);\n  assert.equal(record.profile?.last, want[1], `record ${record.id} must keep its last name exactly`);\n}\nconsole.log('SCHEMAMIG_ORACLE data intact');\n\n// 2) The accessors read the new shape - a pure nested record, no flat fallback.\nconst users = await import(pathToFileURL(join(root, 'src/users.js')).href);\nassert.equal(\n  users.fullName({ profile: { first: 'Test', last: 'User' } }),\n  'Test User',\n  'fullName must read profile.first and profile.last',\n);\nassert.equal(\n  users.byFullName([{ profile: { first: 'Grace', last: 'Hopper' }, email: 'x' }], 'Grace Hopper')?.email,\n  'x',\n  'byFullName must match display names on the new shape',\n);\nconsole.log('SCHEMAMIG_ORACLE accessors migrated');\n\n// 3) Contract landed: no flat-shape read remains in the accessor module.\nconst accessorSource = readFileSync(join(root, 'src/users.js'), 'utf8');\nassert.ok(\n  !/\\.name\\b|\\[[\"']name[\"']\\]/.test(accessorSource),\n  'src/users.js still reads the flat name field',\n);\nconsole.log('SCHEMAMIG_ORACLE contract complete');\n\n// 4) The suite is green on the migrated tree, and the seeded test file survives.\nreadFileSync(join(root, 'tests/users.test.mjs'));\nfunction runSuite(cwd) {\n  try {\n    execFileSync(process.execPath, ['--test'], { cwd, stdio: 'pipe', timeout: 30000 });\n    return 0;\n  } catch (err) {\n    return typeof err.status === 'number' ? err.status : 1;\n  }\n}\nassert.equal(runSuite(root), 0, 'the suite must be green after the migration');\nconsole.log('SCHEMAMIG_ORACLE suite green');\nconsole.log('SCHEMAMIG_ORACLE done');\n",
+        "surface": "harness"
+      }
+    ],
+    "craftbookParams": {
+      "workPath": "tasks/eval",
+      "scope": "Migrate data/users.json and src/users.js from the flat name field to profile.first/profile.last per source/migration-brief.md, with no record loss and reads working at every stage."
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "Every record reaches the nested profile shape with its values intact, the accessors read the new shape with the dual-read retired, the flat field is gone from data and code, the suite is green, and every fleet artifact exists with honest receipts.",
+    "deliverables": [
+      {
+        "path": "tasks/eval/migration-plan.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 700,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/migration-plan.md",
+            "pattern": "^##\\s+Current shape[\\s\\S]*^##\\s+Target shape[\\s\\S]*^##\\s+Stages[\\s\\S]*^##\\s+Data safety[\\s\\S]*^##\\s+Rollback per stage",
+            "flags": "im",
+            "label": "plan sections in order"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/migration-plan.md",
+            "pattern": "data/users\\.json",
+            "label": "names the real data file"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "tasks/eval/migration-plan.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/change-notes.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 700,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/change-notes.md",
+            "pattern": "^##\\s+Stages executed[\\s\\S]*^##\\s+Files touched[\\s\\S]*^##\\s+Data transformed[\\s\\S]*^##\\s+Deviations",
+            "flags": "im",
+            "label": "change-notes sections in order"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "tasks/eval/change-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/verification.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/verification.md",
+            "pattern": "^##\\s+Old shape check[\\s\\S]*^##\\s+Data integrity[\\s\\S]*^##\\s+Suite[\\s\\S]*^##\\s+Result",
+            "flags": "im",
+            "label": "verification sections in order"
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/review.md",
+        "kind": "markdown-report",
+        "artifact": true,
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit reviewer verdict"
+          }
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "kind": "notContains",
+        "file": "data/users.json",
+        "pattern": "\"name\"\\s*:",
+        "label": "the flat name field is gone from the data"
+      },
+      {
+        "kind": "notContains",
+        "file": "src/users.js",
+        "pattern": "\\.name\\b|\\[[\"']name[\"']\\]",
+        "label": "no flat-shape read remains in the accessors"
+      },
+      {
+        "kind": "sourceParses",
+        "file": "src/users.js"
+      },
+      {
+        "kind": "sniff",
+        "file": "data/users.json",
+        "sniff": "json-valid"
+      },
+      {
+        "kind": "nodeRuns",
+        "file": "tests/users.test.mjs"
+      },
+      {
+        "kind": "nodeScriptPasses",
+        "script": "tests/verify-migration.mjs",
+        "timeoutMs": 60000,
+        "requiredOutput": [
+          {
+            "pattern": "SCHEMAMIG_ORACLE data intact",
+            "label": "every record migrated with values intact"
+          },
+          {
+            "pattern": "SCHEMAMIG_ORACLE accessors migrated",
+            "label": "accessors read the new shape"
+          },
+          {
+            "pattern": "SCHEMAMIG_ORACLE contract complete",
+            "label": "the dual-read retired with the old shape"
+          },
+          {
+            "pattern": "SCHEMAMIG_ORACLE suite green",
+            "label": "suite green on the migrated tree"
+          }
+        ]
+      }
+    ],
+    "taskNotes": {
+      "minBytes": 120,
+      "checks": [
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "\\bDONE\\b[\\s\\S]*(npm\\s+run\\s+test|node\\s+--test)",
+          "flags": "i",
+          "label": "DONE note names the real test command"
+        }
+      ]
+    },
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    },
+    "unchangedFixtures": [
+      "source/migration-brief.md",
+      "package.json"
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "tasks/eval/change-notes.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "Expand/contract discipline",
+        "description": "The stages genuinely followed expand, migrate, contract in order - readers accepted both shapes while the data moved, and the old shape was dropped only after the transform completed with a green suite."
+      },
+      {
+        "name": "Data preservation",
+        "description": "The transform is real and lossless: every record reached the target shape with names and emails surviving exactly, proven by counts and spot-checks rather than asserted."
+      },
+      {
+        "name": "Honest verification",
+        "description": "Verification searched for leftover old-shape reads, quoted what it found, ran the real suite, and labeled anything unrun as unverified instead of claiming it."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "expand/contract data safety",
+    "no record stranded",
+    "real-site accessor changes"
+  ]
+}

@@ -1,0 +1,221 @@
+{
+  "schemaVersion": 1,
+  "title": "Hotfix with minimal blast radius and a rollback path",
+  "objective": "The craftbook drives an urgent fix of a seeded null-guard crash in a receipts formatter: reproduction with the least machinery, the smallest change at the real defect site, honest validation with a rollback path, and an enforced review — verified mechanically, including a mutant re-seed proving the patch engaged the real site.",
+  "tags": [
+    "code",
+    "bug-fix",
+    "hotfix",
+    "tactical-fleet"
+  ],
+  "prompt": "Use the Hotfix Flow craftbook for this emergency: the nightly receipts export is crashing in production on orders without a gift note. The incident report is in source/incident.md. Reproduce it with the least machinery that shows it, patch minimally at the real defect site, and leave a rollback path.",
+  "setup": {
+    "projectName": "Receiptline",
+    "about": "A tiny order-receipt formatting module behind a nightly export. No test suite - the export script is the only runnable surface.",
+    "files": [
+      {
+        "path": "package.json",
+        "content": "{\n  \"name\": \"receiptline\",\n  \"private\": true,\n  \"version\": \"1.0.0\",\n  \"type\": \"module\"\n}\n",
+        "modelInput": false
+      },
+      {
+        "path": "src/format-order.js",
+        "content": "export function formatOrder(order) {\n  const lines = [];\n  lines.push('Order ' + order.id + ' for ' + order.customer);\n  for (const item of order.items) {\n    lines.push('  ' + item.qty + ' x ' + item.name + ' @ ' + money(item.unitPrice));\n  }\n  lines.push('Total: ' + money(orderTotal(order)));\n  lines.push('Gift note: ' + order.giftNote.trim());\n  return lines.join('\\n');\n}\n\nexport function orderTotal(order) {\n  let total = 0;\n  for (const item of order.items) {\n    total += item.qty * item.unitPrice;\n  }\n  return Math.round(total * 100) / 100;\n}\n\nfunction money(value) {\n  return value.toFixed(2);\n}\n"
+      },
+      {
+        "path": "data/orders.json",
+        "content": "[\n  {\n    \"id\": \"A-1041\",\n    \"customer\": \"Ana Torres\",\n    \"items\": [{ \"qty\": 1, \"name\": \"Ceramic Vase\", \"unitPrice\": 30 }],\n    \"giftNote\": \"  Happy birthday, Ana!  \"\n  },\n  {\n    \"id\": \"A-1042\",\n    \"customer\": \"Ben Ito\",\n    \"items\": [{ \"qty\": 2, \"name\": \"Stone Mug\", \"unitPrice\": 9.5 }]\n  },\n  {\n    \"id\": \"A-1043\",\n    \"customer\": \"Priya Shah\",\n    \"items\": [\n      { \"qty\": 3, \"name\": \"Linen Napkin\", \"unitPrice\": 4 },\n      { \"qty\": 1, \"name\": \"Oak Tray\", \"unitPrice\": 18 }\n    ]\n  }\n]\n",
+        "modelInput": false
+      },
+      {
+        "path": "scripts/print-receipts.mjs",
+        "content": "import { readFileSync } from 'node:fs';\nimport { formatOrder } from '../src/format-order.js';\n\nconst orders = JSON.parse(\n  readFileSync(new URL('../data/orders.json', import.meta.url), 'utf8'),\n);\nfor (const order of orders) {\n  console.log(formatOrder(order));\n  console.log('---');\n}\n",
+        "modelInput": false
+      },
+      {
+        "path": "source/incident.md",
+        "content": "# Incident: receipts export crashing\n\n02:14 - the nightly receipts export died partway through and retail has no morning receipts. Support traced it to orders without a gift note:\n\n    TypeError: Cannot read properties of undefined (reading 'trim')\n        at formatOrder (src/format-order.js)\n\n`node scripts/print-receipts.mjs` reproduces it: the first order (which has a gift note) prints fine, then the export falls over on the second order in `data/orders.json`.\n\nWhat must hold once this is fixed:\n\n- Orders with a gift note keep printing the trimmed note line.\n- Orders without one print a normal receipt with NO gift-note line.\n- Item lines and totals unchanged.\n\nWe need the smallest safe patch now. The proper cleanup of the formatter can wait for daylight - write it down instead of doing it.\n"
+      },
+      {
+        "path": "tests/verify-hotfix.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { execFileSync } from 'node:child_process';\nimport { cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';\nimport { join } from 'node:path';\nimport { formatOrder, orderTotal } from '../src/format-order.js';\n\nconst root = process.cwd();\n\n// 1) The crash case is fixed: an order without a gift note formats cleanly.\nconst plain = {\n  id: 'A-1042',\n  customer: 'Ben Ito',\n  items: [{ qty: 2, name: 'Stone Mug', unitPrice: 9.5 }],\n};\nconst plainReceipt = formatOrder(plain);\nassert.ok(!plainReceipt.includes('undefined'), 'a receipt must not leak \"undefined\"');\nassert.ok(!/Gift note:/.test(plainReceipt), 'an order without a gift note must not print a gift-note line');\nassert.ok(plainReceipt.includes('Total: 19.00'), 'totals must survive the patch');\nconsole.log('HOTFIX_ORACLE crash case fixed');\n\n// 2) Neighborhood intact: gift notes still print trimmed, totals still add up.\nconst gifted = {\n  id: 'A-1041',\n  customer: 'Ana Torres',\n  items: [{ qty: 1, name: 'Ceramic Vase', unitPrice: 30 }],\n  giftNote: '  Happy birthday, Ana!  ',\n};\nconst giftedReceipt = formatOrder(gifted);\nassert.ok(giftedReceipt.includes('Gift note: Happy birthday, Ana!'), 'gift notes must still print, trimmed');\nconst multi = {\n  id: 'A-1043',\n  customer: 'Priya Shah',\n  items: [\n    { qty: 3, name: 'Linen Napkin', unitPrice: 4 },\n    { qty: 1, name: 'Oak Tray', unitPrice: 18 },\n  ],\n};\nassert.equal(orderTotal(multi), 30, 'orderTotal must be untouched');\nconsole.log('HOTFIX_ORACLE neighborhood intact');\n\n// 3) The export the incident names runs clean end to end.\nconst exportOut = execFileSync(process.execPath, ['scripts/print-receipts.mjs'], {\n  cwd: root,\n  stdio: 'pipe',\n  timeout: 30000,\n}).toString();\nassert.ok(exportOut.includes('A-1043'), 'the export must reach the last order');\nconsole.log('HOTFIX_ORACLE export green');\n\n// 4) Re-seed the original defect into a mutant tree: the crash must come\n// back, proving the patch engaged the real site rather than the callers\n// or the data (both of which are pinned fixtures anyway).\nconst ORIGINAL = `export function formatOrder(order) {\n  const lines = [];\n  lines.push('Order ' + order.id + ' for ' + order.customer);\n  for (const item of order.items) {\n    lines.push('  ' + item.qty + ' x ' + item.name + ' @ ' + money(item.unitPrice));\n  }\n  lines.push('Total: ' + money(orderTotal(order)));\n  lines.push('Gift note: ' + order.giftNote.trim());\n  return lines.join('\\\\n');\n}\n\nexport function orderTotal(order) {\n  let total = 0;\n  for (const item of order.items) {\n    total += item.qty * item.unitPrice;\n  }\n  return Math.round(total * 100) / 100;\n}\n\nfunction money(value) {\n  return value.toFixed(2);\n}\n`;\nconst mutantRoot = join(root, '.oracle-mutant');\nrmSync(mutantRoot, { recursive: true, force: true });\nmkdirSync(join(mutantRoot, 'src'), { recursive: true });\ncpSync(join(root, 'scripts'), join(mutantRoot, 'scripts'), { recursive: true });\ncpSync(join(root, 'data'), join(mutantRoot, 'data'), { recursive: true });\ncpSync(join(root, 'package.json'), join(mutantRoot, 'package.json'));\nwriteFileSync(join(mutantRoot, 'src', 'format-order.js'), ORIGINAL);\nlet mutantStatus = 0;\ntry {\n  execFileSync(process.execPath, ['scripts/print-receipts.mjs'], {\n    cwd: mutantRoot,\n    stdio: 'pipe',\n    timeout: 30000,\n  });\n} catch (err) {\n  mutantStatus = typeof err.status === 'number' ? err.status : 1;\n}\nassert.notEqual(mutantStatus, 0, 're-seeding the original defect must restore the crash - the patch did not engage the real site');\nconsole.log('HOTFIX_ORACLE mutant caught');\nconsole.log('HOTFIX_ORACLE done');\n",
+        "surface": "harness"
+      }
+    ],
+    "craftbookParams": {
+      "workPath": "tasks/eval",
+      "scope": "The nightly receipts export crashes on orders without a gift note; see source/incident.md. Smallest safe patch now - the proper cleanup is deferred, not attempted."
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "The seeded null-guard crash is fixed at the real site with minimal blast radius, the export runs clean, a mutant re-seed restores the crash, and the fleet artifacts carry honest evidence, a Follow-up debt record, and a runnable rollback.",
+    "deliverables": [
+      {
+        "path": "tasks/eval/repro.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/repro.md",
+            "pattern": "^##\\s+Symptom[\\s\\S]*^##\\s+Repro command[\\s\\S]*^##\\s+Expected[\\s\\S]*^##\\s+Actual[\\s\\S]*^##\\s+Evidence",
+            "flags": "im",
+            "label": "reproduction sections in order"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "tasks/eval/repro.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/fix-notes.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 700,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/fix-notes.md",
+            "pattern": "^##\\s+Problem[\\s\\S]*^##\\s+Change[\\s\\S]*^##\\s+Files touched[\\s\\S]*^##\\s+Risk[\\s\\S]*^##\\s+How to verify[\\s\\S]*^##\\s+Follow-up",
+            "flags": "im",
+            "label": "fix-notes sections in order, Follow-up included"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/fix-notes.md",
+            "pattern": "src/format-order\\.js",
+            "label": "names the real defect site"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "tasks/eval/fix-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/validation.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/validation.md",
+            "pattern": "^##\\s+Repro re-run[\\s\\S]*^##\\s+Result[\\s\\S]*^##\\s+Rollback",
+            "flags": "im",
+            "label": "validation sections in order, Rollback included"
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/review.md",
+        "kind": "markdown-report",
+        "artifact": true,
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit reviewer verdict"
+          }
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "kind": "notContains",
+        "file": "src/format-order.js",
+        "pattern": "\\btry\\s*\\{|\\bcatch\\s*\\(",
+        "label": "the crash is fixed at the site, not swallowed with try/catch"
+      },
+      {
+        "kind": "sourceParses",
+        "file": "src/format-order.js"
+      },
+      {
+        "kind": "nodeRuns",
+        "file": "scripts/print-receipts.mjs",
+        "timeoutMs": 30000
+      },
+      {
+        "kind": "nodeScriptPasses",
+        "script": "tests/verify-hotfix.mjs",
+        "timeoutMs": 60000,
+        "requiredOutput": [
+          {
+            "pattern": "HOTFIX_ORACLE crash case fixed",
+            "label": "the null-guard crash is gone"
+          },
+          {
+            "pattern": "HOTFIX_ORACLE neighborhood intact",
+            "label": "gift notes and totals still behave"
+          },
+          {
+            "pattern": "HOTFIX_ORACLE export green",
+            "label": "the incident's export runs end to end"
+          },
+          {
+            "pattern": "HOTFIX_ORACLE mutant caught",
+            "label": "re-seeding the defect restores the crash"
+          }
+        ]
+      }
+    ],
+    "taskNotes": {
+      "minBytes": 120,
+      "checks": [
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "\\bDONE\\b[\\s\\S]*validation\\.md",
+          "flags": "i",
+          "label": "DONE note names the validation deliverable"
+        }
+      ]
+    },
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    },
+    "unchangedFixtures": [
+      "source/incident.md",
+      "package.json",
+      "data/orders.json",
+      "scripts/print-receipts.mjs"
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "tasks/eval/fix-notes.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "Minimal blast radius",
+        "description": "The change is the smallest that stops the failure at the real defect site - no refactor, rename, or cleanup rode along with the emergency patch."
+      },
+      {
+        "name": "Honest evidence under pressure",
+        "description": "Reproduction and validation quote real observed behavior, and anything that could not actually be run is labeled unverified rather than claimed."
+      },
+      {
+        "name": "Deferred debt discipline",
+        "description": "Follow-up records the proper fix and the debt the patch leaves (with a backport note where relevant) instead of attempting a deeper repair mid-incident, and Rollback is a concrete, runnable path."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "minimal-diff discipline",
+    "honest verification",
+    "runnable rollback"
+  ]
+}
