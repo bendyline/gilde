@@ -23,7 +23,7 @@ against their inputs; repository tooling and CI files are not published.
 | Connector types | data/connector-types/ | Connector definitions for external services |
 | Video models | data/video-models/ | Video generation model manifests |
 | Toolsets | data/toolsets/ | Hand-curated first-party toolsets |
-| Community toolsets | data/community/toolsets/ | Auto-imported from the MCP registry, permissive licenses only — bot-managed |
+| Community toolsets | data/community/toolsets/ | Auto-imported from the MCP registry, permissive licenses only, filtered by `tools/lib/community-policy.mjs` — bot-managed, unreviewed |
 | Authoring sources | authoring/ | Reproducible source material for generated catalog families; inert at runtime |
 
 Every item follows the same layout:

@@ -10,7 +10,8 @@
  *   2. Schema        - ajv (draft 2020-12) against schemas/*.schema.json
  *   3. Layout        - shard/id/kind/version-folder invariants
  *   4. Cross-checks  - craftbook graph, file references, model sources
- *   5. Community     - permissive-license policy for data/community/**
+ *   5. Community     - permissive-license and content policy for data/community/**
+ *                      (content rules: lib/community-policy.mjs)
  *
  * Severity triage rule: a finding is an ERROR when it would also break
  * gezel's runtime (the Zod parse or the catalog merge); schema-only
@@ -24,6 +25,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
+import { communityPolicyViolation, loadCommunityToolset } from './lib/community-policy.mjs';
 import { PERMISSIVE_LICENSES } from './lib/licenses.mjs';
 import { discoverVersionFolders, loadIdentity } from './lib/manifest-merge.mjs';
 import { loadSchema, zodParse } from './lib/jsonshape.mjs';
@@ -301,11 +303,17 @@ function main() {
           }
         }
 
-        // Community license policy.
+        // Community license + content policy.
         if (tier.community) {
           const license = identity.license;
           if (typeof license !== 'string' || !PERMISSIVE_LICENSES.has(license)) {
             c.error(manifestPath, '/license', 'community-license', `"${license}" is not in the permissive allowlist (${[...PERMISSIVE_LICENSES].join(', ')})`);
+          }
+          if (kind === 'toolset') {
+            const violation = communityPolicyViolation(loadCommunityToolset(item.itemDir));
+            if (violation) {
+              c.error(manifestPath, '', 'community-policy', `${violation.rule}: ${violation.detail} (npm run prune-community removes it; rules in tools/lib/community-policy.mjs)`);
+            }
           }
         }
 

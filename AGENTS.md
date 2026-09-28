@@ -122,7 +122,9 @@ with controls.
   content change; on merge conflict take either side and regenerate.
 - `schemas/` — generated from gezel core's Zod schemas, refreshed from the
   gezel repo.
-- `data/community/` — bot-managed MCP-registry imports.
+- `data/community/` — bot-managed MCP-registry imports. What may be listed
+  there is decided by `tools/lib/community-policy.mjs`; to exclude an entry,
+  change the policy (or its `DENIED_TOOLSET_IDS`), then `npm run fix`.
 - Released `versions/<v>/` directories — add a new version instead;
   yank via `yankedVersions`.
 

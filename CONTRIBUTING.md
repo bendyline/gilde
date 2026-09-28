@@ -143,7 +143,14 @@ items that have never worked on older gezels.
 - `schemas/*.schema.json` are exported from gezel core and refreshed from
   there. Do not edit them in this repo.
 - `data/community/` is bot-managed (imported from the MCP registry). To
-  fix a community entry, fix it upstream in the registry.
+  fix a community entry, fix it upstream in the registry. To keep an entry
+  *out*, change the content policy in `tools/lib/community-policy.mjs` (or
+  add its id to `DENIED_TOOLSET_IDS` there), never delete it by hand: the
+  next import would write it back. The importer skips policy matches,
+  `npm run fix` prunes any already on disk, and `npm run check` fails on
+  one that remains. The policy excludes security-research bait (honeypots,
+  injection demos), adult content, gambling, tools that ask for a wallet's
+  private key, template/example servers, and entries with garbled text.
 - `authoring/gstack/snapshots/` is a frozen upstream capture. Change it only
   as part of an explicit upstream refresh; ordinary curation belongs in the
   overlays and evals beside it.
