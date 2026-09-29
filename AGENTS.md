@@ -9,7 +9,8 @@ first try.
 ```
 data/<kind-dir>/<shard>/<id>/manifest.json                    identity
 data/<kind-dir>/<shard>/<id>/versions/<semver>/...            released content
-data/<kind-dir>/index.json                                    generated listing
+data/<kind-dir>/raw-index.json                                generated listing (item files verbatim)
+data/<kind-dir>/index.json                                    generated legacy listing
 authoring/<family>/                                            generator inputs
 ```
 
@@ -118,7 +119,7 @@ with controls.
 
 ## Never edit
 
-- `data/**/index.json` — generated. Run `npm run build-index` after any
+- `data/**/raw-index.json`, `data/**/index.json` — generated. Run `npm run build-index` after any
   content change; on merge conflict take either side and regenerate.
 - `schemas/` — generated from gezel core's Zod schemas, refreshed from the
   gezel repo.

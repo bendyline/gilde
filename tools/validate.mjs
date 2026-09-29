@@ -32,6 +32,7 @@ import { loadSchema, zodParse } from './lib/jsonshape.mjs';
 import { makeCollector, render } from './lib/report.mjs';
 import { collectSeedExemptFiles } from './lib/seeds.mjs';
 import { isSemver, safeCompare } from './lib/semver.mjs';
+import { FILE_INDEX_FILENAME } from './lib/file-index.mjs';
 import { DIR_KIND, KIND_DIR, isOsJunk, listItems, presentKinds } from './lib/walk.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -109,7 +110,7 @@ function main() {
       continue;
     }
     const buf = readFileSync(path);
-    if (name !== 'index.json' && buf.length > ONE_MB) {
+    if (name !== 'index.json' && name !== FILE_INDEX_FILENAME && buf.length > ONE_MB) {
       c.error(path, '', 'file-too-large', `${buf.length} bytes exceeds the 1 MB cap`);
     }
     if (ext === '.webp') {
@@ -237,7 +238,7 @@ function main() {
     for (const [kind, kindDir] of presentKinds(tier.root)) {
       const kindRoot = join(tier.root, kindDir);
 
-      // Layout: kind root carries only index.json + 2-char shard dirs;
+      // Layout: kind root carries only the two indexes + 2-char shard dirs;
       // shard dirs carry only item dirs.
       for (const entry of readdirSync(kindRoot, { withFileTypes: true })) {
         if (isOsJunk(entry.name)) continue;
@@ -255,8 +256,13 @@ function main() {
               }
             }
           }
-        } else if (entry.name !== 'index.json') {
-          c.error(join(kindRoot, entry.name), '', 'stray-file', 'kind level allows only index.json beside shard dirs');
+        } else if (entry.name !== 'index.json' && entry.name !== FILE_INDEX_FILENAME) {
+          c.error(
+            join(kindRoot, entry.name),
+            '',
+            'stray-file',
+            `kind level allows only index.json and ${FILE_INDEX_FILENAME} beside shard dirs`,
+          );
         }
       }
 
@@ -272,6 +278,22 @@ function main() {
             if (idx.value.count !== idx.value.entries.length) {
               c.error(indexPath, '/count', 'index-count-mismatch', `count ${idx.value.count} != ${idx.value.entries.length} entries`);
             }
+          }
+        }
+      }
+
+      // The file-bundle index is item files verbatim, so it has no schema
+      // to check; its envelope is all there is to get wrong.
+      const fileIndexPath = join(kindRoot, FILE_INDEX_FILENAME);
+      if (existsSync(fileIndexPath)) {
+        const idx = readJson(fileIndexPath);
+        if (idx.ok) {
+          const items = Array.isArray(idx.value?.items) ? idx.value.items : null;
+          if (idx.value?.kind !== kind) {
+            c.error(fileIndexPath, '/kind', 'index-kind-mismatch', `index kind "${idx.value?.kind}" != directory kind "${kind}"`);
+          }
+          if (!items || idx.value.count !== items.length) {
+            c.error(fileIndexPath, '/count', 'index-count-mismatch', `count ${idx.value?.count} != ${items?.length ?? 'no'} items`);
           }
         }
       }

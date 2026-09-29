@@ -31,7 +31,8 @@ Every item follows the same layout:
 ```
 data/<category>/<shard>/<id>/manifest.json          identity: name, description, tags, license
 data/<category>/<shard>/<id>/versions/<semver>/...  released content, never mutated after release
-data/<category>/index.json                          generated listing (do not hand-edit)
+data/<category>/raw-index.json                      generated listing: item files verbatim (do not hand-edit)
+data/<category>/index.json                          generated legacy listing for older gezel builds
 ```
 
 where `<shard>` is the first two characters of the id.
@@ -56,7 +57,7 @@ Every PR is validated by CI. Run the same checks locally:
 ```
 npm run check         runs all validation checks below
 npm run validate      structural + schema validation of the whole tree
-npm run check-index   verifies the generated index.json files are fresh
+npm run check-index   verifies the generated index files are fresh
 npm run lint-models   completeness lint for chat-model manifests
 npm run fix           rewrites non-canonical JSON and regenerates the indexes
                       (check never writes — run fix, then re-run check)

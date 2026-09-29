@@ -137,7 +137,7 @@ items that have never worked on older gezels.
 
 ## Generated files
 
-- `data/**/index.json` are generated. Run `npm run build-index` before
+- `data/**/raw-index.json` and `data/**/index.json` are generated. Run `npm run build-index` before
   pushing; never hand-edit or hand-merge them. On a merge conflict in an
   index, take either side and regenerate.
 - `schemas/*.schema.json` are exported from gezel core and refreshed from

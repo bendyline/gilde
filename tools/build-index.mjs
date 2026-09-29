@@ -1,11 +1,18 @@
 #!/usr/bin/env node
 /**
- * Port of gezel packages/catalog/scripts/build-index.ts for the gilde
- * content repo. Emits one compact index.json per kind directory under
- * data/ and data/community/ so consumers can answer catalog listings
- * from one read instead of walking ~3,800 manifest folders.
+ * Emits two compact indexes per kind directory under data/ and
+ * data/community/ so consumers can answer catalog listings from one read
+ * instead of walking thousands of item folders:
  *
- * Byte-compatibility with gezel's generator is the contract: same merge
+ *   raw-index.json  the item files verbatim (lib/file-index.mjs). What
+ *                   current gezel reads: no schema and no merge here, so
+ *                   gilde and gezel need not move in lockstep.
+ *   index.json      legacy: gezel's resolved manifest, re-derived here
+ *                   through schemas/ and a port of gezel's merge. Kept for
+ *                   gezel builds that predate raw-index.json and live-update
+ *                   on this minor line; drop it at the next minor bump.
+ *
+ * For the legacy index, byte-compatibility with gezel's generator is the contract: same merge
  * semantics (lib/manifest-merge.mjs), same entry sort
  * (manifest.name.localeCompare), same compact one-line JSON + trailing
  * newline, no generatedAt timestamp.
@@ -25,6 +32,7 @@ import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { categorizeToolset } from './lib/categorize.mjs';
+import { FILE_INDEX_FILENAME, buildFileIndex } from './lib/file-index.mjs';
 import { loadResolvedManifest } from './lib/manifest-merge.mjs';
 import { KINDS, KIND_DIR, listItems } from './lib/walk.mjs';
 
@@ -162,6 +170,33 @@ function main() {
   let driftCount = 0;
   for (const root of args.roots) {
     for (const kind of args.kinds) {
+      const fileIndex = buildFileIndex(root, kind);
+      const fileIndexPath = join(root, KIND_DIR[kind], FILE_INDEX_FILENAME);
+      const fileLabel = `${rootLabel(root)}/${KIND_DIR[kind]}/${FILE_INDEX_FILENAME}`;
+      if (args.check) {
+        let committedText = null;
+        try {
+          committedText = readFileSync(fileIndexPath, 'utf8');
+        } catch {
+          // absent committed index
+        }
+        if (fileIndex && committedText === fileIndex.text) {
+          results.push({ root, kind, file: FILE_INDEX_FILENAME, count: fileIndex.payload.count, ok: true });
+        } else if (fileIndex || committedText !== null) {
+          driftCount++;
+          const why =
+            committedText === null
+              ? `missing committed file (rebuild has ${fileIndex.payload.count} items)`
+              : fileIndex === null
+                ? 'committed file exists but rebuild found no items'
+                : 'differs from a clean rebuild';
+          console.error(`  DRIFT ${fileLabel}: ${why}`);
+        }
+      } else if (fileIndex) {
+        writeFileSync(fileIndexPath, fileIndex.text, 'utf8');
+        results.push({ root, kind, file: FILE_INDEX_FILENAME, count: fileIndex.payload.count, outputPath: fileIndexPath });
+      }
+
       const built = buildKindIndex(root, kind, args.verbose);
       const outputPath = join(root, KIND_DIR[kind], 'index.json');
       if (args.check) {
@@ -203,7 +238,7 @@ function main() {
   if (args.check) {
     console.log(`\n=== build-index --check summary (${elapsed}s) ===`);
     for (const r of results) {
-      console.log(`  ok ${rootLabel(r.root)}/${KIND_DIR[r.kind]}: ${r.count} entries match`);
+      console.log(`  ok ${rootLabel(r.root)}/${KIND_DIR[r.kind]}/${r.file ?? 'index.json'}: ${r.count} entries match`);
     }
     if (driftCount > 0) {
       console.error(`\n${driftCount} index file(s) drifted from a clean rebuild.`);
@@ -214,7 +249,7 @@ function main() {
   } else {
     console.log(`\n=== build-index summary (${elapsed}s) ===`);
     for (const r of results) {
-      console.log(`  ${rootLabel(r.root)}/${KIND_DIR[r.kind]}: ${r.count} entries -> ${r.outputPath}`);
+      console.log(`  ${rootLabel(r.root)}/${KIND_DIR[r.kind]}/${r.file ?? 'index.json'}: ${r.count} entries -> ${r.outputPath}`);
     }
     if (results.length === 0) console.log('  (no kind directories found in any root)');
   }
