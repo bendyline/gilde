@@ -169,6 +169,7 @@ function rebuildSteps(steps, context) {
       ...(s.onExit ? { onExit: s.onExit } : {}),
       ...(s.consumes && s.consumes.length > 0 ? { consumes: s.consumes } : {}),
       ...(s.advanceWhen ? { advanceWhen: s.advanceWhen } : {}),
+      ...(s.runWhen ? { runWhen: s.runWhen } : {}),
       ...(s.gate ? { gate: s.gate } : {}),
       ...(s.next ? { next: s.next } : {}),
       ...(s.branches && s.branches.length > 0 ? { branches: s.branches } : {}),
