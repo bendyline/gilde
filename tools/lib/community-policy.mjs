@@ -50,11 +50,19 @@ const SECURITY_BAIT = [
 
 const ADULT =
   /\b(?:porn\w*|nsfw|hentai|rule ?34|onlyfans|erotic\w*|xvideos|xhamster|pornhub|camgirls?|e621|adult[- ](?:content|sites?|videos?|entertainment|industry|toys?)|sex[- ]?(?:chat|cams?|toys?|work|workers?|dating))\b/i;
+/**
+ * Adult media metadata sources. An entry can describe itself only as
+ * "scenes, performers and studios across the public stash-box catalogues"
+ * and name ThePornDB, FansDB and JAVStash nowhere but in its setting names
+ * (STASHBOX_TPDB_KEY), so this also reads those.
+ */
+const ADULT_SOURCE =
+  /\b(?:stash[- ]?box|stashdb|the ?porn ?db|tpdb|fansdb|javstash|javdb|javlibrary|pmv ?haven)\b/i;
 /** A tool that detects or filters adult content is a safety tool. */
 const ADULT_SAFETY = /\b(?:detect\w*|filter\w*|block\w*|moderat\w*|classif\w*|safety|safe)\b/i;
 
 const GAMBLING =
-  /\b(?:casinos?|gambl\w*|sportsbooks?|sports[- ]?betting|betting|bookmakers?|slot machines?|wager\w*|lotter(?:y|ies)|lotto|jackpots?|roulette|blackjack|baccarat|for real money)\b/i;
+  /\b(?:casinos?|gambl\w*|sportsbooks?|sports[- ]?betting|betting|bets?|bookmakers?|slot machines?|wager\w*|lotter(?:y|ies)|lotto|jackpots?|roulette|blackjack|baccarat|for real money)\b/i;
 /** Help for people with a gambling problem is not gambling. */
 const GAMBLING_HELP = /\b(?:addiction|problem gambling|responsible gambling|self[- ]exclusion)\b/i;
 
@@ -101,6 +109,21 @@ export function communityPolicyViolation({ identity, versions = [] }) {
 
   if (ADULT.test(aboutWithId) && !ADULT_SAFETY.test(about)) {
     return { rule: 'adult', detail: `adult content (${aboutWithId.match(ADULT)[0]})` };
+  }
+
+  // Setting names split on `_` so STASHBOX_TPDB_KEY reads as its words.
+  const settingNames = versions
+    .flatMap((version) => [
+      ...(Array.isArray(version?.runtime?.envHints) ? version.runtime.envHints : []),
+      ...(Array.isArray(version?.config)
+        ? version.config.flatMap((field) => [text(field?.id), text(field?.envVar), text(field?.label)])
+        : []),
+    ])
+    .map((value) => text(value).replace(/_+/g, ' '))
+    .join('\n');
+  const adultSource = `${aboutWithId}\n${settingNames}`.match(ADULT_SOURCE);
+  if (adultSource && !ADULT_SAFETY.test(about)) {
+    return { rule: 'adult', detail: `adult media catalogue (${adultSource[0]})` };
   }
 
   if (GAMBLING.test(aboutWithId) && !GAMBLING_HELP.test(about)) {

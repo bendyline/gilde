@@ -52,6 +52,35 @@ test('excludes what the release audit found', () => {
   );
 });
 
+test('excludes the adult catalogue and betting tools the second audit found', () => {
+  // The only adult signal in this one is its setting names.
+  assert.equal(
+    ruleOf(
+      entry('Mcp Media Index', 'Search scenes, performers, studios and tags across the public catalogues.', {
+        envHints: ['STASHBOX_TPDB_KEY', 'STASHBOX_FANSDB_KEY'],
+      }),
+    ),
+    'adult',
+  );
+  assert.equal(
+    ruleOf(
+      entry('Mcp Media Index', 'Search scenes and performers.', {
+        config: [{ id: 'JAVSTASH_KEY', label: 'API key', description: '' }],
+      }),
+    ),
+    'adult',
+  );
+  for (const [name, description] of [
+    ['NegativeEV bet checker', 'Grade any MLB bet against 10,000 sims before you place it.'],
+    ['Lumify Sports Intelligence', 'Live odds, splits & explainable AI bet confidence.'],
+    ['Buzzr Sports Engine', 'Local sports math, DFS settlement, bet analytics and parlay grading.'],
+    ['Baozi Mcp', 'Trade Solana prediction markets on Baozi.bet.'],
+    ['Olympus Bets Analytics', 'Quant sports analytics: projections, methods, track record.'],
+  ]) {
+    assert.equal(ruleOf(entry(name, description)), 'gambling', name);
+  }
+});
+
 test('keeps the look-alikes each rule was narrowed around', () => {
   for (const [name, description, options] of [
     ['Rugcheck Ai', 'Solana token safety for AI agents — rug-pull, honeypot & Token-2022 trap detection before you buy.'],
@@ -81,6 +110,9 @@ test('keeps the look-alikes each rule was narrowed around', () => {
       { envHints: ['APP_STORE_CONNECT_PRIVATE_KEY'] },
     ],
     ['Café Finder', 'Finds cafés near you — no garbled text here.'],
+    ['Alphabet Soup', 'Better search across your notes, sorted alphabetically; beta features included.'],
+    ['Stash Notes', 'Stash snippets and read them back later.', { envHints: ['STASH_API_KEY'] }],
+    ['Content Moderator', 'Detect and filter adult images from stash-box style catalogues before display.'],
   ]) {
     assert.equal(ruleOf(entry(name, description, options)), null, name);
   }
