@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Household budget</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2; --card: #fff; --ink: #2b2620; --muted: #7a7166;
+        --accent: #b5651d; --track: #ece5da; --good: #4a7c59; --warn: #a4552e;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+          --accent: #e0894a; --track: #3a352f; --good: #7fae8d; --warn: #d98a63;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--ink); padding: 1.5rem 1.25rem; }
+      main { max-width: 760px; margin: 0 auto; }
+      h1 { font-family: Georgia, 'PT Serif', 'Times New Roman', serif; font-size: 1.35rem; font-weight: 600; margin: 0 0 0.15rem; }
+      .sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 1rem; }
+      .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; margin-bottom: 1rem; }
+      .tile { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.7rem 0.85rem; }
+      .tile .n { font-size: 1.35rem; font-weight: 700; color: var(--accent); line-height: 1.2; }
+      .tile .n.good { color: var(--good); }
+      .tile .n.warn { color: var(--warn); }
+      .tile .l { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+      .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+      .panel { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.85rem 1rem; font-size: 0.85rem; }
+      .panel h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 0.5rem; }
+      .bar-row { display: grid; grid-template-columns: 7.5rem 1fr 4.5rem; gap: 0.5rem; align-items: center; margin: 0.3rem 0; }
+      .bar-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .bar { background: var(--track); border-radius: 4px; height: 10px; overflow: hidden; }
+      .bar > span { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+      .bar-row .amt { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+      .entries { margin: 0; padding-left: 1.05rem; }
+      .entries li { margin: 0.25rem 0; color: var(--muted); }
+      .entries li strong { color: var(--ink); font-weight: 600; }
+      form { display: grid; grid-template-columns: 5.5rem 1fr auto; gap: 0.4rem; margin-top: 0.5rem; }
+      input { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--track); border-radius: 6px; padding: 0.35rem 0.5rem; min-width: 0; }
+      button { font: inherit; border: 1px solid var(--track); background: var(--card); color: var(--ink); border-radius: 6px; padding: 0.35rem 0.8rem; cursor: pointer; }
+      button:hover { border-color: var(--accent); }
+      button:disabled { opacity: 0.5; cursor: default; }
+      .banner { border: 1px solid var(--accent); border-radius: 6px; padding: 0.45rem 0.7rem; font-size: 0.85rem; margin-bottom: 0.75rem; display: none; }
+      .banner.show { display: block; }
+      .empty { color: var(--muted); font-style: italic; }
+      @media (max-width: 640px) { .cols { grid-template-columns: 1fr; } .tiles { grid-template-columns: 1fr 1fr; } }
++      .demo-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0 0 0.85rem;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid var(--accent, #8a5a2b);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--card, var(--surface, #fffdf8)) 88%, var(--accent, #8a5a2b));
+        color: var(--ink, #2b2620);
+        font-size: 0.8rem;
+      }
+      .demo-banner[hidden] { display: none; }
+      .demo-banner strong { font-weight: 700; }
+      .demo-reset {
+        flex: none;
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--accent, #8a5a2b);
+        border-radius: 6px;
+        background: var(--card, var(--surface, #fffdf8));
+        color: var(--ink, #2b2620);
+        cursor: pointer;
+        font: inherit;
+      }
+      .demo-reset:hover { border-color: var(--ink, #2b2620); }
+    </style>
+  </head>
+  <body>
+    <main>
++      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong> — sample data stays in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <div class="banner" id="banner"></div>
+      <h1>Household budget</h1>
+      <p class="sub" id="sub">Loading the ledger…</p>
+      <div class="tiles">
+        <div class="tile"><div class="n good" id="t-in">—</div><div class="l">In this month</div></div>
+        <div class="tile"><div class="n warn" id="t-out">—</div><div class="l">Out this month</div></div>
+        <div class="tile"><div class="n" id="t-net">—</div><div class="l">Net</div></div>
+      </div>
+      <div class="cols">
+        <div class="panel">
+          <h2>Where it goes</h2>
+          <div id="cats"><p class="empty">No spending recorded this month.</p></div>
+        </div>
+        <div class="panel">
+          <h2>Recent entries</h2>
+          <ul class="entries" id="entries"><li class="empty">Nothing yet — tell your Penningmeester, or use quick add.</li></ul>
+          <h2 style="margin-top: 0.9rem">Quick add expense</h2>
+          <form id="quick">
+            <input id="q-amount" type="number" step="0.01" min="0.01" placeholder="12.50" required />
+            <input id="q-category" type="text" placeholder="groceries" required />
+            <button type="submit" id="q-go">Add</button>
+          </form>
+        </div>
+      </div>
+    </main>
+    <script>
+      (function () {
+        'use strict';
+        var gezelPage = (function () {
+          var seq = 0; var pending = {};
+          window.addEventListener('message', function (event) {
+            var d = event.data;
+            if (!d || d.__gezelPageResult !== true || typeof d.id !== 'string') return;
+            var entry = pending[d.id]; if (!entry) return;
+            delete pending[d.id]; clearTimeout(entry.timer);
+            if (d.ok) entry.resolve(d); else entry.reject(new Error(d.error || 'invoke failed'));
+          });
+          return {
+            embedded: function () { return demoMode || Boolean(capability && projectId); },
+            invoke: function (tool, input) {
+              return new Promise(function (resolve, reject) {
+                if (demoMode) { resolve(demoInvoke(tool, input)); return; }
+                if (window.parent === window) { reject(new Error('not embedded in Gezel')); return; }
+                seq += 1; var id = 'pi-' + Date.now() + '-' + seq;
+                pending[id] = { resolve: resolve, reject: reject, timer: setTimeout(function () { delete pending[id]; reject(new Error('invoke timed out')); }, 45000) };
+                window.parent.postMessage({ __gezelPageInvoke: true, id: id, tool: tool, input: input || {} }, '*');
+              });
+            },
+            refresh: function () { if (!demoMode && window.parent !== window) window.parent.postMessage({ __gezelPageRefresh: true }, '*'); },
+          };
+        })();
+
+        var parts = location.pathname.split('/').filter(Boolean);
+        var typeIdx = parts.indexOf('type');
+        var capability = typeIdx > 0 ? parts[typeIdx - 1] : null;
+        var projectId = typeIdx >= 0 ? parts[typeIdx + 1] : null;
+        var failedPolls = 0;
+        var demoMode = !capability || !projectId;
+        var demoLedger = { currency: 'USD', entries: [
+          { kind: 'in', amountCents: 520000, category: 'Income', note: 'Monthly pay', at: new Date().toISOString() },
+          { kind: 'out', amountCents: 146000, category: 'Housing', note: 'Rent', at: new Date().toISOString() },
+          { kind: 'out', amountCents: 58200, category: 'Groceries', note: 'Weekly shops', at: new Date().toISOString() },
+          { kind: 'out', amountCents: 22400, category: 'Transport', note: 'Train and fuel', at: new Date().toISOString() },
+          { kind: 'out', amountCents: 18900, category: 'Eating out', note: 'Dinner with friends', at: new Date().toISOString() },
+        ] };
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+        function fmt(cents) {
+          var sign = cents < 0 ? '-' : '';
+          var abs = Math.abs(cents);
+          return sign + Math.floor(abs / 100) + '.' + String(abs % 100).padStart(2, '0');
+        }
+        function setBanner(text) { var el = document.getElementById('banner'); el.textContent = text || ''; el.className = text ? 'banner show' : 'banner'; }
+        function demoInvoke(tool, input) {
+          if (tool !== 'record_expense') throw new Error('Unknown demo action: ' + tool);
+          demoLedger.entries.push({
+            kind: 'out',
+            amountCents: Math.round(Number(input.amount) * 100),
+            category: input.category,
+            at: new Date().toISOString(),
+          });
+          return { ok: true };
+        }
+
+        function render(ledger) {
+          var month = new Date().toISOString().slice(0, 7);
+          var entries = (ledger.entries || []).filter(function (e) { return typeof e.at === 'string'; });
+          var monthEntries = entries.filter(function (e) { return e.at.slice(0, 7) === month; });
+          var inC = 0, outC = 0; var byCat = {};
+          monthEntries.forEach(function (e) {
+            if (e.kind === 'in') inC += e.amountCents;
+            else { outC += e.amountCents; byCat[e.category] = (byCat[e.category] || 0) + e.amountCents; }
+          });
+          document.getElementById('sub').textContent = month + ' · ' + (ledger.currency || '') + ' · ' + entries.length + ' entr' + (entries.length === 1 ? 'y' : 'ies') + ' all time';
+          document.getElementById('t-in').textContent = fmt(inC);
+          document.getElementById('t-out').textContent = fmt(outC);
+          var net = document.getElementById('t-net');
+          net.textContent = fmt(inC - outC);
+          net.className = 'n ' + (inC - outC >= 0 ? 'good' : 'warn');
+
+          var cats = Object.entries(byCat).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 7);
+          var max = cats.length ? cats[0][1] : 1;
+          document.getElementById('cats').innerHTML = cats.length
+            ? cats.map(function (pair) {
+                return '<div class="bar-row"><span class="name">' + esc(pair[0]) + '</span><span class="bar"><span style="width:' + Math.max(4, Math.round((pair[1] / max) * 100)) + '%"></span></span><span class="amt">' + fmt(pair[1]) + '</span></div>';
+              }).join('')
+            : '<p class="empty">No spending recorded this month.</p>';
+
+          var recent = entries.slice(-7).reverse();
+          if (recent.length) {
+            document.getElementById('entries').innerHTML = recent.map(function (e) {
+              return '<li><strong>' + (e.kind === 'in' ? '+' : '-') + fmt(e.amountCents) + '</strong> ' + esc(e.category) + (e.note ? ' — ' + esc(e.note) : '') + '</li>';
+            }).join('');
+          }
+        }
+
+        function poll() {
+          if (demoMode) { render(demoLedger); return Promise.resolve(); }
+          if (!capability || !projectId) return Promise.resolve();
+          return fetch('/preview/' + encodeURIComponent(capability) + '/workspace/' + encodeURIComponent(projectId) + '/ledger.json', { cache: 'no-store' })
+            .then(function (r) { if (!r.ok) throw new Error('poll ' + r.status); return r.json(); })
+            .then(function (next) { failedPolls = 0; render(next); })
+            .catch(function () { failedPolls += 1; if (failedPolls === 3) gezelPage.refresh(); });
+        }
+
+        document.getElementById('quick').addEventListener('submit', function (ev) {
+          ev.preventDefault();
+          var amount = parseFloat(document.getElementById('q-amount').value);
+          var category = document.getElementById('q-category').value.trim();
+          if (!(amount > 0) || !category) return;
+          var btn = document.getElementById('q-go');
+          btn.disabled = true;
+          gezelPage.invoke('record_expense', { amount: amount, category: category })
+            .then(function () {
+              setBanner('');
+              document.getElementById('q-amount').value = '';
+              document.getElementById('q-category').value = '';
+              return poll();
+            })
+            .catch(function (err) { setBanner(String(err && err.message ? err.message : err)); })
+            .then(function () { btn.disabled = false; });
+        });
+
+        poll().then(function () { setInterval(function () { void poll(); }, 5000); });
+      })();
+    </script>
+  </body>
+</html>
