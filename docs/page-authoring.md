@@ -106,6 +106,12 @@ server-side on every call.
   mismatch rejects with `code: 'invalid-input'` before the script runs.
 - A page tool may declare a `reaction` — a seeded gezel turn fired only on
   page invokes. That is how a board move summons the crew.
+- When the reaction's seed carries the whole current state (the board and its
+  legal moves), declare `"standalone": true` on the reaction. The gezel then
+  answers from its instructions and the seed alone. Small on-device models need
+  this: earlier turns crowd out the state in a 4K window, and a model shown its
+  own old replies tends to repeat one instead of acting on the new position.
+  Leave it off when the conversation matters to the reply (a coach following up).
 
 ## Theme and UX
 

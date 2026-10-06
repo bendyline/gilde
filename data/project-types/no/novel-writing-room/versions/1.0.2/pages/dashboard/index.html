@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Novel Writing Room</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2; --card: #fff; --ink: #2b2620; --muted: #7a7166;
+        --accent: #b5651d; --track: #ece5da; --good: #4a7c59;
+      }
+      :root[data-theme='dark'] {
+        --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+        --accent: #e0894a; --track: #3a352f; --good: #7fae8d;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+          --accent: #e0894a; --track: #3a352f; --good: #7fae8d;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--ink); padding: 1.5rem 1.25rem; }
+      main { max-width: 680px; margin: 0 auto; }
+      h1 { font-family: Georgia, 'PT Serif', 'Times New Roman', serif; font-size: 1.35rem; font-weight: 600; margin: 0 0 0.15rem; }
+      .sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.9rem; }
+      .pace { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 1rem; margin-bottom: 0.75rem; }
+      .pace .total { font-size: 1.9rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .pace .goal { color: var(--muted); font-size: 0.9rem; }
+      .bar { background: var(--track); border-radius: 4px; height: 12px; overflow: hidden; margin-top: 0.6rem; }
+      .bar > span { display: block; height: 100%; background: var(--good); border-radius: 4px; transition: width 0.4s ease; }
+      .board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.6rem; }
+      .col { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.7rem 0.8rem; min-height: 5.5rem; }
+      .col h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 0.45rem; }
+      .col h2 .count { color: var(--ink); }
+      .card { border: 1px solid var(--track); border-radius: 6px; padding: 0.35rem 0.5rem; margin: 0.3rem 0; font-size: 0.85rem; }
+      .card .id { color: var(--muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+      .empty { color: var(--muted); font-style: italic; font-size: 0.85rem; }
+      @media (max-width: 640px) { .board { grid-template-columns: 1fr 1fr; } }
+      .demo-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0 0 0.85rem;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--card) 88%, var(--accent));
+        color: var(--ink);
+        font-size: 0.8rem;
+      }
+      .demo-banner[hidden] { display: none; }
+      .demo-banner strong { font-weight: 700; }
+      .demo-reset {
+        flex: none;
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: var(--card);
+        color: var(--ink);
+        cursor: pointer;
+        font: inherit;
+      }
+      .demo-reset:hover { border-color: var(--ink); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong> — sample data stays in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1 id="title">Novel Writing Room</h1>
+      <p class="sub" id="sub">Loading the manuscript…</p>
+      <div class="pace">
+        <div class="total" id="total">—</div>
+        <div class="goal" id="goal">words logged</div>
+        <div class="bar"><span id="bar" style="width: 0%"></span></div>
+      </div>
+      <div class="board" id="board"></div>
+    </main>
+    <script>
+/* gezel-page-demo-stub v1 */
+/*
+ * The canonical demo stub for Gezel type pages. MIT License.
+ *
+ * Paste this file's bytes verbatim into a <script> block ahead of the
+ * page's own code, then call makeDemoGezel({ page, tools, data }) with the
+ * page's demo handlers. Served by Gezel, the real window.gezel is already
+ * injected and the stub steps aside; opened as a raw file (the live demos
+ * on gezelgilde.com), it installs a window.gezel whose tools and data are
+ * the page-supplied handler maps — one code path in every mode. `tools`
+ * and `data` map a tool name / declared read path to a function; data
+ * handlers back read() and list(), and url() returns the handler's value
+ * or passes a data: URI through. See docs/page-authoring.md.
+ */
+(function () {
+  'use strict';
+  window.makeDemoGezel = function (opts) {
+    if (window.gezel) return window.gezel;
+    var page = (opts && opts.page) || {};
+    var tools = (opts && opts.tools) || {};
+    var data = (opts && opts.data) || {};
+    var themeListeners = [];
+    var media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+    var ui = {
+      theme: { mode: media && media.matches ? 'dark' : 'light' },
+      onTheme: function (cb) {
+        themeListeners.push(cb);
+        return function () {
+          var at = themeListeners.indexOf(cb);
+          if (at >= 0) themeListeners.splice(at, 1);
+        };
+      },
+    };
+    if (media && media.addEventListener) {
+      media.addEventListener('change', function (ev) {
+        ui.theme = { mode: ev.matches ? 'dark' : 'light' };
+        themeListeners.slice().forEach(function (cb) { cb(ui.theme); });
+      });
+    }
+    function fail(code, message) {
+      var err = new Error(message);
+      err.code = code;
+      return Promise.reject(err);
+    }
+    function run(map, key, arg) {
+      if (!Object.prototype.hasOwnProperty.call(map, key)) return null;
+      return Promise.resolve().then(function () { return map[key](arg); });
+    }
+    window.gezel = {
+      page: {
+        api: 1,
+        projectId: 'demo',
+        source: 'type',
+        entry: page.entry || 'index.html',
+        typeName: page.typeName || 'demo',
+        params: page.params || {},
+        mode: 'demo',
+      },
+      tools: {
+        list: function () { return Promise.resolve(Object.keys(tools)); },
+        invoke: function (name, input) {
+          var call = run(tools, name, input || {});
+          if (!call) return fail('not-allowed', "The demo does not handle the tool '" + name + "'.");
+          return call.then(function (output) { return { output: output }; });
+        },
+      },
+      data: {
+        read: function (path, o) {
+          return run(data, path, o || {}) || fail('not-allowed', "The demo has no data for '" + path + "'.");
+        },
+        list: function (path, o) {
+          return run(data, path, o || {}) || Promise.resolve([]);
+        },
+        watch: function () { return function () {}; },
+        url: function (path) {
+          if (Object.prototype.hasOwnProperty.call(data, path)) return String(data[path]({}));
+          return typeof path === 'string' && path.indexOf('data:') === 0 ? path : '';
+        },
+      },
+      ui: ui,
+      refresh: function () {},
+    };
+    return window.gezel;
+  };
+})();
+    </script>
+    <script>
+      (function () {
+        'use strict';
+        var STAGES = ['outline', 'drafting', 'revised', 'done'];
+
+        // ── demo manuscript (used only when the page opens as a raw file) ──
+        var demoSessions = {
+          title: 'The Glass Cartographer',
+          weeklyWordGoal: 5000,
+          events: [
+            { at: new Date(Date.now() - 6 * 86400000).toISOString(), data: { words: 850 } },
+            { at: new Date(Date.now() - 3 * 86400000).toISOString(), data: { words: 1200 } },
+            { at: new Date().toISOString(), data: { words: 640 } },
+          ],
+        };
+        var demoChapters = { records: [
+          { id: 'ch-01', status: 'done', fields: { title: 'The map that changed overnight' } },
+          { id: 'ch-02', status: 'revised', fields: { title: 'A city folded into glass' } },
+          { id: 'ch-03', status: 'drafting', fields: { title: 'The ferryman’s bargain' } },
+          { id: 'ch-04', status: 'outline', fields: { title: 'North of the last road' } },
+          { id: 'ch-05', status: 'outline', fields: { title: 'The unfinished coast' } },
+        ] };
+
+        makeDemoGezel({
+          page: { entry: 'dashboard/index.html', typeName: 'Novel Writing Room', params: { title: 'Untitled', weeklyWordGoal: 5000 } },
+          data: {
+            'sessions.json': function () { return demoSessions; },
+            'chapters.json': function () { return demoChapters; },
+          },
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+
+        function applyTheme(mode) {
+          document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light');
+        }
+        applyTheme(gezel.ui.theme.mode);
+        gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); });
+
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+        function fmtNum(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+        function weekStartMs(nowIso) {
+          var d = new Date(nowIso.slice(0, 10) + 'T00:00:00Z');
+          return d.getTime() - ((d.getUTCDay() + 6) % 7) * 86400000;
+        }
+        function wordsOf(e) {
+          var w = e && e.data ? Number(e.data.words) : NaN;
+          return isFinite(w) && w > 0 ? Math.round(w) : 0;
+        }
+
+        function render(sessions, chapters) {
+          var events = Array.isArray(sessions.events) ? sessions.events : [];
+          var records = Array.isArray(chapters.records) ? chapters.records : [];
+          var goal = Number(sessions.weeklyWordGoal);
+          if (!isFinite(goal) || goal <= 0) goal = 0;
+          var total = 0;
+          events.forEach(function (e) { total += wordsOf(e); });
+          var start = weekStartMs(new Date().toISOString());
+          var week = 0;
+          events.forEach(function (e) { if (Date.parse(e.at) >= start) week += wordsOf(e); });
+
+          if (sessions.title) document.getElementById('title').textContent = sessions.title;
+          document.getElementById('sub').textContent = records.length + ' chapter(s) on the board, ' + events.length + ' session(s) logged';
+          document.getElementById('total').textContent = fmtNum(total);
+          document.getElementById('goal').textContent = 'words logged — ' + fmtNum(week) + (goal > 0 ? ' of ' + fmtNum(goal) : '') + ' this week';
+          document.getElementById('bar').style.width = (goal > 0 ? Math.min(100, Math.round((week / goal) * 100)) : week > 0 ? 100 : 0) + '%';
+
+          document.getElementById('board').innerHTML = STAGES.map(function (stage) {
+            var here = records.filter(function (r) { return r.status === stage; });
+            var cards = here.map(function (r) {
+              return '<div class="card"><span class="id">' + esc(r.id) + '</span> ' + esc(String((r.fields && r.fields.title) || '')) + '</div>';
+            }).join('');
+            return '<div class="col"><h2>' + stage + ' <span class="count">' + here.length + '</span></h2>' +
+              (cards || '<div class="empty">' + (stage === 'outline' ? 'Ask your Schrijfmaat to put chapters on the board.' : 'None yet.') + '</div>') + '</div>';
+          }).join('');
+        }
+
+        function loadRoom() {
+          return Promise.all([gezel.data.read('sessions.json'), gezel.data.read('chapters.json')])
+            .then(function (both) { render(both[0] || {}, both[1] || {}); })
+            .catch(function () {});
+        }
+
+        loadRoom();
+        gezel.data.watch('sessions.json', function () { loadRoom(); });
+        gezel.data.watch('chapters.json', function () { loadRoom(); });
+      })();
+    </script>
+  </body>
+</html>

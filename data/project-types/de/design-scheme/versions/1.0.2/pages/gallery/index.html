@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Scheme gallery</title>
+    <style>
+      :root { color-scheme: light dark; --bg: #faf7f2; --card: #fff; --ink: #2b2620; --muted: #7a7166; --line: #ece5da; --accent: #8a5a2b; }
+      :root[data-theme='dark'] { --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c; --line: #3a352f; --accent: #e0894a; }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) { --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c; --line: #3a352f; --accent: #e0894a; }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--ink); padding: 2rem 1.25rem; }
+      main { max-width: 720px; margin: 0 auto; }
+      h1 { font-size: 1.5rem; margin: 0 0 0.25rem; }
+      .sub { color: var(--muted); margin: 0 0 1.5rem; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
+      .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+      .swatches { display: flex; height: 84px; }
+      .swatches > span { flex: 1; }
+      .card .name { padding: 0.6rem 0.85rem; font-weight: 600; }
+      .card .hexes { padding: 0 0.85rem 0.75rem; color: var(--muted); font-size: 0.78rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+      .empty { color: var(--muted); font-style: italic; }
+      .demo-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0 0 0.85rem;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--card) 88%, var(--accent));
+        color: var(--ink);
+        font-size: 0.8rem;
+      }
+      .demo-banner[hidden] { display: none; }
+      .demo-banner strong { font-weight: 700; }
+      .demo-reset {
+        flex: none;
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: var(--card);
+        color: var(--ink);
+        cursor: pointer;
+        font: inherit;
+      }
+      .demo-reset:hover { border-color: var(--ink); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong> — sample data stays in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Scheme gallery</h1>
+      <p class="sub" id="sub">Loading schemes…</p>
+      <div class="grid" id="grid"></div>
+    </main>
+    <script>
+/* gezel-page-demo-stub v1 */
+/*
+ * The canonical demo stub for Gezel type pages. MIT License.
+ *
+ * Paste this file's bytes verbatim into a <script> block ahead of the
+ * page's own code, then call makeDemoGezel({ page, tools, data }) with the
+ * page's demo handlers. Served by Gezel, the real window.gezel is already
+ * injected and the stub steps aside; opened as a raw file (the live demos
+ * on gezelgilde.com), it installs a window.gezel whose tools and data are
+ * the page-supplied handler maps — one code path in every mode. `tools`
+ * and `data` map a tool name / declared read path to a function; data
+ * handlers back read() and list(), and url() returns the handler's value
+ * or passes a data: URI through. See docs/page-authoring.md.
+ */
+(function () {
+  'use strict';
+  window.makeDemoGezel = function (opts) {
+    if (window.gezel) return window.gezel;
+    var page = (opts && opts.page) || {};
+    var tools = (opts && opts.tools) || {};
+    var data = (opts && opts.data) || {};
+    var themeListeners = [];
+    var media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+    var ui = {
+      theme: { mode: media && media.matches ? 'dark' : 'light' },
+      onTheme: function (cb) {
+        themeListeners.push(cb);
+        return function () {
+          var at = themeListeners.indexOf(cb);
+          if (at >= 0) themeListeners.splice(at, 1);
+        };
+      },
+    };
+    if (media && media.addEventListener) {
+      media.addEventListener('change', function (ev) {
+        ui.theme = { mode: ev.matches ? 'dark' : 'light' };
+        themeListeners.slice().forEach(function (cb) { cb(ui.theme); });
+      });
+    }
+    function fail(code, message) {
+      var err = new Error(message);
+      err.code = code;
+      return Promise.reject(err);
+    }
+    function run(map, key, arg) {
+      if (!Object.prototype.hasOwnProperty.call(map, key)) return null;
+      return Promise.resolve().then(function () { return map[key](arg); });
+    }
+    window.gezel = {
+      page: {
+        api: 1,
+        projectId: 'demo',
+        source: 'type',
+        entry: page.entry || 'index.html',
+        typeName: page.typeName || 'demo',
+        params: page.params || {},
+        mode: 'demo',
+      },
+      tools: {
+        list: function () { return Promise.resolve(Object.keys(tools)); },
+        invoke: function (name, input) {
+          var call = run(tools, name, input || {});
+          if (!call) return fail('not-allowed', "The demo does not handle the tool '" + name + "'.");
+          return call.then(function (output) { return { output: output }; });
+        },
+      },
+      data: {
+        read: function (path, o) {
+          return run(data, path, o || {}) || fail('not-allowed', "The demo has no data for '" + path + "'.");
+        },
+        list: function (path, o) {
+          return run(data, path, o || {}) || Promise.resolve([]);
+        },
+        watch: function () { return function () {}; },
+        url: function (path) {
+          if (Object.prototype.hasOwnProperty.call(data, path)) return String(data[path]({}));
+          return typeof path === 'string' && path.indexOf('data:') === 0 ? path : '';
+        },
+      },
+      ui: ui,
+      refresh: function () {},
+    };
+    return window.gezel;
+  };
+})();
+    </script>
+    <script>
+      (function () {
+        'use strict';
+
+        // ── demo schemes (used only when the page opens as a raw file) ──
+        var demoSchemes = [
+          { name: 'Warm Dusk', colors: ['#2B2620', '#8D694D', '#D5B58C', '#EFE4D1', '#FFF8E8'] },
+          { name: 'Canal Morning', colors: ['#19323C', '#4F6D7A', '#9BB8B3', '#E7E3D4', '#F7F4EC'] },
+          { name: 'Workshop Sage', colors: ['#26352D', '#557A5B', '#A7B89A', '#DDD5BF', '#FAF7F2'] },
+        ];
+
+        makeDemoGezel({
+          page: { entry: 'gallery/index.html', typeName: 'Design Scheme', params: { brief: 'a new brand' } },
+          data: {
+            'schemes/index.json': function () { return { schemes: demoSchemes }; },
+          },
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+
+        function applyTheme(mode) {
+          document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light');
+        }
+        applyTheme(gezel.ui.theme.mode);
+        gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); });
+
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+        function isHex(c) { return typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c); }
+        function render(schemes) {
+          var sub = document.getElementById('sub');
+          var grid = document.getElementById('grid');
+          if (!schemes.length) {
+            sub.textContent = 'No schemes yet — ask the designer to save one.';
+            grid.innerHTML = '';
+            return;
+          }
+          sub.textContent = schemes.length + ' scheme' + (schemes.length === 1 ? '' : 's');
+          grid.innerHTML = schemes.map(function (s) {
+            var colors = Array.isArray(s.colors) ? s.colors.filter(isHex) : [];
+            var bars = colors.map(function (c) { return '<span style="background:' + c + '"></span>'; }).join('');
+            return '<div class="card"><div class="swatches">' + bars + '</div>' +
+              '<div class="name">' + esc(s.name || 'Untitled') + '</div>' +
+              '<div class="hexes">' + colors.map(esc).join(' · ') + '</div></div>';
+          }).join('');
+        }
+
+        function loadSchemes() {
+          return gezel.data
+            .read('schemes/index.json', { source: 'artifacts' })
+            .then(function (data) { render(data && Array.isArray(data.schemes) ? data.schemes : []); })
+            .catch(function () { render([]); });
+        }
+
+        loadSchemes();
+        gezel.data.watch('schemes/index.json', function () { loadSchemes(); }, { source: 'artifacts' });
+      })();
+    </script>
+  </body>
+</html>
