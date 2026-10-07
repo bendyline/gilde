@@ -112,6 +112,16 @@ server-side on every call.
   this: earlier turns crowd out the state in a 4K window, and a model shown its
   own old replies tends to repeat one instead of acting on the new position.
   Leave it off when the conversation matters to the reply (a coach following up).
+- When one model call is a turn's whole job (a move, a scored reply), declare
+  `"turn": { "say": "<argument>" }` on that tool: a successful call ends the
+  turn and the argument becomes the reply. Declare `"state": true` on the tool
+  that reads the current state; a person's chat message is then answered from
+  its fresh output. A reaction can require its turn to be that call with
+  `"turn": { "tool": "make_move", "when": { "op": "equals", "field": "status",
+  "value": "playing" } }`: while `when` holds over the page tool's output, the
+  turn offers only that tool and engines that can force a call do. Keep `when`
+  tight, so a finished game still gets a gracious line instead of a forced move.
+  Checkers, chess and go are the reference.
 
 ## Theme and UX
 
