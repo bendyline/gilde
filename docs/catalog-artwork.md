@@ -80,6 +80,17 @@ gets the whole tile:
   for Religion & Philosophy), and keep protected emblems such as the red
   cross off medicine bottles.
 
+Regional catalogs (`regional-*`) use the same prompt. Their subject is an
+animal or plant people associate with the place: a leaping sockeye salmon for
+the Pacific Northwest, an olive tree for the Mediterranean, a baobab for West
+& Central Africa. Never a map outline, landmark, or building, and never a
+national emblem: the Northeast's maple is two fallen autumn leaves, not one
+red leaf. Regions share a gallery with the topic catalogs, so a region must
+not reuse another catalog's subject. Australia & New Zealand is a kangaroo
+because Biology already has the fern. Two regions with similar animals get
+different poses and accents: the stork stands in its nest, and the crane
+dances.
+
 The first tranche (Food & Drink, Astronomy, Law, Technology) was generated
 with the craftbook style anchor (`accessibility-audit-1910`) as Image 1.
 Every later mark also passed `wikipedia-astronomy`'s mark as Image 2, the set
