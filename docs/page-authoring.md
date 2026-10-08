@@ -122,6 +122,12 @@ server-side on every call.
   turn offers only that tool and engines that can force a call do. Keep `when`
   tight, so a finished game still gets a gracious line instead of a forced move.
   Checkers, chess and go are the reference.
+- A person's own chat message can be held to the turn tool too: on the `state`
+  tool, `"answer": { "tool": "reply", "when": { "op": "equals", "field":
+  "status", "value": "active" } }` requires that call while the state matches.
+  And `"turn": { "show": "display" }` displays an output field the script
+  composed instead of the model's `say` argument: the language trainer shows its
+  line plus the corrections it graded, Word Clues shows the clue and its count.
 
 ## Theme and UX
 

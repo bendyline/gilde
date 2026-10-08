@@ -1,0 +1,229 @@
+{
+  "schemaVersion": 1,
+  "version": "1.1.0",
+  "releasedAt": "2026-10-07T00:00:00Z",
+  "meesterManaged": false,
+  "leanProfile": true,
+  "params": {
+    "type": "object",
+    "properties": {
+      "goal": {
+        "type": "string",
+        "title": "What are you training toward?",
+        "description": "e.g. 'feel strong again', 'a 10k in October'.",
+        "default": "feeling strong and consistent"
+      },
+      "weeklyTarget": {
+        "type": "number",
+        "title": "Sessions per week",
+        "description": "How many training sessions a week to aim for.",
+        "default": 3
+      }
+    },
+    "required": [
+      "goal",
+      "weeklyTarget"
+    ]
+  },
+  "nameTemplate": "Fitness: {{goal}}",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "coach",
+      "voorman": true
+    }
+  ],
+  "tools": [
+    {
+      "name": "log_workout",
+      "description": "Log a training session the moment it is reported (activity + minutes).",
+      "script": "training-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "activity": {
+            "type": "string"
+          },
+          "minutes": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "activity"
+        ]
+      },
+      "bind": {
+        "action": "log_workout"
+      }
+    },
+    {
+      "name": "set_target",
+      "description": "Change the weekly session target.",
+      "script": "training-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "weeklyTarget": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "weeklyTarget"
+        ]
+      },
+      "bind": {
+        "action": "set_target"
+      }
+    },
+    {
+      "name": "training_status",
+      "description": "Streak, this week against the target, all-time count.",
+      "script": "training-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "status"
+      }
+    },
+    {
+      "name": "workout_history",
+      "description": "The recent sessions, most recent last.",
+      "script": "training-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "history"
+      }
+    },
+    {
+      "name": "training_recap",
+      "description": "This week's training against last week: sessions, minutes, and the longest session.",
+      "script": "training-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "recap_numbers"
+      }
+    },
+    {
+      "name": "save_recap",
+      "description": "Save the weekly recap with ONE concrete suggestion for next week, in one sentence, grounded in this week's numbers. The app adds the numbers.",
+      "script": "training-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "suggestion": {
+            "type": "string",
+            "description": "One sentence for next week."
+          }
+        },
+        "required": [
+          "suggestion"
+        ]
+      },
+      "bind": {
+        "action": "save_recap"
+      },
+      "turn": {
+        "show": "display",
+        "fallback": "Recap saved."
+      }
+    },
+    {
+      "name": "page_log_workout",
+      "description": "Log a session from the dashboard.",
+      "script": "training-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "activity": {
+            "type": "string"
+          },
+          "minutes": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "activity"
+        ]
+      },
+      "bind": {
+        "action": "log_workout"
+      }
+    },
+    {
+      "name": "request_recap",
+      "description": "Ask the coach for this week's recap from the dashboard.",
+      "script": "training-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "request_recap"
+      },
+      "reaction": {
+        "gezel": "coach",
+        "hideSeed": true,
+        "standalone": true,
+        "prompt": "The person asked for this week's training recap. The numbers, from their log:\n```json\n{{output.recap}}\n```\nCall save_recap once with ONE concrete suggestion for next week, in one sentence, grounded in these numbers. Their goal: {{goal}}.",
+        "turn": {
+          "tool": "save_recap",
+          "when": {
+            "op": "equals",
+            "field": "status",
+            "value": "recap_wanted"
+          }
+        }
+      }
+    }
+  ],
+  "craftbooks": [
+    "training-recap"
+  ],
+  "schedules": [
+    {
+      "cron": "0 18 * * 0",
+      "craftbook": "training-recap",
+      "consent": "ask"
+    }
+  ],
+  "pages": {
+    "entry": "dashboard/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "training.json"
+      },
+      {
+        "source": "workspace",
+        "path": "recaps/latest.json"
+      }
+    ],
+    "tools": [
+      "page_log_workout",
+      "request_recap"
+    ]
+  },
+  "workspaceSeed": [
+    "training.json"
+  ],
+  "scripts": {
+    "training-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { logStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'training-store',\n  description:\n    \"Read and update the training log (training.json). Call action:'status' for streak + this week vs the target; 'log_workout' the moment a session is reported (activity + minutes); 'set_target' to change the weekly session target; 'history' for the recent sessions; 'recap_numbers' for this week against last; 'save_recap' to write the weekly recap with one suggestion.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description:\n        \"One of 'status', 'log_workout', 'set_target', 'history', 'recap_numbers', 'request_recap', or 'save_recap'.\",\n      required: true,\n    },\n    activity: { type: 'string', description: \"What they did, e.g. 'run', 'gym', 'long walk'.\" },\n    minutes: { type: 'number', description: 'How long the session ran, in minutes.' },\n    note: { type: 'string', description: 'Anything worth remembering about the session.' },\n    weeklyTarget: { type: 'number', description: 'Sessions per week to aim for (set_target).' },\n    suggestion: { type: 'string', description: 'For save_recap: one concrete suggestion for next week.' },\n  },\n  outputs: {\n    streakDays: { type: 'number', description: 'Consecutive days with a session, ending at the latest.' },\n    thisWeek: { type: 'number', description: 'Sessions logged this week (Monday UTC start).' },\n    weeklyTarget: { type: 'number', description: 'The current weekly session target.' },\n    summary: { type: 'string', description: 'The training picture.' },\n    personalBest: { type: 'boolean', description: 'For log_workout: the longest session on record.' },\n    recap: { type: 'json', description: 'This week against last: sessions, minutes, longest session.' },\n    display: { type: 'string', description: 'For save_recap: the recap as shown.' },\n    status: { type: 'string', description: \"'recap_wanted' after request_recap, else 'ok'.\" },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── fitness-rules-start ──\n// Pure derivations over logStore-shaped workout events: kind 'workout',\n// data {activity, minutes}. Weeks start Monday 00:00 UTC; nowIso is a\n// parameter so the rules stay clock-independent and testable.\n\nfunction weekStartMs(nowIso) {\n  var day = new Date(nowIso.slice(0, 10) + 'T00:00:00Z');\n  var sinceMonday = (day.getUTCDay() + 6) % 7;\n  return day.getTime() - sinceMonday * 86400000;\n}\n\nfunction thisWeekCount(events, nowIso) {\n  var start = weekStartMs(nowIso);\n  return events.filter(function (e) {\n    return Date.parse(e.at) >= start;\n  }).length;\n}\n\nfunction trainingLine(stats, weekCount, weeklyTarget) {\n  var target = weeklyTarget > 0 ? weeklyTarget : 0;\n  var weekPart =\n    'This week: ' +\n    weekCount +\n    (target > 0 ? ' of ' + target + ' session(s)' : ' session(s)') +\n    (target > 0 && weekCount >= target ? ' — target met.' : '.');\n  var streakPart =\n    stats.total === 0\n      ? 'No sessions logged yet.'\n      : 'Streak: ' + stats.streakDays + ' day(s); ' + stats.total + ' session(s) all time.';\n  return weekPart + ' ' + streakPart;\n}\n\n// The week's numbers against the week before: what a recap reports, so the\n// coach only adds a suggestion. Weeks start Monday UTC, as above.\nfunction weekRecap(events, nowIso, weeklyTarget) {\n  var start = weekStartMs(nowIso);\n  var prevStart = start - 7 * 86400000;\n  function minutesOf(e) {\n    var m = e.data && Number(e.data.minutes);\n    return isFinite(m) && m > 0 ? m : 0;\n  }\n  var week = events.filter(function (e) { return Date.parse(e.at) >= start; });\n  var prev = events.filter(function (e) {\n    var t = Date.parse(e.at);\n    return t >= prevStart && t < start;\n  });\n  var minutes = week.reduce(function (n, e) { return n + minutesOf(e); }, 0);\n  var prevMinutes = prev.reduce(function (n, e) { return n + minutesOf(e); }, 0);\n  var longest = week.reduce(function (best, e) {\n    return !best || minutesOf(e) > minutesOf(best) ? e : best;\n  }, null);\n  return {\n    weekOf: new Date(start).toISOString().slice(0, 10),\n    sessions: week.length,\n    target: weeklyTarget,\n    minutes: minutes,\n    sessionsChange: week.length - prev.length,\n    minutesChange: minutes - prevMinutes,\n    longest: longest\n      ? { activity: String((longest.data && longest.data.activity) || 'session'), minutes: minutesOf(longest) }\n      : null,\n  };\n}\n\nfunction recapLine(recap, suggestion) {\n  var change = recap.minutesChange === 0 ? 'same as last week' : (recap.minutesChange > 0 ? '+' : '') + recap.minutesChange + ' min vs last week';\n  return (\n    'Week of ' + recap.weekOf + ': ' + recap.sessions + (recap.target > 0 ? ' of ' + recap.target : '') +\n    ' session(s), ' + recap.minutes + ' min (' + change + ').' +\n    (suggestion ? ' Next week: ' + suggestion : '')\n  );\n}\n// ── fitness-rules-end ──\n\nconst training = logStore(gezel.fs, 'training.json');\n\nasync function readWeeklyTarget(): Promise<number> {\n  try {\n    const parsed = JSON.parse(await gezel.fs.read('training.json')) as { weeklyTarget?: unknown };\n    const target = Number(parsed.weeklyTarget);\n    return Number.isFinite(target) && target > 0 ? Math.round(target) : 0;\n  } catch {\n    return 0;\n  }\n}\n\nlet personalBest = false;\nlet display = '';\nlet status = 'ok';\nif (input.action === 'log_workout') {\n  if (!input.activity) throw new Error(\"log_workout needs 'activity' (what they did).\");\n  const minutes = typeof input.minutes === 'number' && input.minutes > 0 ? Math.round(input.minutes) : 0;\n  const before = await training.list();\n  const longestBefore = before.reduce((n, e) => Math.max(n, Number(e.data?.minutes) || 0), 0);\n  personalBest = minutes > 0 && before.length > 0 && minutes > longestBefore;\n  await training.append({\n    kind: 'workout',\n    ...(input.note ? { note: input.note } : {}),\n    data: {\n      activity: input.activity,\n      ...(typeof input.minutes === 'number' && input.minutes > 0\n        ? { minutes: Math.round(input.minutes) }\n        : {}),\n    },\n  });\n} else if (input.action === 'set_target') {\n  const target = Number(input.weeklyTarget);\n  if (!Number.isFinite(target) || target <= 0) {\n    throw new Error(\"set_target needs a positive 'weeklyTarget' (sessions per week).\");\n  }\n  // logStore has no field API; the passenger key flips via a targeted\n  // read-modify-write that preserves the rest of the file.\n  const raw = JSON.parse(await gezel.fs.read('training.json')) as Record<string, unknown>;\n  raw.weeklyTarget = Math.round(target);\n  await gezel.fs.write('training.json', `${JSON.stringify(raw, null, 2)}\\n`);\n} else if (input.action === 'request_recap') {\n  status = 'recap_wanted';\n} else if (input.action === 'save_recap') {\n  const suggestion = String(input.suggestion ?? '').replace(/\\s+/g, ' ').trim().slice(0, 240);\n  if (suggestion.length < 10) throw new Error(\"save_recap needs a one-sentence 'suggestion' for next week.\");\n  const recap = weekRecap(await training.list(), new Date().toISOString(), await readWeeklyTarget());\n  const doc = { ...recap, suggestion, writtenAt: new Date().toISOString() };\n  const body = `${JSON.stringify(doc, null, 2)}\\n`;\n  await gezel.fs.write(`recaps/${recap.weekOf}.json`, body);\n  await gezel.fs.write('recaps/latest.json', body);\n  display = recapLine(recap, suggestion);\n} else if (!['status', 'history', 'recap_numbers'].includes(String(input.action))) {\n  throw new Error(\n    `Unknown action '${input.action}'. Use status, log_workout, set_target, history, recap_numbers, or save_recap.`,\n  );\n}\n\nconst events = await training.list();\nconst stats = await training.stats();\nconst weeklyTarget = await readWeeklyTarget();\nconst nowIso = new Date().toISOString();\nconst weekCount = thisWeekCount(events, nowIso);\nconst listing =\n  input.action === 'history'\n    ? events\n        .slice(-12)\n        .map(\n          (e) =>\n            `${e.at.slice(0, 10)} ${String(e.data?.activity ?? 'session')}${typeof e.data?.minutes === 'number' ? ` (${e.data.minutes} min)` : ''}${e.note ? ` — ${e.note}` : ''}`,\n        )\n        .join('\\n') || 'No sessions yet.'\n    : '';\n\nconst recap = weekRecap(events, nowIso, weeklyTarget);\ngezel.output({\n  streakDays: stats.streakDays,\n  thisWeek: weekCount,\n  weeklyTarget,\n  summary:\n    listing ||\n    (input.action === 'recap_numbers' || input.action === 'request_recap'\n      ? recapLine(recap, '')\n      : trainingLine(stats, weekCount, weeklyTarget)),\n  personalBest,\n  recap,\n  display,\n  status,\n});\n"
+  },
+  "minGezelVersion": "1.26280"
+}

@@ -1,0 +1,205 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "releasedAt": "2026-10-07T00:00:00Z",
+  "minGezelVersion": "1.26280",
+  "meesterManaged": false,
+  "indexingEnabled": false,
+  "leanProfile": true,
+  "tabVisibility": {
+    "overview": false,
+    "tasks": false,
+    "approvals": false,
+    "workspace": false,
+    "artifacts": false,
+    "map": false
+  },
+  "nameTemplate": "Word Clues",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "woordsmid",
+      "voorman": true
+    },
+    {
+      "templateId": "puzzelaar"
+    }
+  ],
+  "scripts": {
+    "clue-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'clue-store',\n  description:\n    \"The word-clue game's engine (game.json). action:'board' reads the game; 'give_clue' records a clue; 'guess' reveals a word the player picked; 'pass' ends the player's guessing; 'new_game' deals a fresh board.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'board', 'give_clue', 'guess', 'pass', 'new_game'.\",\n      required: true,\n    },\n    clue: { type: 'string', description: 'For give_clue: one word, not on the board.' },\n    count: { type: 'number', description: 'For give_clue: how many of the player’s words it points at.' },\n    say: { type: 'string', description: 'For give_clue: one short line of table talk.' },\n    word: { type: 'string', description: 'For guess: the board word the player picked.' },\n  },\n  outputs: {\n    status: {\n      type: 'string',\n      description: \"'clue_needed', 'guessing', 'won', 'lost' or 'new'.\",\n    },\n    giver: { type: 'string', description: \"Whose clue is next: 'a' (Woordsmid) or 'b' (Puzzelaar).\" },\n    result: { type: 'string', description: \"For guess: 'target', 'neutral', 'trap', or ''.\" },\n    display: { type: 'string', description: 'For give_clue: the clue as shown to the player.' },\n    modelState: { type: 'json', description: 'What the clue-giver sees: its words, the trap, the rest.' },\n    summary: { type: 'string', description: 'A short summary of the game.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── clue-rules-start ──\n// The board is sixteen words: six are the player's, nine are neutral, one\n// is the trap. A clue-giver who knows the board gives one word and a count;\n// the player then picks up to count + 1 words. A neutral word ends their\n// turn, the trap ends the game, and finding all six wins it. Kept\n// self-contained between these sentinels so unit tests execute the shipped\n// bytes.\nvar BOARD_SIZE = 16;\nvar TARGETS = 6;\n\nfunction shuffle(list, random) {\n  var out = list.slice();\n  for (var i = out.length - 1; i > 0; i -= 1) {\n    var j = Math.floor(random() * (i + 1));\n    var t = out[i];\n    out[i] = out[j];\n    out[j] = t;\n  }\n  return out;\n}\n\nfunction deal(bank, random) {\n  var picked = shuffle(bank, random).slice(0, BOARD_SIZE);\n  var cells = picked.map(function (word, i) {\n    return { word: word, kind: i < TARGETS ? 'target' : i === TARGETS ? 'trap' : 'neutral', revealed: false };\n  });\n  return shuffle(cells, random);\n}\n\nfunction remaining(words, kind) {\n  return words.filter(function (w) { return w.kind === kind && !w.revealed; }).map(function (w) { return w.word; });\n}\n\n// Why a clue is not allowed on this board, or '' when it is.\nfunction clueProblem(words, clue, count) {\n  var c = String(clue || '').trim().toLowerCase();\n  if (!/^[a-zÀ-ɏ'-]{2,24}$/.test(c)) return 'A clue is one word of letters, like \"ocean\".';\n  for (var i = 0; i < words.length; i += 1) {\n    var w = words[i].word.toLowerCase();\n    if (w === c) return '\"' + c + '\" is on the board.';\n    // Forms of a board word (plurals, compounds that start with it) give the\n    // answer away; a word that merely contains one (\"planet\", \"net\") does not.\n    var shorter = c.length < w.length ? c : w;\n    var longer = c.length < w.length ? w : c;\n    if (shorter.length >= 3 && longer.indexOf(shorter) === 0)\n      return '\"' + c + '\" is a form of the board word \"' + w + '\".';\n  }\n  var left = remaining(words, 'target').length;\n  if (!(count >= 1 && count <= left && Math.floor(count) === count))\n    return 'The count must be a whole number from 1 to ' + left + '.';\n  return '';\n}\n\nfunction applyGuess(game, word) {\n  var pick = String(word || '').trim().toLowerCase();\n  var cell = game.words.find(function (w) { return w.word.toLowerCase() === pick; });\n  if (!cell) return { error: '\"' + word + '\" is not on the board.' };\n  if (cell.revealed) return { error: '\"' + cell.word + '\" is already revealed.' };\n  cell.revealed = true;\n  var result = cell.kind;\n  if (result === 'trap') {\n    game.status = 'lost';\n  } else if (remaining(game.words, 'target').length === 0) {\n    game.status = 'won';\n  } else if (result === 'neutral') {\n    endGuessing(game);\n  } else {\n    game.clue.guessesLeft -= 1;\n    if (game.clue.guessesLeft <= 0) endGuessing(game);\n  }\n  return { result: result };\n}\n\nfunction endGuessing(game) {\n  game.status = 'clue_needed';\n  game.giver = game.giver === 'a' ? 'b' : 'a';\n}\n// ── clue-rules-end ──\n\ninterface Cell {\n  word: string;\n  kind: 'target' | 'neutral' | 'trap';\n  revealed: boolean;\n}\n\ninterface Game {\n  version: number;\n  status: 'new' | 'clue_needed' | 'guessing' | 'won' | 'lost';\n  giver: 'a' | 'b';\n  words: Cell[];\n  clue: { word: string; count: number; guessesLeft: number; giver: 'a' | 'b' } | null;\n  round: number;\n  history: Array<{ round: number; clue: string; count: number; found: string[] }>;\n  stats: { played: number; won: number; lost: number };\n}\n\nconst GAME_FILE = 'game.json';\n\nasync function load(): Promise<Game> {\n  let parsed: Partial<Game> = {};\n  try {\n    parsed = JSON.parse(await gezel.fs.read(GAME_FILE)) as Partial<Game>;\n  } catch {\n    // A missing game is a new one.\n  }\n  return {\n    version: 1,\n    status: parsed.status ?? 'new',\n    giver: parsed.giver === 'b' ? 'b' : 'a',\n    words: Array.isArray(parsed.words) ? parsed.words : [],\n    clue: parsed.clue ?? null,\n    round: parsed.round ?? 0,\n    history: Array.isArray(parsed.history) ? parsed.history : [],\n    stats: parsed.stats ?? { played: 0, won: 0, lost: 0 },\n  };\n}\n\nasync function save(game: Game): Promise<void> {\n  await gezel.fs.write(GAME_FILE, `${JSON.stringify(game, null, 2)}\\n`);\n}\n\nconst game = await load();\nlet result = '';\nlet display = '';\nlet changed = false;\n\nswitch (input.action) {\n  case 'new_game': {\n    let bank: string[] = [];\n    try {\n      bank = (JSON.parse(await gezel.fs.read('words.json')) as { words?: string[] }).words ?? [];\n    } catch {\n      bank = [];\n    }\n    if (bank.length < BOARD_SIZE) throw new Error('words.json needs at least 16 words.');\n    game.words = deal(bank, Math.random);\n    game.status = 'clue_needed';\n    game.giver = game.stats.played % 2 === 0 ? 'a' : 'b';\n    game.clue = null;\n    game.round = 0;\n    game.history = [];\n    changed = true;\n    break;\n  }\n  case 'give_clue': {\n    if (game.status !== 'clue_needed')\n      throw new Error(\n        game.status === 'guessing'\n          ? 'The player is still guessing; no clue is needed yet.'\n          : 'The game is over. Offer a new game instead of a clue.',\n      );\n    const count = Number(input.count);\n    const problem = clueProblem(game.words, input.clue, count);\n    if (problem) throw new Error(`${problem} Give another clue.`);\n    const word = String(input.clue).trim().toUpperCase();\n    game.clue = { word, count, guessesLeft: count + 1, giver: game.giver };\n    game.status = 'guessing';\n    game.round += 1;\n    game.history = [...game.history, { round: game.round, clue: word, count, found: [] }];\n    const say = String(input.say ?? '').replace(/\\s+/g, ' ').trim().slice(0, 160);\n    display = `Clue: ${word}, ${count}.${say ? ` ${say}` : ''}`;\n    changed = true;\n    break;\n  }\n  case 'guess': {\n    if (game.status !== 'guessing') throw new Error('Wait for a clue before guessing.');\n    const outcome = applyGuess(game, input.word);\n    if (outcome.error) throw new Error(outcome.error);\n    result = outcome.result;\n    if (result === 'target') game.history[game.history.length - 1]?.found.push(String(input.word));\n    if (game.status === 'won' || game.status === 'lost') {\n      game.stats.played += 1;\n      if (game.status === 'won') game.stats.won += 1;\n      else game.stats.lost += 1;\n    }\n    changed = true;\n    break;\n  }\n  case 'pass': {\n    if (game.status !== 'guessing') throw new Error('There is no guessing turn to end.');\n    endGuessing(game);\n    changed = true;\n    break;\n  }\n  case 'board':\n    break;\n  default:\n    throw new Error(`Unknown action '${input.action}'.`);\n}\n\nif (changed) await save(game);\n\nconst over = game.status === 'won' || game.status === 'lost';\ngezel.output({\n  status: game.status,\n  giver: game.giver,\n  result,\n  display,\n  modelState: {\n    status: game.status,\n    yourWords: remaining(game.words, 'target'),\n    trap: game.words.find((w) => w.kind === 'trap')?.word ?? '',\n    otherWords: remaining(game.words, 'neutral'),\n    found: game.words.filter((w) => w.kind === 'target' && w.revealed).map((w) => w.word),\n    round: game.round,\n    ...(game.clue && game.status === 'guessing' ? { currentClue: `${game.clue.word} ${game.clue.count}` } : {}),\n  },\n  summary: over\n    ? `The player ${game.status === 'won' ? 'found all six words' : 'hit the trap'} in ${game.round} round(s). Games: ${game.stats.won} won, ${game.stats.lost} lost.`\n    : `Round ${game.round}: ${remaining(game.words, 'target').length} of 6 words still to find.`,\n});\n"
+  },
+  "tools": [
+    {
+      "name": "board",
+      "description": "Read the game: your words still to find, the trap, the other words, and whether a clue is needed.",
+      "script": "clue-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "board"
+      },
+      "state": true,
+      "answer": {
+        "tool": "give_clue",
+        "when": {
+          "op": "equals",
+          "field": "status",
+          "value": "clue_needed"
+        }
+      }
+    },
+    {
+      "name": "give_clue",
+      "description": "Give the player's next clue: one word that is not on the board, the number of their words it points at, and one short line of table talk.",
+      "script": "clue-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "clue": {
+            "type": "string",
+            "description": "One word, not on the board."
+          },
+          "count": {
+            "type": "number",
+            "description": "How many of the player's words it points at."
+          },
+          "say": {
+            "type": "string",
+            "description": "One short line of table talk (max 160 characters)."
+          }
+        },
+        "required": [
+          "clue",
+          "count"
+        ]
+      },
+      "bind": {
+        "action": "give_clue"
+      },
+      "turn": {
+        "say": "say",
+        "show": "display",
+        "fallback": "Your clue is on the board."
+      }
+    },
+    {
+      "name": "new_game",
+      "description": "Deal a fresh board.",
+      "script": "clue-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "new_game"
+      }
+    },
+    {
+      "name": "guess",
+      "description": "The player picks a word on the board.",
+      "script": "clue-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "word": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "word"
+        ]
+      },
+      "bind": {
+        "action": "guess"
+      }
+    },
+    {
+      "name": "pass",
+      "description": "The player stops guessing this turn.",
+      "script": "clue-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "pass"
+      }
+    },
+    {
+      "name": "ask_clue_a",
+      "description": "The board asks for the next clue.",
+      "script": "clue-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "board"
+      },
+      "reaction": {
+        "gezel": "woordsmid",
+        "hideSeed": true,
+        "standalone": true,
+        "prompt": "It is your turn in Word Clues. The game engine returned this state:\n```json\n{{output.modelState}}\n```\nIf `status` is `clue_needed`, call give_clue once: `clue` is one word that links some of `yourWords`, `count` is how many it points at, and `say` is one short line of table talk. Never pick a clue that also fits `trap`, and avoid ones that fit `otherWords`. If the game is over, give no clue: say one warm line about how it went and offer another game.",
+        "turn": {
+          "tool": "give_clue",
+          "when": {
+            "op": "equals",
+            "field": "status",
+            "value": "clue_needed"
+          }
+        }
+      }
+    },
+    {
+      "name": "ask_clue_b",
+      "description": "The board asks for the next clue.",
+      "script": "clue-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "board"
+      },
+      "reaction": {
+        "gezel": "puzzelaar",
+        "hideSeed": true,
+        "standalone": true,
+        "prompt": "It is your turn in Word Clues. The game engine returned this state:\n```json\n{{output.modelState}}\n```\nIf `status` is `clue_needed`, call give_clue once: `clue` is one word that links some of `yourWords`, `count` is how many it points at, and `say` is one short line of table talk. Never pick a clue that also fits `trap`, and avoid ones that fit `otherWords`. If the game is over, give no clue: say one warm line about how it went and offer another game.",
+        "turn": {
+          "tool": "give_clue",
+          "when": {
+            "op": "equals",
+            "field": "status",
+            "value": "clue_needed"
+          }
+        }
+      }
+    }
+  ],
+  "pages": {
+    "entry": "board/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "game.json"
+      }
+    ],
+    "tools": [
+      "new_game",
+      "guess",
+      "pass",
+      "ask_clue_a",
+      "ask_clue_b"
+    ]
+  },
+  "workspaceSeed": [
+    "game.json",
+    "words.json"
+  ]
+}
