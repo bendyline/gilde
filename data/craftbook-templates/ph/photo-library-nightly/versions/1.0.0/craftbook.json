@@ -1,0 +1,186 @@
+{
+  "id": "photo-library-nightly",
+  "name": "Nightly Photo Albums",
+  "description": "Overnight, find the recent outings in a photo folder that have no album yet and leave one album per outing in the artifacts drawer: a Squisq slideshow of the frames that tell the day, in order, captioned, with gentle motion between them. The person plays it, edits it, and exports it to video. Grounded entirely in the photo index (`photo_groups`, `list_photos`): every photo in an album is a real photo, the runtime stores resized copies with the album, and the originals are never touched.",
+  "entryStepId": "survey",
+  "triggers": [
+    "make albums from my recent photos",
+    "albums from last weekend",
+    "nightly photo albums"
+  ],
+  "command": "photo-albums",
+  "runModes": {
+    "scheduled": "supported",
+    "nightShift": "recommended"
+  },
+  "capabilityFloor": "small",
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      },
+      "recentDays": {
+        "type": "integer",
+        "title": "Look back (days)",
+        "description": "Outings that began within this many days are considered. Default 45.",
+        "default": 45
+      },
+      "maxAlbums": {
+        "type": "integer",
+        "title": "Albums per night",
+        "description": "The most album proposals one night makes. Default 3.",
+        "default": 3
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "survey",
+      "name": "Find the outings",
+      "description": "Recent outings without an album, read from the photo index.",
+      "prompt": "Find the outings that deserve an album tonight. Look back {{recentDays}} days and propose at most {{maxAlbums}} albums (if either value reads as a raw {{...}} placeholder, use 45 days and 3 albums).\n\n1. Call `photo_groups` with `by: \"event\"`. Each group is one outing: photos taken without a three-hour gap, with its `from` and `to` capture times, its photo count, and a few sample paths. Screenshots are already left out.\n2. Call `list_artifacts` on `albums/`. An album is named `albums/<YYYY-MM-DD>-<slug>.md` after the day its outing began, so an outing whose `from` date already starts an album's name has one. Skip it.\n3. Choose the outings that began within the last {{recentDays}} days and have no album, newest first, at most {{maxAlbums}}. An outing of fewer than 6 photos is a moment, not an album: skip it too.\n4. Write `{{workPath}}/outings.md` with `write_artifact`: one `## <from> to <to>` section per chosen outing, with its photo count and its `from` and `to` copied exactly from `photo_groups`, character for character. When none qualifies, write the single line `No new outings`, followed by why: no dated photos, nothing in the window, or every outing already has an album.\n\nRead the photo index only. Never open, move, copy, rename or delete a photo.",
+      "suggestedRole": "curator",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      },
+      "advanceWhen": {
+        "file": "{{workPath}}/outings.md",
+        "minBytes": 1,
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/outings.md",
+            "bytes": 14,
+            "artifact": true
+          }
+        ],
+        "onReject": "survey",
+        "maxAttempts": 3
+      },
+      "next": "albums"
+    },
+    {
+      "id": "albums",
+      "name": "Propose the albums",
+      "description": "One Squisq slideshow per outing: the frames that tell it, captioned, in order.",
+      "prompt": "Make one album for each outing in `{{workPath}}/outings.md` (read it with `read_artifact` first). If it says `No new outings`, write `{{workPath}}/albums.md` with that line and the reason, and stop.\n\nFor each outing:\n\n1. Call `list_photos` with `from` and `to` set to the outing's timestamps exactly as `outings.md` gives them, `screenshots: false`, and `limit: 300`. These records are the only photos you may use: their `path`, `takenAt`, `camera` and, where the index has described the photo, `caption`.\n2. Group the moments. Photos taken within a minute of each other that show the same thing are one moment; keep the frame whose caption shows the most, or two to four of them when together they tell the moment.\n3. Pick the moments that tell the outing from start to end: between 6 and 24 photos, never more than the outing holds, in the order they were taken.\n4. Write the album with `write_artifact` to `albums/<YYYY-MM-DD>-<slug>.md`, where the date is the day the outing began and the slug is two or three lowercase words for what it shows (`albums/2026-09-20-beach-afternoon.md`). It is a Squisq slideshow, written as the notes on Squisq slideshows below describe:\n   - frontmatter with `title`, `squisq-theme: gezellig`, `album-from` and `album-to` set to the outing's timestamps;\n   - the `#` title and two or three warm sentences: what the day was;\n   - one slide per moment, its caption one short line about what the photo shows, a gentle `ambientMotion` on single photos and `transition=dissolve`;\n   - each photo linked by its `path` exactly as `list_photos` spells it. The runtime stores a resized copy with the album; never copy, move or rename a photo yourself.\n   Where a photo has no caption, write the caption from what its neighbours show and keep it modest; never describe what you cannot see. Leave out place names and coordinates unless a caption already names the place.\n\nWhen every album is written, write `{{workPath}}/albums.md` with one line per album: its artifact path, its title, and how many photos it holds out of the outing's total. The albums are proposals the person keeps, edits or discards.",
+      "suggestedRole": "curator",
+      "authoring": "squisq-slideshow",
+      "consumes": [
+        {
+          "file": "{{workPath}}/outings.md",
+          "artifact": true
+        }
+      ],
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      },
+      "advanceWhen": {
+        "file": "{{workPath}}/albums.md",
+        "minBytes": 1,
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/albums.md",
+            "bytes": 14,
+            "artifact": true
+          }
+        ],
+        "onReject": "albums",
+        "maxAttempts": 3
+      },
+      "next": "finish"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "Stamp the summary note and stop.",
+      "prompt": "Write a one-paragraph DONE summary with `write_task_note`: how many albums you proposed tonight, each album's path and title, and any outing you skipped and why. Report DONE.",
+      "suggestedRole": "curator",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      },
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-10-08T00:00:00Z",
+  "minGezelVersion": "1.26281"
+}

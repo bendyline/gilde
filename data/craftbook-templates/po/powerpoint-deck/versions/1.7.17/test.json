@@ -1,0 +1,265 @@
+{
+  "schemaVersion": 1,
+  "title": "PowerPoint source grounding, outline parity, and final saved file",
+  "objective": "Measure the complete PowerPoint workflow through its terminal save step: acquire and cite sources, match the approved outline, convert and inspect the PPTX, and retain both the artifact and requested workspace copy without a separate evaluation or summary handoff.",
+  "tags": [
+    "corpus",
+    "research",
+    "grounding",
+    "external",
+    "documents"
+  ],
+  "prompt": "Create a PowerPoint from source/brief.md for operations leads. Use 6-8 slides, preserve the supplied facts exactly, and close with next actions. Do not create HTML.\n\nProduce the finished file through the DocBlocks tools on your roster: `list_roots`, then `convert_document` on the approved `powerpoint/eval/deck.md`, `preview_document` to confirm it rendered, save_artifact to retain the deck in the task artifacts folder, and copy_artifact_to_workspace to save it at deliverables/d-day.pptx. Inspect the saved file and finish by telling the user where it is. Markdown or hand-built OOXML written to that path is not a substitute for the real file.",
+  "setup": {
+    "projectName": "PowerPoint Grounding Eval",
+    "about": "The exact source file is authoritative; the deck must keep the locked outline and its facts.",
+    "missionObjectives": "Read source/brief.md, cite it, preserve the locked outline and facts, and finish with an inspected editable PPTX at deliverables/d-day.pptx plus a retained artifact copy.",
+    "craftbookParams": {
+      "outputPath": "deliverables/d-day.pptx",
+      "sourcePath": "source/brief.md",
+      "topic": "Boreal Desk Returns Pilot",
+      "content": "",
+      "audience": "operations leads",
+      "outputDir": "powerpoint/eval"
+    },
+    "files": [
+      {
+        "path": "source/brief.md",
+        "content": "# Boreal Desk Returns Pilot\n\nAudience: operations leads.\n\nFacts:\n- Pilot coverage: 18 SKUs.\n- Median first response: 18 hours to 6 hours.\n- Preventable refund leakage: 14.2% to 8.9%.\n- Top unresolved complaint: status silence after photo submission.\n- Next actions: automated status emails, barcode-exception training, weekly Finance exception export.\n\nDo not invent other metrics."
+      }
+    ],
+    "worker": {
+      "name": "Mara",
+      "role": "Researcher"
+    }
+  },
+  "mocks": [
+    {
+      "kind": "mcp",
+      "id": "docblocks",
+      "toolsetId": "docblocks",
+      "description": "Deterministic fake DocBlocks MCP for final presentation conversion, preview, and saving.",
+      "tools": [
+        {
+          "name": "list_roots",
+          "description": "List the workspace read root and artifacts write root.",
+          "resultTemplate": {
+            "roots": [
+              {
+                "id": "workspace",
+                "name": "workspace",
+                "capabilities": [
+                  "read"
+                ]
+              },
+              {
+                "id": "artifacts",
+                "name": "artifacts",
+                "capabilities": [
+                  "read",
+                  "write"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "get_authoring_context",
+          "description": "Return optional PPTX authoring guidance.",
+          "resultTemplate": {
+            "targetFormat": "pptx",
+            "guidance": "Use one H1 per slide and editable-native fidelity."
+          }
+        },
+        {
+          "name": "convert_document",
+          "description": "Convert approved Markdown to a deterministic PPTX artifact URI.",
+          "resultTemplate": {
+            "artifacts": [
+              {
+                "format": "pptx",
+                "uri": "mock://docblocks/deck.pptx",
+                "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              }
+            ],
+            "diagnostics": []
+          }
+        },
+        {
+          "name": "preview_document",
+          "description": "Return deterministic slide-preview evidence.",
+          "resultTemplate": {
+            "slides": 7,
+            "overflow": false,
+            "tinyText": false,
+            "previewed": true
+          }
+        },
+        {
+          "name": "save_artifact",
+          "description": "Save the converted PPTX into the project artifacts drawer.",
+          "resultTemplate": {
+            "ok": true,
+            "bytes": 2400,
+            "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+          },
+          "writeFixture": {
+            "surface": "artifact",
+            "pathArgument": "destination.path",
+            "fixture": "minimal-pptx"
+          }
+        },
+        {
+          "name": "inspect_document",
+          "description": "Inspect the converted or saved PowerPoint and report its document structure.",
+          "resultTemplate": {
+            "format": "pptx",
+            "slideCount": 7,
+            "sourceSha256": "2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        }
+      ]
+    }
+  ],
+  "success": {
+    "summary": "The source packet cites the exact brief, the Markdown matches the outline and supplied facts, and real PPTX files exist at both the retained artifact path and requested workspace path after conversion and inspection.",
+    "deliverables": [
+      {
+        "path": "{{task.dir}}/sources.md",
+        "kind": "markdown-doc",
+        "minBytes": 500,
+        "artifact": true,
+        "checks": [
+          {
+            "kind": "citationsResolve",
+            "file": "{{task.dir}}/sources.md",
+            "artifact": true,
+            "minCitations": 1
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/outline.md",
+        "kind": "markdown-doc",
+        "minBytes": 500,
+        "artifact": true,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/outline.md",
+            "pattern": "(?:^|\\n)#{2,6}\\s+(?:Slide\\s+)?1(?:\\s*[.:\\-–—]\\s*|\\s+)\\S",
+            "flags": "i",
+            "label": "a numbered Slide 1 heading",
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "powerpoint/eval/deck.md",
+        "kind": "markdown-doc",
+        "minBytes": 700,
+        "checks": [
+          {
+            "kind": "markdownHeadingsMatch",
+            "file": "powerpoint/eval/deck.md",
+            "outlineFile": "{{task.dir}}/outline.md",
+            "outlineArtifact": true
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "powerpoint/eval/deck.md",
+            "minCitations": 1
+          },
+          {
+            "kind": "contains",
+            "file": "powerpoint/eval/deck.md",
+            "pattern": "18\\s+SKUs|18\\s+hours|6\\s+hours|14\\.2%|8\\.9%",
+            "flags": "i",
+            "label": "the supplied figures, verbatim"
+          },
+          {
+            "kind": "contains",
+            "file": "powerpoint/eval/deck.md",
+            "pattern": "automated status emails|barcode-exception training|weekly Finance exception export",
+            "flags": "i",
+            "label": "the supplied next actions"
+          },
+          {
+            "kind": "notContains",
+            "file": "powerpoint/eval/deck.md",
+            "pattern": "<html|<script|<style",
+            "flags": "i"
+          }
+        ]
+      },
+      {
+        "path": "deliverables/d-day.pptx",
+        "kind": "slide-deck",
+        "minBytes": 1000,
+        "checks": [
+          {
+            "kind": "binaryDocument",
+            "file": "deliverables/d-day.pptx",
+            "minBytes": 1000
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/deck.pptx",
+        "kind": "slide-deck",
+        "minBytes": 1000,
+        "artifact": true,
+        "checks": [
+          {
+            "kind": "binaryDocument",
+            "file": "{{task.dir}}/deck.pptx",
+            "minBytes": 1000,
+            "artifact": true
+          }
+        ]
+      }
+    ],
+    "mocks": [
+      {
+        "service": "docblocks",
+        "requiredTools": [
+          "convert_document",
+          "preview_document",
+          "save_artifact",
+          "inspect_document"
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "powerpoint/eval/deck.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "source-acquisition",
+        "description": "The workflow read and cited the exact supplied source before outlining."
+      },
+      {
+        "name": "outline-parity",
+        "description": "Every numbered outline slide appears exactly once as a same-title H1 in powerpoint/eval/deck.md, in order."
+      },
+      {
+        "name": "grounding",
+        "description": "Every metric and action comes from source/brief.md and no extra metric was invented."
+      },
+      {
+        "name": "convertibility",
+        "description": "One H1 per slide and concise block content make the source ready for DocBlocks PPTX conversion."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "successful exact-source retrieval",
+    "resolvable citations",
+    "exact outline-to-deck slide parity",
+    "no HTML intermediary",
+    "completion directly from save with both PPTX copies present"
+  ]
+}

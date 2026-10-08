@@ -1,0 +1,245 @@
+{
+  "schemaVersion": 1,
+  "version": "1.1.0",
+  "releasedAt": "2026-10-07T00:00:00Z",
+  "extends": "content-writing",
+  "meesterManaged": false,
+  "leanProfile": true,
+  "params": {
+    "type": "object",
+    "properties": {
+      "language": {
+        "type": "string",
+        "title": "Which language?",
+        "description": "The language you want to practice, e.g. Spanish, Japanese, French.",
+        "default": "Spanish"
+      }
+    },
+    "required": [
+      "language"
+    ]
+  },
+  "nameTemplate": "{{language}} Language Trainer",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "language-trainer",
+      "voorman": true
+    }
+  ],
+  "scripts": {
+    "progress-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'progress-store',\n  description:\n    \"The language trainer's state: progress, the role-play scene in play, and the review deck of the student's corrections. action:'state' reads it; 'begin' starts a scene; 'reply' records the tutor's line and the errors it found in the student's last message; 'review' grades a review card; 'end' closes the scene; 'advance' moves up a level.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'state', 'begin', 'reply', 'review', 'end', 'advance' (or the older 'status', 'record').\",\n      required: true,\n    },\n    scenario: { type: 'string', description: \"For begin: a scenario id or title, e.g. 'coffee'.\" },\n    say: { type: 'string', description: \"For reply: the tutor's next line, in the language being practiced.\" },\n    errors: {\n      type: 'json',\n      description: \"For reply: mistakes in the student's last message, [{ wrong, right, note? }], at most 3.\",\n    },\n    done: { type: 'boolean', description: \"For reply: true when the scene's goal is reached.\" },\n    id: { type: 'string', description: \"For review: the review card id, e.g. 'r-3'.\" },\n    verdict: { type: 'string', description: \"For review: 'got-it' or 'missed'.\" },\n    note: { type: 'string', description: 'For advance or record: a short note.' },\n  },\n  outputs: {\n    status: { type: 'string', description: \"'active' while a scene is in play, else 'idle' (or 'started' / 'done').\" },\n    display: { type: 'string', description: \"For reply: the tutor's line plus the corrections, as shown.\" },\n    level: { type: 'number', description: 'Current level (1+).' },\n    streak: { type: 'number', description: 'Days in a row with practice.' },\n    dueCount: { type: 'number', description: 'Review cards due now.' },\n    message: { type: 'string', description: 'A short summary of the state.' },\n    scene: { type: 'json', description: 'The scene in play: title, the part the tutor plays, setting, goal.' },\n    dueReviews: { type: 'json', description: 'Up to three corrections due for review, { wrong, right }.' },\n    scenarios: { type: 'json', description: 'Scenario ids open at this level (when no scene is in play).' },\n    opening: { type: 'boolean', description: 'True right after begin: the tutor opens the scene.' },\n  },\n  requires: ['workspace.read', 'workspace.write', 'memory.write', 'reminders'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── review-rules-start ──\n// Corrections become review cards on three Leitner boxes: box 1 comes back\n// the next day, box 2 after three days, box 3 after a week. A card the\n// student gets right moves up; a miss, or the same mistake made again in\n// conversation, sends it back to box 1. Kept self-contained between these\n// sentinels so unit tests execute the shipped bytes.\nvar REVIEW_INTERVAL_DAYS = { 1: 1, 2: 3, 3: 7 };\nvar REVIEW_DAY_MS = 24 * 60 * 60 * 1000;\n\nfunction reviewDueAt(card) {\n  if (!card.lastSeenAt) return 0;\n  return Date.parse(card.lastSeenAt) + (REVIEW_INTERVAL_DAYS[card.box] || 1) * REVIEW_DAY_MS;\n}\n\nfunction dueReviews(cards, nowMs) {\n  return cards\n    .filter(function (c) {\n      return reviewDueAt(c) <= nowMs;\n    })\n    .sort(function (a, b) {\n      return a.box - b.box || reviewDueAt(a) - reviewDueAt(b);\n    });\n}\n\nfunction nextReviewAt(cards, nowMs) {\n  var next = Infinity;\n  for (var i = 0; i < cards.length; i += 1) {\n    var at = reviewDueAt(cards[i]);\n    if (at > nowMs && at < next) next = at;\n  }\n  return next;\n}\n\nfunction cleanText(value, max) {\n  return typeof value === 'string' ? value.replace(/\\s+/g, ' ').trim().slice(0, max) : '';\n}\n\n// The grading the model returned, made safe to store: at most three\n// mistakes, each a real change, without duplicates.\nfunction normalizeErrors(raw) {\n  var list = Array.isArray(raw) ? raw : [];\n  var out = [];\n  for (var i = 0; i < list.length && out.length < 3; i += 1) {\n    var e = list[i] || {};\n    var wrong = cleanText(e.wrong, 80);\n    var right = cleanText(e.right, 80);\n    if (!wrong || !right || wrong.toLowerCase() === right.toLowerCase()) continue;\n    if (out.some(function (o) { return o.wrong.toLowerCase() === wrong.toLowerCase(); })) continue;\n    var note = cleanText(e.note, 80);\n    out.push(note ? { wrong: wrong, right: right, note: note } : { wrong: wrong, right: right });\n  }\n  return out;\n}\n\n// Each mistake joins the deck, or sends its card back to box 1.\nfunction addCorrections(cards, errors, nowIso) {\n  var max = 0;\n  for (var i = 0; i < cards.length; i += 1) {\n    var m = /^r-(\\d+)$/.exec(cards[i].id);\n    if (m) max = Math.max(max, Number(m[1]));\n  }\n  for (var j = 0; j < errors.length; j += 1) {\n    var e = errors[j];\n    var found = cards.find(function (c) {\n      return c.wrong.toLowerCase() === e.wrong.toLowerCase() && c.right.toLowerCase() === e.right.toLowerCase();\n    });\n    if (found) {\n      found.box = 1;\n      found.lastSeenAt = nowIso;\n      found.repeats = (found.repeats || 0) + 1;\n    } else {\n      max += 1;\n      cards.push({\n        id: 'r-' + max,\n        wrong: e.wrong,\n        right: e.right,\n        note: e.note || '',\n        box: 1,\n        lastSeenAt: nowIso,\n        createdAt: nowIso,\n        repeats: 0,\n      });\n    }\n  }\n  return cards;\n}\n\nfunction gradeReview(card, verdict, nowIso) {\n  card.box = verdict === 'got-it' ? Math.min(3, card.box + 1) : 1;\n  card.lastSeenAt = nowIso;\n  return card;\n}\n\n// What the student sees: the tutor's line, then the corrections the app\n// recorded, so feedback never depends on the model writing it out.\nfunction displayLine(say, errors, done) {\n  var text = say;\n  if (errors.length) {\n    text +=\n      ' — Corrections: ' +\n      errors\n        .map(function (e) {\n          return '\"' + e.wrong + '\" → \"' + e.right + '\"' + (e.note ? ' (' + e.note + ')' : '');\n        })\n        .join('; ') +\n      '.';\n  }\n  if (done) text += ' Scene complete.';\n  return text;\n}\n\n// The streak counts calendar days with practice, in the device's time zone.\nfunction practiceDay(nowMs) {\n  var d = new Date(nowMs);\n  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');\n}\n\nfunction nextStreak(streak, lastDay, nowMs) {\n  var today = practiceDay(nowMs);\n  if (lastDay === today) return streak || 1;\n  return lastDay === practiceDay(nowMs - REVIEW_DAY_MS) ? (streak || 0) + 1 : 1;\n}\n// ── review-rules-end ──\n\ninterface Scene {\n  id: string;\n  title: string;\n  role: string;\n  setting: string;\n  goal: string;\n  level: number;\n  status: 'active' | 'done';\n  turns: number;\n  mistakes: number;\n  startedAt: string;\n}\n\ninterface Progress {\n  language: string;\n  level: number;\n  sessions: number;\n  streak: number;\n  lastPracticeDay: string | null;\n  scene: Scene | null;\n  history: Array<{ day: string; scene: string; turns: number; mistakes: number }>;\n  notes: string[];\n}\n\ninterface Scenario {\n  id: string;\n  title: string;\n  level: number;\n  role: string;\n  setting: string;\n  goal: string;\n}\n\ninterface ReviewCard {\n  id: string;\n  wrong: string;\n  right: string;\n  note: string;\n  box: number;\n  lastSeenAt: string | null;\n  createdAt: string;\n  repeats: number;\n}\n\nasync function readJson<T>(path: string, fallback: T): Promise<T> {\n  try {\n    return JSON.parse(await gezel.fs.read(path)) as T;\n  } catch {\n    return fallback;\n  }\n}\n\nasync function writeJson(path: string, value: unknown): Promise<void> {\n  await gezel.fs.write(path, `${JSON.stringify(value, null, 2)}\\n`);\n}\n\nconst nowMs = Date.now();\nconst nowIso = new Date(nowMs).toISOString();\nconst raw = await readJson<Partial<Progress>>('progress.json', {});\nconst progress: Progress = {\n  language: raw.language ?? 'your language',\n  level: raw.level ?? 1,\n  sessions: raw.sessions ?? 0,\n  streak: raw.streak ?? 0,\n  lastPracticeDay: raw.lastPracticeDay ?? null,\n  scene: raw.scene ?? null,\n  history: Array.isArray(raw.history) ? raw.history : [],\n  notes: Array.isArray(raw.notes) ? raw.notes : [],\n};\nconst scenarios = (await readJson<{ scenarios?: Scenario[] }>('scenarios.json', {})).scenarios ?? [];\nconst deck = await readJson<{ items?: ReviewCard[] }>('reviews.json', {});\nconst cards: ReviewCard[] = Array.isArray(deck.items) ? deck.items : [];\n\nlet status: string = progress.scene?.status === 'active' ? 'active' : 'idle';\nlet display = '';\nlet progressChanged = false;\nlet cardsChanged = false;\n\nfunction findScenario(query: string): Scenario | undefined {\n  const q = query.trim().toLowerCase();\n  return (\n    scenarios.find((s) => s.id === q) ??\n    scenarios.find((s) => s.title.toLowerCase() === q) ??\n    scenarios.find((s) => s.title.toLowerCase().includes(q) || q.includes(s.id))\n  );\n}\n\nfunction practiced(): void {\n  progress.streak = nextStreak(progress.streak, progress.lastPracticeDay, nowMs);\n  progress.lastPracticeDay = practiceDay(nowMs);\n}\n\nfunction closeScene(): void {\n  const scene = progress.scene;\n  if (!scene || scene.status !== 'active') return;\n  scene.status = 'done';\n  progress.sessions += 1;\n  progress.history = [\n    ...progress.history,\n    { day: practiceDay(nowMs), scene: scene.title, turns: scene.turns, mistakes: scene.mistakes },\n  ].slice(-30);\n  status = 'done';\n}\n\nswitch (input.action) {\n  case 'begin': {\n    const scenario = findScenario(String(input.scenario ?? ''));\n    if (!scenario) {\n      throw new Error(\n        `No scenario '${input.scenario ?? ''}'. Choose one of: ${scenarios.map((s) => s.id).join(', ')}.`,\n      );\n    }\n    progress.scene = {\n      id: scenario.id,\n      title: scenario.title,\n      role: scenario.role,\n      setting: scenario.setting,\n      goal: scenario.goal,\n      level: progress.level,\n      status: 'active',\n      turns: 0,\n      mistakes: 0,\n      startedAt: nowIso,\n    };\n    status = 'started';\n    progressChanged = true;\n    break;\n  }\n  case 'reply': {\n    const say = String(input.say ?? '').replace(/\\s+/g, ' ').trim().slice(0, 240);\n    if (!say) throw new Error(\"reply needs 'say': your next line, in the language being practiced.\");\n    const errors = normalizeErrors(input.errors);\n    if (errors.length) {\n      addCorrections(cards, errors, nowIso);\n      cardsChanged = true;\n      for (const e of errors) {\n        const text = `Said \"${e.wrong}\"; it is \"${e.right}\"${e.note ? ` (${e.note})` : ''}`.slice(0, 200);\n        try {\n          await gezel.memory.save(text, { kind: 'correction', scope: 'gezel' });\n        } catch {\n          // Memory is a bonus; the deck already holds the correction.\n        }\n      }\n    }\n    if (progress.scene?.status === 'active') {\n      progress.scene.turns += 1;\n      progress.scene.mistakes += errors.length;\n    }\n    practiced();\n    // A scene ends once the student has played it: never on the opener, and\n    // not before two lines of their own (a small model marked its first line done).\n    const finished = input.done === true && (progress.scene?.turns ?? 0) >= 3;\n    if (finished) closeScene();\n    display = displayLine(say, errors, finished);\n    progressChanged = true;\n    break;\n  }\n  case 'review': {\n    const card = cards.find((c) => c.id === input.id);\n    if (!card || (input.verdict !== 'got-it' && input.verdict !== 'missed'))\n      throw new Error(\"review needs a card 'id' and verdict 'got-it' or 'missed'.\");\n    gradeReview(card, input.verdict, nowIso);\n    cardsChanged = true;\n    practiced();\n    progressChanged = true;\n    break;\n  }\n  case 'end': {\n    closeScene();\n    progressChanged = true;\n    break;\n  }\n  case 'advance': {\n    progress.level += 1;\n    progress.notes = [\n      ...progress.notes,\n      `Advanced to level ${progress.level}${input.note ? `: ${input.note}` : ''}`,\n    ].slice(-20);\n    progressChanged = true;\n    break;\n  }\n  case 'record': {\n    practiced();\n    if (input.note) progress.notes = [...progress.notes, String(input.note)].slice(-20);\n    progressChanged = true;\n    break;\n  }\n  case 'state':\n  case 'status':\n    break;\n  default:\n    throw new Error(`Unknown action '${input.action}'.`);\n}\n\nif (progressChanged) await writeJson('progress.json', progress);\nif (cardsChanged) {\n  await writeJson('reviews.json', { items: cards });\n  // The next card coming due is the one moment a reminder is earned.\n  const next = nextReviewAt(cards, nowMs);\n  try {\n    if (Number.isFinite(next)) {\n      const count = dueReviews(cards, next).length;\n      await gezel.reminder.set({\n        at: new Date(next).toISOString(),\n        title: `${progress.language} review`,\n        body: `${count} correction${count === 1 ? '' : 's'} ready to practice.`,\n      });\n    } else await gezel.reminder.clear();\n  } catch {\n    // A host without reminders still keeps the deck.\n  }\n}\n\nconst due = dueReviews(cards, nowMs);\nconst scene = progress.scene;\nconst levelScenes = scenarios.filter((s) => s.level <= progress.level).map((s) => s.id);\ngezel.output({\n  status,\n  display,\n  level: progress.level,\n  streak: progress.streak,\n  dueCount: due.length,\n  scene:\n    scene && scene.status === 'active'\n      ? {\n          title: scene.title,\n          youPlay: scene.role,\n          setting: scene.setting,\n          studentGoal: scene.goal,\n          turnsSoFar: scene.turns,\n        }\n      : null,\n  opening: status === 'started',\n  dueReviews: due.slice(0, 3).map((c) => ({ wrong: c.wrong, right: c.right })),\n  scenarios: status === 'idle' ? levelScenes : [],\n  message:\n    status === 'active' || status === 'started'\n      ? `Scene \"${scene?.title}\": you play the ${scene?.role}. First check the student's last message for mistakes (word gender, verb forms, agreement, word choice) and list each one in errors as { wrong, right }. Then answer in character, only in ${progress.language}.`\n      : `Learning ${progress.language}: level ${progress.level}, ${progress.sessions} scene(s), ${progress.streak}-day streak, ${due.length} review(s) due.`,\n});\n"
+  },
+  "tools": [
+    {
+      "name": "practice_state",
+      "description": "Read the practice state: the scene in play (the part you play, the setting, the student's goal), the student's level and streak, and corrections due for review.",
+      "script": "progress-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "state"
+      },
+      "state": true,
+      "answer": {
+        "tool": "reply",
+        "when": {
+          "op": "equals",
+          "field": "status",
+          "value": "active"
+        }
+      }
+    },
+    {
+      "name": "reply",
+      "description": "Answer the student during a scene. `say` is your next line in the language being practiced, in character and at their level (one or two short sentences). `errors` lists up to three mistakes in the student's last message as { wrong, right, note? }, quoting their exact words in `wrong`; leave it empty when they made none. Set `done` only after the student has reached the scene's goal, never on your opening line.",
+      "script": "progress-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "say": {
+            "type": "string",
+            "description": "Your next line, in the language being practiced (max 240 characters)."
+          },
+          "errors": {
+            "type": "array",
+            "description": "Mistakes in the student's last message, at most three; an empty list when there were none.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "wrong": {
+                  "type": "string",
+                  "description": "The student's exact words."
+                },
+                "right": {
+                  "type": "string",
+                  "description": "The corrected form."
+                },
+                "note": {
+                  "type": "string",
+                  "description": "A very short reason, in English."
+                }
+              },
+              "required": [
+                "wrong",
+                "right"
+              ]
+            }
+          },
+          "done": {
+            "type": "boolean",
+            "description": "True when the student reached the scene's goal."
+          }
+        },
+        "required": [
+          "say",
+          "errors"
+        ]
+      },
+      "bind": {
+        "action": "reply"
+      },
+      "turn": {
+        "say": "say",
+        "show": "display",
+        "fallback": "Your turn."
+      }
+    },
+    {
+      "name": "begin_scene",
+      "description": "Start a role-play scene the student asked for, by scenario id or title (coffee, market, neighbor, directions, pharmacy, luggage, restaurant, hotel, doctor, return). Then open it with reply.",
+      "script": "progress-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "scenario": {
+            "type": "string",
+            "description": "Scenario id or title."
+          }
+        },
+        "required": [
+          "scenario"
+        ]
+      },
+      "bind": {
+        "action": "begin"
+      }
+    },
+    {
+      "name": "advance_level",
+      "description": "Advance the student to the next level when the current scenes feel comfortable.",
+      "script": "progress-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "advance"
+      }
+    },
+    {
+      "name": "start_scene",
+      "description": "Start a scene from the dashboard.",
+      "script": "progress-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "scenario": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "scenario"
+        ]
+      },
+      "bind": {
+        "action": "begin"
+      },
+      "reaction": {
+        "gezel": "language-trainer",
+        "hideSeed": true,
+        "standalone": true,
+        "prompt": "The student started the scene \"{{output.scene.title}}\". You play the {{output.scene.youPlay}}. Setting: {{output.scene.setting}} The student's goal: {{output.scene.studentGoal}} Open the scene with one short line in {{language}}, in character and at level {{output.level}}, through reply with no errors. The scene has only begun: do not set done.",
+        "turn": {
+          "tool": "reply",
+          "when": {
+            "op": "equals",
+            "field": "status",
+            "value": "started"
+          }
+        }
+      }
+    },
+    {
+      "name": "review_card",
+      "description": "Grade a review card from the dashboard.",
+      "script": "progress-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "verdict"
+        ]
+      },
+      "bind": {
+        "action": "review"
+      }
+    },
+    {
+      "name": "end_scene",
+      "description": "End the scene in play from the dashboard.",
+      "script": "progress-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "end"
+      }
+    }
+  ],
+  "pages": {
+    "entry": "dashboard/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "progress.json"
+      },
+      {
+        "source": "workspace",
+        "path": "scenarios.json"
+      },
+      {
+        "source": "workspace",
+        "path": "reviews.json"
+      }
+    ],
+    "tools": [
+      "start_scene",
+      "review_card",
+      "end_scene"
+    ]
+  },
+  "workspaceSeed": [
+    "progress.json",
+    "scenarios.json",
+    "reviews.json"
+  ],
+  "minGezelVersion": "1.26280"
+}
