@@ -130,6 +130,7 @@
       <div class="grid" id="grid"></div>
       <div class="actions">
         <button type="button" id="pass">Stop guessing</button>
+        <button type="button" id="ask-again" hidden>Ask again</button>
         <button type="button" id="new-game">New game</button>
       </div>
       <p class="stats" id="stats"></p>
@@ -335,6 +336,9 @@
             b.onclick = function () { play('guess', { word: b.getAttribute('data-word') }); };
           });
           el('pass').disabled = g.status !== 'guessing' || busy;
+          // A clue-giver's turn can end without a clue; never leave the player stuck.
+          el('ask-again').hidden = g.status !== 'clue_needed';
+          el('ask-again').disabled = busy;
           el('new-game').disabled = busy;
           var s = g.stats || { played: 0, won: 0, lost: 0 };
           el('stats').textContent = s.played ? 'Games: ' + s.won + ' won, ' + s.lost + ' lost.' : '';
@@ -375,6 +379,17 @@
         }
 
         el('pass').onclick = function () { play('pass', {}); };
+        el('ask-again').onclick = function () {
+          if (busy || !game) return;
+          busy = true;
+          notice('');
+          render();
+          askClue(game.giver)
+            .catch(function (err) {
+              notice(err && err.code === 'unavailable' ? 'Playing happens in the app’s Output pane.' : (err && err.message) || 'That did not work. Try again.');
+            })
+            .then(function () { busy = false; return load(); });
+        };
         el('new-game').onclick = function () { play('new_game', {}); };
         load();
         gezel.data.watch('game.json', function () { load(); });

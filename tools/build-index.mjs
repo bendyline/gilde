@@ -20,7 +20,7 @@
  * Usage:
  *   node tools/build-index.mjs                 rebuild + write all indexes
  *   node tools/build-index.mjs --check         rebuild in memory, byte-compare
- *                                              against the committed files,
+ *                                              against existing generated files,
  *                                              report drift, exit 1 on any
  *   node tools/build-index.mjs --kind=toolset  limit to one kind (repeatable)
  *   node tools/build-index.mjs --root=DIR      override data roots (repeatable)
@@ -76,7 +76,7 @@ Flags:
   --root=<dir>    Override the data root (repeatable). Default:
                   data and data/community.
   --check         Rebuild in memory and byte-compare against the
-                  committed index files; report drift and exit 1.
+                  existing generated index files; report drift and exit 1.
   --verbose       Per-item logging.
   --help          This message.
 `);
@@ -130,7 +130,7 @@ function reportDrift(root, kind, builtPayload, committedText) {
   try {
     committed = JSON.parse(committedText);
   } catch {
-    console.error(`  ${label}: committed file is not valid JSON`);
+    console.error(`  ${label}: generated file is not valid JSON`);
     return;
   }
   const builtById = new Map((builtPayload?.entries ?? []).map((e) => [e.manifest.id, e]));
@@ -178,7 +178,7 @@ function main() {
         try {
           committedText = readFileSync(fileIndexPath, 'utf8');
         } catch {
-          // absent committed index
+          // absent generated index
         }
         if (fileIndex && committedText === fileIndex.text) {
           results.push({ root, kind, file: FILE_INDEX_FILENAME, count: fileIndex.payload.count, ok: true });
@@ -186,9 +186,9 @@ function main() {
           driftCount++;
           const why =
             committedText === null
-              ? `missing committed file (rebuild has ${fileIndex.payload.count} items)`
+              ? `missing generated file (rebuild has ${fileIndex.payload.count} items)`
               : fileIndex === null
-                ? 'committed file exists but rebuild found no items'
+                ? 'generated file exists but rebuild found no items'
                 : 'differs from a clean rebuild';
           console.error(`  DRIFT ${fileLabel}: ${why}`);
         }
@@ -204,16 +204,16 @@ function main() {
         try {
           committedText = readFileSync(outputPath, 'utf8');
         } catch {
-          // absent committed index
+          // absent generated index
         }
         if (built === null && committedText === null) continue;
         if (built === null) {
-          console.error(`  DRIFT ${rootLabel(root)}/${KIND_DIR[kind]}/index.json: committed file exists but rebuild produced zero entries`);
+          console.error(`  DRIFT ${rootLabel(root)}/${KIND_DIR[kind]}/index.json: generated file exists but rebuild produced zero entries`);
           driftCount++;
           continue;
         }
         if (committedText === null) {
-          console.error(`  DRIFT ${rootLabel(root)}/${KIND_DIR[kind]}/index.json: missing committed file (rebuild has ${built.payload.count} entries)`);
+          console.error(`  DRIFT ${rootLabel(root)}/${KIND_DIR[kind]}/index.json: missing generated file (rebuild has ${built.payload.count} entries)`);
           driftCount++;
           continue;
         }

@@ -266,7 +266,7 @@ function main() {
         }
       }
 
-      // The committed index for this kind.
+      // The generated index for this kind, when a build has produced it.
       const indexPath = join(kindRoot, 'index.json');
       if (existsSync(indexPath)) {
         const idx = readJson(indexPath);
