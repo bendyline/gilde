@@ -12,6 +12,7 @@
 import { spawnSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { KINDS, KIND_DIR } from './lib/walk.mjs';
 
 const MAX_TARBALL_BYTES = 60 * 1024 * 1024;
 const MAX_UNPACKED_BYTES = 200 * 1024 * 1024;
@@ -42,8 +43,23 @@ if (result.status !== 0) {
 
 let report;
 try {
-  const parsed = JSON.parse(result.stdout);
-  report = Array.isArray(parsed) ? parsed[0] : parsed;
+  // Lifecycle output from `prepack` may precede npm's JSON on stdout. Find
+  // the first line-starting JSON value that consumes the rest of the output.
+  let parsed;
+  for (let offset = 0; offset < result.stdout.length; offset++) {
+    if (offset > 0 && result.stdout[offset - 1] !== '\n') continue;
+    if (result.stdout[offset] !== '[' && result.stdout[offset] !== '{') continue;
+    try {
+      parsed = JSON.parse(result.stdout.slice(offset));
+      break;
+    } catch {
+      // This was lifecycle output rather than npm's final JSON; keep looking.
+    }
+  }
+  if (!parsed) throw new Error('npm pack emitted no JSON report');
+  if (Array.isArray(parsed)) report = parsed[0];
+  else if (Array.isArray(parsed?.files)) report = parsed;
+  else report = Object.values(parsed ?? {}).find((entry) => Array.isArray(entry?.files));
 } catch {
   console.error(`Could not parse npm pack output: ${String(result.stdout).slice(0, 200)}`);
   process.exit(1);
@@ -66,6 +82,23 @@ const packaged = Array.isArray(report.files)
   ? report.files.map((entry) => ({ path: String(entry.path), size: Number(entry.size) || 0 }))
   : [];
 const packagedPaths = new Set(packaged.map((entry) => entry.path));
+
+// Catalog indexes are generated during `prepack`, not committed to Git. Keep
+// the package contract explicit so an ignore-rule or lifecycle regression
+// cannot silently publish a tarball that the catalog loader cannot list.
+const catalogRoots = [
+  ...KINDS.map((kind) => `data/${KIND_DIR[kind]}`),
+  'data/community/toolsets',
+];
+for (const root of catalogRoots) {
+  for (const filename of ['raw-index.json', 'index.json']) {
+    const required = `${root}/${filename}`;
+    if (!packagedPaths.has(required)) {
+      console.error(`FAIL: generated catalog index is missing from the package: ${required}`);
+      failed = true;
+    }
+  }
+}
 
 // `authoring/` ships on purpose: Gezel's regen fidelity suite resolves these
 // inputs from the installed package and silently skips without them. Keep the

@@ -55,7 +55,7 @@ function safeReaddir(dir, opts) {
 /**
  * Enumerate the items of one kind under one catalog root. Shards and ids
  * are iterated in sorted order so output is deterministic across
- * filesystems (readdir order is not portable); the committed indexes'
+ * filesystems (readdir order is not portable); the generated indexes'
  * name-tie ordering matches sorted id order.
  *
  * Returns [{ root, kind, kindDir, shard, id, itemDir, versions }] where

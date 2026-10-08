@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
  * a Zod `.parse()` before the index-build merge. That parse (a) strips
  * unknown object keys, (b) REORDERS known keys into schema-shape order,
  * and (c) materializes `default` values at their shape position. All
- * three are visible in the committed index bytes (e.g. toolset `config`
+ * three are visible in the generated index bytes (e.g. toolset `config`
  * entries are shape-ordered, `secret`/`required`/`multiline` defaults
  * materialize), so build-index must replicate them exactly to stay
  * byte-identical. Zod 4's toJSONSchema preserves the shape's property
@@ -22,8 +22,7 @@ import { fileURLToPath } from 'node:url';
  * are dropped by the export, so this engine is slightly LOOSER than the
  * runtime Zod parse. Anything that passes Zod passes here; the reverse
  * gap (e.g. the llamaCpp filename-xor-shards refine) has no instances in
- * the committed data - the build-index --check gate is the empirical
- * proof.
+ * the generated data; deterministic rebuilds are the empirical proof.
  *
  * Supported vocabulary (exactly what the exporter emits): type, const,
  * enum, pattern, minLength, maxLength, minimum, maximum,

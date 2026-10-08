@@ -33,7 +33,7 @@ A craftbook is a step-by-step playbook a gezel follows. To add one:
    setup, mocks, success criteria, rubric). Craftbooks without evals are
    hard to keep honest; see
    [docs/craftbook-evaluation-framework.md](docs/craftbook-evaluation-framework.md).
-6. `npm run build-index`, then validate.
+6. Run `npm run check`. Indexes are regenerated later by the build/package lifecycle.
 
 ### Declaring step inputs
 
@@ -137,9 +137,12 @@ items that have never worked on older gezels.
 
 ## Generated files
 
-- `data/**/raw-index.json` and `data/**/index.json` are generated. Run `npm run build-index` before
-  pushing; never hand-edit or hand-merge them. On a merge conflict in an
-  index, take either side and regenerate.
+- Catalog-root `raw-index.json` and `index.json` files (directly under each
+  `data/<kind>/` and `data/community/<kind>/`) are generated and Git-ignored.
+  `npm run build` writes them for local use, and npm's `prepack` lifecycle
+  regenerates them for every tarball. Never add them to a commit. Nested
+  project payloads such as `posts/index.json` are authored content and remain
+  tracked.
 - `schemas/*.schema.json` are exported from gezel core and refreshed from
   there. Do not edit them in this repo.
 - `data/community/` is bot-managed (imported from the MCP registry). To

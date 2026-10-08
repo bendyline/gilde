@@ -10,6 +10,8 @@ The package is raw JSON, Markdown, and implementations with no runtime
 dependencies. It includes the released `data/`, exported schemas, and the
 small authoring source trees consumers need to verify generated families
 against their inputs; repository tooling and CI files are not published.
+The catalog indexes are build artifacts: they are ignored by Git, regenerated
+by `npm run build`, and generated automatically before every npm pack/publish.
 
 ## What's inside
 
@@ -31,15 +33,15 @@ Every item follows the same layout:
 ```
 data/<category>/<shard>/<id>/manifest.json          identity: name, description, tags, license
 data/<category>/<shard>/<id>/versions/<semver>/...  released content, never mutated after release
-data/<category>/raw-index.json                      generated listing: item files verbatim (do not hand-edit)
-data/<category>/index.json                          generated legacy listing for older gezel builds
+data/<category>/raw-index.json                      built listing: item files verbatim (not tracked)
+data/<category>/index.json                          built legacy listing for older gezel builds (not tracked)
 ```
 
 where `<shard>` is the first two characters of the id.
 
 Chat-model introductions are Gilde-only: add an authoring recipe under
 `authoring/chat-models/`, run `npm run build-chat-model`, and commit the new
-identity, version payload, and regenerated index. See
+identity and version payload. See
 `authoring/chat-models/README.md` for the recipe contract.
 
 ## Contributing
@@ -57,7 +59,7 @@ Every PR is validated by CI. Run the same checks locally:
 ```
 npm run check         runs all validation checks below
 npm run validate      structural + schema validation of the whole tree
-npm run check-index   verifies the generated index files are fresh
+npm run build         regenerates the ignored catalog indexes
 npm run lint-models   completeness lint for chat-model manifests
 npm run fix           rewrites non-canonical JSON and regenerates the indexes
                       (check never writes — run fix, then re-run check)

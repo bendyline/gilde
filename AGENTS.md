@@ -119,8 +119,11 @@ with controls.
 
 ## Never edit
 
-- `data/**/raw-index.json`, `data/**/index.json` — generated. Run `npm run build-index` after any
-  content change; on merge conflict take either side and regenerate.
+- Catalog-root `raw-index.json` and `index.json` files (the paths shown in the
+  layout grammar) are generated and Git-ignored. `npm run build` writes them
+  locally, and npm's `prepack` lifecycle regenerates them for published
+  tarballs. Never add them to a commit. Nested project payloads named
+  `index.json` are authored content and remain tracked.
 - `schemas/` — generated from gezel core's Zod schemas, refreshed from the
   gezel repo.
 - `data/community/` — bot-managed MCP-registry imports. What may be listed
@@ -134,7 +137,7 @@ with controls.
 ```
 npm run validate       full-tree structural + schema validation
 npm run check-authoring  generated-family source/output consistency
-npm run check-index    generated indexes are fresh
+npm run build          regenerate ignored indexes for local use
 npm run lint-models    chat-model completeness lint
 npm run check-page-demos  latest project pages carry the standalone contract
 ```
