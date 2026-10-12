@@ -30,6 +30,7 @@ import { PERMISSIVE_LICENSES } from './lib/licenses.mjs';
 import { discoverVersionFolders, loadIdentity } from './lib/manifest-merge.mjs';
 import { loadSchema, zodParse } from './lib/jsonshape.mjs';
 import { makeCollector, render } from './lib/report.mjs';
+import { safetensorsWeightFiles } from './lib/safetensors.mjs';
 import { collectSeedExemptFiles } from './lib/seeds.mjs';
 import { isSemver, safeCompare } from './lib/semver.mjs';
 import { FILE_INDEX_FILENAME } from './lib/file-index.mjs';
@@ -364,6 +365,10 @@ function main() {
           }
         }
 
+        if (kind === 'image-model' || kind === 'video-model') {
+          checkWeightTensors(kind, item.itemDir, onDiskVersions, identity.yankedVersions ?? []);
+        }
+
         // yankedVersions must reference on-disk versions; minSupported
         // must not exceed the highest on-disk version.
         const onDisk = new Set(onDiskVersions);
@@ -396,6 +401,31 @@ function main() {
             c.warn(manifestPath, '', 'no-eligible-versions', 'no version folder passes the payload/yank/min-supported filters; the item is invisible to consumers');
           }
         }
+      }
+    }
+  }
+
+  /**
+   * The newest version of an image or video model pins `tensors` on every
+   * safetensors weight file: gezel prices the model's memory from them before
+   * downloading it, and without them can only warn, never hide a model the
+   * machine cannot run. Older versions predate the field and are immutable.
+   */
+  function checkWeightTensors(kind, itemDir, versions, yankedVersions) {
+    const live = versions.filter((v) => !yankedVersions.includes(v));
+    if (live.length === 0) return;
+    const newest = live.reduce((a, b) => (safeCompare(a, b) >= 0 ? a : b));
+    const manifestPath = join(itemDir, 'versions', newest, 'manifest.json');
+    const parsed = readJson(manifestPath);
+    if (!parsed.ok) return;
+    for (const file of safetensorsWeightFiles(kind, parsed.value)) {
+      if (!file.holder.tensors) {
+        c.error(
+          manifestPath,
+          file.pointer,
+          'missing-weight-tensors',
+          'safetensors weight file has no `tensors` facts - run `npm run pin-weight-tensors -- <this manifest>`',
+        );
       }
     }
   }

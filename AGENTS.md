@@ -43,6 +43,13 @@ The `versions/<semver>/` directory holds the released payload:
   (`llamaCpp`, `mlx`, `ollama`, `ds4` for chat; `downloadUrl`/`source` for
   image/video). Every `sha256` is 64 lowercase hex chars; download URLs
   point at `https://huggingface.co/...`.
+- image/video models: every safetensors weight file also carries `tensors`,
+  the element count at each stored precision read from the file's header.
+  Gezel prices the model's memory from it before downloading anything, and
+  hides a model only when the facts prove it cannot run. Never write it by
+  hand: once the files, shas and sizes are in place, run
+  `npm run pin-weight-tensors -- <version manifest.json>`. `npm run validate`
+  refuses a newest version without it. GGUF files need none.
 - gezel-templates: `manifest.json` + `about.md` (the role's prose).
 - project-types: `manifest.json` + `about.md`, `mission.md`, optional
   `game.json`, `pages/**`.
