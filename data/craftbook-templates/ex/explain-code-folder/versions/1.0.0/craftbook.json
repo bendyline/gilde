@@ -1,0 +1,233 @@
+{
+  "id": "explain-code-folder",
+  "name": "Explain a code folder",
+  "description": "A plain-language tour of a folder of code: what it does, how the files are organised, how to run it, and the three files to read first. Every file and command it names comes from the folder itself. Good for a project you inherited, an open-source tool you want to understand, or your own code after a long break.\n\nIt works on the folder you choose when you launch it: a folder in this project, or one you pick from your computer. It reads the code and never runs or changes it. No code to hand? Try it on the sample, a tiny to-do app for the command line.",
+  "entryStepId": "explain",
+  "triggers": [
+    "explain a code folder",
+    "explain this codebase",
+    "what does this code do",
+    "overview of this repo",
+    "walk me through this code"
+  ],
+  "samples": [
+    {
+      "id": "todo-cli",
+      "title": "a tiny to-do app for the command line",
+      "param": "source",
+      "files": [
+        "samples/todo-cli/README.md",
+        "samples/todo-cli/package.json",
+        "samples/todo-cli/src/index.js",
+        "samples/todo-cli/src/store.js",
+        "samples/todo-cli/src/format.js",
+        "samples/todo-cli/test/store.test.js"
+      ]
+    }
+  ],
+  "paramSchema": {
+    "type": "object",
+    "required": [
+      "source"
+    ],
+    "properties": {
+      "source": {
+        "type": "string",
+        "title": "Code folder",
+        "description": "The folder of code to explain: a folder in this project, or one you pick from your computer.",
+        "input": {
+          "kind": "folder",
+          "accept": [
+            ".js",
+            ".mjs",
+            ".cjs",
+            ".jsx",
+            ".ts",
+            ".tsx",
+            ".py",
+            ".rb",
+            ".go",
+            ".rs",
+            ".java",
+            ".kt",
+            ".cs",
+            ".php",
+            ".swift",
+            ".c",
+            ".h",
+            ".cpp",
+            ".hpp",
+            ".sh",
+            ".sql",
+            ".html",
+            ".css",
+            ".scss",
+            ".vue",
+            ".svelte",
+            ".md",
+            ".txt",
+            ".json",
+            ".toml",
+            ".yaml",
+            ".yml",
+            ".ini",
+            ".cfg",
+            ".xml"
+          ]
+        }
+      },
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}",
+        "askUser": false
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "explain",
+      "name": "Explain the folder",
+      "description": "Read the code and write a plain-language overview of it.",
+      "prompt": "Explain the code folder in the `source` input to someone who has never seen it, in `{{workPath}}/overview.md`.\n\n1. Open the file list `{{task.dir}}/inputs/source.json` with `read_artifact`. It lists every file in the folder and the drawer they are in.\n2. Read the files with the tool named on the `source` line under Invocation parameters: the README first, if there is one, then the file that names the project and its commands (package.json, pyproject.toml, Cargo.toml, a Makefile or similar), then the entry point, then the rest. If there are more than 15 files, read those first and then the files they name, 15 at most.\n3. Write `{{workPath}}/overview.md` with `write_artifact`, under exactly these four headings:\n   - `## What it does`: two or three sentences in plain words.\n   - `## How it is organised`: a markdown table with the columns `File` and `What it holds`, one row per file you read, each path in backticks and relative to the folder (`src/app.js`, not the full drawer path).\n   - `## How to run it`: the commands the README or the project file actually gives, in a code block. If they give none, say so.\n   - `## Three things to read first`: a numbered list of three files, each with one line on why.\n\nName only files that are in the file list and commands the files state. Never invent a file, a function or a command.\n\nIf the folder holds no file you can read, do not write `overview.md`. Write a task note with `write_task_note` that says what you found, then end your turn.",
+      "suggestedRole": "developer",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      },
+      "consumes": [
+        {
+          "file": "{{task.dir}}/inputs/source.json",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/overview.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/overview.md",
+            "bytes": 800,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/overview.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s*What it does",
+            "flags": "i",
+            "label": "a \"## What it does\" section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/overview.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s*How it is organised",
+            "flags": "i",
+            "label": "a \"## How it is organised\" section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/overview.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s*How to run it",
+            "flags": "i",
+            "label": "a \"## How to run it\" section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/overview.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s*Three things to read first",
+            "flags": "i",
+            "label": "a \"## Three things to read first\" section",
+            "artifact": true
+          },
+          {
+            "kind": "tableShape",
+            "file": "{{workPath}}/overview.md",
+            "requiredColumns": [
+              "File",
+              "What it holds"
+            ],
+            "minRows": 2,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/overview.md",
+            "pattern": "`[^`\\n]+\\.[A-Za-z0-9]{1,10}`",
+            "label": "file paths from the folder, in backticks",
+            "artifact": true
+          }
+        ],
+        "onReject": "explain",
+        "maxAttempts": 3
+      },
+      "next": "finish"
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "The deliverable passed its checks. Stamp a short summary and report DONE.",
+      "prompt": "The deliverable passed its checks. Write a one-paragraph DONE summary to task notes via `write_task_note`: what you made, the deliverable path(s), and a one-line confirmation that each required section is there. Then report DONE.",
+      "suggestedRole": "developer",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      },
+      "terminal": true
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-10-12T00:00:00Z",
+  "minGezelVersion": "1.26285"
+}

@@ -1,0 +1,4 @@
+- Every trip day has one anchor and deliberate slack — a spine, not a cage.
+- Bookings, confirmations, and addresses are recorded the moment they exist.
+- Packing is a five-minute sweep the night before, not a panic.
+- The journal gets a line a day; the trip ends, the record stays.

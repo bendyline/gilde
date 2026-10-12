@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "mode": "workflow",
+  "title": "Explain a code folder on the todo-cli sample",
+  "objective": "Prove that a small local model can run the Explain a code folder craftbook on its bundled todo-cli sample, offline, and reach the terminal step with an overview that names only real files and commands.",
+  "tags": [
+    "first-project",
+    "sample",
+    "code"
+  ],
+  "prompt": "Explain this little command-line to-do app to me: what it does, how it is put together, and how to run it.",
+  "setup": {
+    "projectName": "Todo CLI",
+    "about": "A tiny made-up Node.js to-do app for the command line, six files in source/todo-cli. Nothing needs to be run or installed; read the code.",
+    "missionObjectives": "Run the craftbook on source/todo-cli and leave overview.md in the task folder, naming only files and commands that are really there.",
+    "files": [
+      {
+        "path": "source/todo-cli/README.md",
+        "content": "# todo-cli\n\nA tiny to-do list for the command line. It keeps your to-dos in a JSON file\nin the current folder, so each project folder can have its own list.\n\n## Usage\n\n```sh\nnode src/index.js add \"Buy oat milk\"\nnode src/index.js list\nnode src/index.js done 2\nnode src/index.js remove 1\n```\n\n`list` prints every to-do with its number. `done` and `remove` take that\nnumber. Set `TODO_FILE` to keep the list somewhere else:\n\n```sh\nTODO_FILE=~/todos.json node src/index.js list\n```\n\n## Tests\n\n```sh\nnpm test\n```\n\nThe tests use Node's built-in test runner (Node 18 or newer). There are no\ndependencies to install.\n"
+      },
+      {
+        "path": "source/todo-cli/package.json",
+        "content": "{\n  \"name\": \"todo-cli\",\n  \"version\": \"0.3.0\",\n  \"description\": \"A tiny to-do list for the command line.\",\n  \"type\": \"module\",\n  \"bin\": {\n    \"todo\": \"src/index.js\"\n  },\n  \"scripts\": {\n    \"start\": \"node src/index.js\",\n    \"test\": \"node --test\"\n  },\n  \"engines\": {\n    \"node\": \">=18\"\n  },\n  \"license\": \"MIT\"\n}\n"
+      },
+      {
+        "path": "source/todo-cli/src/format.js",
+        "content": "export function formatTodo(todo, index) {\n  const box = todo.done ? '[x]' : '[ ]';\n  return `${String(index + 1).padStart(2)}. ${box} ${todo.text}`;\n}\n\nexport function formatList(todos) {\n  if (todos.length === 0) return 'Nothing to do. Add one with: todo add \"...\"';\n  return todos.map(formatTodo).join('\\n');\n}\n\nexport function formatSummary(todos) {\n  const open = todos.filter((todo) => !todo.done).length;\n  const word = open === 1 ? 'to-do' : 'to-dos';\n  return `${open} open ${word}, ${todos.length - open} done.`;\n}\n"
+      },
+      {
+        "path": "source/todo-cli/src/index.js",
+        "content": "#!/usr/bin/env node\nimport { formatList, formatSummary } from './format.js';\nimport { addTodo, completeTodo, loadTodos, removeTodo } from './store.js';\n\nconst file = process.env.TODO_FILE ?? 'todos.json';\nconst [command, ...rest] = process.argv.slice(2);\n\nfunction readNumber(value) {\n  const number = Number(value);\n  if (!Number.isInteger(number) || number < 1) {\n    throw new Error(`\"${value}\" is not a to-do number. Run \"todo list\" to see the numbers.`);\n  }\n  return number;\n}\n\nasync function main() {\n  switch (command) {\n    case 'add': {\n      const text = rest.join(' ').trim();\n      if (!text) throw new Error('Say what to add: todo add \"Buy oat milk\"');\n      const todo = await addTodo(file, text);\n      console.log(`Added: ${todo.text}`);\n      break;\n    }\n    case 'list': {\n      const todos = await loadTodos(file);\n      console.log(formatList(todos));\n      console.log(formatSummary(todos));\n      break;\n    }\n    case 'done': {\n      const todo = await completeTodo(file, readNumber(rest[0]));\n      console.log(`Done: ${todo.text}`);\n      break;\n    }\n    case 'remove': {\n      const todo = await removeTodo(file, readNumber(rest[0]));\n      console.log(`Removed: ${todo.text}`);\n      break;\n    }\n    default:\n      console.log('Usage: todo <add|list|done|remove> [text or number]');\n      process.exitCode = command ? 1 : 0;\n  }\n}\n\nmain().catch((error) => {\n  console.error(error.message);\n  process.exitCode = 1;\n});\n"
+      },
+      {
+        "path": "source/todo-cli/src/store.js",
+        "content": "import { readFile, writeFile } from 'node:fs/promises';\n\nexport async function loadTodos(file) {\n  try {\n    const text = await readFile(file, 'utf8');\n    return JSON.parse(text);\n  } catch (error) {\n    if (error.code === 'ENOENT') return [];\n    throw error;\n  }\n}\n\nexport async function saveTodos(file, todos) {\n  await writeFile(file, `${JSON.stringify(todos, null, 2)}\\n`);\n}\n\nexport async function addTodo(file, text) {\n  const todos = await loadTodos(file);\n  const todo = { text, done: false, added: new Date().toISOString().slice(0, 10) };\n  todos.push(todo);\n  await saveTodos(file, todos);\n  return todo;\n}\n\nfunction pick(todos, number) {\n  const todo = todos[number - 1];\n  if (!todo) throw new Error(`There is no to-do number ${number}.`);\n  return todo;\n}\n\nexport async function completeTodo(file, number) {\n  const todos = await loadTodos(file);\n  const todo = pick(todos, number);\n  todo.done = true;\n  await saveTodos(file, todos);\n  return todo;\n}\n\nexport async function removeTodo(file, number) {\n  const todos = await loadTodos(file);\n  pick(todos, number);\n  const [removed] = todos.splice(number - 1, 1);\n  await saveTodos(file, todos);\n  return removed;\n}\n"
+      },
+      {
+        "path": "source/todo-cli/test/store.test.js",
+        "content": "import assert from 'node:assert/strict';\nimport { mkdtemp, rm } from 'node:fs/promises';\nimport { tmpdir } from 'node:os';\nimport { join } from 'node:path';\nimport { test } from 'node:test';\nimport { addTodo, completeTodo, loadTodos, removeTodo } from '../src/store.js';\n\nasync function withFile(run) {\n  const dir = await mkdtemp(join(tmpdir(), 'todo-cli-'));\n  try {\n    await run(join(dir, 'todos.json'));\n  } finally {\n    await rm(dir, { recursive: true, force: true });\n  }\n}\n\ntest('a missing file is an empty list', () =>\n  withFile(async (file) => {\n    assert.deepEqual(await loadTodos(file), []);\n  }));\n\ntest('add keeps to-dos in the order they were added', () =>\n  withFile(async (file) => {\n    await addTodo(file, 'Buy oat milk');\n    await addTodo(file, 'Call the plumber');\n    const todos = await loadTodos(file);\n    assert.deepEqual(\n      todos.map((todo) => todo.text),\n      ['Buy oat milk', 'Call the plumber'],\n    );\n  }));\n\ntest('done marks the numbered to-do and saves it', () =>\n  withFile(async (file) => {\n    await addTodo(file, 'Buy oat milk');\n    await addTodo(file, 'Call the plumber');\n    await completeTodo(file, 2);\n    const todos = await loadTodos(file);\n    assert.equal(todos[0].done, false);\n    assert.equal(todos[1].done, true);\n  }));\n\ntest('remove takes out the numbered to-do', () =>\n  withFile(async (file) => {\n    await addTodo(file, 'Buy oat milk');\n    await addTodo(file, 'Call the plumber');\n    await addTodo(file, 'Water the plants');\n    const removed = await removeTodo(file, 1);\n    assert.equal(removed.text, 'Buy oat milk');\n    const todos = await loadTodos(file);\n    assert.deepEqual(\n      todos.map((todo) => todo.text),\n      ['Call the plumber', 'Water the plants'],\n    );\n  }));\n\ntest('a number past the end is an error', () =>\n  withFile(async (file) => {\n    await addTodo(file, 'Buy oat milk');\n    await assert.rejects(removeTodo(file, 3), /no to-do number 3/);\n  }));\n"
+      }
+    ],
+    "craftbookParams": {
+      "source": "source/todo-cli"
+    },
+    "worker": {
+      "name": "Developer",
+      "role": "developer",
+      "about": "A patient developer who explains code to people who are new to it. Follow the craftbook steps exactly, read the code you are given, and never invent a file or a command."
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "The explain-code-folder task read the sample folder, wrote overview.md with all four sections and a File / What it holds table naming real files and the README commands, and reached its terminal step without external services.",
+    "deliverables": [
+      {
+        "path": "{{task.dir}}/overview.md",
+        "kind": "markdown-report",
+        "artifact": true,
+        "minBytes": 800,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/overview.md",
+            "pattern": "store\\.js",
+            "label": "the store module",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/overview.md",
+            "pattern": "node src/index\\.js|npm (?:run )?test",
+            "label": "a run command the README gives",
+            "artifact": true
+          }
+        ]
+      }
+    ],
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    }
+  },
+  "rubric": {
+    "artifact": {
+      "path": "{{task.dir}}/overview.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "grounding",
+        "description": "Every file, function and command in overview.md exists in the sample folder; nothing is invented."
+      },
+      {
+        "name": "clarity",
+        "description": "Someone who has never seen the app understands what it does, where the data lives, and how to run it and its tests."
+      }
+    ],
+    "contextNote": "Advisory only. Deterministic pass/fail comes from the craftbook runtime gates, the deliverable checks, attribution, and terminal progress."
+  },
+  "qualityFocus": [
+    "real explain-code-folder craftbook task attribution",
+    "only real files and commands",
+    "all four required sections and the organisation table",
+    "terminal workflow progress offline"
+  ]
+}

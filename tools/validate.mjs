@@ -42,6 +42,28 @@ const ONE_MB = 1024 * 1024;
 const TEXT_EXTENSIONS = new Set(['.json', '.md', '.html', '.svg']);
 const ALLOWED_EXTENSIONS = new Set([...TEXT_EXTENSIONS, '.webp']);
 const ALLOWED_EXTENSIONS_LABEL = [...ALLOWED_EXTENSIONS].map((ext) => ext.slice(1)).join('/');
+// A craftbook's samples (the input it can try with nothing of the person's
+// own) are real-world text files: a spreadsheet, a small code folder, a
+// transcript. They are allowed only under versions/<v>/samples/ and still pass
+// the UTF-8, no-NUL and size checks below.
+const SAMPLE_EXTENSIONS = new Set([
+  ...TEXT_EXTENSIONS,
+  '.csv',
+  '.tsv',
+  '.txt',
+  '.js',
+  '.mjs',
+  '.ts',
+  '.py',
+  '.css',
+  '.yaml',
+  '.yml',
+  '.toml',
+  '.xml',
+  '.vtt',
+  '.srt',
+]);
+const SAMPLE_PATH = /[\\/]craftbook-templates[\\/][^\\/]+[\\/][^\\/]+[\\/]versions[\\/][^\\/]+[\\/]samples[\\/]/;
 const HF_URL_PREFIX = 'https://huggingface.co/';
 const URI_TEMPLATE_VARIABLE = /\{[A-Za-z_][A-Za-z0-9_-]*\}/g;
 // Runtime-managed system toolsets ship with the app rather than as gilde
@@ -106,7 +128,8 @@ function main() {
     const ext = extname(path).toLowerCase();
     // .gitkeep is a conventional git placeholder for otherwise-empty
     // directories; allowed by name rather than widening the extension list.
-    if (name !== '.gitkeep' && !ALLOWED_EXTENSIONS.has(ext)) {
+    const allowed = SAMPLE_PATH.test(path) ? SAMPLE_EXTENSIONS : ALLOWED_EXTENSIONS;
+    if (name !== '.gitkeep' && !allowed.has(ext)) {
       c.error(path, '', 'ext-not-allowed', `extension "${ext || name}" is not in ${ALLOWED_EXTENSIONS_LABEL}`);
       continue;
     }
