@@ -50,12 +50,15 @@ const SMALL_MODEL_PARAMS_B = 9;
 const SMALL_MODEL_RESCUE_BEHAVIORS = ['mcp.relax-required-fields', 'mcp.default-missing-fields'];
 
 /**
- * OpenMDW 1.0/1.1 grant unrestricted use, modification, and
- * redistribution; their notice-retention clauses are ordinary permissive
- * conditions, so they must sit in the same green bucket as Apache/MIT.
+ * Licenses that grant unrestricted use, modification, and redistribution:
+ * Apache 2.0, MIT, and OpenMDW 1.0/1.1, whose notice-retention clauses are
+ * ordinary permissive conditions. A model under one must be licenseClass
+ * open, the bucket Gezel's pickers offer: an unclassified one is hidden from
+ * the first-run picker and `gezel model list --available`, which is how
+ * qwen3.5-0.8b-q4, the MiniCPM 5 pair, and GLM 5.2 went missing (2026-10-14).
  */
-function isPermissiveOpenMdw(license) {
-  return /^openmdw[- ]1\.(?:0|1)$/i.test(license?.trim() ?? '');
+function isPermissiveLicense(license) {
+  return /^(?:apache-2\.0|mit|openmdw[- ]1\.(?:0|1))$/i.test(license?.trim() ?? '');
 }
 
 /**
@@ -121,10 +124,10 @@ export function lintChatModelManifest(manifest) {
     });
   }
 
-  if (isPermissiveOpenMdw(manifest.license) && manifest.licenseClass !== 'open') {
+  if (isPermissiveLicense(manifest.license) && manifest.licenseClass !== 'open') {
     errors.push({
       modelId,
-      rule: 'openmdw-not-open',
+      rule: 'permissive-not-open',
       detail: `${manifest.license} is permissive and must use licenseClass=open`,
     });
   }

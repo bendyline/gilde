@@ -50,3 +50,30 @@ test('stays silent when the manifest label names no width', () => {
   assert.equal(nameFinding('Muse Glimmer (30B)', 'K-Quant-17GB'), null);
   assert.equal(nameFinding('Muse Glimmer (30B)', undefined), null);
 });
+
+/**
+ * The `permissive-not-open` rule. Gezel's pickers offer only open models, so
+ * a permissive license left unclassified hides the model from them.
+ */
+function licenseFinding(license, licenseClass) {
+  const report = lintChatModelManifest({
+    id: 'test-model',
+    license,
+    ...(licenseClass ? { licenseClass } : {}),
+  });
+  return report.errors.find((f) => f.rule === 'permissive-not-open') ?? null;
+}
+
+test('requires licenseClass open for every permissive license', () => {
+  for (const license of ['Apache-2.0', 'MIT', 'OpenMDW-1.1', 'openmdw 1.0']) {
+    assert.match(licenseFinding(license).detail, /must use licenseClass=open/, license);
+    assert.equal(licenseFinding(license, 'open'), null, license);
+  }
+});
+
+test('leaves custom and restricted licenses to their own class', () => {
+  for (const license of ['MIT-Modified', 'qwen-community-1.0', 'Llama 3.2 Community License']) {
+    assert.equal(licenseFinding(license, 'custom-restricted'), null, license);
+    assert.equal(licenseFinding(license), null, license);
+  }
+});
