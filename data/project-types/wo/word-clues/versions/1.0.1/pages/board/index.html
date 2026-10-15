@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Word Clues</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2;
+        --card: #fff;
+        --ink: #2b2620;
+        --muted: #7a7166;
+        --accent: #b5651d;
+        --track: #ece5da;
+        --good: #4a7c59;
+        --good-bg: #e3efe6;
+        --warn: #a4552e;
+        --warn-bg: #f6e3d8;
+      }
+      :root[data-theme='dark'] {
+        --bg: #1c1a17;
+        --card: #262320;
+        --ink: #efe9e0;
+        --muted: #a59a8c;
+        --accent: #e0894a;
+        --track: #3a352f;
+        --good: #7fae8d;
+        --good-bg: #26352a;
+        --warn: #d98a63;
+        --warn-bg: #3b2a21;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #1c1a17;
+          --card: #262320;
+          --ink: #efe9e0;
+          --muted: #a59a8c;
+          --accent: #e0894a;
+          --track: #3a352f;
+          --good: #7fae8d;
+          --good-bg: #26352a;
+          --warn: #d98a63;
+          --warn-bg: #3b2a21;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font: 15px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+        padding: 1.25rem 0.75rem;
+      }
+      main { max-width: 560px; margin: 0 auto; }
+      h1 {
+        font-family: Georgia, 'PT Serif', 'Times New Roman', serif;
+        font-size: 1.35rem;
+        font-weight: 600;
+        margin: 0 0 0.15rem;
+      }
+      .sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.85rem; }
+      .clue {
+        background: var(--card);
+        border: 1px solid var(--track);
+        border-radius: 10px;
+        padding: 0.65rem 0.85rem;
+        margin-bottom: 0.75rem;
+        min-height: 3.2rem;
+      }
+      .clue strong { font-size: 1.15rem; letter-spacing: 0.04em; }
+      .clue .muted { color: var(--muted); font-size: 0.85rem; }
+      .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.4rem; }
+      button {
+        font: inherit;
+        color: var(--ink);
+        background: var(--card);
+        border: 1px solid var(--track);
+        border-radius: 6px;
+        min-height: 48px;
+        padding: 0.35rem 0.25rem;
+        cursor: pointer;
+      }
+      button:hover:not(:disabled) { border-color: var(--accent); }
+      button:disabled { cursor: default; }
+      .cell { font-size: 0.85rem; overflow-wrap: anywhere; text-transform: lowercase; }
+      .cell.target { background: var(--good-bg); border-color: var(--good); color: var(--good); }
+      .cell.trap { background: var(--warn-bg); border-color: var(--warn); color: var(--warn); }
+      .cell.neutral { color: var(--muted); text-decoration: line-through; }
+      .cell.hidden-target { border-style: dashed; border-color: var(--good); }
+      .actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap; }
+      .actions button { padding: 0.35rem 0.9rem; }
+      .stats { color: var(--muted); font-size: 0.85rem; margin-top: 0.75rem; }
+      .banner {
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        padding: 0.45rem 0.7rem;
+        font-size: 0.85rem;
+        margin-bottom: 0.75rem;
+      }
+      .banner[hidden] { display: none; }
+      .demo-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0 0 0.85rem;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--card) 88%, var(--accent));
+        color: var(--ink);
+        font-size: 0.8rem;
+      }
+      .demo-banner[hidden] { display: none; }
+      .demo-reset { flex: none; min-height: 44px; padding: 0.25rem 0.6rem; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong>: sample data stays in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Word Clues</h1>
+      <p class="sub" id="sub">Find your six words. Steer clear of the trap.</p>
+      <p class="banner" id="notice" hidden></p>
+      <div class="clue" id="clue" aria-live="polite"></div>
+      <div class="grid" id="grid"></div>
+      <div class="actions">
+        <button type="button" id="pass">Stop guessing</button>
+        <button type="button" id="ask-again" hidden>Ask again</button>
+        <button type="button" id="new-game">New game</button>
+      </div>
+      <p class="stats" id="stats"></p>
+    </main>
+    <script>
+/* gezel-page-demo-stub v1 */
+/*
+ * The canonical demo stub for Gezel type pages. MIT License.
+ *
+ * Paste this file's bytes verbatim into a <script> block ahead of the
+ * page's own code, then call makeDemoGezel({ page, tools, data }) with the
+ * page's demo handlers. Served by Gezel, the real window.gezel is already
+ * injected and the stub steps aside; opened as a raw file (the live demos
+ * on gezelgilde.com), it installs a window.gezel whose tools and data are
+ * the page-supplied handler maps — one code path in every mode. `tools`
+ * and `data` map a tool name / declared read path to a function; data
+ * handlers back read() and list(), and url() returns the handler's value
+ * or passes a data: URI through. See docs/page-authoring.md.
+ */
+(function () {
+  'use strict';
+  window.makeDemoGezel = function (opts) {
+    if (window.gezel) return window.gezel;
+    var page = (opts && opts.page) || {};
+    var tools = (opts && opts.tools) || {};
+    var data = (opts && opts.data) || {};
+    var themeListeners = [];
+    var media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+    var ui = {
+      theme: { mode: media && media.matches ? 'dark' : 'light' },
+      onTheme: function (cb) {
+        themeListeners.push(cb);
+        return function () {
+          var at = themeListeners.indexOf(cb);
+          if (at >= 0) themeListeners.splice(at, 1);
+        };
+      },
+    };
+    if (media && media.addEventListener) {
+      media.addEventListener('change', function (ev) {
+        ui.theme = { mode: ev.matches ? 'dark' : 'light' };
+        themeListeners.slice().forEach(function (cb) { cb(ui.theme); });
+      });
+    }
+    function fail(code, message) {
+      var err = new Error(message);
+      err.code = code;
+      return Promise.reject(err);
+    }
+    function run(map, key, arg) {
+      if (!Object.prototype.hasOwnProperty.call(map, key)) return null;
+      return Promise.resolve().then(function () { return map[key](arg); });
+    }
+    window.gezel = {
+      page: {
+        api: 1,
+        projectId: 'demo',
+        source: 'type',
+        entry: page.entry || 'index.html',
+        typeName: page.typeName || 'demo',
+        params: page.params || {},
+        mode: 'demo',
+      },
+      tools: {
+        list: function () { return Promise.resolve(Object.keys(tools)); },
+        invoke: function (name, input) {
+          var call = run(tools, name, input || {});
+          if (!call) return fail('not-allowed', "The demo does not handle the tool '" + name + "'.");
+          return call.then(function (output) { return { output: output }; });
+        },
+      },
+      data: {
+        read: function (path, o) {
+          return run(data, path, o || {}) || fail('not-allowed', "The demo has no data for '" + path + "'.");
+        },
+        list: function (path, o) {
+          return run(data, path, o || {}) || Promise.resolve([]);
+        },
+        watch: function () { return function () {}; },
+        url: function (path) {
+          if (Object.prototype.hasOwnProperty.call(data, path)) return String(data[path]({}));
+          return typeof path === 'string' && path.indexOf('data:') === 0 ? path : '';
+        },
+      },
+      ui: ui,
+      refresh: function () {},
+    };
+    return window.gezel;
+  };
+})();
+    </script>
+    <script>
+      // Reads game.json (pages.reads) and plays through the page tools
+      // new_game, guess, pass, and ask_clue_a / ask_clue_b, which summon the
+      // clue-giver whose turn it is.
+      (function () {
+        'use strict';
+
+        var GIVERS = { a: 'Woordsmid', b: 'Puzzelaar' };
+
+        // ── demo game (used only when the page opens as a raw file) ──
+        var demo = {
+          version: 1,
+          status: 'guessing',
+          giver: 'a',
+          round: 1,
+          clue: { word: 'SEA', count: 2, guessesLeft: 3, giver: 'a' },
+          words: [
+            ['whale', 'target'], ['lantern', 'neutral'], ['sail', 'target'], ['piano', 'neutral'],
+            ['volcano', 'trap'], ['shell', 'target'], ['carpet', 'neutral'], ['eagle', 'neutral'],
+            ['cheese', 'neutral'], ['harbor', 'target'], ['castle', 'neutral'], ['glove', 'neutral'],
+            ['rocket', 'target'], ['honey', 'neutral'], ['ladder', 'neutral'], ['wizard', 'target'],
+          ].map(function (w) { return { word: w[0], kind: w[1], revealed: false }; }),
+          history: [],
+          stats: { played: 3, won: 2, lost: 1 },
+        };
+        var demoClues = [{ word: 'SPACE', count: 1 }, { word: 'MAGIC', count: 1 }, { word: 'PORT', count: 1 }];
+        function demoGuess(word) {
+          var cell = demo.words.find(function (w) { return w.word === word; });
+          if (!cell || cell.revealed || demo.status !== 'guessing') throw new Error('Pick a hidden word while guessing.');
+          cell.revealed = true;
+          var left = demo.words.filter(function (w) { return w.kind === 'target' && !w.revealed; }).length;
+          if (cell.kind === 'trap') demo.status = 'lost';
+          else if (!left) demo.status = 'won';
+          else if (cell.kind === 'neutral' || --demo.clue.guessesLeft <= 0) demo.status = 'clue_needed';
+          return { status: demo.status, result: cell.kind, giver: demo.giver };
+        }
+        function demoClue() {
+          if (demo.status !== 'clue_needed') return { status: demo.status };
+          demo.giver = demo.giver === 'a' ? 'b' : 'a';
+          var next = demoClues[demo.round % demoClues.length];
+          demo.round += 1;
+          demo.clue = { word: next.word, count: next.count, guessesLeft: next.count + 1, giver: demo.giver };
+          demo.status = 'guessing';
+          return { status: 'guessing' };
+        }
+
+        makeDemoGezel({
+          page: { entry: 'board/index.html', typeName: 'Word Clues', params: {} },
+          tools: {
+            guess: function (input) { return demoGuess(input.word); },
+            pass: function () { demo.status = 'clue_needed'; return { status: demo.status, giver: demo.giver }; },
+            new_game: function () { location.reload(); return { status: 'clue_needed' }; },
+            ask_clue_a: demoClue,
+            ask_clue_b: demoClue,
+          },
+          data: { 'game.json': function () { return demo; } },
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+        var game = null;
+        var busy = false;
+
+        function applyTheme(mode) {
+          document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light');
+        }
+        applyTheme(gezel.ui.theme.mode);
+        gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); });
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function el(id) { return document.getElementById(id); }
+        function esc(s) {
+          return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+          });
+        }
+        function notice(text) {
+          el('notice').textContent = text;
+          el('notice').hidden = !text;
+        }
+
+        function render() {
+          var g = game || { status: 'new', words: [], stats: { played: 0, won: 0, lost: 0 } };
+          var over = g.status === 'won' || g.status === 'lost';
+          var clue = el('clue');
+          if (g.status === 'new' || !g.words.length) {
+            clue.innerHTML = '<span class="muted">Deal a board to start.</span>';
+          } else if (g.status === 'guessing' && g.clue) {
+            clue.innerHTML =
+              '<span class="muted">' + esc(GIVERS[g.clue.giver] || 'Your clue-giver') + ' says</span><br />' +
+              '<strong>' + esc(g.clue.word) + ', ' + g.clue.count + '</strong>' +
+              ' <span class="muted">· ' + g.clue.guessesLeft + ' pick' + (g.clue.guessesLeft === 1 ? '' : 's') + ' left</span>';
+          } else if (g.status === 'clue_needed') {
+            clue.innerHTML = '<span class="muted">Waiting for the ' + esc(GIVERS[g.giver]) + '’s clue…</span>';
+          } else {
+            clue.innerHTML = g.status === 'won'
+              ? '<strong>You found all six.</strong> <span class="muted">' + g.round + ' clue' + (g.round === 1 ? '' : 's') + '.</span>'
+              : '<strong>The trap.</strong> <span class="muted">Better luck next game.</span>';
+          }
+          el('grid').innerHTML = g.words
+            .map(function (w) {
+              var shown = w.revealed || over;
+              var cls = shown ? w.kind : '';
+              if (over && !w.revealed && w.kind === 'target') cls = 'hidden-target';
+              return (
+                '<button type="button" class="cell ' + cls + '" data-word="' + esc(w.word) + '"' +
+                (shown || g.status !== 'guessing' || busy ? ' disabled' : '') + '>' + esc(w.word) + '</button>'
+              );
+            })
+            .join('');
+          Array.prototype.forEach.call(el('grid').querySelectorAll('[data-word]'), function (b) {
+            b.onclick = function () { play('guess', { word: b.getAttribute('data-word') }); };
+          });
+          el('pass').disabled = g.status !== 'guessing' || busy;
+          // A clue-giver's turn can end without a clue; never leave the player stuck.
+          el('ask-again').hidden = g.status !== 'clue_needed';
+          el('ask-again').disabled = busy;
+          el('new-game').disabled = busy;
+          var s = g.stats || { played: 0, won: 0, lost: 0 };
+          el('stats').textContent = s.played ? 'Games: ' + s.won + ' won, ' + s.lost + ' lost.' : '';
+        }
+
+        function askClue(giver) {
+          return gezel.tools.invoke(giver === 'b' ? 'ask_clue_b' : 'ask_clue_a', {});
+        }
+
+        function play(tool, input) {
+          if (busy) return;
+          busy = true;
+          notice('');
+          render();
+          gezel.tools
+            .invoke(tool, input)
+            .then(function (res) {
+              var out = (res && res.output) || {};
+              // A turn that ends, or a game that ends, goes to the clue-giver.
+              if (out.status === 'clue_needed' || out.status === 'won' || out.status === 'lost')
+                return askClue(out.giver || (game && game.giver));
+            })
+            .catch(function (err) {
+              if (err && err.code === 'unavailable') notice('Playing happens in the app’s Output pane.');
+              else notice((err && err.message) || 'That did not work. Try again.');
+            })
+            .then(function () {
+              busy = false;
+              return load();
+            });
+        }
+
+        function load() {
+          return gezel.data
+            .read('game.json')
+            .then(function (g) { game = g; render(); })
+            .catch(function () { render(); });
+        }
+
+        el('pass').onclick = function () { play('pass', {}); };
+        el('ask-again').onclick = function () {
+          if (busy || !game) return;
+          busy = true;
+          notice('');
+          render();
+          askClue(game.giver)
+            .catch(function (err) {
+              notice(err && err.code === 'unavailable' ? 'Playing happens in the app’s Output pane.' : (err && err.message) || 'That did not work. Try again.');
+            })
+            .then(function () { busy = false; return load(); });
+        };
+        el('new-game').onclick = function () { play('new_game', {}); };
+        load();
+        gezel.data.watch('game.json', function () { load(); });
+      })();
+    </script>
+  </body>
+</html>
