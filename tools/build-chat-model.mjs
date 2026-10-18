@@ -31,7 +31,8 @@
  *     "versionMinGezelVersion": "1.26228", // optional, gates this version only
  *
  *     "ollama":   { "tag": "qwen3.5:9b" },
- *     "llamaCpp": { "huggingfaceRepo": "...-GGUF", "filename": "...gguf", "quantization": "Q4_K_M" },
+ *     "llamaCpp": { "huggingfaceRepo": "...-GGUF", "filename": "...gguf", "quantization": "Q4_K_M",
+ *                   "excludeBackends": ["metal"], "excludeReason": "..." }, // exclusion optional
  *     "ds4": {
  *       "huggingfaceRepo": "...", "filename": "...gguf",
  *       "visionEncoder": { "huggingfaceRepo": "...", "filename": "...gguf" },
@@ -170,8 +171,20 @@ async function buildLlamaCppBlock(cfg, pinCurrent = false, engine = 'llamaCpp') 
     visionEncoderFilename,
     visionEncoder: visionEncoderConfig,
     draftModelFilename,
+    draftModel: draftModelConfig,
     residentBytes,
+    excludeBackends,
+    excludeReason,
   } = cfg;
+  if ((excludeBackends || excludeReason) && engine !== 'llamaCpp') {
+    throw new Error(`${engine} config cannot set \`excludeBackends\`; it is a llamaCpp source field`);
+  }
+  if (excludeReason && !excludeBackends?.length) {
+    throw new Error(`${engine} config sets \`excludeReason\` without \`excludeBackends\``);
+  }
+  const backendExclusion = excludeBackends?.length
+    ? { excludeBackends, ...(excludeReason ? { excludeReason } : {}) }
+    : {};
   const shardForms = [shardsDir, shardsPrefix].filter(Boolean).length;
   if (!filename && shardForms === 0) {
     throw new Error(
@@ -240,16 +253,37 @@ async function buildLlamaCppBlock(cfg, pinCurrent = false, engine = 'llamaCpp') 
   }
 
   let draftModel;
-  if (draftModelFilename) {
-    const f = tree.find((e) => e.path === draftModelFilename);
+  if (draftModelFilename || draftModelConfig) {
+    if (draftModelFilename && draftModelConfig) {
+      throw new Error(`${engine} config must set only one of draftModel / draftModelFilename`);
+    }
+    // A drafter published in its own repo (NVIDIA ships Nemotron 3.5 Bolt's
+    // LiLiCorr drafter apart from the GGUF) carries that repo and its own
+    // revision; a parent commit means nothing in another repository.
+    const draftFilename = draftModelConfig?.filename ?? draftModelFilename;
+    const draftRepo = draftModelConfig?.huggingfaceRepo ?? huggingfaceRepo;
+    if (draftRepo !== huggingfaceRepo && engine !== 'llamaCpp') {
+      throw new Error(`${engine} draftModel must live in the source repo ${huggingfaceRepo}`);
+    }
+    const draftRevision =
+      draftRepo === huggingfaceRepo
+        ? revision
+        : pinCurrent
+          ? await fetchCommit(draftRepo)
+          : draftModelConfig?.revision;
+    const draftTree =
+      draftRepo === huggingfaceRepo ? tree : await fetchTree(draftRepo, draftRevision);
+    const f = draftTree.find((e) => e.path === draftFilename);
     if (!f) {
-      throw new Error(`draft model ${draftModelFilename} not found in ${huggingfaceRepo}`);
+      throw new Error(`draft model ${draftFilename} not found in ${draftRepo}`);
     }
     if (!f.lfsBacked) {
-      throw new Error(`draft model ${draftModelFilename} is not LFS-backed; sha256 unavailable`);
+      throw new Error(`draft model ${draftFilename} is not LFS-backed; sha256 unavailable`);
     }
     draftModel = {
-      filename: draftModelFilename,
+      ...(draftRepo !== huggingfaceRepo ? { huggingfaceRepo: draftRepo } : {}),
+      ...(draftRepo !== huggingfaceRepo && draftRevision ? { revision: draftRevision } : {}),
+      filename: draftFilename,
       sha256: f.sha256,
       sizeBytes: f.sizeBytes,
     };
@@ -288,6 +322,7 @@ async function buildLlamaCppBlock(cfg, pinCurrent = false, engine = 'llamaCpp') 
       ...(mmproj ? { mmproj } : {}),
       ...(visionEncoder ? { visionEncoder } : {}),
       ...(draftModel ? { draftModel } : {}),
+      ...backendExclusion,
     };
   }
 
@@ -309,6 +344,7 @@ async function buildLlamaCppBlock(cfg, pinCurrent = false, engine = 'llamaCpp') 
     ...(mmproj ? { mmproj } : {}),
     ...(visionEncoder ? { visionEncoder } : {}),
     ...(draftModel ? { draftModel } : {}),
+    ...backendExclusion,
   };
 }
 
