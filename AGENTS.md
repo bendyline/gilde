@@ -100,6 +100,17 @@ Run the Gezel-side importer documented in `authoring/gstack/README.md`, then
 commit source and generated output together. Never hand-edit an emitted
 released version or generate from a different Gilde revision.
 
+For `authoring/knowledge-keywords/`:
+
+- `rules.json` owns each knowledge catalog's hand-written `terms` and the
+  rules that pick phrases from its articles.
+- `npm run build-knowledge-keywords` writes `keywords.json` beside each
+  catalog's identity `manifest.json`; Gezel matches those phrases against
+  what a person types to suggest a catalog they have not installed. Never
+  hand-edit `keywords.json`: change `rules.json` and regenerate.
+- Regenerate after adding a knowledge catalog or a new catalog version. See
+  `authoring/knowledge-keywords/README.md`.
+
 ## Project page demo contract
 
 Every latest project-type page under `pages/**` must also run outside the

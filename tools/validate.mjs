@@ -391,6 +391,7 @@ function main() {
         if (kind === 'image-model' || kind === 'video-model') {
           checkWeightTensors(kind, item.itemDir, onDiskVersions, identity.yankedVersions ?? []);
         }
+        if (kind === 'knowledge-catalog') checkKnowledgeKeywords(item, onDiskVersions);
 
         // yankedVersions must reference on-disk versions; minSupported
         // must not exceed the highest on-disk version.
@@ -434,6 +435,34 @@ function main() {
    * downloading it, and without them can only warn, never hide a model the
    * machine cannot run. Older versions predate the field and are immutable.
    */
+  /**
+   * A knowledge catalog's optional keywords.json (written by
+   * tools/build-knowledge-keywords.mjs): its shape, that it names its own
+   * catalog and a real release, and that every case-sensitive phrase is
+   * one the file actually matches.
+   */
+  function checkKnowledgeKeywords(item, versions) {
+    const path = join(item.itemDir, 'keywords.json');
+    if (!existsSync(path)) return;
+    const parsed = readJson(path);
+    if (!parsed.ok) return;
+    const keywords = parsed.value;
+    if (!checkSchema(path, 'knowledge-catalog-keywords', keywords)) return;
+    if (keywords.catalogId !== item.id) {
+      c.error(path, '/catalogId', 'keywords-catalog-mismatch', `catalogId "${keywords.catalogId}" != directory name "${item.id}"`);
+    }
+    if (keywords.sourceVersion !== undefined && !versions.includes(keywords.sourceVersion)) {
+      c.error(path, '/sourceVersion', 'keywords-unknown-version', `sourceVersion "${keywords.sourceVersion}" has no on-disk version folder`);
+    }
+    const phrases = new Set(keywords.terms ?? []);
+    for (const line of keywords.articles ?? []) for (const phrase of line.split(' | ')) phrases.add(phrase);
+    for (const [i, phrase] of (keywords.matchCase ?? []).entries()) {
+      if (!phrases.has(phrase)) {
+        c.error(path, `/matchCase/${i}`, 'keywords-unused-match-case', `"${phrase}" is not among the file's terms or article phrases`);
+      }
+    }
+  }
+
   function checkWeightTensors(kind, itemDir, versions, yankedVersions) {
     const live = versions.filter((v) => !yankedVersions.includes(v));
     if (live.length === 0) return;
