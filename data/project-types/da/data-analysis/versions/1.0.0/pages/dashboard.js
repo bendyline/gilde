@@ -11,15 +11,12 @@
   let stopped = false;
   let debounce;
   const watches = new Map();
-  const sampleFiles = [
-    { path: 'sales/quarterly-sales.csv', size: 12480, mtime: 1791849600000 },
-    { path: 'sales/revenue-plan.xlsx', size: 48210, mtime: 1791763200000 },
-    { path: 'customers.json', size: 22680, mtime: 1791676800000 },
-    { path: 'research/survey-responses.tsv', size: 8640, mtime: 1791590400000 },
-    { path: 'archive/orders.parquet', size: 3145728, mtime: 1791504000000 },
-    { path: 'reports/quarterly-summary.pdf', size: 128040, mtime: 1791849600000 },
-  ];
+  const sampleFiles = window.dataAnalysisSampleFiles;
 
+  const components = api.ui.components;
+  const componentCards = [];
+  const mountAdder = () => components.fileAdder('#add-files', { target: 'data', onAdded: () => refresh() });
+  let adder = mountAdder();
   function sizeLabel(size) {
     if (size < 1024) return `${size} B`;
     const units = ['KB', 'MB', 'GB', 'TB'];
@@ -71,30 +68,11 @@
   }
   function row(file) {
     const li = document.createElement('li');
-    const badge = document.createElement('span');
-    badge.className = 'file-format';
-    badge.textContent = extension(file.path).toUpperCase();
-    const info = document.createElement('div');
-    info.className = 'file-info';
-    const name = document.createElement('span');
-    name.className = 'file-name';
-    name.textContent = file.path.split('/').pop();
-    const detail = document.createElement('span');
-    detail.className = 'file-detail';
-    const folder = file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : 'Project folder';
-    const date = file.mtime ? new Date(file.mtime).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date unavailable';
-    detail.textContent = `${folder} · ${sizeLabel(file.size)} · ${date}`;
-    info.append(name, detail);
-    const open = document.createElement('button');
-    open.type = 'button';
-    open.className = 'file-open';
-    open.textContent = 'Open';
-    open.setAttribute('aria-label', `Open ${file.path}`);
-    open.addEventListener('click', () => { void openFile(file); });
-    li.append(badge, info, open);
+    componentCards.push(components.fileCard(li, { file: { ...file, source: 'workspace' }, variant: 'row', onActivate: () => openFile(file) }));
     return li;
   }
   function render() {
+    componentCards.splice(0).forEach(card => card.destroy());
     const datasets = files.filter((file) => DATA.has(extension(file.path)));
     const formats = [...new Set(datasets.map((file) => extension(file.path)))].sort();
     const chosen = $('format').value;
@@ -128,7 +106,7 @@
     $('datasets').setAttribute('aria-busy', 'true');
     message('error', '');
     try {
-      const result = demo ? { files: sampleFiles.map((file) => ({ ...file })), notice: '' } : await discover();
+      const result = demo ? { files: sampleFiles.concat(components.demo.files()), notice: '' } : await discover();
       if (stopped) return;
       files = result.files;
       message('notice', result.notice);
@@ -150,7 +128,9 @@
   $('format').addEventListener('change', render);
   $('sort').addEventListener('change', render);
   $('refresh').addEventListener('click', () => { void refresh(); });
+  $('close-demo-preview').addEventListener('click', () => $('demo-preview').close());
   $('reset-demo').addEventListener('click', () => {
+    components.demo.reset(); adder.destroy(); adder = mountAdder();
     $('search').value = ''; $('format').value = ''; $('sort').value = 'name';
     $('demo-preview').close();
     window.dataAnalysisInsights.reset();
@@ -171,7 +151,7 @@
     if (!demo && document.visibilityState !== 'hidden') scheduleRefresh();
   });
   window.addEventListener('pagehide', () => {
-    stopped = true;
+    stopped = true; adder.destroy(); componentCards.forEach(card => card.destroy());
     clearTimeout(debounce); clearInterval(timer);
     for (const stop of watches.values()) stop();
     stopTheme?.();

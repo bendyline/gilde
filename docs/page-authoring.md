@@ -36,52 +36,51 @@ let the mode gate the differences:
 | `embedded` | the Output pane iframe | works | works |
 | `serve` | authenticated app-serve mini-site | works | works |
 | `browser` | "Open in browser" tab | rejects `code: 'unavailable'` | works |
-| `demo` | raw file, no server | page-supplied handlers | page-supplied handlers |
+| `demo` | published preview or offline export | page-supplied handlers | page-supplied handlers |
 
 In `browser` mode, catch the `'unavailable'` rejection and say where the
 action lives ("moving posts happens in the app's Output pane") — never a
 dead read-only error state. In `demo` mode, everything runs against the
 handlers the page itself supplies.
 
-## The demo-stub paste pattern
+## Shared demo bootstrap
 
-`demo` is not produced by the injected shim — a double-clicked file has no
-server. `authoring/page-demo-stub.js` is the canonical stub that
-fills the gap. The contract:
+App source contains the app's HTML, CSS, scripts, assets and sample handlers.
+The host supplies the platform: APIs, components and typography. Do not copy a
+component runtime, demo adapter or fonts into each project's pages.
 
-1. Paste the stub file's bytes **verbatim** into a `<script>` block ahead
-   of the page's own code. The file opens with the marker comment
-   `/* gezel-page-demo-stub v1 */`, so review tooling can byte-check the
-   embedded copy against the canonical source. Do not reformat it, and do
-   not fetch it — pages must stay self-contained.
-2. In the page's own script, call it first thing:
+- Local preview: run `npm run demos` and open the listed URL.
+- Website: Gezel's Handboek exporter injects a shared content-hashed bootstrap
+  and typography stylesheet before app scripts. All demo pages share those assets.
+- Offline: run `npm run export-page-demo -- media-library --out ../media-demo`
+  and open its entry under `pages/`. The new output directory includes all
+  runtime assets and font licenses; it needs no server or network.
+- Private AI apps: `gezel app demo <source-folder> --out <new-directory>`.
+
+Open generated output for an offline demo, not the unprocessed source HTML.
+Initialize app-owned samples with the shared demo helper only when no real API exists:
 
 ```js
-makeDemoGezel({
-  page: { entry: 'dashboard/index.html', typeName: 'Social Feed', params: { brand: 'Juniper Press' } },
-  tools: {
-    page_set_status: function (input) { /* mutate in-memory demo state or throw */ },
-  },
-  data: {
-    'posts/index.json': function () { return demoIndex(); },
-  },
+const api = window.gezel || window.makeDemoGezel({
+  page: { entry: 'dashboard/index.html', typeName: 'Social Feed' },
+  tools: { page_set_status: input => updateDemoState(input) },
+  data: { 'posts/index.json': () => demoIndex() },
+  existingPaths: sampleFiles.map(file => file.path),
 });
-// window.gezel now exists in every mode.
-var demoMode = gezel.page.mode === 'demo';
+const demoMode = api.page.mode === 'demo';
+const components = api.ui.components;
 ```
 
-When the real `window.gezel` exists, `makeDemoGezel` returns it untouched.
-Otherwise it installs a `window.gezel` with `mode: 'demo'` whose
-`tools.invoke` / `data.read` / `data.list` dispatch to the handler maps
-(unknown names reject with `code: 'not-allowed'`), `data.watch` is a no-op
-returning an unsubscribe, `data.url` returns the handler's value or passes
-`data:` URIs through, and `ui.theme` follows `prefers-color-scheme` live.
+The bootstrap installs the shared components with import targets from the
+manifest's `pages.imports`. Demo imports keep Files/object URLs only in memory.
+Merge `components.demo.files()` into the sample listing and call
+`components.demo.reset()` in Reset demo, then reset your own sample state and
+remount the adder to clear results. A demo watch is a no-op: refresh explicitly
+after mutations. Failed live operations must never switch to sample data.
 
-Demo handlers keep mutations in memory; the required `Reset demo` control
-restores the initial sample state (see AGENTS.md "Project page demo
-contract"). A watch never fires in demo mode, so re-render explicitly after
-a successful invoke — harmless in embedded mode, where the post-invoke etag
-sweep also repaints watchers.
+Older embedded canonical stubs are accepted for compatibility; publishing strips
+the legacy adapter block from generated HTML so it cannot replace the bootstrap.
+New pages must use injection. The structural check rejects per-page component copies.
 
 ## Declaring reads and tools
 
@@ -190,10 +189,33 @@ requests. Live external network access is controlled by host policy, not the pag
   `Reset demo` control.
 - Deterministic sample data renders immediately in demo mode; controls stay
   usable; mutations stay in the page.
-- The stub bytes match `authoring/page-demo-stub.js` exactly.
+- Platform assets are absent from app source; test the preview server or exported demo.
 - `pages.api: 1` in the manifest; every read and page tool declared.
 - `npm run check-page-demos` passes. This is a structural check, not a browser test.
 - Verify the real host with permitted and denied paths, empty data, failed actions,
   and unsupported capabilities. Never fall back to demo data after a live failure.
 - Check light/dark themes, keyboard focus, narrow layouts, and teardown of watches
   and media. Verify role tool calls and craftbooks when the app includes them.
+
+## Shared file components and scoped imports
+
+Use `gezel.ui.components.fileCard(mount, options)` for file tiles/rows and
+`fileAdder(mount, { target, onAdded })` for picker/drop imports. Declare a
+named workspace destination in `pages.imports`, separately from `pages.reads`.
+The host enforces extensions, byte limits and the project's managed-write policy;
+never add a private upload bridge or grant writes from page code. Refresh listings
+after `onAdded`; DuckDB indexing may finish later.
+
+See the [component/import API guide](https://github.com/bendyline/gezel/blob/main/docs/handboek/technical/gezel-page-apis.md#file-cards-and-adding-files)
+and [style guide](https://github.com/bendyline/gezel/blob/main/docs/handboek/technical/gezel-app-page-style-guide.md#shared-file-components).
+Live imports currently require the desktop Output pane. Browser/phone/serve
+hosts must show an unavailable state, not a fake success or demo fallback.
+
+For standalone demos, use the shared bootstrap described above. Both the local
+server and website exporter supply it before app scripts, including fonts.
+
+The canonical runtime lives in Gezel's `packages/core/src/project-types/`.
+Run `pnpm pages:sync-components` there after changing it to regenerate the shared
+assets under Gilde's `authoring/`; do not hand-edit generated assets or copy them
+into app pages. `GILDE_DIR=<checkout> pnpm test:e2e:page-components` in Gezel
+checks component behavior and exported Media Library/Data Analysis demos.

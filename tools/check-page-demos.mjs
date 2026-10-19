@@ -49,6 +49,9 @@ for (const item of listItems(dataRoot, 'project-type')) {
     if (rel === '..' || rel.startsWith('..' + sep) || !existsSync(asset)) continue;
     linked.push(readFileSync(asset, 'utf8'));
   }
+  if (existsSync(join(pageRoot, 'page-components.js')) || /installGezelComponents/.test([html, ...linked].join('\n'))) {
+    failures.push(item.id + ': page components belong to the host/demo bootstrap, not app source');
+  }
   const pageSource = [html, ...linked].join('\n');
   const required = [
     '<meta name="gezel-demo" content="standalone"',
@@ -93,9 +96,9 @@ for (const item of listItems(dataRoot, 'project-type')) {
   }
 
   if (manifest.pages?.api === 1) {
-    if (!html.includes(stubBytes)) {
+    if (!html.includes(stubBytes) && !pageSource.includes('window.gezel || window.makeDemoGezel(')) {
       failures.push(
-        `${item.id}@${manifest.version}: api:1 page must embed authoring/page-demo-stub.js verbatim`,
+        `${item.id}@${manifest.version}: api:1 page must use the injected host or shared demo initializer`,
       );
     }
     for (const marker of legacyMarkers) {

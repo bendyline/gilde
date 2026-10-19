@@ -1,0 +1,16 @@
+import { resolve, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
+import { listItems } from './lib/walk.mjs';
+import { loadResolvedManifest } from './lib/manifest-merge.mjs';
+import { exportDemo } from './lib/page-demo.mjs';
+const { values, positionals } = parseArgs({ allowPositionals: true, options: { out: {type:'string'} } });
+if (positionals.length !== 1 || !values.out) throw new Error('Usage: node tools/export-page-demo.mjs <project-type-id> --out <new-directory>');
+const root = fileURLToPath(new URL('../data', import.meta.url));
+const item = listItems(root, 'project-type').find(item => item.id === positionals[0]);
+if (!item) throw new Error('Project type not found.');
+const { manifest } = loadResolvedManifest(item.itemDir, 'project-type', item.id);
+if (!manifest?.pages?.entry) throw new Error('This project type has no page.');
+const out = resolve(values.out);
+await exportDemo(join(item.itemDir, 'versions', manifest.version, 'pages'), out, manifest.pages.imports);
+console.log(`Open ${join(out, 'pages', manifest.pages.entry)}`);

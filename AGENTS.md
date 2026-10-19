@@ -130,11 +130,12 @@ For `authoring/knowledge-keywords/`:
 ## Project page demo contract
 
 Every latest project-type page under `pages/**` must also run outside the
-Gezel preview host. These standalone pages are the live demos embedded on
-gezelgilde.com and the fastest way to dogfood a project type in a browser.
+Gezel preview host. Generated standalone pages are the live demos embedded on
+gezel.com and the fastest way to dogfood a project type in a browser.
 
-- For API v1 pages, embed the canonical `authoring/page-demo-stub.js` verbatim
-  and call `makeDemoGezel(...)`; use `gezel.page.mode`. Do not parse capability
+- For API v1 pages, use `window.gezel || window.makeDemoGezel(...)`; the preview
+  host/exporter supplies the bootstrap, components and fonts. Never copy these
+  into app source. Use `gezel.page.mode`. Do not parse capability
   URLs or infer a live bridge merely from being inside an iframe.
 - Add `<meta name="gezel-demo" content="standalone" />` and a visible element
   marked `data-gezel-demo-banner` that explains sample data stays in the page.
@@ -193,3 +194,5 @@ clean, and paste the final summary line into your PR description.
   (`npm run format` fixes this mechanically).
 - Markdown prose (`about.md`): plain, warm, no emojis.
 - Keep diffs minimal — do not reformat files you did not change.
+
+File explorers should reuse the shared file card and file adder, with explicit `pages.imports` destinations and standalone in-memory import/reset support. Follow [the component authoring contract](docs/page-authoring.md#shared-file-components-and-scoped-imports).

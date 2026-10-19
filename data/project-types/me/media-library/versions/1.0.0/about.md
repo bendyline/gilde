@@ -11,7 +11,7 @@ Do not assume a filename or modification date proves when or where a photo was
 taken. Playback depends on the device's supported formats; unpreviewable files
 remain listed and can be opened through Gezel's existing viewers.
 
-The page only reads files. Hidden folders, dependency folders, and document
+The shared Add files control can copy selected files into this workspace when managed writes are enabled. Existing names are preserved by choosing a new name. Browsing does not change files. Hidden folders, dependency folders, and document
 companion folders are skipped. Scans stop after 100 folders or 10,000 files and
 clearly label a partial library. The bundled samples are only a standalone demo;
 they are never inserted into a real project's folder.

@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
-import { createReadStream, existsSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { dirname, extname, join, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { loadResolvedManifest } from './lib/manifest-merge.mjs';
 import { listItems } from './lib/walk.mjs';
+import { assets, demoHtml } from './lib/page-demo.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const catalogRoot = resolve(here, '..');
@@ -21,7 +22,7 @@ const { values } = parseArgs({
 
 const host = values.host;
 const port = Number(values.port);
-if (!Number.isInteger(port) || port < 1 || port > 65535) {
+if (!Number.isInteger(port) || port < 0 || port > 65535) {
   console.error(`Invalid port: ${values.port}`);
   process.exit(1);
 }
@@ -58,6 +59,7 @@ for (const item of listItems(dataRoot, 'project-type')) {
     version: manifest.version,
     entry,
     pagesRoot,
+    imports: manifest.pages.imports,
     url: demoUrl(item.id, entry),
   });
 }
@@ -191,6 +193,12 @@ const server = createServer((req, res) => {
     return;
   }
 
+  if (pathname.startsWith('/_gezel-demo/')) {
+    const asset = assets.find(asset => pathname === '/_gezel-demo/' + asset.name);
+    if (!asset) { send(res, 404, 'text/plain', 'Not found', method); return; }
+    send(res, 200, contentType(asset.name), asset.bytes, method); return;
+  }
+
   const match = pathname.match(/^\/demos\/([^/]+)(?:\/(.*))?$/);
   if (!match) {
     send(res, 404, 'text/plain; charset=utf-8', 'Not found\n', method);
@@ -226,17 +234,19 @@ const server = createServer((req, res) => {
     return;
   }
 
-  const size = statSync(file).size;
+  const html = /\.html?$/i.test(file) ? demoHtml(readFileSync(file, 'utf8'), demo.imports) : null;
+  const size = html === null ? statSync(file).size : Buffer.byteLength(html);
   res.writeHead(200, {
     'Content-Type': contentType(file),
     'Content-Length': size,
     'Cache-Control': 'no-store',
     'Content-Security-Policy':
-      "default-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'none'; base-uri 'none'; form-action 'none'",
+      "default-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'none'; base-uri 'none'; form-action 'none'",
     'Referrer-Policy': 'no-referrer',
     'X-Content-Type-Options': 'nosniff',
   });
   if (method === 'HEAD') res.end();
+  else if (html !== null) res.end(html);
   else createReadStream(file).pipe(res);
 });
 
@@ -247,7 +257,7 @@ server.on('error', (error) => {
 });
 
 server.listen(port, host, () => {
-  console.log(`gilde demos: http://${host}:${port}/ (${demos.length} experiences)`);
+  console.log(`gilde demos: http://${host}:${server.address().port}/ (${demos.length} experiences)`);
   console.log('Press Ctrl+C to stop.');
 });
 

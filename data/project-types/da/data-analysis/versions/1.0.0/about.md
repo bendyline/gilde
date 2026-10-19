@@ -16,3 +16,5 @@ Unindexed files remain browsable; missing query support is explained on the page
 Hidden folders, document companion
 folders, and dependency folders are omitted. Large or partly unreadable folders
 are explicitly labeled as incomplete.
+
+The shared Add files control imports selected datasets and reports into the workspace when managed writes are enabled, preserving existing files. New files appear before background table indexing may be ready. Standalone demo additions stay in memory; charts remain explicitly labeled sample data.

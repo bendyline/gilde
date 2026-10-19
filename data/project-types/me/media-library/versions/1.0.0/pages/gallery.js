@@ -1,7 +1,5 @@
 (() => {
   'use strict';
-  const api = window.makeDemoGezel({ page: { typeName: 'Media Library' } });
-  const demoMode = api.page.mode === 'demo';
   const model = window.mediaLibraryFiles;
   const $ = (id) => document.getElementById(id);
   const labels = { image: 'Image', video: 'Video', audio: 'Audio' };
@@ -12,9 +10,14 @@
     ['Studio/Evening light.svg', 'evening.svg', 1980], ['Motion/Light study.webm', 'light.webm', 24000],
     ['Recordings/Three notes.wav', 'notes.wav', 96044],
   ].map(([path, asset, size], i) => ({ path, asset, kind: model.kind(path), size, mtime: 1792368000000 - i * 86400000 }));
+  const api = window.gezel || window.makeDemoGezel({ page: { typeName: 'Media Library' }, existingPaths: samples.map(file => file.path) });
+  const demoMode = api.page.mode === 'demo';
+  const components = api.ui.components;
+  const componentCards = [];
+  const mountAdder = () => components.fileAdder('#add-files', { target: 'library', onAdded: () => refresh() });
+  let adder = mountAdder();
   let files = [], shown = [], visible = 24, view = 'grid', busy = false, again = false, stopped = false, debounce, currentPath = null, previewRevision = 0, focusPath = null;
   const watches = new Map();
-  const cards = new Map();
   function element(tag, text, className) { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (className) el.className = className; return el; }
   function icon(type) {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -29,7 +32,7 @@
     return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(n)} ${units[i]}`;
   }
   const stamp = (value) => value ? new Date(value).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : 'Date unavailable';
-  const mediaUrl = (file) => demoMode ? `assets/${file.asset}` : api.data.url(file.path);
+  const mediaUrl = (file) => demoMode && file.asset ? `assets/${file.asset}` : api.data.url(file.path);
   function stopPlayback() {
     previewRevision++;
     for (const media of $('preview-media').querySelectorAll('video,audio')) { media.pause(); media.removeAttribute('src'); media.load(); }
@@ -37,30 +40,15 @@
   }
   function card(file) {
     const li = document.createElement('li');
-    const button = element('button', undefined, 'media-card'); button.type = 'button';
-    button.dataset.path = file.path; button.setAttribute('aria-label', `Preview ${file.path}`);
-    const thumb = element('span', undefined, 'thumbnail');
-    thumb.append(icon(file.kind), element('span', labels[file.kind], 'fallback-label'));
-    if (file.kind === 'image' && model.browserImages.has(model.extension(file.path))) {
-      const image = document.createElement('img'); image.alt = ''; image.loading = 'lazy'; image.decoding = 'async';
-      image.addEventListener('error', () => { image.remove(); thumb.querySelector('.fallback-label').textContent = 'Preview unavailable'; });
-      try { image.src = mediaUrl(file); thumb.append(image); } catch { /* Keep the usable file card. */ }
-    }
-    const info = element('span', undefined, 'card-info');
-    info.append(element('span', file.path.split('/').pop(), 'file-name'), element('span', model.folderOf(file.path) === '.' ? 'Project folder' : model.folderOf(file.path), 'file-folder'), element('span', `${model.extension(file.path).toUpperCase()} · ${size(file.size)}`, 'file-meta'));
-    button.append(thumb, info); button.addEventListener('click', () => openPreview(file.path)); li.append(button); return li;
+    const card = components.fileCard(li, { file: { ...file, source: 'workspace' }, variant: view === 'list' ? 'row' : 'tile', thumbnail: file.kind === 'image' && model.browserImages.has(model.extension(file.path)) ? mediaUrl(file) : false, onActivate: () => openPreview(file.path) });
+    card.element.dataset.path = file.path; componentCards.push(card); return li;
   }
   function render() {
     const previousFocus = document.activeElement?.dataset.path;
     shown = model.select(files, { query: $('search').value, kind: $('kind').value, folder: $('folder').value, sort: $('sort').value });
     $('gallery').dataset.view = view;
-    const present = new Set(files.map((file) => file.path));
-    for (const path of cards.keys()) if (!present.has(path)) cards.delete(path);
-    $('gallery').replaceChildren(...shown.slice(0, visible).map((file) => {
-      const stamp = `${file.size}:${file.mtime}`;
-      if (cards.get(file.path)?.stamp !== stamp) cards.set(file.path, { stamp, node: card(file) });
-      return cards.get(file.path).node;
-    }));
+    componentCards.splice(0).forEach(card => card.destroy());
+    $('gallery').replaceChildren(...shown.slice(0, visible).map(card));
     for (const type of ['image', 'video', 'audio']) $(`${type}-count`).textContent = files.filter((f) => f.kind === type).length.toLocaleString();
     $('file-count').textContent = `${files.length.toLocaleString()} media file${files.length === 1 ? '' : 's'}`;
     $('status').textContent = shown.length > visible ? `Showing ${visible} of ${shown.length.toLocaleString()} matches` : `${shown.length.toLocaleString()} of ${files.length.toLocaleString()} media files`;
@@ -68,7 +56,7 @@
     $('no-matches').hidden = files.length === 0 || shown.length > 0;
     $('show-more').hidden = shown.length <= visible;
     $('view-grid').setAttribute('aria-pressed', String(view === 'grid')); $('view-list').setAttribute('aria-pressed', String(view === 'list'));
-    if (previousFocus) [...$('gallery').querySelectorAll('button')].find((el) => el.dataset.path === previousFocus)?.focus();
+    if (previousFocus) [...$('gallery').querySelectorAll('gezel-file-card')].find((el) => el.dataset.path === previousFocus)?.shadowRoot.querySelector('button').focus();
   }
   function openPreview(path) {
     const file = files.find((f) => f.path === path); if (!file) return;
@@ -115,7 +103,7 @@
     if (busy) { again = true; return; } busy = true; $('refresh').disabled = true;
     $('gallery').setAttribute('aria-busy', 'true'); message('error', '');
     try {
-      const result = demoMode ? { files: samples, folders: ['.', 'Journeys', 'Studio', 'Motion', 'Recordings'] } : await model.scan((path) => api.data.list(path), { cancelled: () => stopped });
+      const result = demoMode ? { files: samples.concat(components.demo.files().map(file => ({ ...file, kind: model.kind(file.path) }))), folders: ['.', 'Journeys', 'Studio', 'Motion', 'Recordings'] } : await model.scan((path) => api.data.list(path), { cancelled: () => stopped });
       if (stopped) return;
       files = result.files;
       const chosen = $('folder').value;
@@ -142,9 +130,9 @@
   for (const style of ['grid', 'list']) $(`view-${style}`).addEventListener('click', () => { view = style; render(); });
   $('show-more').addEventListener('click', () => { visible += 24; render(); });
   $('refresh').addEventListener('click', () => { void refresh(); });
-  $('reset-demo').addEventListener('click', () => { $('search').value = ''; $('kind').value = ''; $('folder').value = ''; $('sort').value = 'newest'; visible = 24; view = 'grid'; $('preview').close(); void refresh(); });
+  $('reset-demo').addEventListener('click', () => { components.demo.reset(); adder.destroy(); adder = mountAdder(); $('search').value = ''; $('kind').value = ''; $('folder').value = ''; $('sort').value = 'newest'; visible = 24; view = 'grid'; $('preview').close(); void refresh(); });
   $('close-preview').addEventListener('click', () => $('preview').close());
-  $('preview').addEventListener('close', () => { stopPlayback(); currentPath = null; [...$('gallery').querySelectorAll('button')].find((el) => el.dataset.path === focusPath)?.focus(); });
+  $('preview').addEventListener('close', () => { stopPlayback(); currentPath = null; [...$('gallery').querySelectorAll('gezel-file-card')].find((el) => el.dataset.path === focusPath)?.shadowRoot.querySelector('button').focus(); });
   $('previous').addEventListener('click', () => move(-1)); $('next').addEventListener('click', () => move(1));
   $('preview').addEventListener('keydown', (e) => {
     if (['VIDEO', 'AUDIO', 'INPUT', 'SELECT'].includes(e.target.tagName)) return;
@@ -160,6 +148,6 @@
   theme(api.ui.theme); const stopTheme = api.ui.onTheme(theme);
   const timer = demoMode ? null : setInterval(() => { if (document.visibilityState !== 'hidden') void refresh(); }, 30000);
   document.addEventListener('visibilitychange', () => { if (!demoMode && document.visibilityState !== 'hidden') schedule(); });
-  window.addEventListener('pagehide', () => { stopped = true; clearTimeout(debounce); clearInterval(timer); stopPlayback(); stopTheme(); for (const stop of watches.values()) stop(); }, { once: true });
+  window.addEventListener('pagehide', () => { stopped = true; adder.destroy(); componentCards.forEach(card => card.destroy()); clearTimeout(debounce); clearInterval(timer); stopPlayback(); stopTheme(); for (const stop of watches.values()) stop(); }, { once: true });
   void refresh();
 })();
