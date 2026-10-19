@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Data Analysis</title>
+    <link rel="stylesheet" href="dashboard.css" />
+    <style>
+      :root { color-scheme: light dark; }
+      @media (prefers-color-scheme: dark) { :root { color-scheme: dark; } }
+    </style>
+    <script>
+/* gezel-page-demo-stub v1 */
+/*
+ * The canonical demo stub for Gezel type pages. MIT License.
+ *
+ * Paste this file's bytes verbatim into a <script> block ahead of the
+ * page's own code, then call makeDemoGezel({ page, tools, data }) with the
+ * page's demo handlers. Served by Gezel, the real window.gezel is already
+ * injected and the stub steps aside; opened as a raw file (the live demos
+ * on gezelgilde.com), it installs a window.gezel whose tools and data are
+ * the page-supplied handler maps — one code path in every mode. `tools`
+ * and `data` map a tool name / declared read path to a function; data
+ * handlers back read() and list(), and url() returns the handler's value
+ * or passes a data: URI through. See docs/page-authoring.md.
+ */
+(function () {
+  'use strict';
+  window.makeDemoGezel = function (opts) {
+    if (window.gezel) return window.gezel;
+    var page = (opts && opts.page) || {};
+    var tools = (opts && opts.tools) || {};
+    var data = (opts && opts.data) || {};
+    var themeListeners = [];
+    var media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+    var ui = {
+      theme: { mode: media && media.matches ? 'dark' : 'light' },
+      onTheme: function (cb) {
+        themeListeners.push(cb);
+        return function () {
+          var at = themeListeners.indexOf(cb);
+          if (at >= 0) themeListeners.splice(at, 1);
+        };
+      },
+    };
+    if (media && media.addEventListener) {
+      media.addEventListener('change', function (ev) {
+        ui.theme = { mode: ev.matches ? 'dark' : 'light' };
+        themeListeners.slice().forEach(function (cb) { cb(ui.theme); });
+      });
+    }
+    function fail(code, message) {
+      var err = new Error(message);
+      err.code = code;
+      return Promise.reject(err);
+    }
+    function run(map, key, arg) {
+      if (!Object.prototype.hasOwnProperty.call(map, key)) return null;
+      return Promise.resolve().then(function () { return map[key](arg); });
+    }
+    window.gezel = {
+      page: {
+        api: 1,
+        projectId: 'demo',
+        source: 'type',
+        entry: page.entry || 'index.html',
+        typeName: page.typeName || 'demo',
+        params: page.params || {},
+        mode: 'demo',
+      },
+      tools: {
+        list: function () { return Promise.resolve(Object.keys(tools)); },
+        invoke: function (name, input) {
+          var call = run(tools, name, input || {});
+          if (!call) return fail('not-allowed', "The demo does not handle the tool '" + name + "'.");
+          return call.then(function (output) { return { output: output }; });
+        },
+      },
+      data: {
+        read: function (path, o) {
+          return run(data, path, o || {}) || fail('not-allowed', "The demo has no data for '" + path + "'.");
+        },
+        list: function (path, o) {
+          return run(data, path, o || {}) || Promise.resolve([]);
+        },
+        watch: function () { return function () {}; },
+        url: function (path) {
+          if (Object.prototype.hasOwnProperty.call(data, path)) return String(data[path]({}));
+          return typeof path === 'string' && path.indexOf('data:') === 0 ? path : '';
+        },
+      },
+      ui: ui,
+      refresh: function () {},
+    };
+    return window.gezel;
+  };
+})();
+    </script>
+    <script>
+      const demoMode = window.makeDemoGezel({ page: { typeName: 'Data Analysis' } }).page.mode === 'demo';
+    </script>
+    <script src="datasets.js" defer></script>
+    <script src="analytics.js" defer></script>
+    <script src="insights.js" defer></script>
+    <script src="dashboard.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <aside data-gezel-demo-banner hidden>
+        <span>Sample project. These files stay in this page.</span>
+        <button id="reset-demo" type="button">Reset demo</button>
+      </aside>
+      <header>
+        <div>
+          <p class="eyebrow">Your project folder</p>
+          <h1>Data Analysis</h1>
+          <p class="intro">A place to explore your data.</p>
+        </div>
+        <button id="refresh" type="button">Refresh</button>
+      </header>
+      <dl class="summary" aria-label="Folder summary">
+        <div><dt>Datasets</dt><dd id="dataset-count">—</dd></div>
+        <div><dt>Formats</dt><dd id="format-count">—</dd></div>
+        <div><dt>Total size</dt><dd id="total-size">—</dd></div>
+      </dl>
+      <section id="insights" aria-labelledby="insights-heading">
+        <h2 id="insights-heading">Explore a table</h2>
+        <p id="insights-status" class="hint" role="status" aria-live="polite">Looking for indexed tables…</p>
+        <p id="insights-error" role="alert" hidden></p>
+        <div id="table-picker-wrap" class="filters" hidden>
+          <label>Dataset and table<select id="table-picker"></select></label>
+        </div>
+        <div id="insights-content" hidden>
+          <div class="source-line"><span id="table-source"></span><button id="open-table-source" type="button">Open source file</button></div>
+          <dl class="summary table-summary" aria-label="Table summary">
+            <div><dt>Records</dt><dd id="table-rows">—</dd></div>
+            <div><dt>Columns</dt><dd id="table-columns">—</dd></div>
+            <div><dt>Data freshness</dt><dd id="table-stamp">—</dd></div>
+          </dl>
+          <div id="chart-controls" class="filters">
+            <label>Group by<select id="chart-group"></select></label>
+            <label>Show<select id="chart-measure"></select></label>
+          </div>
+          <figure class="chart-figure">
+            <figcaption id="chart-caption"></figcaption>
+            <ul id="chart" aria-label="Chart values"></ul>
+          </figure>
+          <details id="numeric-summary" open>
+            <summary>Numeric summary</summary>
+            <p id="numeric-note" class="hint"></p>
+            <div class="table-scroll" tabindex="0" role="region" aria-label="Numeric summary">
+              <table><thead><tr><th scope="col">Field</th><th scope="col">Present</th><th scope="col">Missing</th><th scope="col">Minimum</th><th scope="col">Maximum</th><th scope="col">Average</th></tr></thead><tbody id="numeric-body"></tbody></table>
+            </div>
+          </details>
+          <details>
+            <summary>Columns &amp; types</summary>
+            <p id="schema-note" class="hint"></p>
+            <div class="table-scroll" tabindex="0" role="region" aria-label="Table schema">
+              <table><thead><tr><th scope="col">Column</th><th scope="col">Type</th><th scope="col">Role</th><th scope="col">Description</th></tr></thead><tbody id="schema-body"></tbody></table>
+            </div>
+          </details>
+        </div>
+      </section>
+      <section aria-labelledby="datasets-heading">
+        <div class="section-heading">
+          <h2 id="datasets-heading">Datasets</h2>
+          <p id="updated" class="muted"></p>
+        </div>
+        <p class="hint">Files appear automatically from this folder and its subfolders. Open one to explore it in Gezel.</p>
+        <div class="filters">
+          <label>Find a file<input id="search" type="search" placeholder="Search names and folders…" /></label>
+          <label>Format<select id="format"><option value="">All formats</option></select></label>
+          <label>Sort by<select id="sort"><option value="name">Name</option><option value="modified">Recently changed</option><option value="size">Largest first</option></select></label>
+        </div>
+        <p id="status" role="status" aria-live="polite">Looking for datasets…</p>
+        <p id="error" role="alert" hidden></p>
+        <p id="notice" class="notice" hidden></p>
+        <ul id="datasets" class="file-list" aria-label="Datasets"></ul>
+        <div id="empty" class="empty" hidden>
+          <h3>No datasets yet</h3>
+          <p>Add a CSV, spreadsheet, JSON, Parquet, or another data file to your project folder. It will appear here automatically.</p>
+        </div>
+        <p id="no-matches" class="empty" hidden>No files match these filters. Try another name or format.</p>
+      </section>
+      <section id="reports-section" aria-labelledby="reports-heading" hidden>
+        <h2 id="reports-heading">Reports &amp; notes</h2>
+        <ul id="reports" class="file-list" aria-label="Reports and notes"></ul>
+      </section>
+      <footer>Source files stay in your folder. Summaries and charts read the indexed tables without changing your data.</footer>
+    </main>
+    <dialog id="demo-preview" aria-labelledby="demo-title">
+      <h2 id="demo-title">Sample file</h2>
+      <p>In Gezel, this opens the file's existing viewer. This is a sample table.</p>
+      <table><thead><tr><th>Month</th><th>Revenue</th><th>Orders</th></tr></thead><tbody><tr><td>July</td><td>12,480</td><td>156</td></tr><tr><td>August</td><td>14,560</td><td>182</td></tr><tr><td>September</td><td>16,240</td><td>203</td></tr></tbody></table>
+      <form method="dialog"><button>Close preview</button></form>
+    </dialog>
+  </body>
+</html>

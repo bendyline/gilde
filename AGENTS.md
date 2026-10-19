@@ -4,6 +4,22 @@ Many gilde contributions are authored by AI agents. This file is the
 precise, mechanical contract. Follow it and your PR will pass CI on the
 first try.
 
+## Building Gezel apps
+
+A Gezel app combines only the parts it needs: a project type, custom page,
+gezel role templates, craftbooks, scripts, data, and project defaults. Start with
+the public [app authoring guide](https://github.com/bendyline/gezel/blob/main/docs/handboek/technical/building-ai-apps-inside-gezel.md),
+[page API guide](https://github.com/bendyline/gezel/blob/main/docs/handboek/technical/gezel-page-apis.md), and
+[page style guide](https://github.com/bendyline/gezel/blob/main/docs/handboek/technical/gezel-app-page-style-guide.md).
+Then read [this catalog's page contract](docs/page-authoring.md).
+
+Use the shared `window.gezel` APIs and injected fonts. Keep type-owned pages
+separate from user files. Write the data/permission contract before adding roles
+or scripts, and validate against the generated schemas. Gilde content belongs
+in `data/`; missing shared capabilities belong in the Gezel runtime. A valid
+payload and a working standalone demo are not proof of a working live app:
+test adoption, permissions, page actions, and any crew/craftbook workflow.
+
 ## Layout grammar
 
 ```
@@ -117,19 +133,20 @@ Every latest project-type page under `pages/**` must also run outside the
 Gezel preview host. These standalone pages are the live demos embedded on
 gezelgilde.com and the fastest way to dogfood a project type in a browser.
 
-- Detect live mode from the capability-scoped `/preview/<capability>/type/<projectId>/`
-  path. Being inside an iframe is not proof that the Gezel bridge exists.
+- For API v1 pages, embed the canonical `authoring/page-demo-stub.js` verbatim
+  and call `makeDemoGezel(...)`; use `gezel.page.mode`. Do not parse capability
+  URLs or infer a live bridge merely from being inside an iframe.
 - Add `<meta name="gezel-demo" content="standalone" />` and a visible element
   marked `data-gezel-demo-banner` that explains sample data stays in the page.
-- Without a live capability/project pair, render representative deterministic
+- In demo mode, render representative deterministic
   sample data immediately. Do not leave the page empty or show a read-only/error
   state.
 - Keep the page's meaningful controls usable in demo mode. Mutations stay in
   memory, and a `Reset demo` control restores the initial sample state.
 - Demo mode must not fetch private project URLs, post messages to an arbitrary
   parent, require credentials, or use external network assets.
-- Live behavior is unchanged: polling and tool calls still go through the Gezel
-  preview host and its postMessage bridge.
+- Live behavior uses the injected shared API: the embedded host relays calls;
+  app-serve uses its authenticated transport. Never replace a live error with samples.
 
 `npm run check-page-demos` enforces the structural markers on every current
 project-type page. Browser interaction checks remain part of review for pages

@@ -1,0 +1,4 @@
+- Make the project's datasets easy to find and open.
+- Answer the user's questions with reproducible analysis and clear evidence.
+- Preserve source data and explain uncertainty, assumptions, and limitations.
+- Keep derived datasets, reports, and notes easy to trace back to their sources.

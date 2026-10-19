@@ -41,7 +41,11 @@ const REPO_ROOT = resolve(HERE, '..');
 const ONE_MB = 1024 * 1024;
 const TEXT_EXTENSIONS = new Set(['.json', '.md', '.html', '.svg']);
 const ALLOWED_EXTENSIONS = new Set([...TEXT_EXTENSIONS, '.webp']);
-const ALLOWED_EXTENSIONS_LABEL = [...ALLOWED_EXTENSIONS].map((ext) => ext.slice(1)).join('/');
+// Page bundles are ordinary local websites with scripts and styles.
+// Keep these additions page-scoped.
+// Bundled media samples belong only to project-page payloads.
+const PAGE_EXTENSIONS = new Set([...ALLOWED_EXTENSIONS, '.js', '.css', '.webm', '.wav']);
+const PAGE_PATH = /[\\/]project-types[\\/][^\\/]+[\\/][^\\/]+[\\/]versions[\\/][^\\/]+[\\/]pages[\\/]/;
 // A craftbook's samples (the input it can try with nothing of the person's
 // own) are real-world text files: a spreadsheet, a small code folder, a
 // transcript. They are allowed only under versions/<v>/samples/ and still pass
@@ -128,9 +132,9 @@ function main() {
     const ext = extname(path).toLowerCase();
     // .gitkeep is a conventional git placeholder for otherwise-empty
     // directories; allowed by name rather than widening the extension list.
-    const allowed = SAMPLE_PATH.test(path) ? SAMPLE_EXTENSIONS : ALLOWED_EXTENSIONS;
+    const allowed = SAMPLE_PATH.test(path) ? SAMPLE_EXTENSIONS : PAGE_PATH.test(path) ? PAGE_EXTENSIONS : ALLOWED_EXTENSIONS;
     if (name !== '.gitkeep' && !allowed.has(ext)) {
-      c.error(path, '', 'ext-not-allowed', `extension "${ext || name}" is not in ${ALLOWED_EXTENSIONS_LABEL}`);
+      c.error(path, '', 'ext-not-allowed', `extension "${ext || name}" is not in ${[...allowed].map((value) => value.slice(1)).join('/')}`);
       continue;
     }
     const buf = readFileSync(path);
@@ -143,6 +147,13 @@ function main() {
         buf.subarray(0, 4).toString('ascii') === 'RIFF' &&
         buf.subarray(8, 12).toString('ascii') === 'WEBP';
       if (!isWebp) c.error(path, '', 'invalid-webp', 'missing RIFF/WEBP header');
+      continue;
+    }
+    if (ext === '.wav' || ext === '.webm') {
+      const valid = ext === '.wav'
+        ? buf.length >= 12 && buf.subarray(0, 4).toString('ascii') === 'RIFF' && buf.subarray(8, 12).toString('ascii') === 'WAVE'
+        : buf.length >= 4 && buf.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]));
+      if (!valid) c.error(path, '', 'invalid-media', 'missing WAV or WebM container header');
       continue;
     }
     if (buf.includes(0)) {

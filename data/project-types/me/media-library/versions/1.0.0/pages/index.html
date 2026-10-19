@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="gezel-demo" content="standalone" />
+  <title>Media Library</title>
+  <link rel="stylesheet" href="gallery.css" />
+  <script>
+/* gezel-page-demo-stub v1 */
+/*
+ * The canonical demo stub for Gezel type pages. MIT License.
+ *
+ * Paste this file's bytes verbatim into a <script> block ahead of the
+ * page's own code, then call makeDemoGezel({ page, tools, data }) with the
+ * page's demo handlers. Served by Gezel, the real window.gezel is already
+ * injected and the stub steps aside; opened as a raw file (the live demos
+ * on gezelgilde.com), it installs a window.gezel whose tools and data are
+ * the page-supplied handler maps — one code path in every mode. `tools`
+ * and `data` map a tool name / declared read path to a function; data
+ * handlers back read() and list(), and url() returns the handler's value
+ * or passes a data: URI through. See docs/page-authoring.md.
+ */
+(function () {
+  'use strict';
+  window.makeDemoGezel = function (opts) {
+    if (window.gezel) return window.gezel;
+    var page = (opts && opts.page) || {};
+    var tools = (opts && opts.tools) || {};
+    var data = (opts && opts.data) || {};
+    var themeListeners = [];
+    var media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+    var ui = {
+      theme: { mode: media && media.matches ? 'dark' : 'light' },
+      onTheme: function (cb) {
+        themeListeners.push(cb);
+        return function () {
+          var at = themeListeners.indexOf(cb);
+          if (at >= 0) themeListeners.splice(at, 1);
+        };
+      },
+    };
+    if (media && media.addEventListener) {
+      media.addEventListener('change', function (ev) {
+        ui.theme = { mode: ev.matches ? 'dark' : 'light' };
+        themeListeners.slice().forEach(function (cb) { cb(ui.theme); });
+      });
+    }
+    function fail(code, message) {
+      var err = new Error(message);
+      err.code = code;
+      return Promise.reject(err);
+    }
+    function run(map, key, arg) {
+      if (!Object.prototype.hasOwnProperty.call(map, key)) return null;
+      return Promise.resolve().then(function () { return map[key](arg); });
+    }
+    window.gezel = {
+      page: {
+        api: 1,
+        projectId: 'demo',
+        source: 'type',
+        entry: page.entry || 'index.html',
+        typeName: page.typeName || 'demo',
+        params: page.params || {},
+        mode: 'demo',
+      },
+      tools: {
+        list: function () { return Promise.resolve(Object.keys(tools)); },
+        invoke: function (name, input) {
+          var call = run(tools, name, input || {});
+          if (!call) return fail('not-allowed', "The demo does not handle the tool '" + name + "'.");
+          return call.then(function (output) { return { output: output }; });
+        },
+      },
+      data: {
+        read: function (path, o) {
+          return run(data, path, o || {}) || fail('not-allowed', "The demo has no data for '" + path + "'.");
+        },
+        list: function (path, o) {
+          return run(data, path, o || {}) || Promise.resolve([]);
+        },
+        watch: function () { return function () {}; },
+        url: function (path) {
+          if (Object.prototype.hasOwnProperty.call(data, path)) return String(data[path]({}));
+          return typeof path === 'string' && path.indexOf('data:') === 0 ? path : '';
+        },
+      },
+      ui: ui,
+      refresh: function () {},
+    };
+    return window.gezel;
+  };
+})();
+
+  </script>
+  <script src="media-files.js" defer></script>
+  <script src="gallery.js" defer></script>
+</head>
+<body>
+  <main>
+    <aside data-gezel-demo-banner hidden><span>Sample library. Illustrations, a short clip, and three notes — all local to this page.</span><button id="reset-demo" type="button">Reset demo</button></aside>
+    <header><div><p class="eyebrow">Your collection, in place</p><h1>Media Library</h1><p class="intro">A window into your photos, films, and recordings.</p></div><button id="refresh" type="button">Refresh</button></header>
+    <dl class="counts" aria-label="Library summary"><div><dt>Images</dt><dd id="image-count">—</dd></div><div><dt>Videos</dt><dd id="video-count">—</dd></div><div><dt>Audio</dt><dd id="audio-count">—</dd></div></dl>
+    <section aria-labelledby="library-heading">
+      <div class="library-heading"><h2 id="library-heading">Browse your library</h2><span id="updated"></span></div>
+      <div class="filters">
+        <label>Find media<input id="search" type="search" placeholder="Search names and folders…" /></label>
+        <label>Media type<select id="kind"><option value="">All media</option><option value="image">Images</option><option value="video">Videos</option><option value="audio">Audio</option></select></label>
+        <label>Folder<select id="folder"><option value="">All folders</option></select></label>
+        <label>Sort by<select id="sort"><option value="newest">Recently modified</option><option value="oldest">Oldest modified</option><option value="name">Name</option><option value="size">Largest first</option></select></label>
+      </div>
+      <div class="toolbar"><p id="status" role="status" aria-live="polite">Looking for media…</p><div class="view-choices" role="group" aria-label="Gallery layout"><button id="view-grid" type="button" aria-pressed="true">Grid</button><button id="view-list" type="button" aria-pressed="false">List</button></div></div>
+      <p id="error" role="alert" hidden></p><p id="notice" class="notice" hidden></p>
+      <ul id="gallery" data-view="grid" aria-label="Media files"></ul>
+      <button id="show-more" type="button" hidden>Show more</button>
+      <div id="empty" class="empty" hidden><h2>Your library starts here</h2><p>Choose a media folder when creating this project, or set its folder in project settings. Images, videos, and audio in that folder and its subfolders appear automatically.</p></div>
+      <p id="no-matches" class="empty" hidden>No media matches these filters. Try another name, folder, or media type.</p>
+    </section>
+    <footer><span id="file-count"></span> · Originals stay in your folder. This gallery only reads them. Playback depends on the formats supported by your device.</footer>
+  </main>
+  <dialog id="preview" aria-labelledby="preview-title">
+    <div class="preview-heading"><div><h2 id="preview-title"></h2><p id="preview-path" class="muted"></p></div><button id="close-preview" type="button" autofocus>Close</button></div>
+    <div id="preview-media"></div><p id="preview-detail" class="muted"></p><p id="preview-error" role="status" hidden></p>
+    <div class="preview-actions"><div class="navigation"><button id="previous" type="button">Previous</button><span id="position"></span><button id="next" type="button">Next</button></div><button id="open-file" type="button">Open in Gezel</button></div>
+  </dialog>
+</body>
+</html>

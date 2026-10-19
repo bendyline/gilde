@@ -71,6 +71,17 @@ against the JSON Schemas in schemas/ (generated from gezel's
 
 canonical Zod schemas — do not edit them here).
 
+## Build a Gezel app
+
+An app is a project type composing a custom page, project settings, and any roles,
+craftbooks, scripts, and data it needs. Read the public
+[app authoring guide](https://github.com/bendyline/gezel/blob/main/docs/handboek/technical/building-ai-apps-inside-gezel.md),
+[page API guide](https://github.com/bendyline/gezel/blob/main/docs/handboek/technical/gezel-page-apis.md), and
+[page style guide](https://github.com/bendyline/gezel/blob/main/docs/handboek/technical/gezel-app-page-style-guide.md).
+For this repository's standalone demo requirements, use
+[Authoring type pages](docs/page-authoring.md). Hosted pages receive shared fonts;
+they use the same scoped APIs for files, renditions, and data queries.
+
 ## Try the project pages locally
 
 Run the standalone page gallery from the repository root:

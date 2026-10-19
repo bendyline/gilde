@@ -3,7 +3,11 @@
 How to write a project-type Output page — the HTML dashboard pinned into a
 project's Output pane — using the Output Pane API instead of the old
 hand-rolled postMessage sentinels. Full API reference lives in the gezel
-repo at `docs/output-pane-api.md`; this is the authoring workflow.
+repo at [docs/output-pane-api.md](https://github.com/bendyline/gezel/blob/main/docs/output-pane-api.md).
+Start with [Building AI Apps inside Gezel](https://github.com/bendyline/gezel/blob/main/docs/handboek/technical/building-ai-apps-inside-gezel.md)
+for the complete composition and [Using the Gezel page APIs](https://github.com/bendyline/gezel/blob/main/docs/handboek/technical/gezel-page-apis.md)
+for choosing operations. This file records the Gilde-specific page/demo contract;
+the [app page style guide](https://github.com/bendyline/gezel/blob/main/docs/handboek/technical/gezel-app-page-style-guide.md) owns presentation guidance.
 
 ## The surface
 
@@ -12,7 +16,8 @@ Served type pages find a frozen `window.gezel` before any page script runs:
 ```js
 gezel.page      // { api: 1, projectId, source, entry, typeName, params, mode }
 gezel.tools     // { list(), invoke(tool, input?) }
-gezel.data      // { read(path, opts?), list(path, opts?), watch(path, cb, opts?), url(path, opts?) }
+gezel.data      // { read(path, opts?), list(path, opts?), watch(path, cb, opts?), url(path, opts?), open(path, opts?) }
+gezel.tables    // { list(), describe(name), query(sql, opts?) }
 gezel.ui        // { theme: { mode: 'light'|'dark' }, onTheme(cb) }
 gezel.refresh() // ask the host to re-mint + reload this page
 ```
@@ -21,7 +26,7 @@ Declare `"api": 1` in the manifest's `pages` block. Serving does not branch
 on it, but it routes lint (v1 pages are held to this contract, not the v0
 sentinel checks) and documents intent.
 
-## The three modes
+## The host modes
 
 `gezel.page.mode` tells the page where it woke up. Author one code path and
 let the mode gate the differences:
@@ -29,6 +34,7 @@ let the mode gate the differences:
 | mode | where | tools.invoke | data reads |
 |---|---|---|---|
 | `embedded` | the Output pane iframe | works | works |
+| `serve` | authenticated app-serve mini-site | works | works |
 | `browser` | "Open in browser" tab | rejects `code: 'unavailable'` | works |
 | `demo` | raw file, no server | page-supplied handlers | page-supplied handlers |
 
@@ -40,7 +46,7 @@ handlers the page itself supplies.
 ## The demo-stub paste pattern
 
 `demo` is not produced by the injected shim — a double-clicked file has no
-server. `authoring/page-demo-stub.js` is the canonical ~80-line stub that
+server. `authoring/page-demo-stub.js` is the canonical stub that
 fills the gap. The contract:
 
 1. Paste the stub file's bytes **verbatim** into a `<script>` block ahead
@@ -129,6 +135,26 @@ server-side on every call.
   composed instead of the model's `say` argument: the language trainer shows its
   line plus the corrections it graded, Word Clues shows the clue and its count.
 
+## Existing file viewers and indexed data
+
+Use `gezel.data.open(path, { source: 'workspace' })` to open a file in Gezel's
+existing rendition. It is an embedded-host action; hide it or explain the live
+action in other modes, and feature-detect it for older hosts.
+
+Use `gezel.tables.list/describe/query` for summaries and charts. The host checks
+the same `pages.reads` against the source files and runs bounded read-only SQL.
+Tables describe an indexed snapshot, not a raw CSV parsed on demand. They work
+in desktop embedded and serve modes when indexing and DuckDB are available;
+browser previews and the portable phone runtime report unavailable. Keep file
+browsing useful when no table is ready. The canonical demo stub does not implement
+tables; a demo page supplies its own clearly labeled sample summaries.
+
+Prefer the shared API to a private filesystem/query bridge. The
+[full reference](https://github.com/bendyline/gezel/blob/main/docs/output-pane-api.md)
+defines limits, errors, and permissions. `data.read` remains bounded; use
+`data.url` for streamed media. Bound recursive scans and browser watch polling,
+unsubscribe on teardown, and ignore stale results after selection changes.
+
 ## Theme and UX
 
 Apply the host theme at boot and follow changes:
@@ -144,9 +170,18 @@ plus a `prefers-color-scheme` block guarded with
 `:root:not([data-theme='light'])` for the instant before boot. Pages follow
 the gezel UX rules (`docs/ux.md` in the gezel repo): warm quiet neutrals
 with one accent, small radii (4px chips, 6px keys, 10px trays), no capsule
-buttons, no emojis, a system-ui font stack, and no external requests of any
-kind — the CSP blocks them, so images are workspace media via
-`gezel.data.url()` or inline `data:` URIs.
+buttons, and no emojis. Hosted type pages inherit Hanken Grotesk for body/UI
+and PT Serif for headings through `--font-body`, `--font-ui`, and
+`--font-heading`. Do not ship font files or duplicate `@font-face` rules.
+Use `var(--font-body, system-ui, sans-serif)` and
+`var(--font-heading, Georgia, serif)` for standalone fallbacks.
+
+Only typography is injected today: each page owns its colors, spacing, layout,
+control styling, and reset rules. Shell classes and other design tokens are not
+inherited. Follow the [page style guide](https://github.com/bendyline/gezel/blob/main/docs/handboek/technical/gezel-app-page-style-guide.md)
+for the exact defaults, accessible controls, and responsive states. Bundle local
+assets or use scoped `gezel.data.url()`; standalone demos must make no external
+requests. Live external network access is controlled by host policy, not the page.
 
 ## Checklist
 
@@ -157,4 +192,8 @@ kind — the CSP blocks them, so images are workspace media via
   usable; mutations stay in the page.
 - The stub bytes match `authoring/page-demo-stub.js` exactly.
 - `pages.api: 1` in the manifest; every read and page tool declared.
-- `npm run check-page-demos` passes.
+- `npm run check-page-demos` passes. This is a structural check, not a browser test.
+- Verify the real host with permitted and denied paths, empty data, failed actions,
+  and unsupported capabilities. Never fall back to demo data after a live failure.
+- Check light/dark themes, keyboard focus, narrow layouts, and teardown of watches
+  and media. Verify role tool calls and craftbooks when the app includes them.

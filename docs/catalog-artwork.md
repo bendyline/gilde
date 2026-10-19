@@ -7,54 +7,92 @@ catalog galleries; a missing or failed image falls back to the surface's glyph,
 never to a broken-image placeholder. `tools/validate.mjs` checks that a
 referenced logo exists and is a real WebP.
 
-Two families share one material language. Both are generated with an image
-model from a fixed prompt plus a style reference, and each item records how
-its image was made in `art.json`, so a mark can be regenerated or extended
+Two families share one cut-paper construction. Both are generated with an
+image model from a fixed prompt plus style references, and each item records
+how its image was made in `art.json`, so a mark can be regenerated or extended
 without guessing.
 
 ## Shared rules
 
-- **Format:** 512×512 WebP, sRGB, opaque. Encode at quality 82, method 6
-  (about 15–25 KB each).
-- **Material language:** a quiet circa-1905–1915 bookbinder and small
-  letterpress workshop: laid rag paper, woven bookcloth, hand-cut board,
-  lightly block-printed charcoal ink, gently oxidized brass. Matte gouache and
-  cut-paper rendering. Clean modern simplicity stays dominant. It should feel
-  *made then*, never *themed as then*.
-- **Palette:** parchment, charcoal, dull aged brass, and one or two muted
-  accents from terracotta, sage, muted indigo, ochre, dusty rose, and
-  desaturated blue.
+- **Format:** 512×512 WebP, sRGB. Workshop Marks are transparent; Reference
+  Marks are opaque. Encode at quality 82, method 6 (alpha quality 90).
+- **Construction:** layered cut paper and hand-cut card: crisp simplified
+  shapes, flat matte color, slight soft shadows between the layers, dull
+  brushed brass where the object is metal. Clean and contemporary.
 - **Legibility:** the subject must be recognizable at 44×44 px.
-- **Never:** readable text, letters, numbers, people, hands, faces, logos,
-  watermarks, faux UI, photorealism, sepia filters, brown monochrome,
-  vignettes, scratches, stains, torn edges, heavy patina, Art Nouveau
-  flourishes, medieval props, wax seals, calligraphy, steampunk gears,
-  Victorian clutter.
+- **Never:** readable text, letters, numbers, people, silhouettes of people,
+  hands, faces, logos, watermarks, faux UI, photorealism, a magnifying glass,
+  flags, weapons, religious or national symbols, protected emblems such as the
+  red cross, sepia, aging, stains, torn edges, wax seals, or ornament.
 
-## Workshop Marks (craftbook templates)
+## Workshop Marks (craftbook templates and project types)
 
-One dominant job-specific artifact plus at most one or two supporting tools,
-on a parchment ground, in three-quarter top-down view, with roughly 18% clear
-margin. The style anchor is `a11y-audit`'s mark (`accessibility-audit-1910`);
-every other mark used it as a strict style reference. `art.json` records the
-semantic `family` (for example `inspect-review`, `build-code`,
-`write-publish`) that chose the accent colors.
+A Workshop Mark is **one bold cut-paper subject that names the job**: a sieve
+for a data-quality audit, a card-catalog drawer for a data dictionary, merging
+toy rails for a pull request review, a piggy bank for a household budget.
+Nothing sits under or behind it: no book, card, clipboard, tray, or plinth,
+unless that object is itself the subject. The subject is built mainly from
+cream and warm white papers with charcoal details, so it reads on every
+ground.
 
-Per-item prompt (`promptVersion: workshop-mark-1910-v2`):
+**The ground is not in the image.** Gezel paints it from the item's category
+(`catalogGroundFor` in core's `catalog-ground.ts`, colors as
+`--gezel-ground-<tone>` in the UI's foundation palette). Nine tones cover the
+craftbook shelves and project-type categories, and dark mode deepens each one.
+A shelf in the gallery rail therefore shows one ground, and the subject alone
+tells its books apart.
+
+**Choose subjects per shelf.** Write the subject list for a whole shelf before
+generating anything, so no two neighbors share an object, and review it at the
+size it will be seen. Prefer a physical thing a person already knows over a
+diagram (a lifebuoy for an FAQ, a tuning fork for a tone rewrite). Swap a
+subject whose natural form brings a face with it, such as a contact card with
+a portrait frame, rather than fighting the model with constraints.
+
+**Generation.** Subjects are drawn eight at a time on one transparent sheet,
+which keeps a set consistent. Image 1 is the knowledge-catalog mark
+`wikipedia-astronomy`; Image 2 is the set anchor, `data-dictionary`'s v3 mark
+on its ground. Each subject is then cut out:
+
+1. Drop the image model's faint glow: alpha is remapped as
+   `clamp((a − 60) × 255 / 170)`, which removes the 1–40 halo and keeps real
+   edges.
+2. Group the remaining pixels into connected shapes, split them into rows by
+   the empty bands between them, and into cells by their positions within each
+   row.
+3. Trim each subject to its own shapes and scale it so its longer side is 88%
+   of 512 px, centered. Every mark has the same 6% clear margin.
+4. Bake one soft shadow under the subject: color `#1c120a` at 38% of the
+   subject's alpha, blurred by 3.5% and offset down by 2.5% of the tile.
+
+Sheet prompt (`promptVersion: workshop-mark-cutout-v3`):
 
 ```text
-Use case: stylized-concept
-Asset type: square catalog thumbnail / Workshop Mark for the Gezel craftbook "<name>"
-Input images: Image 1 is a strict style reference only. Match its restrained circa-1905–1915 bindery/letterpress material language, Gezel palette, square framing, lighting, natural fibers, oxidized brass, clean geometry, and simplicity. Do not copy its accessibility subject.
-Primary request: create one distinct, immediately legible still-life representing this exact craftbook. The title is context only and must not appear in the image.
-Meaning to express: <first sentence of the description>
-Catalog family: <family>. Catalog tags: <tags>.
-Subject logic: infer one dominant concrete artifact and one supporting tool or action that best symbolize the meaning. Prefer an object specific to this job; avoid a generic document card unless the job genuinely centers on documents, writing, or interface review. Use no more than three main shapes.
-Composition/framing: 1:1 square, centered three-quarter top-down view, roughly 18% clear margin, recognizable at 44×44 pixels.
-Style/medium: quiet Arts-and-Crafts-era bookbinder and small letterpress workshop; hand-cut board, laid rag paper, muted woven bookcloth, lightly block-printed charcoal ink, gently oxidized brass. Clean modern simplicity remains dominant.
-Color palette: parchment, charcoal, <family accents>, dull aged brass.
-Constraints: no readable text, letters, numbers, people, hands, logos, watermark, faux UI screenshot, generic image-placeholder glyph, sepia filter, brown monochrome, vignette, scratches, stains, torn edges, heavy patina, ornate Art Nouveau flourishes, medieval props, wax seals, calligraphy, steampunk gears, Victorian clutter, or extra decoration. The historical cue must remain subtle and believable, never themed or cheesy.
+Input images: Image 1 is a Gezel knowledge-catalog mark and Image 2 is a cut-paper Gezel craftbook mark on a colored ground. Match their cut-paper construction, layering and the soft shadows between paper layers. Do not copy their subjects.
+
+Create one landscape 3:2 PNG with a fully TRANSPARENT background (alpha channel). No tiles, no colored squares, no paper ground, no cast shadow on the background: only the 8 subjects themselves on transparency.
+
+Layout: 8 subjects arranged in a strict, evenly spaced grid of 4 columns and 2 rows of equal invisible cells. Each subject sits centered in its own cell, filling about 75% of the cell, and stays entirely inside it, with wide empty transparent gaps between neighboring subjects so they never touch or overlap.
+
+Subjects, left to right, top row then bottom row:
+1) <subject>
+...
+8) <subject>
+
+Style for every subject: a bold, layered cut-paper emblem: crisp simplified shapes cut from matte paper and card, two or three layers with slight soft shadows between them, gentle three-quarter front view. Build each subject mainly from cream and warm white papers with charcoal (#2a2520) details, dull brushed brass where the object is metal, and at most one muted accent (terracotta, sage, ochre, muted indigo, dusty rose, slate blue or plum), so it reads on any deep colored background. Bold simple silhouettes that stay recognizable at 44x44 pixels. Clean, contemporary paper craft: no aging, no dust, no sepia, no photographic realism.
+
+Constraints: no text, letters, numbers, labels, logos, people, silhouettes of people, hands, faces or magnifying glass anywhere. Nothing under a subject: no book, card, tray, table or plinth. Background must be transparent.
 ```
+
+To regenerate one mark, put its `art.json` subject on a sheet with seven
+others from the same shelf (or redraw the whole shelf) and cut it out the same
+way.
+
+The v2 marks (`workshop-mark-1910-v2`, 2026-10) were circa-1910 still-lifes:
+the job printed on a card resting on a book, often with a magnifier, on a
+parchment ground. At the plan gallery's 64 px the carrier filled most of the
+tile, the meaning was a few pixels, and a shelf of them read as one beige
+ledger. v3 replaced every one.
 
 ## Reference Marks (knowledge catalogs)
 
@@ -124,10 +162,10 @@ Not read by the runtime; it is the regeneration record.
 | --- | --- |
 | `schemaVersion` | `1` |
 | `promptVersion` | Which prompt template above produced the image |
-| `periodCue` | `circa-1910-subtle` for both families |
-| `family` | Craftbooks: the semantic family. Knowledge catalogs: `reference-library` |
-| `accents` | The accent colors the prompt named |
-| `sourceSummary` | Craftbooks: the description sentence the prompt quoted |
-| `subject` | Reference Marks: the subject sentence the prompt named |
+| `subject` | The subject sentence the prompt named |
+| `sourceSummary` | Workshop Marks: the item's opening description sentence, for review |
 | `styleReference` | The style anchor passed as Image 1 |
-| `setReference` | Reference Marks: the set anchor passed as Image 2 |
+| `setReference` | The set anchor passed as Image 2 |
+| `sheet`, `cell` | Workshop Marks: which generation sheet and which cell (1–8, row by row) the subject came from |
+| `fill`, `shadow` | Workshop Marks: the cut-out's fit (longer side as a share of the tile) and the baked shadow |
+| `periodCue`, `family`, `accents` | Reference Marks only: the period cue, `reference-library`, and the accent colors the prompt named |
