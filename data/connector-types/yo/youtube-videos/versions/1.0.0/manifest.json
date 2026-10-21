@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "releasedAt": "2026-10-19T00:00:00Z",
+  "minGezelVersion": "1.26292",
+  "driver": "native",
+  "source": {
+    "adapterId": "youtube-videos"
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "channels": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "title": "Channels",
+        "description": "Channel @handles, UC… channel IDs or channel addresses, separated by commas."
+      },
+      "syncIntervalHours": {
+        "type": "number",
+        "title": "Hours between checks for new videos (0 = every sync)",
+        "default": 6,
+        "minimum": 0,
+        "maximum": 720
+      },
+      "maxVideos": {
+        "type": "integer",
+        "title": "Newest videos to copy from each channel on the first sync",
+        "default": 500,
+        "minimum": 1,
+        "maximum": 20000
+      },
+      "metricsWindowDays": {
+        "type": "integer",
+        "title": "Days of recent videos to keep view counts fresh for (0 = never refresh)",
+        "default": 14,
+        "minimum": 0,
+        "maximum": 365
+      },
+      "metricsRefreshHours": {
+        "type": "number",
+        "title": "Hours between view-count refreshes",
+        "default": 24,
+        "minimum": 1,
+        "maximum": 720
+      },
+      "metricsHistory": {
+        "type": "boolean",
+        "title": "Keep a daily view-count history for recent videos",
+        "default": false
+      }
+    },
+    "required": [
+      "channels"
+    ]
+  },
+  "secretShape": {
+    "kind": "apikey",
+    "field": "apiKey",
+    "label": "YouTube Data API key",
+    "required": true,
+    "x-gezel-priority": "primary",
+    "description": "A Google Cloud API key with the YouTube Data API v3 enabled. Restrict the key to that one API; it only ever reads public data.",
+    "helpUrl": "https://console.cloud.google.com/apis/library/youtube.googleapis.com",
+    "helpLabel": "Enable the YouTube Data API v3"
+  },
+  "setupInstructions": {
+    "title": "Create a YouTube Data API key",
+    "description": "The key is free and reads only public data. A check of a quiet channel costs one unit of Google's free 10,000-unit daily quota.",
+    "steps": [
+      "Open the Google Cloud console and create a project, or pick an existing one.",
+      "Go to APIs & Services, then Library. Find YouTube Data API v3 and choose Enable.",
+      "Go to APIs & Services, then Credentials. Choose Create credentials, then API key, and copy the key.",
+      "Edit the key: under API restrictions choose Restrict key and select only YouTube Data API v3.",
+      "Paste the key here, then list the channels to follow by @handle or channel ID."
+    ],
+    "url": "https://console.cloud.google.com/apis/credentials",
+    "urlLabel": "Open Google Cloud credentials"
+  },
+  "normalize": {
+    "kind": "native"
+  },
+  "completeness": "window",
+  "notes": "Lists each channel's uploads playlist through the YouTube Data API v3, one folder per channel and one file per video (title, description, publish date, length, tags, language, privacy, live status, caption availability, thumbnail address, and view, like and comment counts), bucketed by publish month. The first sync copies up to maxVideos of each channel's newest videos; later syncs run at most every syncIntervalHours and stop at the newest video already stored, so checking a quiet channel costs one quota unit (every call this connector makes costs one unit of Google's default 10,000-unit daily quota). Counts on a video are as of its metrics_updated_at: they are refreshed only for videos published in the last metricsWindowDays, at most every metricsRefreshHours, and older videos keep their last observed counts so their files never churn. Hidden like counts and disabled comments are left out rather than written as zero. With metricsHistory on, each refresh also leaves a per-video, per-day reading under metrics-history/. Title and description edits are picked up at the next count refresh for videos inside that window, not for older ones. Videos that are later deleted or made private stay in the corpus. Public data only: captions, transcripts and analytics need an OAuth sign-in as the channel owner and are not mirrored, and private videos are invisible to an API key. The key is sent in the X-Goog-Api-Key header, never in a web address, and never written into records or errors. Legacy /c/ custom channel addresses cannot be looked up by the API; use the channel's @handle or UC… ID. Without an API key, a channel can still be followed through its public feed, https://www.youtube.com/feeds/videos.xml?channel_id=UC…, with the RSS and Atom Feeds connector (its newest 15 videos, without counts)."
+}

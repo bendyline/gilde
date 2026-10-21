@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.1",
+  "releasedAt": "2026-10-19T00:00:00Z",
+  "driver": "native",
+  "source": {
+    "adapterId": "x-posts"
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "syncMentions": {
+        "type": "boolean",
+        "title": "Sync mentions of the account (costs extra API reads)",
+        "default": false
+      },
+      "allowPublish": {
+        "type": "boolean",
+        "title": "Allow this project's gezels to queue posts for publishing (each publish still needs your consent)",
+        "default": false
+      },
+      "syncIntervalHours": {
+        "type": "number",
+        "title": "Hours between post syncs (X bills reads — keep this generous)",
+        "default": 4,
+        "minimum": 0.25,
+        "maximum": 720
+      },
+      "metricsWindowDays": {
+        "type": "integer",
+        "title": "Days of recent posts to keep engagement counts fresh for",
+        "default": 7,
+        "minimum": 1,
+        "maximum": 365
+      },
+      "metricsRefreshHours": {
+        "type": "number",
+        "title": "Hours between engagement-count refreshes",
+        "default": 24,
+        "minimum": 0.25,
+        "maximum": 720
+      },
+      "metricsHistory": {
+        "type": "boolean",
+        "title": "Record daily engagement history records",
+        "default": true
+      },
+      "statsIntervalHours": {
+        "type": "number",
+        "title": "Hours between account-stats snapshots",
+        "default": 6,
+        "minimum": 0.25,
+        "maximum": 720
+      }
+    }
+  },
+  "secretShape": {
+    "kind": "oauth2",
+    "authorizeUrl": "https://x.com/i/oauth2/authorize",
+    "tokenUrl": "https://api.x.com/2/oauth2/token",
+    "scopes": "tweet.read users.read offline.access tweet.write",
+    "clientIdEnv": "GEZEL_X_CLIENT_ID",
+    "clientSecretEnv": "GEZEL_X_CLIENT_SECRET",
+    "clientSetup": {
+      "providerLabel": "X (Twitter)",
+      "docsUrl": "https://console.x.com",
+      "secretRequired": false,
+      "appTypeNote": "Create an app in the X Developer Console and set its type to a Native/Public client — PKCE needs no client secret. X API access is pay-per-use: reads and posts are billed to your developer account's credits, under the spending limit you set.",
+      "redirectPort": 6241,
+      "redirectNote": "X matches callback URLs exactly. Register the URI shown here character-for-character.",
+      "steps": [
+        "Sign in at console.x.com with your X account, accept the developer agreement, and create an app.",
+        "Add a small amount of API credit and set a spending limit — X API access is pay-per-use, and Gezel's default intervals keep its use low.",
+        "In the app's settings, open 'User authentication settings' and click Set up.",
+        "Choose the 'Native App' (public client) type and enable OAuth 2.0.",
+        "Paste the redirect URI shown below into Callback URI / Redirect URL, character-for-character.",
+        "Fill the required website URL field with any page of yours and save.",
+        "Copy the OAuth 2.0 Client ID from the app's Keys and tokens page and paste it below — native apps use PKCE, so there is no secret to copy."
+      ]
+    }
+  },
+  "normalize": {
+    "kind": "native"
+  },
+  "actions": [
+    {
+      "name": "publish",
+      "consentScope": "social-publish"
+    }
+  ],
+  "completeness": "window",
+  "notes": "Syncs three things from the linked account: the account's own posts (text with links expanded, language, reply threading, plus like/repost/reply/quote/bookmark/view counts), mentions of the account when enabled, and a once-per-day account-stats record (followers, following, total posts). Be clear about cost: X API access is pay-per-use, billed to your developer account's credits per item returned — reading your own posts and mentions is the cheapest rate, account lookups cost more, and a check that finds nothing new returns nothing to bill. Every read scope is interval-gated (syncIntervalHours for posts and mentions, statsIntervalHours for stats) so background syncing can never read faster than configured, and mentions are OFF by default. When the credits or the spending limit run out, the connector stops with a message saying so instead of retrying silently; add credits in the X Developer Console and it resumes. Engagement counts on posts from the last metricsWindowDays are re-observed roughly every metricsRefreshHours as one extra page per refresh, updating existing files in place; each observation also appends a per-day metrics-history record per post (the engagement curve over time) unless metricsHistory is turned off. An edited post (X gives each edit a new id) refreshes the original record in place, and a post deleted while still inside the metrics window leaves the corpus, together with its engagement history, at the next refresh; deletions of older posts are not detected. The first sync captures up to 500 recent posts; older history is not backfilled, and a burst of new posts larger than one sync round is fetched over the following rounds without gaps. Publishing is off by default: a gezel can only draft posts until allowPublish is enabled on the binding, and every publish is individually consented through the daemon (night shift defers publishes to the outbox for daytime approval); X bills each post, and posts containing a link at a higher rate. Accounts linked before publishing existed must reconnect from the connector's settings to grant the new tweet.write scope. Requires your own X developer app: set GEZEL_X_CLIENT_ID (and GEZEL_X_CLIENT_SECRET for confidential apps) to enable linking."
+}

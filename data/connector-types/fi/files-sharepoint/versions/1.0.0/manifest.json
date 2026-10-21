@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "releasedAt": "2026-10-19T00:00:00Z",
+  "minGezelVersion": "1.26292",
+  "driver": "native",
+  "source": {
+    "adapterId": "files-sharepoint"
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "siteUrl": {
+        "type": "string",
+        "title": "SharePoint site address (for example https://contoso.sharepoint.com/sites/Finance)"
+      },
+      "library": {
+        "type": "string",
+        "title": "Document library (blank = the site's default library)"
+      },
+      "folderPath": {
+        "type": "string",
+        "title": "Folder in the library (blank = the whole library)"
+      },
+      "maxFiles": {
+        "type": "integer",
+        "title": "Most files to mirror",
+        "minimum": 1,
+        "maximum": 50000,
+        "default": 2000
+      },
+      "maxFileMB": {
+        "type": "number",
+        "title": "Largest file to download, in MB (0 = details only)",
+        "minimum": 0,
+        "maximum": 1024,
+        "default": 25
+      },
+      "tenant": {
+        "type": "string",
+        "const": "organizations"
+      }
+    },
+    "required": [
+      "siteUrl"
+    ]
+  },
+  "secretShape": {
+    "kind": "oauth2",
+    "authorizeUrl": "https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize",
+    "tokenUrl": "https://login.microsoftonline.com/organizations/oauth2/v2.0/token",
+    "scopes": "offline_access https://graph.microsoft.com/Sites.Read.All",
+    "clientIdEnv": "GEZEL_MICROSOFT_CLIENT_ID",
+    "clientSetup": {
+      "providerLabel": "Microsoft",
+      "docsUrl": "https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+      "secretRequired": false,
+      "appTypeNote": "Register an app in Microsoft Entra (Azure portal) and add the Mobile and desktop applications platform — a public client needs no client secret. Reading SharePoint uses the Sites.Read.All permission, which many organizations let only an administrator approve.",
+      "steps": [
+        "Sign in at portal.azure.com and open Microsoft Entra ID, then App registrations, then New registration (or reuse the registration you made for Microsoft 365 mail).",
+        "For supported account types choose an option that includes 'Accounts in any organizational directory'.",
+        "Under Authentication, add the 'Mobile and desktop applications' platform and enable the loopback redirect — any 127.0.0.1 port works.",
+        "Under API permissions, choose Add a permission, then Microsoft Graph, Delegated permissions, and add Sites.Read.All.",
+        "If your organization requires it, ask an administrator to choose 'Grant admin consent' for that permission; otherwise you approve it yourself when you link the account.",
+        "No client secret is needed: this registration is a public client.",
+        "Copy the Application (client) ID from the Overview page and paste it below."
+      ]
+    }
+  },
+  "setupInstructions": {
+    "title": "Point at the library to mirror",
+    "description": "Gezel keeps a read-only copy of one document library, or one folder in it, from a SharePoint Online site you can open.",
+    "steps": [
+      "Open the site in a browser and copy its address; a library or folder page address works too.",
+      "Enter the library's name as SharePoint shows it (for example Documents), or leave it blank for the site's default library.",
+      "To mirror only part of the library, enter a folder path such as Contracts/2026."
+    ]
+  },
+  "normalize": {
+    "kind": "native"
+  },
+  "completeness": "mirror",
+  "notes": "Mirrors one document library of a SharePoint Online site (or one folder in it) into one record per file with the file's folder path, type, size, dates, last editor, and web link. The site is found from its address, the library by its name or the name in its web address, and the folder by its path. The first sync records the library's change position and then walks the folder, so edits made during the walk are not lost; later syncs read the library's change feed and keep only what is inside the folder (Microsoft offers change tracking for a whole library, not a single folder). Text and code files up to 512 KB appear in the record; Word, Excel, PowerPoint, PDF, image, and other files up to the download limit (25 MB by default) are saved as attachments, and larger files are mirrored as details only. Downloads follow SharePoint's pre-signed links without sending your sign-in to them. Moves, renames, and deletions are reflected, including every file in a folder moved out of the synced folder. Sites.Read.All lets the connector read any site you can open; many organizations require an administrator to approve it before anyone can link. OneNote notebooks and items linked in from other drives are skipped. The first sync mirrors at most 'Most files to mirror' files (2000 by default) and tracks at most 2000 folders; files beyond that appear only once they change. When Microsoft can no longer serve changes since the last sync, the folder is walked again. SharePoint sites outside the commercial cloud (*.sharepoint.com) are not supported."
+}

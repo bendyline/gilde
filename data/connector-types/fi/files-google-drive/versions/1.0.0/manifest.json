@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "releasedAt": "2026-10-19T00:00:00Z",
+  "minGezelVersion": "1.26292",
+  "driver": "native",
+  "source": {
+    "adapterId": "files-google-drive"
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "folderIds": {
+        "type": "array",
+        "title": "Drive folders to sync (paste each folder's link)",
+        "items": {
+          "type": "string"
+        }
+      },
+      "wholeDrive": {
+        "type": "boolean",
+        "title": "Sync my whole My Drive when no folder is listed",
+        "default": false
+      },
+      "maxFiles": {
+        "type": "integer",
+        "title": "Most files to mirror per folder",
+        "minimum": 1,
+        "maximum": 50000,
+        "default": 2000
+      },
+      "maxFileMB": {
+        "type": "number",
+        "title": "Largest file to download, in MB (0 = details only)",
+        "minimum": 0,
+        "maximum": 1024,
+        "default": 25
+      }
+    }
+  },
+  "secretShape": {
+    "kind": "oauth2",
+    "authorizeUrl": "https://accounts.google.com/o/oauth2/v2/auth",
+    "tokenUrl": "https://oauth2.googleapis.com/token",
+    "scopes": "https://www.googleapis.com/auth/drive.readonly",
+    "clientIdEnv": "GEZEL_GOOGLE_CLIENT_ID",
+    "clientSecretEnv": "GEZEL_GOOGLE_CLIENT_SECRET",
+    "authParams": {
+      "access_type": "offline",
+      "prompt": "consent"
+    },
+    "clientSetup": {
+      "providerLabel": "Google",
+      "docsUrl": "https://console.cloud.google.com/apis/credentials",
+      "secretRequired": true,
+      "appTypeNote": "Create an OAuth client ID of type Desktop app in Google Cloud Console; the app you already use for Gmail or Google Calendar works too. Desktop clients are issued a client secret Google does not treat as confidential — enter both here. Any loopback port works for the redirect.",
+      "steps": [
+        "Sign in at console.cloud.google.com and create (or pick) a project.",
+        "Under APIs & Services, open Library and enable the Google Drive API.",
+        "Under APIs & Services, open OAuth consent screen: configure the app as External and add yourself as a test user.",
+        "Set the publishing status to In production — apps left in Testing get their sign-ins expired every 7 days.",
+        "Reading Drive is a restricted scope: Google only reviews apps offered to the public, so the unverified-app warning on your own app is safe to click through.",
+        "Under APIs & Services, open Credentials and choose Create credentials, then OAuth client ID, application type 'Desktop app'.",
+        "Copy the Client ID and Client Secret from the created client and paste them below. Desktop clients accept any 127.0.0.1 port, so there is no redirect URI to register."
+      ]
+    }
+  },
+  "setupInstructions": {
+    "title": "Choose the folders to mirror",
+    "description": "Gezel keeps a read-only copy of the folders you list, including everything inside them. A whole Drive can take a long time and a lot of disk, so it is off unless you turn it on.",
+    "steps": [
+      "Open the folder in Google Drive and copy its address from the browser (or use Share, then Copy link).",
+      "Paste one link per folder. Folders in shared drives work too.",
+      "Leave the file limits as they are unless a folder is very large or holds big videos."
+    ]
+  },
+  "normalize": {
+    "kind": "native"
+  },
+  "completeness": "mirror",
+  "notes": "Each listed folder becomes its own part of the corpus, holding one record per file with the file's folder path, type, size, dates, last editor, owner, and Drive link. The first sync records Drive's change-feed position and then walks the folder, so edits made during the walk are not lost; later syncs read only Drive's change feed. Google Docs export as Markdown (plain text when Markdown export is refused, inline images omitted), Sheets as a table of the first sheet only (up to 500 rows), and Slides as plain text; Forms, Drawings, Sites, and other Google types are mirrored as details only, and shortcuts are skipped. Text and code files up to 512 KB appear in the record; other files up to the download limit (25 MB by default) are saved as attachments, and larger files are mirrored as details only, as are files whose owner turned off downloading. Moves, renames, trashing, and deletions are reflected, including every file in a trashed or moved-away folder. The first sync of a folder mirrors at most 'Most files to mirror per folder' files (2000 by default) and tracks at most 2000 folders; files beyond that appear only once they change. A sharing or star change downloads a file again to confirm it is unchanged; identical content is not rewritten. Uses the restricted drive.readonly scope, which suits your own Google Cloud app; a public app would need Google's verification."
+}
