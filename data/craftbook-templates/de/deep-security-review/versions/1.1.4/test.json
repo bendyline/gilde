@@ -1,0 +1,184 @@
+{
+  "schemaVersion": 1,
+  "title": "Deep Security Review systemic eval",
+  "objective": "Measure whether the review confirms seeded source-to-sink vulnerabilities, identifies systemic root causes, and emits valid machine-readable findings.",
+  "tags": [
+    "corpus"
+  ],
+  "prompt": "Use the Deep Security Review craftbook for a whole-codebase security sweep. The fixture is offline and self-contained. Write security-review/REPORT.md and security-review/findings.json; do not modify source.",
+  "setup": {
+    "projectName": "Security Maintenance Eval",
+    "about": "A tiny admin service with deliberate command injection, SQL injection, and inconsistent authorization.",
+    "missionObjectives": "Confirm real source-to-sink paths, cluster root causes, and leave report plus structured findings without inventing files or advisories.",
+    "files": [
+      {
+        "path": "src/admin.ts",
+        "content": "import { exec } from 'node:child_process';\nexport function register(app, db) {\n  app.get('/admin/export', (req, res) => {\n    exec('zip -r /tmp/' + req.query.name + '.zip data', (_e, out) => res.send(out));\n  });\n  app.get('/admin/users', async (req, res) => {\n    const rows = await db.query(`SELECT * FROM users WHERE team = '${req.query.team}'`);\n    res.json(rows);\n  });\n}\n"
+      },
+      {
+        "path": "src/profile.ts",
+        "content": "export function registerProfile(app, db, requireUser) {\n  app.get('/profile', requireUser, async (req, res) => {\n    const row = await db.query('SELECT * FROM users WHERE id = ?', [req.user.id]);\n    res.json(row);\n  });\n}\n"
+      },
+      {
+        "path": "src/reports.ts",
+        "content": "import { exec } from 'node:child_process';\n\nconst ALLOWED_SORTS = { name: 'name', created: 'created_at', team: 'team' };\n\nexport function registerReports(app, db, requireUser) {\n  app.get('/health', (_req, res) => res.json({ ok: true }));\n\n  app.get('/reports/rotate', requireUser, (_req, res) => {\n    exec('logrotate -f /etc/logrotate.conf', (_e, out) => res.send(out));\n  });\n\n  app.get('/reports/users', requireUser, async (req, res) => {\n    const column = ALLOWED_SORTS[req.query.sort] ?? 'name';\n    const rows = await db.query(`SELECT id, name FROM users ORDER BY ${column}`);\n    res.json(rows);\n  });\n}\n"
+      },
+      {
+        "path": "docs/security.md",
+        "content": "# Security model\n\nAll /admin routes must require the requireAdmin middleware before business logic runs. SQL must use placeholders. Shell commands must not include request data.\n\n## Deliberate exceptions\n\n- `/health` is unauthenticated by design. It returns a fixed literal and reads nothing.\n- A SQL identifier (a column or table name) cannot be a placeholder. Where one must vary,\n  the only accepted pattern is mapping the request value through a fixed allow-list and\n  interpolating the mapped constant. Code that already does this is correct as written.\n- A shell command whose argument list contains no request data is not command injection.\n"
+      },
+      {
+        "path": "tests/security-oracle.mjs",
+        "content": "// Precision/recall oracle for the deep security review.\n//\n// Run by the harness with the reviewed workspace as cwd. It grades the two\n// halves of a real review separately, because recall alone is passed by a\n// report that flags everything:\n//\n//   RECALL   — each of the three seeded defects in src/admin.ts is reported.\n//   PRECISION — none of the three SAFE constructs is reported. Each is a\n//               deliberate look-alike of a seeded defect and each is\n//               documented as correct in docs/security.md.\n//\n// The classes are matched by their ordinary names, not by any wording this\n// fixture invented, so the bar is \"a real review of this class of defect\"\n// rather than this scenario's vocabulary.\nimport { readFileSync } from 'node:fs';\n\n/**\n * Fail with the message ALONE on stderr.\n *\n * A thrown Error would work, but the harness feeds this script's stderr\n * into the model's repair nudge verbatim, and an uncaught throw pads that\n * nudge with a Node stack trace and a version banner. The actionable\n * sentence is what the next attempt needs; the stack is noise that pushes\n * it out of view on a small model.\n */\nfunction fail(message) {\n  console.error(message);\n  process.exit(1);\n}\n\n\nconst FINDINGS = 'security-review/findings.json';\n\nlet raw;\ntry {\n  raw = readFileSync(FINDINGS, 'utf8');\n} catch {\n  fail(FINDINGS + ' does not exist - the machine-readable findings file is required');\n}\n\nlet findings;\ntry {\n  findings = JSON.parse(raw.replace(/^\\uFEFF/, ''));\n} catch (err) {\n  fail(FINDINGS + ' is not valid JSON: ' + err.message);\n}\nif (!Array.isArray(findings)) {\n  const nested = findings && typeof findings === 'object'\n    ? Object.values(findings).find((value) => Array.isArray(value))\n    : null;\n  if (!nested) fail(FINDINGS + ' must be an array of finding records');\n  findings = nested;\n}\n\nconst text = (finding) =>\n  Object.values(finding)\n    .filter((value) => typeof value === 'string')\n    .join(' ')\n    .toLowerCase();\n\nconst fileOf = (finding) => String(finding.file ?? finding.path ?? '').replace(/\\\\/g, '/');\n\nconst REQUIRED = [\n  {\n    label: 'command injection in the /admin/export shell call',\n    match: /command injection|shell injection|\\bexec\\b|child_process|os command/,\n  },\n  {\n    label: 'SQL injection in the /admin/users query',\n    match: /sql injection|sqli|parameteri[sz]|placeholder|string interpolation into (a )?quer/,\n  },\n  {\n    label: 'missing authorization on the /admin routes',\n    match: /authorization|authentication|requireadmin|access control|missing auth|broken auth/,\n  },\n];\n\nconst adminFindings = findings.filter((finding) => /(^|\\/)src\\/admin\\.ts$/.test(fileOf(finding)));\nconst missing = REQUIRED.filter(\n  (required) => !adminFindings.some((finding) => required.match.test(text(finding))),\n);\nif (missing.length > 0) {\n  fail(\n    'RECALL FAILURE - src/admin.ts holds three separate defects and these were not reported: ' +\n      missing.map((entry) => entry.label).join('; ') +\n      '. Reported for src/admin.ts: ' +\n      (adminFindings.map((finding) => String(finding.category ?? '?')).join(', ') || '(nothing)'),\n  );\n}\n\nconst SAFE_FILES = [\n  {\n    file: 'src/profile.ts',\n    why: 'its query uses a placeholder and its route is behind requireUser',\n  },\n  {\n    file: 'src/reports.ts',\n    why:\n      'its exec call contains no request data, its ORDER BY column comes from a fixed ' +\n      'allow-list, and /health is documented as deliberately unauthenticated',\n  },\n];\n\nconst falsePositives = [];\nfor (const safe of SAFE_FILES) {\n  const pattern = new RegExp('(^|/)' + safe.file.replace(/[.]/g, '\\\\.') + '$');\n  for (const finding of findings) {\n    if (pattern.test(fileOf(finding))) {\n      falsePositives.push(\n        safe.file + ' (' + String(finding.category ?? 'unnamed finding') + ') - ' + safe.why,\n      );\n    }\n  }\n}\nif (falsePositives.length > 0) {\n  fail(\n    'PRECISION FAILURE - these files are correct as written and must not be reported as ' +\n      'vulnerable: ' + falsePositives.join('; ') +\n      '. A review that flags safe code is not usable; re-read docs/security.md, which states ' +\n      'which constructs are deliberate.',\n  );\n}\n\nconsole.log(\n  'Security precision/recall oracle passed: all 3 seeded defects reported on src/admin.ts, ' +\n    '0 false positives on the 2 safe files.',\n);\n",
+        "surface": "workspace",
+        "modelInput": false
+      }
+    ],
+    "worker": {
+      "name": "Rae",
+      "role": "Reviewer"
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "The report and findings JSON confirm both injection paths and the missing admin boundary with systemic remediation.",
+    "deliverables": [
+      {
+        "path": "security-review/REPORT.md",
+        "kind": "security-report",
+        "minBytes": 1500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "security-review/REPORT.md",
+            "pattern": "src/admin\\.ts:[0-9]+",
+            "flags": "i",
+            "label": "real file and line"
+          },
+          {
+            "kind": "contains",
+            "file": "security-review/REPORT.md",
+            "pattern": "command injection|exec",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "security-review/REPORT.md",
+            "pattern": "SQL injection|parameter",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "security-review/REPORT.md",
+            "pattern": "authorization|requireAdmin|auth",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "security-review/REPORT.md",
+            "pattern": "Systemic Themes|root cause|blast radius",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "security-review/REPORT.md",
+            "pattern": "Verified Safe|Not Statically Verifiable",
+            "flags": "i"
+          }
+        ]
+      },
+      {
+        "path": "security-review/findings.json",
+        "kind": "json",
+        "minBytes": 300,
+        "checks": [
+          {
+            "kind": "sniff",
+            "file": "security-review/findings.json",
+            "sniff": "json-valid"
+          },
+          {
+            "kind": "recordSchema",
+            "file": "security-review/findings.json",
+            "format": "json",
+            "minRows": 3,
+            "fields": [
+              {
+                "name": "file",
+                "type": "nonempty",
+                "required": true
+              },
+              {
+                "name": "line",
+                "type": "integer",
+                "required": true
+              },
+              {
+                "name": "severity",
+                "type": "^(critical|high|medium|low|info)$",
+                "required": true
+              },
+              {
+                "name": "category",
+                "type": "nonempty",
+                "required": true
+              },
+              {
+                "name": "remediation",
+                "type": "nonempty",
+                "required": true
+              },
+              {
+                "name": "theme",
+                "type": "nonempty",
+                "required": true
+              },
+              {
+                "name": "title",
+                "type": "nonempty",
+                "required": true
+              }
+            ],
+            "allowExtraFields": true
+          },
+          {
+            "kind": "nodeScriptPasses",
+            "script": "tests/security-oracle.mjs",
+            "timeoutMs": 30000,
+            "requiredOutput": [
+              {
+                "pattern": "Security precision/recall oracle passed",
+                "label": "every seeded defect reported, and no safe construct reported"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "security-review/REPORT.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "verification",
+        "description": "Raw leads are confirmed as real source-to-sink or authorization paths."
+      },
+      {
+        "name": "systemic analysis",
+        "description": "Findings are grouped by root cause and blast radius."
+      },
+      {
+        "name": "remediation",
+        "description": "The report and JSON contain concrete, severity-consistent fixes."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "confirmed vulnerabilities",
+    "systemic themes",
+    "machine-readable findings"
+  ]
+}

@@ -1,0 +1,174 @@
+{
+  "id": "reviewer-loop",
+  "name": "Reviewer Loop",
+  "description": "A four-step recipe for any \"draft, critique, revise, publish\" pattern.\n\nThe workflow exists for cases where a first draft is not enough: briefs,\nannouncements, reports, specs, and other artifacts that need an explicit\nreview pass before they are considered done.\n\nPhases:\n\n1. Draft (writer) — identify the deliverable path and acceptance criteria,\n   then write the first complete file.\n2. Critique (reviewer) — review the file against the criteria and route\n   either to revision or publish.\n3. Revise (writer) — address the named critique with a real file edit, then\n   loop back to critique.\n4. Publish (writer) — stamp the final summary only after reviewer approval.\n\nThe evaluate step is the gate. It defaults back to revision and must never\nroute to publish while a criterion is unmet. The safe failure mode is another\ntargeted revision, not an early DONE.\n",
+  "entryStepId": "draft",
+  "triggers": [
+    "draft critique revise",
+    "reviewer loop",
+    "critique and revise",
+    "polish this draft"
+  ],
+  "steps": [
+    {
+      "id": "draft",
+      "name": "Draft",
+      "description": "Produce the first cut of the requested artifact and make the review target explicit.",
+      "prompt": "Create the first complete draft of the requested artifact. Before writing, identify the deliverable path, audience, and 4-6 acceptance criteria in task notes. Then write the draft with the appropriate file-writing tool. Do not ask for critique until a real draft exists. When the draft is written, add a short task note naming the path and the criteria it is intended to satisfy, then call `advance_task_step({ ref, stepId: \"draft\", next: \"evaluate\" })`.",
+      "suggestedRole": "writer",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "none"
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "evaluate",
+      "name": "Critique",
+      "description": "Review the draft against the criteria and route either to revision or publish.",
+      "prompt": "Act as the reviewer. Read the deliverable and the acceptance criteria from task notes. Write a concrete critique to task notes with PASS/FAIL for each criterion and no vague style advice.\n\nThen record your verdict — this is the whole point of the loop:\n\n1. If any criterion fails, first write the specific gaps to the task notes with `write_task_note`: which file, which part, and what is missing. The \"Revise\" step reads them when it fixes the work.\n2. When you have graded every criterion, write `{{task.dir}}/verdict.md` with `write_artifact`. One line per criterion and no preamble: the criterion, its one-line reason, then PASS or FAIL as the last word on the line. Writing verdict.md completes this step.\n\nThe runtime routes on the verdict: every line PASS moves the task to \"Publish\"; any FAIL sends it back to \"Revise\" to fix those gaps, and a review that keeps failing pauses the task for the user. Mark a criterion PASS only when it is met.",
+      "suggestedRole": "reviewer",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      },
+      "advanceWhen": {
+        "file": "{{task.dir}}/verdict.md",
+        "minBytes": 40,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/verdict.md",
+            "pattern": "(?<!/\\s*)\\bPASS\\b(?!\\s*/)",
+            "label": "the verdict marks its criteria PASS",
+            "artifact": true
+          },
+          {
+            "kind": "notContains",
+            "file": "{{task.dir}}/verdict.md",
+            "pattern": "(?<!/\\s*)\\bFAIL\\b(?!\\s*/)",
+            "label": "no criterion is marked FAIL",
+            "artifact": true
+          }
+        ],
+        "onReject": "revise",
+        "maxAttempts": 3
+      },
+      "next": "publish"
+    },
+    {
+      "id": "revise",
+      "name": "Revise",
+      "description": "Address the named critique without redesigning unrelated parts.",
+      "prompt": "Revise the deliverable to address exactly the critique in task notes. Preserve criteria that already passed. Make a real file edit; a prose promise is not enough. After editing, write a short task note listing which critique items were fixed and call `advance_task_step({ ref, stepId: \"revise\", next: \"evaluate\" })` so the reviewer can check the revision.",
+      "suggestedRole": "writer",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      },
+      "next": "evaluate"
+    },
+    {
+      "id": "publish",
+      "name": "Publish",
+      "description": "Stamp the final summary after reviewer approval.",
+      "prompt": "The reviewer approved the artifact. Write a one-paragraph DONE summary to task notes naming the final deliverable path and the acceptance criteria that passed. Then report DONE.",
+      "suggestedRole": "writer",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      },
+      "terminal": true
+    }
+  ],
+  "version": "1.0.3",
+  "releasedAt": "2026-10-21T00:00:00Z",
+  "minGezelVersion": "1.26233"
+}

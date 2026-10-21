@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "mode": "workflow",
+  "title": "REST API Service workflow processability",
+  "objective": "Prove that a medium local model can parse and execute the REST API Service craftbook, satisfy its declared runtime gates, and reach a terminal step using only local fixtures.",
+  "tags": [
+    "code"
+  ],
+  "prompt": "Use the `rest-api` (REST API Service) craftbook for this self-contained local evaluation. Open `source/craftbook-eval-brief.md` first, then follow the craftbook's actual steps and gates through its terminal step. Complete this request: Build a RESTful HTTP API service with resource endpoints, JSON request/response bodies, status codes, validation, and error handling. Locks the contract FIRST — resources, routes, verbs, request/response shapes, status-code map, auth, and pagination — so the implementation has a fixed target, then builds the server, then writes endpoint tests that exercise every route and error case. Covers CRUD endpoints, RESTful routing, OpenAPI-style contract, HTTP status codes, input validation, JSON serialization, and integration tests against the running handler.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Contract design (planner) — lock resources, routes, request/response shapes, status codes → gated on artifact `{{workPath}}/contract-design.md` (markdown-notes)\n2. Build the service (developer) — implement the server to the locked contract → gated on `src/server.js` (code-module)\n3. Write endpoint tests (developer) — test every route, status code, and error path → gated on `src/server.test.js` (code-with-tests)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n Produce `contract-design.md` in this task's artifact working folder, `src/server.js`, `src/server.test.js`. Use only seeded project files and installed local simulators. Do not call a real external service, fetch live data, or claim an external side effect occurred; an explicit dry-run record is the correct result when a dependency is unavailable.",
+  "setup": {
+    "projectName": "REST API Service Workflow Eval",
+    "about": "A hermetic workflow evaluation for the REST API Service craftbook. No live dependency or external network is authorized.",
+    "missionObjectives": "Run the REST API Service craftbook end to end, use the local evaluation brief and fixtures as truth, produce its declared outputs, and reach a terminal step without fabricating external effects.",
+    "managedWorkspaceWritePolicy": "allow",
+    "files": [
+      {
+        "path": "source/craftbook-eval-brief.md",
+        "content": "# REST API Service — local evaluation brief\n\nThis is a hermetic processability evaluation of the `rest-api` craftbook.\nDo not contact real services, use real credentials, or fetch live data. Treat\nthe project fixtures and installed local simulators as authoritative. If a\ndependency is intentionally unavailable, document an honest dry run instead\nof claiming a real side effect.\n\n## Request\n\nBuild a RESTful HTTP API service with resource endpoints, JSON request/response bodies, status codes, validation, and error handling. Locks the contract FIRST — resources, routes, verbs, request/response shapes, status-code map, auth, and pagination — so the implementation has a fixed target, then builds the server, then writes endpoint tests that exercise every route and error case. Covers CRUD endpoints, RESTful routing, OpenAPI-style contract, HTTP status codes, input validation, JSON serialization, and integration tests against the running handler.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Contract design (planner) — lock resources, routes, request/response shapes, status codes → gated on artifact `{{workPath}}/contract-design.md` (markdown-notes)\n2. Build the service (developer) — implement the server to the locked contract → gated on `src/server.js` (code-module)\n3. Write endpoint tests (developer) — test every route, status code, and error path → gated on `src/server.test.js` (code-with-tests)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n\n\n## Required workflow\n\n1. Contract design\n2. Build the service\n3. Write endpoint tests\n4. Evaluate\n5. Finish (terminal)\n\n## Declared outputs\n\n- `contract-design.md` in this task's artifact working folder\n- `src/server.js`\n- `src/server.test.js`\n"
+      },
+      {
+        "path": "source/api-brief.md",
+        "content": "# Bookstore API brief\n\nResource: books for a small local bookstore.\nOpenAPI version: 3.1.0.\nSeed books: bk-1 The Left Hand of Darkness by au-1; bk-2 Parable of the Sower by au-2; bk-3 A Wizard of Earthsea by au-1.\nEndpoints:\n- GET /books?limit=&offset= returns `{ items, pagination: { limit, offset, total, hasMore } }`.\n- GET /books/{id} returns one book or 404 `{ error: { code: \"BOOK_NOT_FOUND\", message } }`.\n- POST /books creates a book and requires `Authorization: Bearer eval-token`.\n- POST body requires title and authorId. Missing fields return 400 `{ error: { code: \"VALIDATION_ERROR\", message } }`.\nOpenAPI auth requirement: define `components.securitySchemes.bearerAuth` with HTTP bearer auth and add `security: [{ bearerAuth: [] }]` to POST /books.\nOpenAPI must define an `ErrorEnvelope` schema shaped like `{ error: { code, message } }` and must mention `VALIDATION_ERROR` and `BOOK_NOT_FOUND` as concrete error codes.\nImplementation constraints: Node ESM, built-in modules only, no Express/Fastify/package install, server exports a `createBookstoreServer()` helper for tests and does not call listen() inside that helper. `server.mjs` must import the HTTP module normally at top level, such as `import http from \"node:http\"` or `import { createServer } from \"node:http\"`; do not use `await import(\"node:http\")`. `server.mjs` must enforce exact `Authorization: Bearer eval-token` on POST /books and return 401 for missing or wrong tokens. Every route branch in `server.mjs` must send exactly one response per request; after an auth, validation, not-found, or success response, immediately `return` so later code cannot write headers again. `server.mjs` must not import itself or import from `./server` or `./server.mjs`, and must not assign or replace `server.close`.\nTests must be complete runnable files with no placeholder elisions. They must import from exactly ./server.mjs, use node:assert/strict, call createBookstoreServer(), and run the tests at top level when `node contract-test.mjs` executes. Use the built-in global fetch() directly or through a helper that calls globalThis.fetch(url, options), call server.listen(0), resolve the assigned port inside the listen callback with server.address().port, and build request URLs from that resolved baseUrl before making requests. Do not use `new URL(path, \"http://localhost\")` in contract-test.mjs because it drops the assigned port. Do not wait for a `listening` event after `listen()` has already fired. Do not import node:http, node-fetch, or replace the global fetch function. If a helper uses `await fetch(...)`, declare that helper with `async function` or as an async arrow function, and pass POST method/headers/body options through to fetch. The helper must not throw on expected 400/401/404 HTTP responses; return status plus parsed JSON so negative tests can assert error codes. Do not catch assertion failures unless you log `error.stack ?? error` and then rethrow them or set a non-zero exit code. Run and log pagination, not-found, auth failure, validation failure, and create-success checks; the pagination check must explicitly request limit=2. Do not define or export tests that are never called. Run non-mutating checks before create success, or isolate/reset server state so pagination totals do not assume the seeded count after a create. Close the server cleanly.\nREADME must include a Usage section that shows these exact command lines: `node server.mjs` and `node contract-test.mjs`. It must also list GET /books, GET /books/{id}, POST /books, and the POST header `Authorization: Bearer eval-token`."
+      }
+    ],
+    "worker": {
+      "name": "Craftbook Runner",
+      "role": "Workflow Operator",
+      "about": "Execute the assigned craftbook exactly. Read local fixtures, satisfy each runtime gate, record honest dry-run evidence for unavailable dependencies, and continue until a terminal step is active or the task is complete."
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "The attributed rest-api task satisfied its own gates, produced its declared outputs, and reached a terminal step without using external services.",
+    "deliverables": [
+      {
+        "path": "{{task.dir}}/contract-design.md",
+        "kind": "markdown-report",
+        "artifact": true,
+        "minBytes": 120
+      },
+      {
+        "path": "src/server.js",
+        "kind": "code-module",
+        "minBytes": 200
+      },
+      {
+        "path": "src/server.test.js",
+        "kind": "code-module",
+        "minBytes": 1
+      }
+    ],
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    }
+  },
+  "rubric": {
+    "artifact": {
+      "path": "{{task.dir}}/contract-design.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "workflow fidelity",
+        "description": "The result reflects the named craftbook sequence and its declared acceptance gates rather than a freehand substitute."
+      },
+      {
+        "name": "usefulness",
+        "description": "The deliverable is coherent, actionable, and suitable for the craftbook purpose stated in the local brief."
+      }
+    ],
+    "contextNote": "Advisory only. Deterministic pass/fail comes from the craftbook runtime gates, deliverable existence, attribution, and terminal progress."
+  },
+  "qualityFocus": [
+    "real rest-api craftbook task attribution",
+    "declared runtime gate satisfaction",
+    "terminal workflow progress",
+    "offline fixture and simulator discipline"
+  ]
+}

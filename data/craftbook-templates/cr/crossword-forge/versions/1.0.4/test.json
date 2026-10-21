@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 1,
+  "title": "Forge a Crossword — personal words to a verified printable grid",
+  "objective": "Measure whether the crossword-forge craftbook constructs a mechanically-valid interlocking crossword from the seeded family notes — entries readable out of the grid at their coordinates, every entry clued — rendered as a printable page with the solution out of sight.",
+  "tags": [
+    "html-page"
+  ],
+  "prompt": "can you make a crossword for the grandkids with there names and our dog in it? printable pls",
+  "setup": {
+    "projectName": "Loon Lake Puzzle Almanac",
+    "about": "Puzzle almanac project for the Halloran family. Notes about the solvers live at workspace/notes/family.md; finished puzzles are filed on the workspace/puzzles shelf. The working puzzle is workspace/puzzle.json with its printable page at workspace/puzzle.html.",
+    "missionObjectives": "The grid must actually interlock and verify — every entry readable out of the grid at its coordinates, every entry clued. Personalization comes from the family notes. No live services, no real credentials.",
+    "files": [
+      {
+        "path": "tasks/eval/family.md",
+        "content": "# The solvers\n\nGrandkids: Nora (12, reigning flashlight-tag champion), Felix (10, dinosaur phase never ended),\nImani (9, reads above her grade and knows it), Theo (7, will need help with the long ones).\n\nThe dog: Biscuit — golden retriever, eats crayons, beloved.\n\nPlaces: the cabin at Loon Lake, the porch swing, Grandpa's garden.\n\nRunning jokes: Grandpa's burnt pancakes, the canoe that tipped twice in one day,\nflashlight tag after dark, \"who fed Biscuit already?\"\n"
+      },
+      {
+        "path": "checks/verify-puzzle.mjs",
+        "content": "// Eval-only re-check: verifies puzzle.json is a real, solvable crossword.\n// Exits 0 and prints PUZZLE OK when every entry reads out of the grid at its\n// coordinates, every entry has a clue, and the entries interlock.\nimport { readFileSync } from 'node:fs';\n\nfunction fail(message) {\n  console.error('PUZZLE BROKEN: ' + message);\n  process.exit(1);\n}\n\nlet puzzle;\ntry {\n  puzzle = JSON.parse(readFileSync('puzzle.json', 'utf8'));\n} catch (err) {\n  fail('puzzle.json missing or not valid JSON (' + err.message + ')');\n}\n\nconst grid = puzzle.grid;\nif (!Array.isArray(grid) || grid.length < 5 || !grid.every((r) => typeof r === 'string')) {\n  fail('grid must be an array of at least 5 row strings');\n}\nconst width = grid[0].length;\nfor (let r = 0; r < grid.length; r++) {\n  if (grid[r].length !== width) fail('row ' + r + ' width differs from row 0');\n  if (!/^[A-Z.]+$/.test(grid[r])) fail('row ' + r + ' has characters outside A-Z and \".\"');\n}\n\nconst entries = puzzle.entries;\nif (!Array.isArray(entries) || entries.length < 4) fail('need at least 4 entries');\n\nconst owners = new Map();\nlet across = 0;\nlet down = 0;\nfor (const e of entries) {\n  const label = typeof e.answer === 'string' && e.answer ? e.answer : 'entry #' + (e.number ?? '?');\n  if (typeof e.answer !== 'string' || !/^[A-Z]{2,}$/.test(e.answer)) fail(label + ': bad answer');\n  if (e.direction !== 'across' && e.direction !== 'down') fail(label + ': bad direction');\n  if (!Number.isInteger(e.row) || !Number.isInteger(e.col)) fail(label + ': bad coordinates');\n  if (typeof e.clue !== 'string' || e.clue.trim().length === 0) fail(label + ': missing clue');\n  if (e.direction === 'across') across++;\n  else down++;\n  for (let i = 0; i < e.answer.length; i++) {\n    const r = e.direction === 'down' ? e.row + i : e.row;\n    const c = e.direction === 'across' ? e.col + i : e.col;\n    if (r < 0 || r >= grid.length || c < 0 || c >= width) fail(label + ' runs off the grid');\n    if (grid[r][c] !== e.answer[i]) {\n      fail(label + ': grid has \"' + grid[r][c] + '\" at ' + r + ',' + c + ' expected \"' + e.answer[i] + '\"');\n    }\n    const key = r + ',' + c;\n    if (!owners.has(key)) owners.set(key, new Set());\n    owners.get(key).add(e.direction + ':' + label);\n  }\n}\nif (across === 0 || down === 0) fail('need both across and down entries');\n\nfor (const e of entries) {\n  let interlocks = false;\n  for (let i = 0; i < e.answer.length && !interlocks; i++) {\n    const r = e.direction === 'down' ? e.row + i : e.row;\n    const c = e.direction === 'across' ? e.col + i : e.col;\n    for (const owner of owners.get(r + ',' + c) ?? []) {\n      if (!owner.startsWith(e.direction + ':')) interlocks = true;\n    }\n  }\n  if (!interlocks) fail(e.answer + ' does not cross any other entry');\n}\n\nconsole.log('PUZZLE OK: ' + entries.length + ' entries (' + across + ' across, ' + down + ' down) verified');\n"
+      }
+    ],
+    "worker": {
+      "name": "Wouter",
+      "role": "Puzzle maker"
+    },
+    "craftbookParams": {
+      "workPath": "tasks/eval"
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "puzzle.json is a verified interlocking crossword carrying the personal words; puzzle.html is a printable page with clue lists and the solution kept out of sight.",
+    "deliverables": [
+      {
+        "path": "puzzle.json",
+        "kind": "json",
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "sniff",
+            "file": "puzzle.json",
+            "sniff": "json-valid"
+          },
+          {
+            "kind": "nodeScriptPasses",
+            "script": "checks/verify-puzzle.mjs",
+            "timeoutMs": 5000,
+            "requiredOutput": [
+              {
+                "pattern": "PUZZLE OK",
+                "label": "grid verifies as solvable"
+              }
+            ]
+          },
+          {
+            "kind": "contains",
+            "file": "puzzle.json",
+            "pattern": "NORA|FELIX|IMANI|THEO",
+            "label": "a grandkid name made the grid"
+          },
+          {
+            "kind": "contains",
+            "file": "puzzle.json",
+            "pattern": "BISCUIT",
+            "label": "the dog made the grid"
+          }
+        ]
+      },
+      {
+        "path": "puzzle.html",
+        "kind": "html-page",
+        "minBytes": 2000,
+        "checks": [
+          {
+            "kind": "cssMinBytes",
+            "bytes": 650,
+            "file": "puzzle.html"
+          },
+          {
+            "kind": "jsParses",
+            "file": "puzzle.html"
+          },
+          {
+            "kind": "contains",
+            "file": "puzzle.html",
+            "pattern": "@page|@media\\s+print",
+            "flags": "i",
+            "label": "print CSS"
+          },
+          {
+            "kind": "contains",
+            "file": "puzzle.html",
+            "pattern": "Across",
+            "flags": "i",
+            "label": "across clue list"
+          },
+          {
+            "kind": "contains",
+            "file": "puzzle.html",
+            "pattern": "Down",
+            "flags": "i",
+            "label": "down clue list"
+          }
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "puzzle.html",
+      "kind": "html"
+    },
+    "axes": [
+      {
+        "name": "solvability",
+        "description": "The grid interlocks and the clue numbering matches the grid — a solver could actually finish it."
+      },
+      {
+        "name": "personalization",
+        "description": "The names, the dog, and the running jokes from the family notes carry the puzzle; fillers stay in the background."
+      },
+      {
+        "name": "clue craft",
+        "description": "Clues are tuned to the solvers — in-jokes for the personal entries, honest difficulty for the fillers, help-sized for the youngest."
+      },
+      {
+        "name": "print readiness",
+        "description": "The page prints with pencil-sized squares and the solution on its own page, never beside the blank grid."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "verified interlocking grid",
+    "grounded personalization",
+    "solution out of sight"
+  ]
+}

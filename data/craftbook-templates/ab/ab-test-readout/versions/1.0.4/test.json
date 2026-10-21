@@ -1,0 +1,189 @@
+{
+  "schemaVersion": 1,
+  "title": "Decision-ready A/B test readout",
+  "objective": "Measure whether the ab-test-readout craftbook computes the experiment figures CORRECTLY (checked against a harness-owned arithmetic oracle, not prose keyword matching), and whether it applies a decision rule whose guardrail clause overrides a positive, statistically significant primary metric.",
+  "tags": [
+    "corpus"
+  ],
+  "prompt": "In the `A/B Test Readout Eval` project, read `source/experiment-brief.md` and `data/checkout-test.csv`, then produce two files.\n\n1. `data/stats.json` — the computed figures, using EXACTLY this schema and these units:\n```json\n{\n  \"control\": { \"exposures\": 0, \"conversions\": 0, \"rate\": 0.0, \"refund_requests\": 0, \"refund_rate\": 0.0 },\n  \"variant\":  { \"exposures\": 0, \"conversions\": 0, \"rate\": 0.0, \"refund_requests\": 0, \"refund_rate\": 0.0 },\n  \"absolute_lift_pp\": 0.0,\n  \"relative_lift_pct\": 0.0,\n  \"p_value\": 0.0,\n  \"significant_at_95\": false,\n  \"guardrail_delta_pp\": 0.0,\n  \"guardrail_breached\": false,\n  \"decision\": \"ship\" | \"do_not_ship\" | \"inconclusive\"\n}\n```\n`rate` and `refund_rate` are FRACTIONS (0.12, not 12). `absolute_lift_pp` and `guardrail_delta_pp` are PERCENTAGE POINTS (1.25, not 0.0125). `relative_lift_pct` is a percentage (10.4). Use a two-proportion z-test for `p_value`. Round the two `_pp` fields and `relative_lift_pct` to 2 decimal places and the rate fields to 4, so a computed float does not serialize as 1.2500000000000009.\n\n2. `tasks/eval/readout.md` — a decision-ready experiment readout built from those figures and no new numbers. Lead with Ship / Do not ship / Inconclusive, report the conversion lift with confidence/significance language, check the refund-request guardrail, and tie the recommendation to the pre-registered decision rule. Apply the decision rule as written: every clause must hold to ship.",
+  "setup": {
+    "projectName": "A/B Test Readout Eval",
+    "about": "Self-contained eval project for the ab-test-readout craftbook. Experiment brief and aggregate data are seeded in workspace/source and workspace/data.",
+    "missionObjectives": "Compute the experiment figures into data/stats.json under the locked schema, then produce an A/B test readout with hypothesis, primary metric, lift, significance/confidence language, guardrail check, recommendation, and next action. The readout must restate the computed figures, not new ones.",
+    "files": [
+      {
+        "path": "source/experiment-brief.md",
+        "content": "# Checkout Trust Badge Experiment\n\nHypothesis: adding the trust badge near the payment button increases checkout conversion.\nPrimary metric: purchase conversions / checkout exposures.\nDecision rule: ship only if conversion lift is positive and statistically persuasive at roughly 95% confidence AND refund-request rate does not regress by more than 0.20 percentage points.\nGuardrail: refund requests / exposures.\nRuntime: 14 full days. Traffic split was 50/50. No peeking; use this as the final readout.\n"
+      },
+      {
+        "path": "data/checkout-test.csv",
+        "content": "variant,exposures,conversions,refund_requests\ncontrol,10000,1200,80\ntrust_badge,10000,1325,103\n"
+      }
+    ],
+    "worker": {
+      "name": "Noor",
+      "role": "Data Analyst"
+    },
+    "craftbookParams": {
+      "workPath": "tasks/eval"
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "data/stats.json carries the correct computed figures under the locked schema, and workspace/readout.md restates them with a do-not-ship recommendation that follows the pre-registered decision rule despite a significant positive primary metric.",
+    "deliverables": [
+      {
+        "path": "data/stats.json",
+        "kind": "json",
+        "minBytes": 120,
+        "checks": [
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/stats.json",
+            "path": "control.rate",
+            "value": 0.12,
+            "label": "control conversion rate is 1200/10000"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/stats.json",
+            "path": "variant.rate",
+            "value": 0.1325,
+            "label": "variant conversion rate is 1325/10000"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/stats.json",
+            "path": "control.refund_rate",
+            "value": 0.008,
+            "label": "control refund rate is 80/10000"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/stats.json",
+            "path": "variant.refund_rate",
+            "value": 0.0103,
+            "label": "variant refund rate is 103/10000"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/stats.json",
+            "path": "absolute_lift_pp",
+            "value": 1.25,
+            "label": "absolute lift is 13.25% - 12.00% = 1.25 percentage points"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/stats.json",
+            "path": "significant_at_95",
+            "value": true,
+            "label": "the two-proportion z-test gives z~2.66, p~0.008 — significant at 95%"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/stats.json",
+            "path": "guardrail_delta_pp",
+            "value": 0.23,
+            "label": "refund rate moved 1.03% - 0.80% = 0.23 percentage points"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/stats.json",
+            "path": "guardrail_breached",
+            "value": true,
+            "label": "0.23pp exceeds the 0.20pp guardrail limit"
+          },
+          {
+            "kind": "jsonPathEquals",
+            "file": "data/stats.json",
+            "path": "decision",
+            "value": "do_not_ship",
+            "label": "the decision rule requires BOTH a persuasive lift AND no guardrail regression; the guardrail clause fails"
+          }
+        ]
+      },
+      {
+        "path": "tasks/eval/readout.md",
+        "kind": "markdown-report",
+        "minBytes": 2000,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "tasks/eval/readout.md",
+            "pattern": "Hypothesis|Decision rule|Recommendation|Guardrail|Next action",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/readout.md",
+            "pattern": "10,?000|1,?200|1,?325|80|103",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/readout.md",
+            "pattern": "12\\.0?%|13\\.25%|1\\.25|10\\.4",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/readout.md",
+            "pattern": "confidence|significant|p[- ]?value|95%",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/readout.md",
+            "pattern": "refund request|guardrail|0\\.23|23 basis|basis points",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "tasks/eval/readout.md",
+            "pattern": "do not ship|no-go|hold|do not launch|inconclusive",
+            "flags": "i"
+          }
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "tasks/eval/readout.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "safety",
+        "description": "Dry-run posture is explicit: no real credentials, clear stop-before-side-effect boundary."
+      },
+      {
+        "name": "mapping",
+        "description": "Fake endpoints/commands are mapped completely to the workflow steps."
+      },
+      {
+        "name": "signals",
+        "description": "Success, failure, retry, and abort conditions are all defined."
+      },
+      {
+        "name": "containment",
+        "description": "The plan cannot accidentally reach a real service from a mock context."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "pre-registered decision rule",
+    "computed lift",
+    "guardrail-aware verdict"
+  ],
+  "extensions": {
+    "legacySimulators": [
+      {
+        "id": "seeded-experiment-aggregate",
+        "kind": "data-source",
+        "status": "implemented",
+        "description": "Local aggregate experiment CSV replacing any live analytics warehouse or experimentation API."
+      }
+    ]
+  }
+}

@@ -1,0 +1,169 @@
+{
+  "id": "build-loop",
+  "name": "Build Loop",
+  "description": "A generic **make-something** procedure: `build → evaluate → (loop) → finish`.\n\nIt exists for the common case where the user wants a thing built (\"make an arcade game\", \"build a landing page\", \"write a script that does X\") and no domain-specific craftbook fits better. It gives a small/medium model the thing it loses on multi-phase work: a **durable structure with a gate** — so it drives one deliverable to a checkable bar instead of declaring victory early.\n\n## How the loop works\n\n1. **Build** (developer) first writes an **acceptance-criteria checklist** to task notes, then builds the deliverable to meet it. For a web build that's `index.html`.\n2. **Evaluate** (reviewer) grades the deliverable against every criterion and routes: all pass → `advance_task_step(next: \"finish\")`; any fail → write the gaps → `advance_task_step(next: \"build\")` to loop back.\n3. **Finish** stamps a DONE summary.\n\nEvaluate's default forward edge loops back to **Build**, not Finish — so the safe failure mode is \"keep improving\", never \"ship half-done\".\n\n## Advancement rides on the deliverable, not a meta-tool call\n\nThe Build step declares an `advanceWhen` contract: when a complete `index.html` lands (clears a size floor + a non-truncation `html-complete` sniff), the runtime advances Build → Evaluate **automatically**, without the model calling `advance_task_step`. This is deliberate: models reliably *do work* (`write_file`) but reliably *skip* the meta-navigation tool — two eval runs (gemma4-31b, gemma4-e4b-q8) produced the deliverable and advanced **zero** steps. Observable-progress auto-advance closes that gap. For a non-`index.html` deliverable the auto-advance is a no-op and Build advances model-driven (its prompt says so).\n\n## Why criteria-first matters for small models\n\nThe acceptance-criteria checklist is the scaffold. Without it a weak model declares victory early; with it, \"is this good?\" becomes \"does criterion 4 pass?\" — answerable even by a small model, and the thing the gate and the next loop iteration check against.\n\n## Specific books beat this one\n\nThis is the **fallback**. A domain craftbook earns its keep by encoding things this generic shape can't: the right *specialist role per phase* (a space-shooter splits design into a game-designer and a visual-designer) and the *domain-correct ordering* (a branding site locks a visual language before any HTML). When selection finds a specific match, prefer it; fall back to Build Loop when nothing fits. In a **solo** project the meester pins this book with every step collapsed onto the one specialist (it can't recruit); in a **crew** project it pins the matching multi-role gallery book instead.\n\n## Roles are suggestions\n\n`build → developer`, `evaluate → reviewer` are `suggestedRole` hints resolved via `ensureGezel`; domain gallery books override them (game-designer, visual-designer, copywriter, …).\n\n## Next: an automated evaluate gate\n\nEvaluate is still reviewer-gated (a gezel grades + routes). The follow-up replaces its routing with a script that judges and advances deterministically — now reachable because observable-advance gets the workflow *to* Evaluate without depending on the model to navigate there.\n",
+  "entryStepId": "build",
+  "steps": [
+    {
+      "id": "build",
+      "name": "Build",
+      "description": "Lock concrete acceptance criteria, then build the deliverable to meet them. The workflow advances to Evaluate automatically when the deliverable lands.",
+      "prompt": "**Two things, in order.**\n\n1. **Lock the bar.** Write an **acceptance-criteria checklist** to task notes via `write_task_note` — 4-8 concrete, checkable statements that define \"good enough\" (e.g. \"clicking Start begins play\", \"score increments on a hit\", \"page loads with no console error\"). This is the contract Evaluate grades against; without it the loop has no target.\n2. **Build it.** Create the real deliverable with your file-writing capability, to satisfy every criterion. For a web build that's `index.html` (inline CSS + JS, no build step). On a loop-back from Evaluate, read the gaps in notes and fix ONLY those — don't regress criteria that already passed.\n\n**Advancing:** the workflow moves you to Evaluate automatically when you actually WRITE `index.html` this turn — you do NOT need to call `advance_task_step`. On a loop-back, narrating the gaps is not enough: the step holds until you make a real edit to `index.html`. For any other deliverable path, write the file, then call `advance_task_step({ ref, stepId: \"build\", next: \"evaluate\" })` yourself.",
+      "suggestedRole": "developer",
+      "advanceWhen": {
+        "file": "index.html",
+        "minBytes": 800,
+        "sniff": "html-complete",
+        "requireChange": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "index.html",
+            "bytes": 2048
+          },
+          {
+            "kind": "jsParses",
+            "file": "index.html"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkHtmlComplete",
+            "scope": "standard",
+            "inputs": {
+              "file": "index.html"
+            }
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against EVERY acceptance criterion. All pass → finish. Any fail → write the gaps and loop back to Build.",
+      "prompt": "**You are the gate. Judge, then route — do not build here.**\n\n1. `read_task_notes({ ref })` for the acceptance-criteria checklist + the deliverable path.\n2. Open the deliverable and check it against each criterion (exercise it in a browser/with a test capability if the project has one — don't grade from source alone when you can observe behavior). Write a PASS/FAIL per criterion to notes.\n\nThen record your verdict — this is the whole point of the loop:\n\n1. If any criterion fails, first write the specific gaps to the task notes with `write_task_note`: which file, which part, and what is missing. The \"Build\" step reads them when it fixes the work.\n2. When you have graded every criterion, write `{{task.dir}}/verdict.md` with `write_artifact`. One line per criterion and no preamble: the criterion, its one-line reason, then PASS or FAIL as the last word on the line. Writing verdict.md completes this step.\n\nThe runtime routes on the verdict: every line PASS moves the task to \"Finish\"; any FAIL sends it back to \"Build\" to fix those gaps, and a review that keeps failing pauses the task for the user. Mark a criterion PASS only when it is met.",
+      "suggestedRole": "reviewer",
+      "advanceWhen": {
+        "file": "{{task.dir}}/verdict.md",
+        "minBytes": 40,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/verdict.md",
+            "pattern": "(?<!/\\s*)\\bPASS\\b(?!\\s*/)",
+            "label": "the verdict marks its criteria PASS",
+            "artifact": true
+          },
+          {
+            "kind": "notContains",
+            "file": "{{task.dir}}/verdict.md",
+            "pattern": "(?<!/\\s*)\\bFAIL\\b(?!\\s*/)",
+            "label": "no criterion is marked FAIL",
+            "artifact": true
+          }
+        ],
+        "onReject": "build",
+        "maxAttempts": 3
+      },
+      "next": "finish",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.1.2",
+  "releasedAt": "2026-10-21T00:00:00Z",
+  "minGezelVersion": "1.26233"
+}
