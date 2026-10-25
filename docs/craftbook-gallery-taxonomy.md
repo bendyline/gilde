@@ -4,7 +4,7 @@ The content backlog for the gallery (Pillar 3). Each entry below maps to one
 `ArchetypeSpec` in [`scripts/craftbook-archetypes.ts`](../scripts/craftbook-archetypes.ts);
 running `pnpm --filter @bendyline/gezel-catalog generate-craftbooks` turns
 specs into bundled craftbooks, and `suggest_craftbook` ranks the lot into a
-top-K shortlist for the voorman.
+top-K shortlist for the crew lead.
 
 This is a *menu*, not 400 finished specs. The value of a specific gallery
 book over the generic `build-loop` is two things, and every entry encodes
