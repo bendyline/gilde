@@ -1,0 +1,235 @@
+{
+  "schemaVersion": 1,
+  "title": "Vendored dependency upgrade with staged receipts",
+  "objective": "The craftbook drives a staged upgrade of a vendored library across a breaking major: a recorded green suite before any change, the v2 API adopted at both real call sites with behavior preserved against the v1 reference, an honest stage record, and an enforced review - all verified mechanically, including a resolved-module check proving the call sites genuinely run v2.",
+  "tags": [
+    "code",
+    "dependency-upgrade",
+    "tactical-fleet"
+  ],
+  "prompt": "Use the Upgrade a Dependency craftbook for this: upgrade our vendored markdownlite library from 1.4.2 to the staged 2.0.0 copy. The vendoring convention and the v2 changelog are in VENDORING.md, and the request is in source/upgrade-request.md. Rendering behavior must not change - adapt the call sites to the new API rather than accepting the new defaults.",
+  "setup": {
+    "projectName": "Relay Notes",
+    "about": "A tiny note-rendering module for a team relay tool. Dependencies are vendored under lib/vendored/ per VENDORING.md. Tests run with `npm run test` (node --test).",
+    "files": [
+      {
+        "path": "package.json",
+        "content": "{\n  \"name\": \"relay-notes\",\n  \"private\": true,\n  \"version\": \"1.0.0\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test\"\n  }\n}\n"
+      },
+      {
+        "path": "lib/vendored/markdownlite.js",
+        "content": "// markdownlite 1.4.2 (vendored - see VENDORING.md)\nexport function parse(text) {\n  const lines = String(text).split(/\\r?\\n/);\n  const out = [];\n  for (const line of lines) {\n    const t = line.trim();\n    if (t === '') continue;\n    const h = /^(#{1,3})\\s+(.*)$/.exec(t);\n    if (h) {\n      out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`);\n    } else {\n      out.push(`<p>${inline(t)}</p>`);\n    }\n  }\n  return out.join('\\n');\n}\n\nfunction inline(text) {\n  return text.replace(/\\*([^*]+)\\*/g, '<em>$1</em>');\n}\n"
+      },
+      {
+        "path": "lib/vendored/v2/markdownlite.js",
+        "content": "// markdownlite 2.0.0 (vendored staging copy - see VENDORING.md)\nexport function parseDoc(text, options = {}) {\n  const wrapParagraphs = options.wrapParagraphs ?? false;\n  const lines = String(text).split(/\\r?\\n/);\n  const out = [];\n  for (const line of lines) {\n    const t = line.trim();\n    if (t === '') continue;\n    const h = /^(#{1,3})\\s+(.*)$/.exec(t);\n    if (h) {\n      out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`);\n    } else {\n      out.push(wrapParagraphs ? `<p>${inline(t)}</p>` : inline(t));\n    }\n  }\n  return out.join('\\n');\n}\n\nfunction inline(text) {\n  return text.replace(/\\*([^*]+)\\*/g, '<em>$1</em>');\n}\n"
+      },
+      {
+        "path": "src/render-note.js",
+        "content": "import { parse } from '../lib/vendored/markdownlite.js';\n\nexport function renderNote(note) {\n  return `<h2>${note.title}</h2>\\n${parse(note.body)}`;\n}\n"
+      },
+      {
+        "path": "src/render-digest.js",
+        "content": "import { parse } from '../lib/vendored/markdownlite.js';\n\nexport function renderDigest(notes) {\n  return notes\n    .map((note) => `<section>\\n<h2>${note.title}</h2>\\n${parse(note.body)}\\n</section>`)\n    .join('\\n');\n}\n"
+      },
+      {
+        "path": "tests/render-note.test.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { test } from 'node:test';\nimport { renderNote } from '../src/render-note.js';\n\ntest('renders the body as wrapped paragraphs', () => {\n  assert.equal(\n    renderNote({ title: 'Standup', body: 'we shipped the *fast* path' }),\n    '<h2>Standup</h2>\\n<p>we shipped the <em>fast</em> path</p>',\n  );\n});\n\ntest('renders headings inside the body', () => {\n  assert.equal(\n    renderNote({ title: 'Plan', body: '# Goals\\nship it' }),\n    '<h2>Plan</h2>\\n<h1>Goals</h1>\\n<p>ship it</p>',\n  );\n});\n"
+      },
+      {
+        "path": "tests/render-digest.test.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { test } from 'node:test';\nimport { renderDigest } from '../src/render-digest.js';\n\ntest('joins every note as a wrapped section', () => {\n  const html = renderDigest([\n    { title: 'One', body: 'first' },\n    { title: 'Two', body: 'second line' },\n  ]);\n  assert.equal(\n    html,\n    '<section>\\n<h2>One</h2>\\n<p>first</p>\\n</section>\\n<section>\\n<h2>Two</h2>\\n<p>second line</p>\\n</section>',\n  );\n});\n"
+      },
+      {
+        "path": "VENDORING.md",
+        "content": "# Vendoring convention\n\nThis project vendors small dependencies directly under `lib/vendored/` instead\nof installing them from a registry. Each vendored library is a single file named\nafter the package. Upgrades arrive as a staged copy in a version subfolder\n(for example `lib/vendored/v2/`) so the switch is an explicit, reviewable\nchange: move the staged copy into place (or point the imports at it), adapt the\ncall sites, and remove the staging folder when the switch is complete.\n\n## markdownlite\n\nCurrent vendored version: 1.4.2 at `lib/vendored/markdownlite.js`.\nStaged upgrade: 2.0.0 at `lib/vendored/v2/markdownlite.js`.\n\n### markdownlite 2.0.0 changelog\n\n- BREAKING: `parse(text)` is renamed to `parseDoc(text, options)`.\n- BREAKING: plain lines are no longer wrapped in `<p>` by default. Paragraph\n  wrapping is now opt-in: pass `{ wrapParagraphs: true }` to keep the 1.x\n  output.\n- Heading and emphasis handling are unchanged.\n"
+      },
+      {
+        "path": "source/upgrade-request.md",
+        "content": "# Upgrade request\n\nPlease move us from vendored markdownlite 1.4.2 to the staged 2.0.0 copy.\nThe v2 changelog is in VENDORING.md. Rendering behavior must not change:\nnotes and digests must produce exactly the same HTML as today, so adapt the\ncall sites to the new API rather than accepting the new defaults.\n"
+      },
+      {
+        "path": "tests/verify-upgrade.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { execFileSync } from 'node:child_process';\nimport { readFileSync } from 'node:fs';\nimport { join } from 'node:path';\nimport { pathToFileURL } from 'node:url';\n\nconst root = process.cwd();\n\n// 1) Both call sites moved off the removed v1 API and resolve to a v2 module.\n//    Accepted either way: v2 copied into place at lib/vendored/markdownlite.js,\n//    or imports repointed at the staged v2 file.\nconst callSites = ['src/render-note.js', 'src/render-digest.js'];\nfor (const file of callSites) {\n  const source = readFileSync(join(root, file), 'utf8');\n  assert.ok(/\\bparseDoc\\s*\\(/.test(source), `${file} must call the v2 parseDoc API`);\n  assert.ok(!/\\bparse\\s*\\(/.test(source), `${file} still calls the removed v1 parse API`);\n  const spec = /import\\s*\\{[^}]*\\}\\s*from\\s*['\"]([^'\"]*markdownlite[^'\"]*)['\"]/.exec(source);\n  assert.ok(spec, `${file} must import the vendored markdownlite module`);\n  const mod = await import(new URL(spec[1], pathToFileURL(join(root, file))).href);\n  assert.equal(typeof mod.parseDoc, 'function', `${file} must resolve to markdownlite v2 (parseDoc export)`);\n  assert.equal(mod.parse, undefined, `${file} resolves to a module that still exports the removed v1 parse API`);\n}\nconsole.log('DEPUPGRADE_ORACLE call sites adapted');\n\n// 2) Behavior is unchanged against the v1 reference output.\nconst { renderNote } = await import(pathToFileURL(join(root, 'src/render-note.js')).href);\nconst { renderDigest } = await import(pathToFileURL(join(root, 'src/render-digest.js')).href);\nassert.equal(\n  renderNote({ title: 'Standup', body: 'we shipped the *fast* path' }),\n  '<h2>Standup</h2>\\n<p>we shipped the <em>fast</em> path</p>',\n  'renderNote must keep wrapping paragraphs after the upgrade',\n);\nassert.equal(\n  renderNote({ title: 'Plan', body: '# Goals\\nship it' }),\n  '<h2>Plan</h2>\\n<h1>Goals</h1>\\n<p>ship it</p>',\n  'renderNote must keep heading handling after the upgrade',\n);\nassert.equal(\n  renderDigest([\n    { title: 'One', body: 'first' },\n    { title: 'Two', body: 'second line' },\n  ]),\n  '<section>\\n<h2>One</h2>\\n<p>first</p>\\n</section>\\n<section>\\n<h2>Two</h2>\\n<p>second line</p>\\n</section>',\n  'renderDigest must keep its exact output after the upgrade',\n);\nconsole.log('DEPUPGRADE_ORACLE behavior ok');\n\n// 3) The suite is green on the upgraded tree, and the seeded tests survive.\nreadFileSync(join(root, 'tests/render-note.test.mjs'));\nreadFileSync(join(root, 'tests/render-digest.test.mjs'));\nfunction runSuite(cwd) {\n  try {\n    execFileSync(process.execPath, ['--test'], { cwd, stdio: 'pipe', timeout: 30000 });\n    return 0;\n  } catch (err) {\n    return typeof err.status === 'number' ? err.status : 1;\n  }\n}\nassert.equal(runSuite(root), 0, 'the suite must be green on the upgraded tree');\nconsole.log('DEPUPGRADE_ORACLE suite green');\nconsole.log('DEPUPGRADE_ORACLE done');\n",
+        "surface": "harness"
+      }
+    ],
+    "craftbookParams": {
+      "scope": "Upgrade the vendored markdownlite from 1.4.2 to the staged 2.0.0 copy per VENDORING.md; rendering behavior must not change."
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "The vendored library runs at v2 through both call sites (either moved into place or repointed), every adaptation preserves the exact v1 rendering behavior, the suite is green, and every fleet artifact exists with honest receipts.",
+    "deliverables": [
+      {
+        "path": "{{task.dir}}/survey.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 600,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/survey.md",
+            "pattern": "^##\\s+Current state[\\s\\S]*^##\\s+Candidates[\\s\\S]*^##\\s+Breaking-change notes[\\s\\S]*^##\\s+Stage plan",
+            "flags": "im",
+            "label": "survey sections in order"
+          },
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/survey.md",
+            "pattern": "parseDoc",
+            "label": "names the real v2 API change from the local changelog"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{task.dir}}/survey.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/change-notes.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 700,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/change-notes.md",
+            "pattern": "^##\\s+Stages executed[\\s\\S]*^##\\s+Files touched[\\s\\S]*^##\\s+Adaptations[\\s\\S]*^##\\s+Reverted stages",
+            "flags": "im",
+            "label": "change-notes sections in order"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{task.dir}}/change-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/verification.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 450,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/verification.md",
+            "pattern": "^##\\s+Suite[\\s\\S]*^##\\s+Adaptations verified[\\s\\S]*^##\\s+Rollback[\\s\\S]*^##\\s+Result",
+            "flags": "im",
+            "label": "verification sections in order"
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/review.md",
+        "kind": "markdown-report",
+        "artifact": true,
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit reviewer verdict"
+          }
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "kind": "notContains",
+        "file": "src/render-note.js",
+        "pattern": "\\bparse\\s*\\(|import\\s*\\{[^}]*\\bparse\\b[^}]*\\}",
+        "label": "the removed v1 parse API is gone from the note call site"
+      },
+      {
+        "kind": "notContains",
+        "file": "src/render-digest.js",
+        "pattern": "\\bparse\\s*\\(|import\\s*\\{[^}]*\\bparse\\b[^}]*\\}",
+        "label": "the removed v1 parse API is gone from the digest call site"
+      },
+      {
+        "kind": "sourceParses",
+        "file": "src/render-note.js"
+      },
+      {
+        "kind": "sourceParses",
+        "file": "src/render-digest.js"
+      },
+      {
+        "kind": "nodeRuns",
+        "file": "tests/render-note.test.mjs"
+      },
+      {
+        "kind": "nodeScriptPasses",
+        "script": "tests/verify-upgrade.mjs",
+        "timeoutMs": 60000,
+        "requiredOutput": [
+          {
+            "pattern": "DEPUPGRADE_ORACLE call sites adapted",
+            "label": "both call sites run the v2 API"
+          },
+          {
+            "pattern": "DEPUPGRADE_ORACLE behavior ok",
+            "label": "rendering behavior preserved against the v1 reference"
+          },
+          {
+            "pattern": "DEPUPGRADE_ORACLE suite green",
+            "label": "suite green on the upgraded tree"
+          }
+        ]
+      }
+    ],
+    "taskNotes": {
+      "minBytes": 120,
+      "checks": [
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "\\bDONE\\b[\\s\\S]*(npm\\s+run\\s+test|node\\s+--test)",
+          "flags": "i",
+          "label": "DONE note names the real test command"
+        }
+      ]
+    },
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    },
+    "unchangedFixtures": [
+      "source/upgrade-request.md",
+      "package.json"
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "{{task.dir}}/change-notes.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "Staged discipline",
+        "description": "The work ran as ordered stages with the suite genuinely run before the first change and between stages, and the record distinguishes executed stages from reverted or deferred ones."
+      },
+      {
+        "name": "Local evidence honesty",
+        "description": "Breaking-change notes come from sources actually read in the repository (VENDORING.md, the staged v2 file), with nothing presented as a release note that was invented."
+      },
+      {
+        "name": "Adaptation fidelity",
+        "description": "Call sites were adapted at their real locations to preserve exact rendering behavior under the v2 API, rather than accepting changed defaults or weakening tests."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "staged upgrades with receipts",
+    "local breaking-change evidence",
+    "honest reverts"
+  ]
+}

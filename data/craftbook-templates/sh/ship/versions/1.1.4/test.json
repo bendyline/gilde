@@ -1,0 +1,235 @@
+{
+  "schemaVersion": 1,
+  "mode": "workflow",
+  "title": "Ship workflow processability",
+  "objective": "Prove that a medium local model can parse and execute the Ship craftbook, satisfy its declared runtime gates, and reach a terminal step using only local fixtures.",
+  "tags": [
+    "external"
+  ],
+  "prompt": "Use the `ship` (Ship) craftbook for this self-contained local evaluation. Open `source/craftbook-eval-brief.md` first, then follow the craftbook's actual steps and gates through its terminal step. Complete this request: End-to-end release procedure for an already-published feature branch. Six normal\nsteps + one halt step the branches divert to on failure:\n\n1. **Preflight** — verify branch, clean tree, upstream, and commit scope\n2. **Run tests** — project's primary test command\n3. **Self-review pass** — last walk through the published diff\n4. **Open PR** — create the PR from the published branch\n5. **Wait for CI** — poll until green or failure\n6. **Summary** — final DONE\n7. **Halt** (branched target) — DONE_WITH_CONCERNS on any failure\n\nThe branches are the load-bearing piece. If tests fail, PR creation fails,\nCI fails, or the poll times out, the recipe routes to `halt` rather than\nblasting through. The upstream procedure encoded that safety property in\nimperative if/else; the craftbook schema makes it explicit.\n\nScripts:\n- `run-tests.ts` — wraps `run_package_script` with the right test command\n- `open-pr.ts` — calls `github_pr_create` for the already-published branch\n- `wait-checks.ts` — polls `github_check_status` until settled\n\n## Applicability\n\nThe craftbook declares two manifest-level `requirements` so the launcher\nand command registry only offer it where it can actually run:\n\n- **github** — the project must be connected to a GitHub repo (the\n  `open-pr` and `wait-checks` scripts call `github_pr_create` /\n  `github_check_status` directly; without a connected repo they cannot\n  create or observe the pull request).\n- **non-main-branch** — the project's checkout must be on a branch\n  other than `main` / `master`. Preflight re-checks this snapshot, requires\n  a clean tree and an existing upstream, and stops instead of inventing a\n  push capability when the branch has not yet been published.\n\nRequires the github toolset configured. Both gates evaluate via\n`unmetCraftbookRequirements` in `@bendyline/gezel` and are surfaced\nthrough `/api/projects/:id/craftbooks` so the Commands panel hides the\ncraftbook in projects that do not qualify rather than letting the user\nlaunch it and watch PR creation fail.\n Produce the concrete deliverables named in this request. Use only seeded project files and installed local simulators. Do not call a real external service, fetch live data, or claim an external side effect occurred; an explicit dry-run record is the correct result when a dependency is unavailable.",
+  "setup": {
+    "projectName": "Ship Workflow Eval",
+    "about": "A hermetic workflow evaluation for the Ship craftbook. No live dependency or external network is authorized.",
+    "missionObjectives": "Run the Ship craftbook end to end, use the local evaluation brief and fixtures as truth, produce its declared outputs, and reach a terminal step without fabricating external effects.",
+    "managedWorkspaceWritePolicy": "allow",
+    "files": [
+      {
+        "path": "source/craftbook-eval-brief.md",
+        "content": "# Ship — local evaluation brief\n\nThis is a hermetic processability evaluation of the `ship` craftbook.\nDo not contact real services, use real credentials, or fetch live data. Treat\nthe project fixtures and installed local simulators as authoritative. If a\ndependency is intentionally unavailable, document an honest dry run instead\nof claiming a real side effect.\n\n## Request\n\nEnd-to-end release procedure for an already-published feature branch. Six normal\nsteps + one halt step the branches divert to on failure:\n\n1. **Preflight** — verify branch, clean tree, upstream, and commit scope\n2. **Run tests** — project's primary test command\n3. **Self-review pass** — last walk through the published diff\n4. **Open PR** — create the PR from the published branch\n5. **Wait for CI** — poll until green or failure\n6. **Summary** — final DONE\n7. **Halt** (branched target) — DONE_WITH_CONCERNS on any failure\n\nThe branches are the load-bearing piece. If tests fail, PR creation fails,\nCI fails, or the poll times out, the recipe routes to `halt` rather than\nblasting through. The upstream procedure encoded that safety property in\nimperative if/else; the craftbook schema makes it explicit.\n\nScripts:\n- `run-tests.ts` — wraps `run_package_script` with the right test command\n- `open-pr.ts` — calls `github_pr_create` for the already-published branch\n- `wait-checks.ts` — polls `github_check_status` until settled\n\n## Applicability\n\nThe craftbook declares two manifest-level `requirements` so the launcher\nand command registry only offer it where it can actually run:\n\n- **github** — the project must be connected to a GitHub repo (the\n  `open-pr` and `wait-checks` scripts call `github_pr_create` /\n  `github_check_status` directly; without a connected repo they cannot\n  create or observe the pull request).\n- **non-main-branch** — the project's checkout must be on a branch\n  other than `main` / `master`. Preflight re-checks this snapshot, requires\n  a clean tree and an existing upstream, and stops instead of inventing a\n  push capability when the branch has not yet been published.\n\nRequires the github toolset configured. Both gates evaluate via\n`unmetCraftbookRequirements` in `@bendyline/gezel` and are surfaced\nthrough `/api/projects/:id/craftbooks` so the Commands panel hides the\ncraftbook in projects that do not qualify rather than letting the user\nlaunch it and watch PR creation fail.\n\n\n## Required workflow\n\n1. Preflight\n2. Run tests\n3. Self-review pass\n4. Open PR\n5. Wait for CI\n6. Summary (terminal)\n7. Halted (terminal)\n\n## Declared outputs\n\n- The concrete user-requested outputs named in the kickoff.\n"
+      },
+      {
+        "path": "fixtures/local-test-output.log",
+        "content": "$ npm test\nlint: pass\nunit: pass (42 tests)\nplaywright-smoke: pass\nduration: 18.4s"
+      }
+    ],
+    "craftbookParams": {
+      "branch": "chore/packing-count-export"
+    },
+    "worker": {
+      "name": "Craftbook Runner",
+      "role": "Workflow Operator",
+      "about": "Execute the assigned craftbook exactly. Read local fixtures, satisfy each runtime gate, record honest dry-run evidence for unavailable dependencies, and continue until a terminal step is active or the task is complete."
+    }
+  },
+  "mocks": [
+    {
+      "kind": "http",
+      "id": "github",
+      "description": "Fake GitHub API for the co-op/returns-desk repository. POST a pull request for branch chore/packing-count-export; GET it back by number.",
+      "credential": {
+        "name": "mock.github"
+      },
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/repos/co-op/returns-desk/pulls",
+          "status": 201,
+          "body": {
+            "number": 42,
+            "state": "open",
+            "branch": "chore/packing-count-export",
+            "html_url": "https://fake.github.local/co-op/returns-desk/pull/42"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/repos/co-op/returns-desk/pulls/42",
+          "status": 200,
+          "body": {
+            "number": 42,
+            "state": "open",
+            "branch": "chore/packing-count-export",
+            "html_url": "https://fake.github.local/co-op/returns-desk/pull/42"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "http",
+      "id": "ci",
+      "description": "Fake CI API. Poll GET /runs/pr-42 for the pipeline attached to the fake PR.",
+      "credential": {
+        "name": "mock.ci"
+      },
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/runs/pr-42",
+          "status": 200,
+          "body": {
+            "run": "pr-42",
+            "status": "success",
+            "checks": [
+              {
+                "name": "lint",
+                "status": "success"
+              },
+              {
+                "name": "unit",
+                "status": "success"
+              },
+              {
+                "name": "playwright-smoke",
+                "status": "success"
+              }
+            ]
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/runs/*",
+          "status": 200,
+          "body": {
+            "status": "pending"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "cli",
+      "id": "probe",
+      "description": "Provenance-trusted project script `ship-mock-probe` that exercises both fake services through http.authed and returns their raw responses.",
+      "shim": {
+        "path": "scripts/ship-mock-probe.ts",
+        "content": "import { defineScript, gezel } from '@bendyline/gezel-sdk';\n\nexport const meta = defineScript({\n  name: 'ship-mock-probe',\n  description:\n    'Probe the live fake GitHub/CI services for this eval: opens the fake PR for branch chore/packing-count-export and polls CI for run pr-42. Outputs the raw JSON responses for the ship report.',\n  inputs: {},\n  outputs: {\n    pr: { type: 'string', description: 'Raw JSON body from the fake GitHub PR creation.' },\n    ci: { type: 'string', description: 'Raw JSON body from the fake CI status poll.' },\n  },\n  requires: ['workspace.read', 'network', 'credential:mock.github', 'credential:mock.ci'],\n});\n\nconst services = JSON.parse(await gezel.fs.read('mocks/services.json'));\nconst base = (id) => {\n  const service = services.find((entry) => entry.id === id);\n  if (!service) throw new Error(`mock service \"${id}\" is not listed in mocks/services.json`);\n  return service.baseUrl;\n};\n\nconst pr = await gezel.http.authed(`${base('github')}/repos/co-op/returns-desk/pulls`, {\n  credential: 'mock.github',\n  method: 'POST',\n  body: JSON.stringify({ branch: 'chore/packing-count-export', title: 'Packing count export' }),\n});\nif (!pr.ok) throw new Error(`fake GitHub PR creation failed: ${pr.status} ${pr.body}`);\n\nconst ci = await gezel.http.authed(`${base('ci')}/runs/pr-42`, { credential: 'mock.ci' });\nif (!ci.ok) throw new Error(`fake CI poll failed: ${ci.status} ${ci.body}`);\n\ngezel.output({ pr: pr.body, ci: ci.body });\n"
+      }
+    }
+  ],
+  "success": {
+    "summary": "The attributed ship task satisfied its own gates, produced its declared outputs, and reached a terminal step without using external services.",
+    "deliverables": [
+      {
+        "path": "ship-report.md",
+        "kind": "markdown-report",
+        "minBytes": 1200,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "ship-report.md",
+            "pattern": "preflight|local tests|npm test",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "ship-report.md",
+            "pattern": "lint|unit|playwright-smoke",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "ship-report.md",
+            "pattern": "https://fake\\.github\\.local/co-op/returns-desk/pull/42"
+          },
+          {
+            "kind": "contains",
+            "file": "ship-report.md",
+            "pattern": "chore/packing-count-export"
+          },
+          {
+            "kind": "contains",
+            "file": "ship-report.md",
+            "pattern": "CI|checks|green|success",
+            "flags": "i"
+          },
+          {
+            "kind": "contains",
+            "file": "ship-report.md",
+            "pattern": "stop|failure|do not ship",
+            "flags": "i"
+          },
+          {
+            "kind": "notContains",
+            "file": "ship-report.md",
+            "pattern": "github\\.com|real remote|pushed to origin",
+            "flags": "i"
+          }
+        ]
+      },
+      {
+        "path": "fake-pr.json",
+        "kind": "json",
+        "minBytes": 180,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "fake-pr.json",
+            "pattern": "42"
+          },
+          {
+            "kind": "contains",
+            "file": "fake-pr.json",
+            "pattern": "chore/packing-count-export"
+          },
+          {
+            "kind": "contains",
+            "file": "fake-pr.json",
+            "pattern": "https://fake\\.github\\.local/co-op/returns-desk/pull/42"
+          }
+        ]
+      }
+    ],
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    },
+    "mocks": [
+      {
+        "service": "github",
+        "minRequests": 1,
+        "requiredPaths": [
+          "^/repos/co-op/returns-desk/pulls"
+        ]
+      },
+      {
+        "service": "ci",
+        "minRequests": 1,
+        "requiredPaths": [
+          "^/runs/"
+        ]
+      }
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "ship-report.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "workflow fidelity",
+        "description": "The result reflects the named craftbook sequence and its declared acceptance gates rather than a freehand substitute."
+      },
+      {
+        "name": "usefulness",
+        "description": "The deliverable is coherent, actionable, and suitable for the craftbook purpose stated in the local brief."
+      }
+    ],
+    "contextNote": "Advisory only. Deterministic pass/fail comes from the craftbook runtime gates, deliverable existence, attribution, and terminal progress."
+  },
+  "qualityFocus": [
+    "real ship craftbook task attribution",
+    "declared runtime gate satisfaction",
+    "terminal workflow progress",
+    "offline fixture and simulator discipline"
+  ]
+}
