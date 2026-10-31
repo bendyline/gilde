@@ -1,0 +1,432 @@
+{
+  "id": "ab-test-readout",
+  "name": "A/B Test Readout",
+  "description": "Analyze a controlled experiment and produce a decision-ready readout: does the variant beat control, by how much, and is it real? States the hypothesis, the primary metric, and the decision rule FIRST (to avoid p-hacking and metric-shopping), then computes lift, statistical significance, and confidence intervals as a data-analyst, then writes a plain-language ship/no-ship recommendation. Use this for an experiment analysis, A/B test results, significance testing, conversion-lift readout, or an experiment decision memo.\n\nA gallery craftbook generated from an archetype spec. It runs\n`phase → (per-phase gate) → … → evaluate → (loop) → finish`. Each build\nphase that produces a checkable artifact is followed by a **runtime\ngate-checkpoint** — the runtime verifies the artifact and routes with no\nmodel turn, looping back to redo the phase on a miss. The final `evaluate`\nstep holds a static deliverable gate plus a reviewer QA pass. What it adds\nover the generic `build-loop`: a specialist role per phase, a\ndomain-correct ordering, and a concrete per-phase quality bar.\n\nDeliverables marked \"artifact\" land in the project's artifacts drawer (`write_artifact` / `read_artifact`), not the shipped workspace — review output is not product source.\n\nPhases:\n\n1. Scope the hypothesis (data-analyst) — lock the hypothesis, primary metric, and decision rule before looking → gated on artifact `{{workPath}}/hypothesis-scope.md` (markdown-notes)\n2. Analyze the experiment (data-analyst) — compute lift, significance, and confidence intervals → gated on `data/stats.json` (json)\n3. Write the readout (copywriter) — produce a plain-language ship/no-ship recommendation → gated on artifact `{{workPath}}/readout.md` (markdown-report)\n\nThe gates never advance with an unmet criterion, and loop back to the\nowning phase to fix named gaps.\n",
+  "entryStepId": "hypothesis-scope",
+  "triggers": [
+    "analyze an ab test",
+    "experiment readout",
+    "is this result significant",
+    "ab test results",
+    "ship or no ship from a test"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer. Defaults to this task's own folder so runs never collide; override with a stable name when you deliberately want runs to share files.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "contract": {
+    "goal": "A decision-ready A/B test readout that leads with Ship, Don't ship or Inconclusive under the decision rule stated before the analysis, and reports the lift with its confidence interval and significance, every figure taken from the computed statistics or a cited source.",
+    "deliverables": [
+      {
+        "id": "readout",
+        "path": "{{workPath}}/readout.md",
+        "artifact": true,
+        "kind": "markdown-report",
+        "description": "The readout: the recommendation tied to the decision rule, the lift with its confidence interval and significance, the guardrail check, honest caveats and the next action"
+      },
+      {
+        "id": "stats",
+        "path": "data/stats.json",
+        "kind": "json",
+        "role": "supporting",
+        "description": "The computed figures behind the readout: rates per arm, lift, p-value, confidence interval and guardrail results"
+      }
+    ],
+    "grounding": {
+      "citationStyle": "inline-path"
+    },
+    "criteria": [
+      {
+        "id": "substantial",
+        "kind": "acceptance",
+        "text": "The readout is a full document organized under headings",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/readout.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/readout.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "label": "section headings",
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "id": "figures-saved",
+        "kind": "acceptance",
+        "text": "The computed figures, the confidence interval on the lift included, are saved as valid JSON",
+        "checks": [
+          {
+            "kind": "sniff",
+            "file": "data/stats.json",
+            "sniff": "json-valid"
+          },
+          {
+            "kind": "contains",
+            "file": "data/stats.json",
+            "pattern": "\"[a-z0-9_]*?(?:ci|ci95|conf(?:idence)?[a-z0-9_]*|interval[a-z0-9_]*|(?:lower|upper)[a-z0-9_]*)(?:_[a-z0-9]+)*\"\\s*:",
+            "flags": "i",
+            "label": "data/stats.json records the confidence interval on the lift"
+          }
+        ]
+      },
+      {
+        "id": "recommendation",
+        "kind": "acceptance",
+        "text": "It makes a Ship, Don't ship or Inconclusive call",
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/readout.md",
+            "pattern": "(?<![a-z])(?:ship(?:ped|ping)?|launch(?:ed|ing)?|roll[- ]?out|inconclusive)\\b",
+            "flags": "i",
+            "label": "a ship, don't-ship or inconclusive recommendation",
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "id": "significance",
+        "kind": "quality",
+        "text": "It reports the lift with its confidence interval and whether it cleared significance",
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/readout.md",
+            "pattern": "p[- ]?value|confidence interval|\\bCI\\b|significan",
+            "flags": "i",
+            "label": "a significance test or confidence interval for the lift",
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "id": "grounded",
+        "kind": "quality",
+        "text": "Every number in the readout appears in the computed figures or a source it cites, or is simple arithmetic on them; nothing new is invented",
+        "checks": [
+          {
+            "kind": "claimsGrounded",
+            "file": "{{workPath}}/readout.md",
+            "sources": [
+              "data/stats.json"
+            ],
+            "artifact": true
+          }
+        ],
+        "enforce": "eval-only"
+      },
+      {
+        "id": "follows-rule",
+        "kind": "quality",
+        "enforce": "advisory",
+        "text": "The recommendation follows from every clause of the decision rule, guardrails included, and the caveats on sample size, power and runtime are honest",
+        "judge": {
+          "rubric": "Does the recommendation follow from every clause of the pre-stated decision rule, guardrails included, and does the readout caveat sample size, power or runtime honestly and end with a concrete next action?"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "hypothesis-scope",
+      "name": "Scope the hypothesis",
+      "description": "lock the hypothesis, primary metric, and decision rule before looking",
+      "prompt": "Define the experiment's contract BEFORE computing anything, to prevent metric-shopping. Step 1: state the hypothesis ('variant B increases checkout conversion vs control'). Step 2: name the ONE primary metric the decision rests on and how it's defined (conversions / exposures). Step 3: list guardrail metrics that must not regress. Step 4: state the decision rule up front (e.g. 'ship if lift is positive and significant at 95% and no guardrail drops > 2%'). Step 5: write an acceptance-criteria checklist ('reports lift with a confidence interval', 'reports a significance test for the primary metric', 'checks sample size / power', 'gives a clear ship/no-ship tied to the decision rule', 'flags any guardrail regression'). Call write_task_note and write the hypothesis + metric + decision rule + checklist to {{workPath}}/hypothesis-scope.md.\n\nThe deliverable `{{workPath}}/hypothesis-scope.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "{{workPath}}/hypothesis-scope.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/hypothesis-scope.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "sniff",
+            "file": "{{workPath}}/hypothesis-scope.md",
+            "sniff": "nonempty",
+            "artifact": true
+          }
+        ],
+        "onReject": "hypothesis-scope",
+        "maxAttempts": 3
+      },
+      "next": "analyze",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "analyze",
+      "name": "Analyze the experiment",
+      "description": "compute lift, significance, and confidence intervals",
+      "prompt": "Compute the statistics for the primary metric and guardrails. Step 1: for control and variant, report exposures, conversions, and the rate. Step 2: compute absolute and relative lift. Step 3: run the appropriate significance test (two-proportion z-test for a rate; report the p-value) and a confidence interval on the lift. Step 4: assess whether the sample size is adequate (was the experiment powered, or is it underpowered/peeking?). Step 5: compute the guardrail metrics and flag any regression. Step 6: apply the decision rule to reach a tentative verdict. Write the computed numbers to data/stats.json and call write_task_note with the figures and the tentative call. The readout may state no number that data/stats.json lacks, so the confidence interval on the lift must be in it. If the request gives a schema for data/stats.json, use that schema, and when it has no field for the interval add `lift_ci95_pp: [low, high]`. Otherwise use this shape (rates are fractions, `_pp` fields are percentage points, `relative_lift_pct` is a percent):\n\n```json\n{\n  \"control\": { \"exposures\": 0, \"conversions\": 0, \"rate\": 0.0 },\n  \"variant\": { \"exposures\": 0, \"conversions\": 0, \"rate\": 0.0 },\n  \"absolute_lift_pp\": 0.0,\n  \"relative_lift_pct\": 0.0,\n  \"lift_ci95_pp\": [0.0, 0.0],\n  \"p_value\": 0.0,\n  \"significant_at_95\": false,\n  \"guardrails\": [{ \"metric\": \"\", \"control\": 0.0, \"variant\": 0.0, \"delta_pp\": 0.0, \"limit_pp\": 0.0, \"breached\": false }],\n  \"decision\": \"ship | do_not_ship | inconclusive\"\n}\n```",
+      "suggestedRole": "data-analyst",
+      "advanceWhen": {
+        "file": "data/stats.json",
+        "minBytes": 1,
+        "sniff": "json-valid"
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "data/stats.json",
+            "bytes": 2
+          },
+          {
+            "kind": "contains",
+            "file": "data/stats.json",
+            "pattern": "\"[a-z0-9_]*?(?:ci|ci95|conf(?:idence)?[a-z0-9_]*|interval[a-z0-9_]*|(?:lower|upper)[a-z0-9_]*)(?:_[a-z0-9]+)*\"\\s*:",
+            "flags": "i",
+            "label": "data/stats.json records the confidence interval on the lift"
+          }
+        ],
+        "scripts": [
+          {
+            "name": "checkJsonValid",
+            "scope": "standard",
+            "inputs": {
+              "file": "data/stats.json"
+            }
+          }
+        ],
+        "onReject": "analyze",
+        "maxAttempts": 3
+      },
+      "next": "write",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web"
+        ],
+        "outputMedium": "workspace",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "write",
+      "name": "Write the readout",
+      "description": "produce a plain-language ship/no-ship recommendation",
+      "prompt": "Write a decision-ready readout from the computed stats — no new numbers. Step 1: lead with the recommendation (Ship / Don't ship / Inconclusive) in the first sentence, tied to the decision rule. Step 2: state the lift with its confidence interval and whether it cleared significance, in plain language ('+8% conversion, 95% CI [3%, 13%], significant at p=0.01'). Step 3: note the guardrail check result. Step 4: caveat honestly — underpowered, short runtime, novelty effect, or a result too good to be true. Step 5: end with the concrete next action. Write the readout to {{workPath}}/readout.md and call write_task_note with the recommendation. On a loop-back, fix only the named gaps.\n\nThe deliverable `{{workPath}}/readout.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the shipped workspace stays untouched.",
+      "suggestedRole": "copywriter",
+      "advanceWhen": {
+        "file": "{{workPath}}/readout.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/readout.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/readout.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "evaluate",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "evaluate",
+      "name": "Evaluate",
+      "description": "Grade the deliverable against every acceptance criterion. All pass → finish; any fail → loop back and fix the gap.",
+      "prompt": "Read {{workPath}}/readout.md and check it against the scope. Verify: it leads with a clear ship/no-ship recommendation tied to the stated decision rule; it reports lift WITH a confidence interval; it reports a significance test for the primary metric; it addresses sample size / power; and it flags any guardrail regression. Re-check the headline lift and significance call against data/stats.json. Confirm the verdict actually follows from the decision rule (not metric-shopped). Write PASS/FAIL per criterion; any FAIL loops back to write.\n\nThe deliverable lives in the project's artifacts drawer — open `{{workPath}}/readout.md` with `read_artifact`, not `read_file`.\n\nThen record your verdict — this is the whole point of the loop:\n\n1. If any criterion fails, first write the specific gaps to the task notes with `write_task_note`: which file, which part, and what is missing. The \"Write the readout\" step reads them when it fixes the work.\n2. When you have graded every criterion, write `{{workPath}}/verdict.md` with `write_artifact`. One line per criterion and no preamble: the criterion, its one-line reason, then PASS or FAIL as the last word on the line. Writing verdict.md completes this step.\n\nThe runtime routes on the verdict: every line PASS moves the task to \"Finish\"; any FAIL sends it back to \"Write the readout\" to fix those gaps, and a review that keeps failing pauses the task for the user. Mark a criterion PASS only when it is met. The build phase's completion gate already blocked a grossly-incomplete deliverable; your job is the judgment an automated check cannot make (does it actually work, read well, look right).",
+      "suggestedRole": "reviewer",
+      "consumes": [
+        {
+          "file": "{{workPath}}/readout.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/verdict.md",
+        "minBytes": 40,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/verdict.md",
+            "pattern": "(?<!/\\s*)\\bPASS\\b(?!\\s*/)",
+            "label": "the verdict marks its criteria PASS",
+            "artifact": true
+          },
+          {
+            "kind": "notContains",
+            "file": "{{workPath}}/verdict.md",
+            "pattern": "(?<!/\\s*)\\bFAIL\\b(?!\\s*/)",
+            "label": "no criterion is marked FAIL",
+            "artifact": true
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 3
+      },
+      "next": "finish",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "All acceptance criteria met. Stamp a short summary and report DONE.",
+      "prompt": "Every acceptance criterion passed. Write a one-paragraph DONE summary to task notes via `write_task_note`: what was built, the deliverable path(s), and a one-line confirmation that each criterion is met. Then report DONE.",
+      "suggestedRole": "developer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "artifacts",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.6",
+  "releasedAt": "2026-10-31T00:00:00Z",
+  "minGezelVersion": "1.26295"
+}
