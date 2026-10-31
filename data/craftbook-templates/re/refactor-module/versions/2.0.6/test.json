@@ -1,0 +1,241 @@
+{
+  "schemaVersion": 1,
+  "title": "Behavior-preserving extraction of duplicated logic",
+  "objective": "The craftbook drives a disciplined refactor of copy-pasted name-normalization logic: a green baseline recorded before anything moves, reversible stages with the suite green throughout, a re-measured duplication target, and an enforced review — verified mechanically via a reference matrix across both call sites, a duplication count across src/, and a green-suite run.",
+  "tags": [
+    "code",
+    "refactor",
+    "tactical-fleet"
+  ],
+  "prompt": "Use the Behavior-Preserving Refactor craftbook for this: the same name-normalization logic is copy-pasted in src/format-name.js and src/report.js, and the copies have drifted once already. The brief is in source/refactor-brief.md. Extract the shared logic into a new src/normalize-name.js used by both files, without changing behavior.",
+  "setup": {
+    "projectName": "Crewlog",
+    "about": "A tiny crew-hours logging module. Tests run with `npm run test` (node --test).",
+    "files": [
+      {
+        "path": "package.json",
+        "content": "{\n  \"name\": \"crewlog\",\n  \"private\": true,\n  \"version\": \"1.0.0\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test\"\n  }\n}\n"
+      },
+      {
+        "path": "src/format-name.js",
+        "content": "export function formatName(raw) {\n  const words = String(raw).trim().split(/\\s+/);\n  const fixed = [];\n  for (const word of words) {\n    fixed.push(word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());\n  }\n  return fixed.join(' ');\n}\n"
+      },
+      {
+        "path": "src/report.js",
+        "content": "function titleCaseName(raw) {\n  const words = String(raw).trim().split(/\\s+/);\n  const fixed = [];\n  for (const word of words) {\n    fixed.push(word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());\n  }\n  return fixed.join(' ');\n}\n\nexport function reportLine(entry) {\n  return titleCaseName(entry.name) + ': ' + entry.hours + 'h';\n}\n\nexport function reportSummary(entries) {\n  return entries.map((entry) => reportLine(entry)).join('\\n');\n}\n"
+      },
+      {
+        "path": "tests/format.test.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { test } from 'node:test';\nimport { formatName } from '../src/format-name.js';\n\ntest('formats a messy name', () => {\n  assert.equal(formatName('  ada   lovelace '), 'Ada Lovelace');\n});\n"
+      },
+      {
+        "path": "tests/report.test.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { test } from 'node:test';\nimport { reportLine } from '../src/report.js';\n\ntest('report line normalizes the name', () => {\n  assert.equal(reportLine({ name: 'grace hopper', hours: 2 }), 'Grace Hopper: 2h');\n});\n"
+      },
+      {
+        "path": "source/refactor-brief.md",
+        "content": "# Refactor brief\n\nThe same name-normalization logic (trim, collapse inner whitespace, title-case each word) is copy-pasted in two places:\n\n- src/format-name.js - `formatName`, used by the profile screens\n- src/report.js - a private `titleCaseName` helper feeding `reportLine`\n\nThe copies drifted once before and had to be manually re-synced. Extract the shared logic into a NEW `src/normalize-name.js` module used by both files, WITHOUT changing behavior. Every output must stay byte-for-byte identical, including edge cases: extra inner spaces, ALL-CAPS input, single letters, and the empty string. Public exports must survive unchanged: `formatName`, `reportLine`, and `reportSummary` keep their names and signatures.\n"
+      },
+      {
+        "path": "tests/verify-refactor.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { execFileSync } from 'node:child_process';\nimport { readFileSync, readdirSync } from 'node:fs';\nimport { join } from 'node:path';\nimport { formatName } from '../src/format-name.js';\nimport { reportLine, reportSummary } from '../src/report.js';\n\n// 1) Behavior: a reference matrix across BOTH call sites, quirks included.\nconst matrix = [\n  ['  ada   lovelace ', 'Ada Lovelace'],\n  ['GRACE HOPPER', 'Grace Hopper'],\n  ['katherine  g.  johnson', 'Katherine G. Johnson'],\n  ['a', 'A'],\n  ['', ''],\n];\nfor (const [input, expected] of matrix) {\n  assert.equal(formatName(input), expected, 'formatName(' + JSON.stringify(input) + ')');\n}\nassert.equal(reportLine({ name: '  grace   HOPPER ', hours: 4 }), 'Grace Hopper: 4h');\nassert.equal(reportLine({ name: 'ada lovelace', hours: 2 }), 'Ada Lovelace: 2h');\nassert.equal(\n  reportSummary([\n    { name: 'ADA   LOVELACE', hours: 1 },\n    { name: ' mary jackson ', hours: 3 },\n  ]),\n  'Ada Lovelace: 1h\\nMary Jackson: 3h',\n);\nconsole.log('REFACTOR_MODULE_ORACLE behavior ok');\n\n// 2) Deduplication: the title-case implementation exists at most once\n// across src/ - two surviving copies mean the extraction did not happen.\nconst root = process.cwd();\nfunction countMarker(relDir) {\n  let count = 0;\n  for (const entry of readdirSync(join(root, relDir), { withFileTypes: true })) {\n    const relPath = relDir + '/' + entry.name;\n    if (entry.isDirectory()) {\n      count += countMarker(relPath);\n    } else if (/\\.(js|mjs|cjs|ts)$/.test(entry.name)) {\n      const text = readFileSync(join(root, relPath), 'utf8');\n      count += (text.match(/toUpperCase/g) ?? []).length;\n    }\n  }\n  return count;\n}\nconst occurrences = countMarker('src');\nassert.ok(\n  occurrences <= 1,\n  'the title-case implementation appears ' + occurrences + ' times across src/ - the duplication was not extracted to one shared place',\n);\nconsole.log('REFACTOR_MODULE_ORACLE dedupe ok');\n\n// 3) The whole suite is green on the refactored tree (real run).\nfunction runSuite(cwd) {\n  try {\n    execFileSync(process.execPath, ['--test'], { cwd, stdio: 'pipe', timeout: 30000 });\n    return 0;\n  } catch (err) {\n    return typeof err.status === 'number' ? err.status : 1;\n  }\n}\nassert.equal(runSuite(root), 0, 'the suite must be green on the refactored tree');\nconsole.log('REFACTOR_MODULE_ORACLE suite green');\nconsole.log('REFACTOR_MODULE_ORACLE done');\n",
+        "surface": "harness"
+      }
+    ],
+    "craftbookParams": {
+      "scope": "Extract the duplicated name normalization in src/format-name.js and src/report.js into a shared src/normalize-name.js used by both, without changing behavior; see source/refactor-brief.md."
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "The duplicated normalization lives in exactly one place, both call sites behave byte-for-byte as before (reference matrix), the suite is green on a real run, and every fleet artifact exists with honest citations.",
+    "deliverables": [
+      {
+        "path": "{{task.dir}}/baseline.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/baseline.md",
+            "pattern": "^##\\s+Current behavior[\\s\\S]*^##\\s+Measurements[\\s\\S]*^##\\s+Guardrail",
+            "flags": "im",
+            "label": "baseline sections in order"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{task.dir}}/baseline.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/plan.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/plan.md",
+            "pattern": "^##\\s+Target[\\s\\S]*^##\\s+Stages[\\s\\S]*^##\\s+Acceptance criteria",
+            "flags": "im",
+            "label": "plan sections in order"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{task.dir}}/plan.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/change-notes.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 600,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/change-notes.md",
+            "pattern": "^##\\s+Stages executed[\\s\\S]*^##\\s+Files touched[\\s\\S]*^##\\s+Deviations from plan",
+            "flags": "im",
+            "label": "change-notes sections in order"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{task.dir}}/change-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/verification.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/verification.md",
+            "pattern": "^##\\s+Before\\s*/\\s*after[\\s\\S]*^##\\s+Suite[\\s\\S]*^##\\s+Result",
+            "flags": "im",
+            "label": "verification sections in order"
+          },
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/verification.md",
+            "pattern": "^##\\s+Before\\s*/\\s*after[\\s\\S]*\\d",
+            "flags": "im",
+            "label": "before/after figures quoted"
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/review.md",
+        "kind": "markdown-report",
+        "artifact": true,
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit reviewer verdict"
+          }
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "kind": "notContains",
+        "file": "src/format-name.js",
+        "pattern": "toUpperCase",
+        "label": "format-name.js no longer carries its own title-case copy"
+      },
+      {
+        "kind": "notContains",
+        "file": "src/report.js",
+        "pattern": "toUpperCase",
+        "label": "report.js no longer carries its own title-case copy"
+      },
+      {
+        "kind": "sourceParses",
+        "file": "src/format-name.js"
+      },
+      {
+        "kind": "sourceParses",
+        "file": "src/report.js"
+      },
+      {
+        "kind": "nodeScriptPasses",
+        "script": "tests/verify-refactor.mjs",
+        "timeoutMs": 60000,
+        "requiredOutput": [
+          {
+            "pattern": "REFACTOR_MODULE_ORACLE behavior ok",
+            "label": "both call sites match the reference matrix"
+          },
+          {
+            "pattern": "REFACTOR_MODULE_ORACLE dedupe ok",
+            "label": "the implementation exists at most once across src/"
+          },
+          {
+            "pattern": "REFACTOR_MODULE_ORACLE suite green",
+            "label": "suite green on the refactored tree"
+          }
+        ]
+      }
+    ],
+    "taskNotes": {
+      "minBytes": 120,
+      "checks": [
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "\\bDONE\\b[\\s\\S]*(npm\\s+run\\s+test|node\\s+--test)",
+          "flags": "i",
+          "label": "DONE note names the real test command"
+        }
+      ]
+    },
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    },
+    "unchangedFixtures": [
+      "source/refactor-brief.md",
+      "package.json"
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "{{task.dir}}/change-notes.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "Guardrail-first discipline",
+        "description": "The suite was genuinely run and recorded green before any restructuring, characterization coverage was considered honestly, and the baseline counted the duplication with a stated method."
+      },
+      {
+        "name": "Reversible-stage execution",
+        "description": "The restructure happened in small planned stages at the real sites, with the suite kept green between stages and deviations recorded honestly rather than papered over."
+      },
+      {
+        "name": "Genuine deduplication",
+        "description": "One shared implementation remains, both call sites use it, public exports survived unchanged, and no behavior change was smuggled in under cover of the refactor."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "green-before/green-after receipts",
+    "same-method re-measurement",
+    "enforced review loop"
+  ]
+}

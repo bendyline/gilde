@@ -1,0 +1,132 @@
+{
+  "id": "content-accuracy-review",
+  "contract": {
+    "goal": "A claim-by-claim accuracy review of the supplied content: every checkable claim rated true, false, misleading or unverifiable against cited evidence, each inaccuracy corrected with its source, and an overall trust rating.",
+    "inputs": [{ "path": "{{source}}", "required": true }],
+    "deliverables": [
+      {
+        "id": "review",
+        "path": "{{workPath}}/accuracy-review.md",
+        "artifact": true,
+        "kind": "markdown-report",
+        "description": "The accuracy review: the overall trust rating with counts by verdict, every claim with its verdict and evidence, a correction and source for each inaccuracy, and the sources consulted"
+      }
+    ],
+    "grounding": { "citationStyle": "any" },
+    "criteria": [
+      {
+        "id": "substantial",
+        "kind": "acceptance",
+        "text": "The review is a full document organized under section headings",
+        "checks": [
+          { "kind": "minBytes", "file": "{{workPath}}/accuracy-review.md", "bytes": 1500, "artifact": true },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/accuracy-review.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "label": "section headings",
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "id": "content-read",
+        "kind": "acceptance",
+        "text": "The content under review was opened and read before it was judged",
+        "checks": [
+          {
+            "kind": "researchEvidence",
+            "sourcePath": "{{source}}",
+            "tools": ["web_search", "wikipedia_search", "wikipedia_read", "fetch_url"],
+            "minSuccessful": 1
+          }
+        ]
+      },
+      {
+        "id": "verdicts",
+        "kind": "acceptance",
+        "text": "Each claim carries a verdict: true, false, misleading or unverifiable",
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/accuracy-review.md",
+            "pattern": "(?:verdict|rating|rated|status|assessment)\\W{0,12}(?:true|false|misleading|unverifiable)\\b|\\|\\s*[*_]{0,2}(?:true|false|misleading|unverifiable)[*_]{0,2}\\s*\\||\\*\\*(?:true|false|misleading|unverifiable)\\*\\*|^#{1,6}[^\\n]*\\b(?:true|false|misleading|unverifiable)\\b|\\[(?:true|false|misleading|unverifiable)\\]",
+            "flags": "im",
+            "label": "claim verdicts on the true/false/misleading/unverifiable scale",
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "id": "trust-rating",
+        "kind": "acceptance",
+        "text": "It gives an overall trust rating for the content",
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/accuracy-review.md",
+            "pattern": "trust(?:worthiness)?\\s*(?:rating|level|score|verdict)|overall\\s+(?:rating|verdict|assessment|accuracy)|(?:mostly|largely|generally)\\s+accurate|significant inaccurac",
+            "flags": "i",
+            "label": "an overall trust rating",
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "id": "sources",
+        "kind": "acceptance",
+        "text": "It lists every source consulted in a Sources section",
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/accuracy-review.md",
+            "pattern": "(?:^|\\n)#{1,6}\\s*(?:sources|references|citations|works cited|bibliography)\\b",
+            "flags": "i",
+            "label": "a Sources section",
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "id": "cited",
+        "kind": "quality",
+        "text": "Its verdicts and corrections cite their evidence, and every cited file exists",
+        "checks": [
+          { "kind": "citationsResolve", "file": "{{workPath}}/accuracy-review.md", "minCitations": 1, "artifact": true }
+        ]
+      },
+      {
+        "id": "grounded",
+        "kind": "quality",
+        "text": "Every number, date and quote given as evidence or as a correction appears in the source it cites; restating the reviewed content is fine",
+        "checks": [
+          {
+            "kind": "claimsGrounded",
+            "file": "{{workPath}}/accuracy-review.md",
+            "artifact": true,
+            "sources": ["{{source}}"],
+            "maxUncited": 5
+          }
+        ]
+      },
+      {
+        "id": "complete",
+        "kind": "quality",
+        "enforce": "advisory",
+        "text": "Every checkable claim in the content is addressed, and a claim no reliable source settles is marked unverifiable rather than assumed true",
+        "judge": {
+          "rubric": "Does the review address every checkable claim in the content, and mark claims without reliable evidence as unverifiable instead of accepting them as true?"
+        }
+      },
+      {
+        "id": "corrections",
+        "kind": "quality",
+        "enforce": "advisory",
+        "text": "Inaccuracies come first, each false or misleading claim gives the correct statement with its source, and the trust rating matches the findings",
+        "judge": {
+          "rubric": "Does every false or misleading claim get a correct statement backed by a cited source, and does the overall trust rating follow from the verdicts?"
+        }
+      }
+    ]
+  }
+}

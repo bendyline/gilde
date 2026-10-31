@@ -1,0 +1,114 @@
+{
+  "id": "ab-test-readout",
+  "contract": {
+    "goal": "A decision-ready A/B test readout that leads with Ship, Don't ship or Inconclusive under the decision rule stated before the analysis, and reports the lift with its confidence interval and significance, every figure taken from the computed statistics or a cited source.",
+    "deliverables": [
+      {
+        "id": "readout",
+        "path": "{{workPath}}/readout.md",
+        "artifact": true,
+        "kind": "markdown-report",
+        "description": "The readout: the recommendation tied to the decision rule, the lift with its confidence interval and significance, the guardrail check, honest caveats and the next action"
+      },
+      {
+        "id": "stats",
+        "path": "data/stats.json",
+        "kind": "json",
+        "role": "supporting",
+        "description": "The computed figures behind the readout: rates per arm, lift, p-value, confidence interval and guardrail results"
+      }
+    ],
+    "grounding": {
+      "citationStyle": "inline-path"
+    },
+    "criteria": [
+      {
+        "id": "substantial",
+        "kind": "acceptance",
+        "text": "The readout is a full document organized under headings",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/readout.md",
+            "bytes": 1500,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/readout.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "label": "section headings",
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "id": "figures-saved",
+        "kind": "acceptance",
+        "text": "The computed figures are saved as valid JSON",
+        "checks": [
+          {
+            "kind": "sniff",
+            "file": "data/stats.json",
+            "sniff": "json-valid"
+          }
+        ]
+      },
+      {
+        "id": "recommendation",
+        "kind": "acceptance",
+        "text": "It makes a Ship, Don't ship or Inconclusive call",
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/readout.md",
+            "pattern": "(?<![a-z])(?:ship(?:ped|ping)?|launch(?:ed|ing)?|roll[- ]?out|inconclusive)\\b",
+            "flags": "i",
+            "label": "a ship, don't-ship or inconclusive recommendation",
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "id": "significance",
+        "kind": "quality",
+        "text": "It reports the lift with its confidence interval and whether it cleared significance",
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/readout.md",
+            "pattern": "p[- ]?value|confidence interval|\\bCI\\b|significan",
+            "flags": "i",
+            "label": "a significance test or confidence interval for the lift",
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "id": "grounded",
+        "kind": "quality",
+        "text": "Every number in the readout appears in the computed figures or a source it cites, or is simple arithmetic on them; nothing new is invented",
+        "checks": [
+          {
+            "kind": "claimsGrounded",
+            "file": "{{workPath}}/readout.md",
+            "sources": [
+              "data/stats.json"
+            ],
+            "artifact": true
+          }
+        ],
+        "enforce": "eval-only"
+      },
+      {
+        "id": "follows-rule",
+        "kind": "quality",
+        "enforce": "advisory",
+        "text": "The recommendation follows from every clause of the decision rule, guardrails included, and the caveats on sample size, power and runtime are honest",
+        "judge": {
+          "rubric": "Does the recommendation follow from every clause of the pre-stated decision rule, guardrails included, and does the readout caveat sample size, power or runtime honestly and end with a concrete next action?"
+        }
+      }
+    ]
+  }
+}

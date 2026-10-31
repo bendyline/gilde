@@ -1,0 +1,145 @@
+{
+  "id": "alert-rules",
+  "contract": {
+    "goal": "A deployable alerting-rules config in alerts.yaml (Prometheus rule format unless the person asks for another): symptom-level alerts, each with an expression, a non-zero for: duration, severity and routing labels, a summary and description, and a runbook link on page-level alerts, kept within the noise budget.",
+    "deliverables": [
+      {
+        "id": "rules",
+        "path": "alerts.yaml",
+        "kind": "yaml-spec",
+        "description": "The alerting-rules config, ready to deploy"
+      }
+    ],
+    "criteria": [
+      {
+        "id": "rules-file",
+        "kind": "acceptance",
+        "text": "alerts.yaml exists and holds real rule definitions, not a stub",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "alerts.yaml",
+            "bytes": 200
+          },
+          {
+            "kind": "sniff",
+            "file": "alerts.yaml",
+            "sniff": "nonempty"
+          }
+        ]
+      },
+      {
+        "id": "expr-and-for",
+        "kind": "acceptance",
+        "text": "Each alert has a metric expression (expr) and a for: duration",
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "alerts.yaml",
+            "pattern": "(?:^|\\n)[ \\t]*(?:-[ \\t]*)?expr:[ \\t]*\\S",
+            "label": "an expr: field"
+          },
+          {
+            "kind": "contains",
+            "file": "alerts.yaml",
+            "pattern": "(?:^|\\n)[ \\t]*(?:-[ \\t]*)?for:[ \\t]*['\"]?\\d",
+            "label": "a for: duration"
+          }
+        ]
+      },
+      {
+        "id": "severity-and-routing",
+        "kind": "acceptance",
+        "text": "Alerts carry a severity label and a routing label such as team or service",
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "alerts.yaml",
+            "pattern": "(?:^|\\n)[ \\t]*severity:[ \\t]*\\S",
+            "label": "a severity label"
+          },
+          {
+            "kind": "contains",
+            "file": "alerts.yaml",
+            "pattern": "(?:^|\\n)[ \\t]*(?:team|service|owner|squad|component|routing|routing_key|receiver):[ \\t]*\\S",
+            "flags": "i",
+            "label": "a routing label (team, service, owner, …)"
+          }
+        ]
+      },
+      {
+        "id": "annotations",
+        "kind": "acceptance",
+        "text": "Alerts are annotated with a summary and a description",
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "alerts.yaml",
+            "pattern": "(?:^|\\n)[ \\t]*summary:[ \\t]*\\S",
+            "label": "a summary annotation"
+          },
+          {
+            "kind": "contains",
+            "file": "alerts.yaml",
+            "pattern": "(?:^|\\n)[ \\t]*description:[ \\t]*\\S",
+            "label": "a description annotation"
+          }
+        ]
+      },
+      {
+        "id": "runbook-links",
+        "kind": "quality",
+        "text": "Page-level alerts link to a runbook (runbook_url annotation)",
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "alerts.yaml",
+            "pattern": "(?:^|\\n)[ \\t]*runbook(?:_url|_link|url)?:[ \\t]*\\S",
+            "flags": "i",
+            "label": "a runbook_url annotation"
+          }
+        ]
+      },
+      {
+        "id": "no-zero-for",
+        "kind": "quality",
+        "text": "No alert fires on a zero for: duration, so a passing spike never pages",
+        "checks": [
+          {
+            "kind": "notContains",
+            "file": "alerts.yaml",
+            "pattern": "(?:^|\\n)[ \\t]*(?:-[ \\t]*)?for:[ \\t]*['\"]?0+(?:\\.0+)?[smhdw]?['\"]?[ \\t]*(?:#[^\\n]*)?(?=\\n|$)",
+            "label": "a zero for: duration"
+          }
+        ]
+      },
+      {
+        "id": "valid-config",
+        "kind": "quality",
+        "enforce": "advisory",
+        "text": "The file parses as YAML and matches the target system's rule schema (groups[].rules[] for Prometheus)",
+        "judge": {
+          "rubric": "Does alerts.yaml parse as YAML and follow the target system's rule schema, with every alert complete (name, expr, for, labels, annotations)?"
+        }
+      },
+      {
+        "id": "symptom-coverage",
+        "kind": "quality",
+        "enforce": "advisory",
+        "text": "Every service or SLO the person named has at least one symptom-level alert (latency, errors, saturation, availability), with no unrequested, duplicate or overlapping rules",
+        "judge": {
+          "rubric": "Does every service or SLO the person named get at least one user-facing symptom alert, with no alerts nobody asked for and no two rules firing on the same condition?"
+        }
+      },
+      {
+        "id": "thresholds-and-noise",
+        "kind": "quality",
+        "enforce": "advisory",
+        "text": "Thresholds and for-durations match what was asked, and page-level alerts stay within the noise budget",
+        "judge": {
+          "rubric": "Do the thresholds and for-durations match the person’s targets, and does the number of page-severity alerts stay within the stated noise budget?"
+        }
+      }
+    ]
+  }
+}
