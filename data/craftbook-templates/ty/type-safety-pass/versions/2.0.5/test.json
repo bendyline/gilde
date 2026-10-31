@@ -1,0 +1,221 @@
+{
+  "schemaVersion": 1,
+  "title": "Counted tightening of seeded unsafe patterns",
+  "objective": "The craftbook drives a counted type-safety pass over a module with three seeded unsafe patterns and their real consequences: a loose-equality guard that lets 0 through, an implicit string-number concat corrupting a total, and a swallowed catch hiding data loss. Verified mechanically: the patterns are structurally gone, the three behavioral consequences are fixed by probes, the suite is green, and the fleet artifacts quote honest before/after counts.",
+  "tags": [
+    "code",
+    "type-safety",
+    "tactical-fleet"
+  ],
+  "prompt": "Use the Type-Safety Pass craftbook for this: src/expenses.js has unsafe patterns with real consequences - splitting across zero people returns Infinity, string amounts silently corrupt the running total, and corrupt imports vanish without a trace. The brief is in source/cleanup-brief.md. Tighten the module and fix those three consequences without breaking the pinned happy-path behavior.",
+  "setup": {
+    "projectName": "Expense Tracker",
+    "about": "A tiny expense-tracking module. Tests run with `npm run test` (node --test).",
+    "files": [
+      {
+        "path": "package.json",
+        "content": "{\n  \"name\": \"expense-tracker\",\n  \"private\": true,\n  \"version\": \"1.0.0\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test\"\n  }\n}\n"
+      },
+      {
+        "path": "src/expenses.js",
+        "content": "const DEFAULT_CATEGORY = 'general';\n\nexport function splitEvenly(total, people) {\n  if (people == null) throw new Error('people required');\n  return Math.round((total / people) * 100) / 100;\n}\n\nexport function addExpense(report, entry) {\n  report.total = report.total + entry.amount;\n  report.entries.push({\n    label: entry.label,\n    amount: entry.amount,\n    category: entry.category || DEFAULT_CATEGORY,\n  });\n  return report;\n}\n\nexport function importEntry(report, json) {\n  try {\n    const entry = JSON.parse(json);\n    return addExpense(report, entry);\n  } catch (err) {\n    return report;\n  }\n}\n"
+      },
+      {
+        "path": "tests/expenses.test.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { test } from 'node:test';\nimport { addExpense, importEntry, splitEvenly } from '../src/expenses.js';\n\ntest('splits evenly with rounding', () => {\n  assert.equal(splitEvenly(100, 4), 25);\n  assert.equal(splitEvenly(100, 3), 33.33);\n});\n\ntest('adds numeric expenses', () => {\n  const report = { total: 0, entries: [] };\n  addExpense(report, { label: 'lunch', amount: 12 });\n  assert.equal(report.total, 12);\n  assert.equal(report.entries.length, 1);\n});\n\ntest('imports a valid entry', () => {\n  const report = { total: 0, entries: [] };\n  importEntry(report, '{\"label\":\"bus\",\"amount\":3}');\n  assert.equal(report.entries.length, 1);\n});\n"
+      },
+      {
+        "path": "source/cleanup-brief.md",
+        "content": "# Cleanup brief\n\nsrc/expenses.js has unsafe patterns with three consequences we can reproduce:\n\n1. `splitEvenly(100, 0)` returns `Infinity` - the loose `== null` guard lets `0` through. Splitting across zero people must throw, exactly like a missing count.\n2. Legacy JSON entries sometimes carry `amount` as a numeric string like `\"12.50\"`. `addExpense` then concatenates instead of adding and the running total silently becomes a string like `\"1012.50\"`. A string amount must be treated as the number it spells, and a total must always stay a number.\n3. `importEntry` swallows every parse error, so a corrupt import vanishes without a trace - we lost a day of expenses to this once. A corrupt import must throw, not return as if nothing happened.\n\nTighten the module: strict checks instead of loose equality, validate or normalize values at the boundary they cross, surface errors instead of swallowing them. Happy-path behavior pinned by the tests must not change. Do not silence anything to make a count fall.\n"
+      },
+      {
+        "path": "tests/verify-expenses.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { execFileSync } from 'node:child_process';\nimport { readFileSync } from 'node:fs';\nimport { join } from 'node:path';\nimport { addExpense, importEntry, splitEvenly } from '../src/expenses.js';\n\n// 1) Structural: the seeded unsafe patterns are gone from the module.\nconst source = readFileSync(join(process.cwd(), 'src', 'expenses.js'), 'utf8');\nassert.ok(\n  !/(^|[^=!<>])==[^=]|!=[^=]/.test(source),\n  'loose equality is still present in src/expenses.js',\n);\nassert.ok(\n  !/catch[^{]*\\{\\s*\\}/.test(source),\n  'an empty catch still swallows errors in src/expenses.js',\n);\nassert.ok(\n  !/@ts-ignore|@ts-expect-error|eslint-disable/.test(source),\n  'a suppression comment was introduced to move a count',\n);\nconsole.log('TYPE_SAFETY_PASS_ORACLE patterns gone');\n\n// 2) Behavior: the three declared consequences are fixed, happy path preserved.\nassert.equal(splitEvenly(100, 4), 25);\nassert.equal(splitEvenly(100, 3), 33.33);\nassert.throws(() => splitEvenly(100, 0), undefined, 'zero people must be rejected, not Infinity');\nassert.throws(() => splitEvenly(100, null));\nassert.throws(() => splitEvenly(100, undefined));\n\nconst stringAmounts = { total: 10, entries: [] };\naddExpense(stringAmounts, { label: 'taxi', amount: '12.50' });\nassert.equal(stringAmounts.total, 22.5, 'a string amount must be treated as the number it spells');\nassert.equal(typeof stringAmounts.total, 'number', 'the running total must stay a number');\n\nconst numeric = { total: 0, entries: [] };\naddExpense(numeric, { label: 'lunch', amount: 12 });\nassert.equal(numeric.total, 12);\n\nconst report = { total: 0, entries: [] };\nassert.throws(() => importEntry(report, 'not json {'), undefined, 'a corrupt import must throw, not vanish');\nimportEntry(report, '{\"label\":\"bus\",\"amount\":\"3.25\"}');\nassert.equal(report.total, 3.25);\nassert.equal(report.entries.length, 1);\nconsole.log('TYPE_SAFETY_PASS_ORACLE behavior ok');\n\n// 3) The whole suite is green after the pass (real run).\nfunction runSuite(cwd) {\n  try {\n    execFileSync(process.execPath, ['--test'], { cwd, stdio: 'pipe', timeout: 30000 });\n    return 0;\n  } catch (err) {\n    return typeof err.status === 'number' ? err.status : 1;\n  }\n}\nassert.equal(runSuite(process.cwd()), 0, 'the suite must be green after the pass');\nconsole.log('TYPE_SAFETY_PASS_ORACLE suite green');\nconsole.log('TYPE_SAFETY_PASS_ORACLE done');\n",
+        "surface": "harness"
+      }
+    ],
+    "craftbookParams": {
+      "scope": "Tighten src/expenses.js: fix the loose-equality zero bug in splitEvenly, the string-amount concat bug in addExpense, and the swallowed catch in importEntry, per source/cleanup-brief.md."
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "The seeded unsafe patterns are structurally gone, the three declared behavioral consequences are fixed (probes), the suite is green on a real run, and the fleet artifacts quote honest before/after counts gathered by the same method.",
+    "deliverables": [
+      {
+        "path": "{{task.dir}}/audit.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 600,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/audit.md",
+            "pattern": "^##\\s+Inventory[\\s\\S]*^##\\s+Targets[\\s\\S]*^##\\s+Guardrail",
+            "flags": "im",
+            "label": "audit sections in order"
+          },
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/audit.md",
+            "pattern": "^##\\s+Inventory[\\s\\S]*\\d",
+            "flags": "im",
+            "label": "inventory carries counts"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{task.dir}}/audit.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/change-notes.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 600,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/change-notes.md",
+            "pattern": "^##\\s+Patterns addressed[\\s\\S]*^##\\s+Files touched[\\s\\S]*^##\\s+Deviations",
+            "flags": "im",
+            "label": "change-notes sections in order"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{task.dir}}/change-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/verification.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/verification.md",
+            "pattern": "^##\\s+Before\\s*/\\s*after counts[\\s\\S]*^##\\s+Suite[\\s\\S]*^##\\s+Result",
+            "flags": "im",
+            "label": "verification sections in order"
+          },
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/verification.md",
+            "pattern": "^##\\s+Before\\s*/\\s*after counts[\\s\\S]*\\d",
+            "flags": "im",
+            "label": "before/after counts quoted"
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/review.md",
+        "kind": "markdown-report",
+        "artifact": true,
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit reviewer verdict"
+          }
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "kind": "notContains",
+        "file": "src/expenses.js",
+        "pattern": "(^|[^=!<>])==[^=]|!=[^=]",
+        "label": "loose equality is gone from the module"
+      },
+      {
+        "kind": "notContains",
+        "file": "src/expenses.js",
+        "pattern": "catch[^{]*\\{\\s*\\}",
+        "label": "no empty catch swallows errors"
+      },
+      {
+        "kind": "notContains",
+        "file": "src/expenses.js",
+        "pattern": "@ts-ignore|@ts-expect-error|eslint-disable",
+        "label": "no suppression comment bought the improvement"
+      },
+      {
+        "kind": "sourceParses",
+        "file": "src/expenses.js"
+      },
+      {
+        "kind": "nodeScriptPasses",
+        "script": "tests/verify-expenses.mjs",
+        "timeoutMs": 60000,
+        "requiredOutput": [
+          {
+            "pattern": "TYPE_SAFETY_PASS_ORACLE patterns gone",
+            "label": "seeded unsafe patterns structurally gone"
+          },
+          {
+            "pattern": "TYPE_SAFETY_PASS_ORACLE behavior ok",
+            "label": "the three declared consequences are fixed"
+          },
+          {
+            "pattern": "TYPE_SAFETY_PASS_ORACLE suite green",
+            "label": "suite green after the pass"
+          }
+        ]
+      }
+    ],
+    "taskNotes": {
+      "minBytes": 120,
+      "checks": [
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "\\bDONE\\b[\\s\\S]*(npm\\s+run\\s+test|node\\s+--test)",
+          "flags": "i",
+          "label": "DONE note names the real test command"
+        }
+      ]
+    },
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    },
+    "unchangedFixtures": [
+      "source/cleanup-brief.md",
+      "package.json"
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "{{task.dir}}/verification.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "Honest counting",
+        "description": "The audit counted real patterns with a stated, repeatable method, and verification re-counted with exactly that method, quoting before and after per pattern - no method swap, no adjectives standing in for counts."
+      },
+      {
+        "name": "No suppression",
+        "description": "Every count fell because the code got stronger: strict checks, boundary validation, surfaced errors - never a deleted assertion, silenced error path, cast, or ignore-comment."
+      },
+      {
+        "name": "Consequence-fix discipline",
+        "description": "The three declared consequences were fixed and named in the notes, happy-path behavior stayed pinned and green with real receipts, and anything unverified is labeled honestly."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "counts with their method",
+    "no suppression-by-cast",
+    "enforced review loop"
+  ]
+}

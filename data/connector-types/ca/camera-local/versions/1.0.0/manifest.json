@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "releasedAt": "2026-10-21T00:00:00Z",
+  "minGezelVersion": "1.26294",
+  "driver": "device",
+  "source": {
+    "adapterId": "camera-local",
+    "family": "camera"
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "device": {
+        "type": "string",
+        "title": "Camera",
+        "description": "Which camera to watch with."
+      },
+      "deviceName": {
+        "type": "string",
+        "title": "Camera name"
+      },
+      "storage": {
+        "type": "string",
+        "title": "What to keep",
+        "enum": [
+          "interesting",
+          "motion",
+          "interval",
+          "latest-only"
+        ],
+        "default": "interesting",
+        "description": "interesting: only moments the vision model found notable (or every movement when it is off). motion: a picture every few seconds while something moves. interval: a picture on a fixed schedule. latest-only: keep nothing, just the live view."
+      },
+      "intervalSeconds": {
+        "type": "integer",
+        "title": "Seconds between saved pictures",
+        "default": 10,
+        "minimum": 1,
+        "maximum": 60
+      },
+      "sensitivity": {
+        "type": "string",
+        "title": "Motion sensitivity",
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "default": "medium"
+      },
+      "review": {
+        "type": "boolean",
+        "title": "Recognize what's happening",
+        "default": true,
+        "description": "When something moves, ask the on-device vision model what it sees. Needs the image reader from Settings."
+      },
+      "keepDays": {
+        "type": "integer",
+        "title": "Days to keep saved pictures",
+        "default": 7,
+        "minimum": 1,
+        "maximum": 365
+      },
+      "maxGigabytes": {
+        "type": "number",
+        "title": "Most space saved pictures may use (GB)",
+        "default": 2,
+        "minimum": 0.1,
+        "maximum": 1000
+      },
+      "allowCloudModels": {
+        "type": "boolean",
+        "title": "Let cloud AI see these pictures",
+        "default": false,
+        "description": "Off: only gezels running on this computer may look at this camera's pictures."
+      }
+    },
+    "required": [
+      "device"
+    ]
+  },
+  "setupInstructions": {
+    "title": "Pictures stay on this computer",
+    "description": "Gezel watches through the camera while this computer is on. It keeps only what you choose, looks at what moves with an on-device model, and never sends a picture anywhere unless you allow it.",
+    "steps": [
+      "Gezel uses ffmpeg to read the camera. If it is missing, install it (Windows: winget install ffmpeg; macOS: brew install ffmpeg; Linux: your package manager).",
+      "Pick the camera and take a test picture to check the view.",
+      "Add a lookout to say what to watch for and what to do when it happens."
+    ]
+  },
+  "normalize": {
+    "kind": "native"
+  },
+  "completeness": "window",
+  "notes": "A device connector: the daemon keeps the camera open while the binding is on (never a sync pass). Frames are analyzed at 2 per second as 160x90 grayscale for motion and presence; a JPEG of each moment is kept in memory for the live view. Saved pictures go to the project's private sidecar (never the artifacts drawer), bounded by keepDays and maxGigabytes and paused when the disk runs low. Each episode — one thing happening in view, from the frames that confirm it to the quiet that ends it — can become an event record under events/YYYY-MM-DD/HH/ with up to three keyframes and episode.json; records are kept 90 days. The vision review uses the on-device image reader with one structured question per review (a summary, the subjects in view, and a yes/no answer per lookout), at most one at a time across the install and 120 an hour. Text the vision model writes is untrusted: a sign held up to the camera can steer it. Needs ffmpeg (GEZEL_FFMPEG or on PATH). Windows uses DirectShow, macOS AVFoundation (camera permission must be granted to Gezel), Linux V4L2."
+}

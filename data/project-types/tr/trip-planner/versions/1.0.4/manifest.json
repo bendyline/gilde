@@ -1,0 +1,226 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.4",
+  "releasedAt": "2026-10-25T16:48:51Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "destination": {
+        "type": "string",
+        "title": "Where to?",
+        "description": "e.g. 'Kyoto', 'the Scottish Highlands'.",
+        "default": "somewhere wonderful"
+      },
+      "start": {
+        "type": "string",
+        "title": "Departure date",
+        "description": "e.g. 2026-09-12. A rough date is fine.",
+        "default": "2026-12-01"
+      },
+      "travellers": {
+        "type": "string",
+        "title": "Who's going?",
+        "description": "e.g. '4', or 'two adults and a toddler'. Leave empty if you're not sure yet.",
+        "default": ""
+      }
+    },
+    "required": [
+      "destination",
+      "start"
+    ]
+  },
+  "nameTemplate": "Trip: {{destination}}",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "reisleider",
+      "voorman": true
+    }
+  ],
+  "tools": [
+    {
+      "name": "set_trip",
+      "description": "Change the trip's details when the traveller gives new ones: the departure date, who is going, or the destination. Record their words; never choose a date for them.",
+      "script": "trip-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "The departure date they gave: YYYY-MM-DD when they named a day, otherwise their words ('next spring')."
+          },
+          "travellers": {
+            "type": "string",
+            "description": "How many are going ('4'), or who ('two adults and a toddler')."
+          },
+          "destination": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "set_trip"
+      }
+    },
+    {
+      "name": "plan_day",
+      "description": "Set one day's plan in plain sentences, one per line: what the day is for, then a couple of alternatives, then the free time. Use the date (YYYY-MM-DD) once it is known, otherwise 'Day 1', 'Day 2', … Never write 'Anchor:' or 'Options:' labels.",
+      "script": "trip-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "YYYY-MM-DD, or 'Day 1' when the dates are not set yet."
+          },
+          "plan": {
+            "type": "string",
+            "description": "The day in plain sentences, one per line."
+          }
+        },
+        "required": [
+          "date",
+          "plan"
+        ]
+      },
+      "bind": {
+        "action": "plan_day"
+      }
+    },
+    {
+      "name": "pack_add",
+      "description": "Add an item to the packing list.",
+      "script": "trip-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item"
+        ]
+      },
+      "bind": {
+        "action": "pack_add"
+      }
+    },
+    {
+      "name": "pack_check",
+      "description": "Mark an item packed.",
+      "script": "trip-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "item": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "pack_check"
+      }
+    },
+    {
+      "name": "journal_entry",
+      "description": "Capture a trip moment — a line a day.",
+      "script": "trip-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "note"
+        ]
+      },
+      "bind": {
+        "action": "journal_entry"
+      }
+    },
+    {
+      "name": "trip_status",
+      "description": "Who is going, the countdown, days planned, and the packing state.",
+      "script": "trip-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "status"
+      }
+    },
+    {
+      "name": "itinerary",
+      "description": "Read the full day-by-day itinerary.",
+      "script": "trip-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "itinerary"
+      }
+    },
+    {
+      "name": "mark_packed",
+      "description": "The dashboard's packing checkbox.",
+      "script": "trip-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "bind": {
+        "action": "pack_check"
+      }
+    }
+  ],
+  "craftbooks": [
+    "pre-departure-countdown"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "dashboard/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "trip.json"
+      },
+      {
+        "source": "workspace",
+        "path": "packing.json"
+      },
+      {
+        "source": "workspace",
+        "path": "journal.json"
+      }
+    ],
+    "tools": [
+      "mark_packed"
+    ]
+  },
+  "workspaceSeed": [
+    "trip.json",
+    "packing.json",
+    "journal.json"
+  ],
+  "scripts": {
+    "trip-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { logStore, rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'trip-store',\n  description:\n    \"Read and update the trip: itinerary + packing (trip.json) and the journal (journal.json). Call action:'status' for the shape of the trip; 'set_trip' with start / travellers / destination as the traveller tells you; 'plan_day' with date + plan; 'pack_add' / 'pack_check' for the packing list; 'journal_entry' during the trip.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description:\n        \"One of 'status', 'set_trip', 'plan_day', 'pack_add', 'pack_check', 'journal_entry', or 'itinerary'.\",\n      required: true,\n    },\n    date: {\n      type: 'string',\n      description: \"The day being planned: 2026-09-14 once the dates are known, otherwise 'Day 1', 'Day 2', ...\",\n    },\n    plan: {\n      type: 'string',\n      description:\n        \"The day in plain sentences, one per line: what the day is for, then a couple of alternatives, then the free time. No 'Anchor:' or 'Options:' labels.\",\n    },\n    start: {\n      type: 'string',\n      description: \"The departure date they gave: 2026-09-12 when they named a day, otherwise their words ('next spring'). Never choose one for them.\",\n    },\n    travellers: { type: 'string', description: \"Who is going: a number ('4') or a phrase ('two adults and a toddler').\" },\n    destination: { type: 'string', description: 'Where the trip goes.' },\n    item: { type: 'string', description: 'Packing item name.' },\n    id: { type: 'string', description: \"Packing item id, e.g. 'pack-3'.\" },\n    note: { type: 'string', description: 'Journal entry text.' },\n  },\n  outputs: {\n    daysPlanned: { type: 'number', description: 'Days with a plan.' },\n    unpacked: { type: 'number', description: 'Packing items still unpacked.' },\n    summary: { type: 'string', description: 'The trip picture (or the itinerary).' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── trip-rules-start ──\n// Pure derivations over the trip doc: countdown, day keys and itinerary rendering.\n\nfunction plural(n, one, many) {\n  return n + ' ' + (n === 1 ? one : many);\n}\n\nfunction daysUntil(dateStr, nowMs) {\n  if (!/^\\d{4}-\\d{2}-\\d{2}/.test(String(dateStr || ''))) return null;\n  var when = Date.parse(dateStr);\n  if (!isFinite(when)) return null;\n  return Math.ceil((when - nowMs) / (24 * 60 * 60 * 1000));\n}\n\n// \"2026-09-14T10:00\" -> \"2026-09-14\"; \"day 3\" / \"Day3\" / \"3\" -> \"Day 3\".\nfunction dayKey(raw) {\n  var text = String(raw || '').trim();\n  var iso = text.match(/^\\d{4}-\\d{2}-\\d{2}/);\n  if (iso) return iso[0];\n  var numbered = text.match(/^(?:day\\s*)?(\\d{1,3})$/i);\n  if (numbered) return 'Day ' + Number(numbered[1]);\n  return text;\n}\n\n// Numbered days sort by number (\"Day 10\" after \"Day 9\"); dates sort as text.\nfunction sortedDays(days) {\n  return Object.keys(days).sort(function (a, b) {\n    var na = a.match(/^Day (\\d+)$/);\n    var nb = b.match(/^Day (\\d+)$/);\n    if (na && nb) return Number(na[1]) - Number(nb[1]);\n    return a < b ? -1 : a > b ? 1 : 0;\n  });\n}\n\n// \"4 people\" / \"4 travellers\" -> \"4\", so the board can say \"4 travellers\";\n// a phrase (\"two adults and a toddler\") is kept as written.\nfunction partyCount(raw) {\n  var text = String(raw || '').trim();\n  var counted = text.match(/^(\\d{1,3})\\s*(?:people|persons|travell?ers|adults|guests|of us)?$/i);\n  return counted ? String(Number(counted[1])) : text;\n}\n\nfunction travellersLine(travellers) {\n  var text = String(travellers || '').trim();\n  if (!text) return '';\n  if (/^\\d+$/.test(text)) return plural(Number(text), 'traveller', 'travellers');\n  return text;\n}\n\nfunction renderItinerary(days) {\n  var keys = sortedDays(days);\n  if (keys.length === 0) return 'No days planned yet.';\n  return keys\n    .map(function (d) {\n      return d + ': ' + days[d];\n    })\n    .join('\\n');\n}\n\nfunction tripLine(trip, unpackedCount, nowMs) {\n  var start = daysUntil(trip.startDate, nowMs);\n  var planned = Object.keys(trip.days || {}).length;\n  var who = travellersLine(trip.travellers);\n  var lead =\n    start === null\n      ? trip.startDate && trip.startDate !== 'soon'\n        ? 'Leaving ' + trip.startDate + '. '\n        : 'No departure date yet. '\n      : start > 0\n        ? plural(start, 'day', 'days') + ' until departure. '\n        : start === 0\n          ? 'Departure day! '\n          : 'On the road (or home again). ';\n  return (\n    (who ? who + '. ' : '') +\n    lead +\n    plural(planned, 'day', 'days') + ' planned. Packing: ' +\n    (unpackedCount === 0 ? 'all packed.' : plural(unpackedCount, 'item', 'items') + ' still unpacked.')\n  );\n}\n// ── trip-rules-end ──\n\nconst TRIP_FILE = 'trip.json';\nconst packing = rosterStore(gezel.fs, 'packing.json', {\n  stages: ['unpacked', 'packed'],\n  idPrefix: 'pack',\n});\nconst journal = logStore(gezel.fs, 'journal.json');\n\ninterface Trip {\n  version: number;\n  destination: string;\n  startDate: string;\n  travellers: string;\n  days: Record<string, string>;\n  updatedAt: string;\n}\n\nasync function loadTrip(): Promise<Trip> {\n  try {\n    const parsed = JSON.parse(await gezel.fs.read(TRIP_FILE)) as Partial<Trip>;\n    return {\n      version: 1,\n      destination: typeof parsed.destination === 'string' ? parsed.destination : '',\n      startDate: typeof parsed.startDate === 'string' ? parsed.startDate : '',\n      travellers: typeof parsed.travellers === 'string' ? parsed.travellers : '',\n      days: parsed.days && typeof parsed.days === 'object' ? (parsed.days as Record<string, string>) : {},\n      updatedAt: new Date().toISOString(),\n    };\n  } catch {\n    return {\n      version: 1,\n      destination: '',\n      startDate: '',\n      travellers: '',\n      days: {},\n      updatedAt: new Date().toISOString(),\n    };\n  }\n}\n\nasync function saveTrip(trip: Trip): Promise<void> {\n  trip.updatedAt = new Date().toISOString();\n  await gezel.fs.write(TRIP_FILE, `${JSON.stringify(trip, null, 2)}\\n`);\n}\n\nconst trip = await loadTrip();\n\nif (input.action === 'set_trip') {\n  if (!input.start && !input.travellers && !input.destination) {\n    throw new Error(\"set_trip needs at least one of 'start', 'travellers', or 'destination'.\");\n  }\n  if (input.start) trip.startDate = input.start.trim();\n  if (input.travellers) trip.travellers = partyCount(input.travellers);\n  if (input.destination) trip.destination = input.destination.trim();\n  await saveTrip(trip);\n} else if (input.action === 'plan_day') {\n  if (!input.date || !input.plan) throw new Error(\"plan_day needs 'date' (YYYY-MM-DD, or 'Day 1') and 'plan'.\");\n  trip.days[dayKey(input.date)] = input.plan;\n  await saveTrip(trip);\n} else if (input.action === 'pack_add') {\n  if (!input.item) throw new Error(\"pack_add needs 'item'.\");\n  await packing.add({ status: 'unpacked', fields: { name: input.item } });\n} else if (input.action === 'pack_check') {\n  let id = input.id;\n  if (!id && input.item) {\n    const wanted = input.item.toLowerCase();\n    const matches = (await packing.list()).filter(\n      (r) => String(r.fields.name ?? '').toLowerCase() === wanted,\n    );\n    if (matches.length === 1) id = matches[0]!.id;\n  }\n  if (!id) throw new Error(\"Pass 'id' (e.g. 'pack-3') or an exact packing 'item'.\");\n  await packing.transition(id, 'packed');\n} else if (input.action === 'journal_entry') {\n  if (!input.note) throw new Error(\"journal_entry needs 'note'.\");\n  await journal.append({ kind: 'entry', note: input.note });\n} else if (input.action !== 'status' && input.action !== 'itinerary') {\n  throw new Error(\n    `Unknown action '${input.action}'. Use status, set_trip, plan_day, pack_add, pack_check, journal_entry, or itinerary.`,\n  );\n}\n\nconst packItems = await packing.list();\nconst unpacked = packItems.filter((r) => r.status === 'unpacked').length;\n\ngezel.output({\n  daysPlanned: Object.keys(trip.days).length,\n  unpacked,\n  summary:\n    input.action === 'itinerary' ? renderItinerary(trip.days) : tripLine(trip, unpacked, Date.now()),\n});\n"
+  }
+}

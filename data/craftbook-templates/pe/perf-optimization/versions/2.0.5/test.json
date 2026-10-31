@@ -1,0 +1,235 @@
+{
+  "schemaVersion": 1,
+  "title": "Measured near-linear fix for a quadratic hot path",
+  "objective": "The craftbook drives a measured optimization of a seeded O(n^2) duplicate finder: baseline numbers recorded with their method, one bottleneck fixed at the real site, the same measurement re-run to prove the gain, and an enforced review — verified mechanically via a deterministic instrumented op-count budget, reference-equal results, and a green-suite run.",
+  "tags": [
+    "code",
+    "performance",
+    "tactical-fleet"
+  ],
+  "prompt": "Use the Targeted Performance Fix craftbook for this: support says importing a 200-row sheet crawls, and profiling points at findDuplicates - a 200-item list burns about 40,000 comparisons. The brief is in source/perf-brief.md. Get findDuplicates near-linear without changing its results.",
+  "setup": {
+    "projectName": "Sheet Importer",
+    "about": "A tiny sheet-import module with an instrumented duplicate finder. Tests run with `npm run test` (node --test).",
+    "files": [
+      {
+        "path": "package.json",
+        "content": "{\n  \"name\": \"sheet-importer\",\n  \"private\": true,\n  \"version\": \"1.0.0\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test\"\n  }\n}\n"
+      },
+      {
+        "path": "src/instrument.js",
+        "content": "let comparisons = 0;\n\nexport function countComparison() {\n  comparisons += 1;\n}\n\nexport function comparisonCount() {\n  return comparisons;\n}\n\nexport function resetComparisons() {\n  comparisons = 0;\n}\n"
+      },
+      {
+        "path": "src/find-duplicates.js",
+        "content": "import { countComparison } from './instrument.js';\n\nexport function findDuplicates(items) {\n  const duplicates = [];\n  for (let i = 0; i < items.length; i += 1) {\n    let count = 0;\n    for (let j = 0; j < items.length; j += 1) {\n      countComparison();\n      if (items[j] === items[i]) count += 1;\n    }\n    if (count > 1 && !duplicates.includes(items[i])) duplicates.push(items[i]);\n  }\n  return duplicates;\n}\n"
+      },
+      {
+        "path": "tests/duplicates.test.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { test } from 'node:test';\nimport { findDuplicates } from '../src/find-duplicates.js';\n\ntest('reports each duplicate once, in first-appearance order', () => {\n  assert.deepEqual(findDuplicates(['a', 'b', 'a', 'c', 'b']), ['a', 'b']);\n});\n\ntest('returns empty for unique lists', () => {\n  assert.deepEqual(findDuplicates(['x', 'y', 'z']), []);\n});\n\ntest('order pins to first appearance, not second occurrence', () => {\n  assert.deepEqual(findDuplicates(['a', 'b', 'b', 'a']), ['a', 'b']);\n});\n"
+      },
+      {
+        "path": "source/perf-brief.md",
+        "content": "# Performance brief\n\nSupport reports that importing a 200-row sheet crawls. Profiling points at `findDuplicates` in src/find-duplicates.js: for a 200-item list it performs about 40,000 instrumented comparisons (200 x 200 full rescans). The counter lives in src/instrument.js - `comparisonCount()` reads it, `resetComparisons()` clears it.\n\nTarget: get `findDuplicates` near-linear - well under 2,000 instrumented comparisons for a 200-item list - WITHOUT changing its results. Each duplicated value is reported once, in order of FIRST appearance.\n\nRules:\n\n- src/instrument.js is measurement infrastructure; leave it exactly as it is.\n- Keep the measurement honest: keep calling `countComparison()` for every equality comparison the new implementation still performs. Deleting instrumentation instead of deleting work is measurement theater.\n- Measure with a repeatable command: a small script that builds a 200-item list, calls `findDuplicates`, and prints `comparisonCount()`.\n"
+      },
+      {
+        "path": "tests/verify-perf.mjs",
+        "content": "import assert from 'node:assert/strict';\nimport { execFileSync } from 'node:child_process';\nimport { findDuplicates } from '../src/find-duplicates.js';\nimport { comparisonCount, resetComparisons } from '../src/instrument.js';\n\n// Independent reference: each duplicated value once, first-appearance order.\nfunction referenceDuplicates(items) {\n  const counts = new Map();\n  for (const item of items) counts.set(item, (counts.get(item) ?? 0) + 1);\n  const out = [];\n  const added = new Set();\n  for (const item of items) {\n    if ((counts.get(item) ?? 0) > 1 && !added.has(item)) {\n      added.add(item);\n      out.push(item);\n    }\n  }\n  return out;\n}\n\n// 1) Results identical to reference on small pinned cases.\nassert.deepEqual(findDuplicates(['a', 'b', 'a', 'c', 'b']), ['a', 'b']);\nassert.deepEqual(findDuplicates([]), []);\nassert.deepEqual(findDuplicates(['a', 'b', 'b', 'a']), ['a', 'b']);\n\n// 2) Deterministic 200-item workload: results equal reference AND the\n// instrumented op-count is under the stated budget (seeded code: 40000).\nconst items = [];\nfor (let i = 0; i < 200; i += 1) items.push('v' + ((i * 7) % 149));\nresetComparisons();\nconst result = findDuplicates(items);\nassert.deepEqual(result, referenceDuplicates(items), 'results changed - speed that changes answers is a bug');\nconsole.log('PERF_OPTIMIZATION_ORACLE results ok');\nconst ops = comparisonCount();\nassert.ok(\n  ops <= 2000,\n  'findDuplicates on 200 items performed ' + ops + ' instrumented comparisons - the budget is 2000 and the seeded code did 40000',\n);\nconsole.log('PERF_OPTIMIZATION_ORACLE ops ' + ops + ' within budget');\n\n// 3) The whole suite is green on the optimized tree (real run).\nfunction runSuite(cwd) {\n  try {\n    execFileSync(process.execPath, ['--test'], { cwd, stdio: 'pipe', timeout: 30000 });\n    return 0;\n  } catch (err) {\n    return typeof err.status === 'number' ? err.status : 1;\n  }\n}\nassert.equal(runSuite(process.cwd()), 0, 'the suite must be green on the optimized tree');\nconsole.log('PERF_OPTIMIZATION_ORACLE suite green');\nconsole.log('PERF_OPTIMIZATION_ORACLE done');\n",
+        "surface": "harness"
+      }
+    ],
+    "craftbookParams": {
+      "scope": "findDuplicates in src/find-duplicates.js does about 40,000 instrumented comparisons for a 200-item list; get it near-linear (well under 2,000 comparisons) without changing its results. See source/perf-brief.md."
+    }
+  },
+  "mocks": [],
+  "success": {
+    "summary": "The quadratic rescan is gone, the instrumented op-count for 200 items is under budget, results are identical to the reference on a deterministic workload, the suite is green on a real run, and every fleet artifact exists with honest numbers and citations.",
+    "deliverables": [
+      {
+        "path": "{{task.dir}}/baseline.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/baseline.md",
+            "pattern": "^##\\s+Current behavior[\\s\\S]*^##\\s+Measurements[\\s\\S]*^##\\s+Guardrail",
+            "flags": "im",
+            "label": "baseline sections in order"
+          },
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/baseline.md",
+            "pattern": "^##\\s+Measurements[\\s\\S]*\\d",
+            "flags": "im",
+            "label": "baseline numbers recorded"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{task.dir}}/baseline.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/plan.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 500,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/plan.md",
+            "pattern": "^##\\s+Target[\\s\\S]*^##\\s+Stages[\\s\\S]*^##\\s+Acceptance criteria",
+            "flags": "im",
+            "label": "plan sections in order"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{task.dir}}/plan.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/change-notes.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 600,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/change-notes.md",
+            "pattern": "^##\\s+Stages executed[\\s\\S]*^##\\s+Files touched[\\s\\S]*^##\\s+Deviations from plan",
+            "flags": "im",
+            "label": "change-notes sections in order"
+          },
+          {
+            "kind": "citationsResolve",
+            "file": "{{task.dir}}/change-notes.md",
+            "minCitations": 2,
+            "artifact": true
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/verification.md",
+        "kind": "markdown-notes",
+        "artifact": true,
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/verification.md",
+            "pattern": "^##\\s+Before\\s*/\\s*after[\\s\\S]*^##\\s+Suite[\\s\\S]*^##\\s+Result",
+            "flags": "im",
+            "label": "verification sections in order"
+          },
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/verification.md",
+            "pattern": "^##\\s+Before\\s*/\\s*after[\\s\\S]*\\d",
+            "flags": "im",
+            "label": "both numbers quoted"
+          }
+        ]
+      },
+      {
+        "path": "{{task.dir}}/review.md",
+        "kind": "markdown-report",
+        "artifact": true,
+        "minBytes": 400,
+        "checks": [
+          {
+            "kind": "contains",
+            "file": "{{task.dir}}/review.md",
+            "pattern": "Verdict:\\s*(?:PASS|REVISE)",
+            "flags": "i",
+            "label": "explicit reviewer verdict"
+          }
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "kind": "notContains",
+        "file": "src/find-duplicates.js",
+        "pattern": "for\\s*\\(let j = 0; j < items\\.length",
+        "label": "the seeded inner full-list rescan is gone"
+      },
+      {
+        "kind": "sourceParses",
+        "file": "src/find-duplicates.js"
+      },
+      {
+        "kind": "nodeScriptPasses",
+        "script": "tests/verify-perf.mjs",
+        "timeoutMs": 60000,
+        "requiredOutput": [
+          {
+            "pattern": "PERF_OPTIMIZATION_ORACLE results ok",
+            "label": "results identical to the reference"
+          },
+          {
+            "pattern": "PERF_OPTIMIZATION_ORACLE ops \\d+ within budget",
+            "label": "instrumented op-count under the stated budget"
+          },
+          {
+            "pattern": "PERF_OPTIMIZATION_ORACLE suite green",
+            "label": "suite green on the optimized tree"
+          }
+        ]
+      }
+    ],
+    "taskNotes": {
+      "minBytes": 120,
+      "checks": [
+        {
+          "kind": "contains",
+          "file": "task-notes.md",
+          "pattern": "\\bDONE\\b[\\s\\S]*(npm\\s+run\\s+test|node\\s+--test)",
+          "flags": "i",
+          "label": "DONE note names the real test command"
+        }
+      ]
+    },
+    "taskGraph": {
+      "requireCraftbookTask": true,
+      "requireTerminalStep": true
+    },
+    "unchangedFixtures": [
+      "source/perf-brief.md",
+      "package.json",
+      "src/instrument.js"
+    ]
+  },
+  "rubric": {
+    "artifact": {
+      "path": "{{task.dir}}/verification.md",
+      "kind": "markdown"
+    },
+    "axes": [
+      {
+        "name": "Measurement honesty",
+        "description": "Baseline numbers were gathered by a stated, repeatable method before the change, and verification re-ran the identical method and quoted both figures side by side - no adjectives standing in for numbers, no swapped workload."
+      },
+      {
+        "name": "Bottleneck focus",
+        "description": "One bottleneck was named with its mechanism and fixed at the real site by that mechanism - not a synthetic proxy, a weakened measurement, or scattered micro-tweaks."
+      },
+      {
+        "name": "Correctness under speed",
+        "description": "Results stayed identical on the same inputs, the suite stayed green between stages with real receipts, and residual risk or unverified claims are labeled honestly."
+      }
+    ]
+  },
+  "qualityFocus": [
+    "numbers with their method",
+    "same-method re-measurement",
+    "enforced review loop"
+  ]
+}
