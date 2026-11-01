@@ -26,6 +26,7 @@ import { fetchWeightTensors, safetensorsWeightFiles, setTensors } from './lib/sa
 function kindOf(path) {
   const parts = resolve(path).split(sep);
   if (parts.includes('image-models')) return 'image-model';
+  if (parts.includes('image-loras')) return 'image-lora';
   if (parts.includes('video-models')) return 'video-model';
   return null;
 }
@@ -46,7 +47,7 @@ async function main() {
   for (const path of paths) {
     const kind = kindOf(path);
     if (!kind) {
-      console.error(`ERROR ${path} — not under data/image-models or data/video-models`);
+      console.error(`ERROR ${path} — not under data/image-models, data/image-loras or data/video-models`);
       failures += 1;
       continue;
     }

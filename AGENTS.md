@@ -30,8 +30,8 @@ data/<kind-dir>/index.json                                    generated legacy l
 authoring/<family>/                                            generator inputs
 ```
 
-- `<kind-dir>` is one of: `chat-models`, `image-models`, `video-models`,
-  `knowledge-catalogs`, `toolsets`, `connector-types`, `project-types`,
+- `<kind-dir>` is one of: `chat-models`, `image-models`, `image-loras`,
+  `video-models`, `knowledge-catalogs`, `toolsets`, `connector-types`, `project-types`,
   `gezel-templates`, `craftbook-templates`. The community tier mirrors this under
   `data/community/toolsets/`.
 - `<id>`: lowercase, matches `[a-z0-9][a-z0-9-]*`. The item's directory
@@ -167,6 +167,38 @@ with controls.
   change the policy (or its `DENIED_TOOLSET_IDS`), then `npm run fix`.
 - Released `versions/<v>/` directories — add a new version instead;
   yank via `yankedVersions`.
+
+## Image LoRAs
+
+An `image-loras` item is a style or a speed shortcut for image models the
+catalog already ships. People see them as **Styles** and **Fast mode**.
+
+- **Content policy.** Family-safe styles (watercolor, papercut, pixel art,
+  ink, 3D render, coloring book) and speed LoRAs (Lightning, LCM, distills)
+  only. Never an NSFW or "uncensored" LoRA, never one that copies a real
+  person, a face or a celebrity, and never one whose card or sample images
+  suggest adult content. `validate` refuses the obvious words; review is what
+  keeps the rest out.
+- **Files.** Hugging Face only, `.safetensors` only (the engine would also load
+  pickle files), sha256-pinned, with `tensors` from `npm run pin-weight-tensors`.
+- **Fit.** `baseModels` lists the image-model ids it was checked on. A LoRA fits
+  a model version, not a quantization, so list each quantization. A LoRA id
+  never equals an image-model id.
+- **Recipe.** `prompt.prefix`/`suffix` carries trigger words, or the edit
+  instruction the style was trained on; the engine adds them for the person. A
+  `speed` LoRA states `render.steps`, plus `cfg`, `sampler` and `scheduler` when
+  it needs them.
+- **License.** Name it, with `licenseClass` and `commercialUse` as for models. A
+  LoRA inherits its base model's terms: every Krea 2 LoRA is
+  `commercial-restricted`.
+- **Admission.** Before a LoRA enters the catalog:
+  - an image-bench grid, with and without it on each base model
+    (`pnpm --filter @bendyline/gezel-evals run image-bench -- --models <base>
+    --arms base,fast` or `--arms base,style:<id>`), shows the effect and keeps
+    the subject;
+  - a person has looked at its outputs and at its card's sample images;
+  - the version's `notes` say where and when it was checked: hardware, date,
+    and what the bench showed.
 
 ## Validation loop
 

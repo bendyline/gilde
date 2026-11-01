@@ -69,6 +69,20 @@ const SAMPLE_EXTENSIONS = new Set([
 ]);
 const SAMPLE_PATH = /[\\/]craftbook-templates[\\/][^\\/]+[\\/][^\\/]+[\\/]versions[\\/][^\\/]+[\\/]samples[\\/]/;
 const HF_URL_PREFIX = 'https://huggingface.co/';
+// Image LoRAs are family-safe styles and speed shortcuts only (AGENTS.md).
+const IMAGE_LORA_DENYLIST = [
+  /\bnsfw\b/i,
+  /uncensor/i,
+  /\bnud(e|ity)\b/i,
+  /\bexplicit\b/i,
+  /\bhentai\b/i,
+  /realistic[\s-]+(person|people|portrait|face)/i,
+  /face[\s-]*swap/i,
+  /head[\s-]*swap/i,
+  /\blikeness\b/i,
+  /\bcelebrit/i,
+  /\bdeepfake/i,
+];
 const URI_TEMPLATE_VARIABLE = /\{[A-Za-z_][A-Za-z0-9_-]*\}/g;
 // Runtime-managed system toolsets ship with the app rather than as gilde
 // catalog identities. Craftbooks may depend on them exactly like builtin.*
@@ -399,9 +413,10 @@ function main() {
           }
         }
 
-        if (kind === 'image-model' || kind === 'video-model') {
+        if (kind === 'image-model' || kind === 'image-lora' || kind === 'video-model') {
           checkWeightTensors(kind, item.itemDir, onDiskVersions, identity.yankedVersions ?? []);
         }
+        if (kind === 'image-lora') checkImageLora(manifestPath, identity, tier.root);
         if (kind === 'knowledge-catalog') checkKnowledgeKeywords(item, onDiskVersions);
 
         // yankedVersions must reference on-disk versions; minSupported
@@ -494,6 +509,35 @@ function main() {
   }
 
   /** Per-version-directory checks (schema, payload/folder agreement, kind rules). */
+  /**
+   * An image LoRA names the image models it was checked on, never shares an
+   * id with one (the app keys downloads by id), and stays inside the content
+   * policy in AGENTS.md: styles and speed only, nothing explicit, nothing
+   * that copies a real person.
+   */
+  function checkImageLora(manifestPath, identity, tierRoot) {
+    const imageModelIds = new Set(listItems(tierRoot, 'image-model').map((m) => m.id));
+    for (const [i, base] of (identity.baseModels ?? []).entries()) {
+      if (!imageModelIds.has(base)) {
+        c.error(manifestPath, `/baseModels/${i}`, 'image-lora-unknown-base', `"${base}" is not an image-model in this catalog`);
+      }
+    }
+    if (imageModelIds.has(identity.id)) {
+      c.error(manifestPath, '/id', 'image-lora-id-collision', `"${identity.id}" is also an image-model id; LoRA ids must differ`);
+    }
+    if (identity.purpose === 'speed' && !Number.isInteger(identity.render?.steps)) {
+      c.error(manifestPath, '/render/steps', 'image-lora-speed-steps', 'a speed LoRA must state the steps it renders in');
+    }
+    if (typeof identity.license !== 'string' || identity.license.trim() === '') {
+      c.error(manifestPath, '/license', 'image-lora-license', 'an image LoRA must name its license');
+    }
+    const text = [identity.id, identity.name, identity.description, ...(identity.tags ?? [])].join(' ');
+    const denied = IMAGE_LORA_DENYLIST.find((re) => re.test(text));
+    if (denied) {
+      c.error(manifestPath, '', 'image-lora-content-policy', `matches ${denied}; only family-safe style and speed LoRAs belong in the catalog (AGENTS.md)`);
+    }
+  }
+
   function checkVersionDir(item, kind, versionName, versionDir, yanked) {
     const isCraftbook = kind === 'craftbook-template';
     const docPath = join(versionDir, 'craftbook.json');

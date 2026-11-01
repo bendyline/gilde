@@ -143,7 +143,7 @@ function huggingFaceResolveUrl(repo, revision, name) {
 }
 
 /**
- * Every safetensors weight file in an image- or video-model version
+ * Every safetensors weight file in an image-model, image-lora or video-model version
  * manifest, as `{ pointer, url, sizeBytes, holder, sizeKey }`. `holder` is
  * the object that carries (or should carry) the file's `tensors`, and
  * `sizeKey` the key `tensors` is written after.
@@ -163,7 +163,7 @@ export function safetensorsWeightFiles(kind, version) {
       });
     });
   }
-  if (kind === 'image-model') {
+  if (kind === 'image-model' || kind === 'image-lora') {
     if (isSafetensors(urlFileName(String(version.downloadUrl ?? '')))) {
       out.push({
         pointer: '',

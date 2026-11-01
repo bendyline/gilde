@@ -101,6 +101,17 @@ test('finds an image model’s safetensors main file and auxiliaries, not its GG
   assert.deepEqual(files.map((f) => f.pointer), ['/auxiliaryFiles/0']);
 });
 
+test('finds an image LoRA’s safetensors file', () => {
+  const files = safetensorsWeightFiles('image-lora', {
+    downloadUrl: 'https://huggingface.co/a/b/resolve/main/style.safetensors',
+    approxSizeBytes: 7,
+  });
+  assert.deepEqual(
+    files.map((f) => [f.pointer, f.sizeBytes]),
+    [['', 7]],
+  );
+});
+
 test('writes tensors right after the size, keeping the authored key order', () => {
   const holder = { name: 'w.safetensors', sha256: 'x', sizeBytes: 9, repo: 'Org/Other' };
   setTensors(holder, 'sizeBytes', { floatElements: { F32: 1 }, otherBytes: 0 });

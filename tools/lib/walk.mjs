@@ -12,6 +12,7 @@ export const KINDS = [
   'connector-type',
   'chat-model',
   'image-model',
+  'image-lora',
   'video-model',
   'knowledge-catalog',
 ];
@@ -24,6 +25,7 @@ export const KIND_DIR = {
   'connector-type': 'connector-types',
   'chat-model': 'chat-models',
   'image-model': 'image-models',
+  'image-lora': 'image-loras',
   'video-model': 'video-models',
   'knowledge-catalog': 'knowledge-catalogs',
 };

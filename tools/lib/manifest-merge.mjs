@@ -478,6 +478,41 @@ function mergeIdentityAndVersion(kind, identity, version, availableVersions) {
       availableVersions,
     };
   }
+  if (kind === 'image-lora') {
+    return {
+      schemaVersion: 1,
+      kind: 'image-lora',
+      id: identity.id,
+      name: identity.name,
+      description: identity.description,
+      tags: identity.tags,
+      maintainer: identity.maintainer,
+      ...(identity.logo !== undefined ? { logo: identity.logo } : {}),
+      ...(identity.license !== undefined ? { license: identity.license } : {}),
+      ...(identity.licenseClass !== undefined ? { licenseClass: identity.licenseClass } : {}),
+      ...(identity.licenseShortName !== undefined
+        ? { licenseShortName: identity.licenseShortName }
+        : {}),
+      ...(identity.licenseUrl !== undefined ? { licenseUrl: identity.licenseUrl } : {}),
+      ...(identity.recoScore !== undefined ? { recoScore: identity.recoScore } : {}),
+      ...(minGezelVersion !== undefined ? { minGezelVersion } : {}),
+      baseModels: identity.baseModels,
+      purpose: identity.purpose,
+      strength: identity.strength ?? 1,
+      ...(identity.prompt ? { prompt: identity.prompt } : {}),
+      ...(identity.render ? { render: identity.render } : {}),
+      ...(identity.upstream !== undefined ? { upstream: identity.upstream } : {}),
+      commercialUse: identity.commercialUse,
+      version: version.version,
+      releasedAt: version.releasedAt,
+      downloadUrl: version.downloadUrl,
+      sha256: version.sha256,
+      approxSizeBytes: version.approxSizeBytes,
+      ...(version.tensors ? { tensors: version.tensors } : {}),
+      ...(version.notes !== undefined ? { notes: version.notes } : {}),
+      availableVersions,
+    };
+  }
   if (kind === 'knowledge-catalog') {
     return {
       schemaVersion: 1,
