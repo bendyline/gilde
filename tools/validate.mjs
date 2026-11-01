@@ -651,6 +651,43 @@ function main() {
       if (typeof version.pages?.entry === 'string' && !existsSync(join(versionDir, 'pages', version.pages.entry))) {
         c.error(manifestPath, '/pages/entry', 'missing-referenced-file', `pages/${version.pages.entry} not found in version folder`);
       }
+      if (!yanked) checkProjectTypeTurns(manifestPath, version);
+    }
+  }
+
+  /**
+   * Port of gezel core's `projectTypeTurnProblems`: turn declarations must
+   * name tools the model calls. The runtime drops a page tool's `turn`
+   * without a word, and gezel's catalog contract test rejects the release
+   * at pin time — flashcards 1.2.2 shipped in 0.3.3 that way.
+   */
+  function checkProjectTypeTurns(manifestPath, version) {
+    const tools = Array.isArray(version.tools) ? version.tools : [];
+    const pageTools = new Set(version.pages?.tools ?? []);
+    const byName = new Map(tools.map((tool) => [tool?.name, tool]));
+    const problem = (i, detail) => c.error(manifestPath, `/tools/${i}`, 'project-type-turn', detail);
+    tools.forEach((tool, i) => {
+      if (!tool || typeof tool !== 'object') return;
+      if ((tool.turn || tool.state) && pageTools.has(tool.name)) {
+        problem(i, `${tool.name} is a page tool; turn and state apply to tools the model calls`);
+      }
+      const turn = tool.reaction?.turn;
+      if (turn) {
+        const target = byName.get(turn.tool);
+        if (!target) problem(i, `${tool.name}: reaction.turn names ${turn.tool}, which is not a tool of this type`);
+        else if (pageTools.has(turn.tool)) problem(i, `${tool.name}: reaction.turn names ${turn.tool}, a page tool the model never sees`);
+        else if (!target.turn) problem(i, `${tool.name}: reaction.turn names ${turn.tool}, which does not declare turn`);
+      }
+      if (tool.answer) {
+        if (!tool.state) problem(i, `${tool.name}: answer applies only to the state tool`);
+        const target = byName.get(tool.answer.tool);
+        if (!target || pageTools.has(tool.answer.tool) || !target.turn) {
+          problem(i, `${tool.name}: answer names ${tool.answer.tool}, which is not a model tool that declares turn`);
+        }
+      }
+    });
+    if (tools.filter((tool) => tool?.state).length > 1) {
+      c.error(manifestPath, '/tools', 'project-type-turn', 'more than one tool declares state; a message is answered from one');
     }
   }
 
