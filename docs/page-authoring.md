@@ -219,3 +219,32 @@ Run `pnpm pages:sync-components` there after changing it to regenerate the share
 assets under Gilde's `authoring/`; do not hand-edit generated assets or copy them
 into app pages. `GILDE_DIR=<checkout> pnpm test:e2e:page-components` in Gezel
 checks component behavior and exported Media Library/Data Analysis demos.
+
+
+## Full-page application workspaces
+
+Current page apps use `gezel.ui.components.appLayout('main', options)` to expand
+their content and embed the native project conversation in fullscreen. Keep
+the existing page DOM mounted, choose a useful companion title and description,
+and allow crew selection only where it serves the app. Media Library deliberately
+uses `chat: false`. The native Email, Just Chat, and Software Project experiences
+remain native rather than duplicating the shell in a page.
+
+Use `actionForm` for direct record edits and `collectionFilter` for searching
+rendered records. Give page actions separate aliases from model actions, bound
+to the same scripts, and put only those aliases in `pages.tools`. Every new
+page action needs an in-memory demo handler. Respect the project's write policy
+and keep all state in the existing declared files. A successful schema check or
+demo is not proof that the script-backed action works: exercise adoption, edits,
+denied writes, and an upgrade with seed preservation in the real host.
+
+Use native dialogs for overlapping page details; appLayout temporarily hides its
+host-owned chat slot while a dialog is visible. Keep form drafts on failures,
+report read failures without pretending the collection is empty, and dispose
+watches on page exit. Feature-detect new components and provide an update message
+when an older host cannot supply them.
+
+The maintained [workspace API guide](https://github.com/bendyline/gezel/blob/main/docs/handboek/technical/gezel-page-apis.md#building-a-full-page-workspace)
+documents options and lifecycle. Gezel's `test:e2e:catalog-apps` suite exercises
+every current page in both the live host and exported demos; set `GILDE_DIR`
+and `GEZEL_GILDE_DATA_DIR` to the checkout under review.
