@@ -153,7 +153,9 @@ items that have never worked on older gezels.
   `npm run fix` prunes any already on disk, and `npm run check` fails on
   one that remains. The policy excludes security-research bait (honeypots,
   injection demos), adult content, gambling, tools that ask for a wallet's
-  private key, template/example servers, and entries with garbled text.
+  private key, template/example servers, entries with garbled text, and
+  remote servers on a throwaway tunnel address (Cloudflare quick tunnels,
+  localhost.run, localtunnel, Serveo, Pinggy's free tier).
 - `authoring/gstack/snapshots/` is a frozen upstream capture. Change it only
   as part of an explicit upstream refresh; ordinary curation belongs in the
   overlays and evals beside it.

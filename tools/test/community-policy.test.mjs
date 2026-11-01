@@ -118,6 +118,46 @@ test('keeps the look-alikes each rule was narrowed around', () => {
   }
 });
 
+function remote(name, description, ...urls) {
+  return {
+    identity: { id: 'someone-tool', name, description },
+    versions: urls.map((url) => ({ runtime: { kind: 'http-mcp', url }, config: [] })),
+  };
+}
+
+test('excludes remote servers on a throwaway tunnel address', () => {
+  for (const url of [
+    'https://0c5678d9815785.lhr.life/mcp',
+    'https://emails-ship-peninsula-deliver.trycloudflare.com/mcp-a',
+    'https://njjtx-38-15-34-250.free.pinggy.net/mcp-b',
+    'https://quiet-fox-12.loca.lt/mcp',
+    'https://abc123.serveousercontent.com/mcp',
+  ]) {
+    assert.equal(ruleOf(remote('Perps Funding Pulse', 'Live perps funding rates.', url)), 'temporary-host', url);
+  }
+});
+
+test('keeps remotes on stable hosts, and tunnel names that only appear in settings', () => {
+  for (const [label, value] of [
+    ['ngrok static domain', remote('Weather', 'Forecasts.', 'https://calm-otter.ngrok-free.app/mcp')],
+    ['own domain', remote('Weather', 'Forecasts.', 'https://mcp.weather.example.com/mcp')],
+    ['look-alike host', remote('Weather', 'Forecasts.', 'https://trycloudflare.com.example.net/mcp')],
+    ['look-alike suffix', remote('Weather', 'Forecasts.', 'https://notlhr.life/mcp')],
+    [
+      'moved off the tunnel',
+      remote('Weather', 'Forecasts.', 'https://old-name.trycloudflare.com/mcp', 'https://mcp.weather.example.com/mcp'),
+    ],
+    [
+      'npm package with a tunnel default',
+      entry('Scanpay', 'Code security scanner for AI agents.', {
+        config: [{ id: 'API_URL', label: 'API URL', description: 'default: https://x.trycloudflare.com' }],
+      }),
+    ],
+  ]) {
+    assert.equal(ruleOf(value), null, label);
+  }
+});
+
 test('an id on the denylist stays out even when its text is harmless', () => {
   assert.equal(
     ruleOf(entry('Workspace Tools', 'Helpful workspace tools.', { id: 'brian-mitchell-sec-workspace-tools' })),

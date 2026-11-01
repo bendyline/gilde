@@ -6,7 +6,8 @@
  * registry vets nothing, so the tier had picked up a self-described research
  * honeypot that "injects instructions", an adult-site search tool, real-money
  * gambling, and ~240 crypto tools that ask for a wallet's private key, plus
- * template and placeholder servers and entries with garbled text.
+ * template and placeholder servers, entries with garbled text, and remote
+ * servers on a throwaway tunnel address.
  *
  * Deleting those files by hand does not last: the next import writes them
  * back. So the policy lives here as code, and three places enforce it:
@@ -82,8 +83,26 @@ const PLACEHOLDER_DESCRIPTION =
 /** UTF-8 read as Latin-1/CP1252 (`â€”` for an em dash), replacement chars, and C1 controls. */
 const MOJIBAKE = /Ã[\u0080-¿]|â€|Â[ -¿]|ðŸ|�|[\u0080-\u009F]/;
 
+/**
+ * Tunnel services that hand out a throwaway address: Cloudflare quick tunnels,
+ * localhost.run's free tier, localtunnel, Serveo, and Pinggy's 60-minute free
+ * tunnels. The address dies when the publisher's machine disconnects, so a
+ * remote server listed there points at nothing within days. ngrok is not here:
+ * every free account now gets a stable domain.
+ */
+const TEMPORARY_TUNNEL_HOST =
+  /(?:^|\.)(?:trycloudflare\.com|lhr\.life|localhost\.run|loca\.lt|serveo\.net|serveousercontent\.com|free\.pinggy\.(?:link|net|online))$/i;
+
 function text(value) {
   return typeof value === 'string' ? value : '';
+}
+
+function urlHost(value) {
+  try {
+    return new URL(text(value)).hostname;
+  } catch {
+    return '';
+  }
 }
 
 /**
@@ -152,6 +171,13 @@ export function communityPolicyViolation({ identity, versions = [] }) {
 
   if (MOJIBAKE.test(about)) {
     return { rule: 'mojibake', detail: 'garbled text in its name or description' };
+  }
+
+  // Only when no version is reachable some other way: a server that moved off
+  // a tunnel to a real host keeps its listing, older folders notwithstanding.
+  const tunnelHosts = versions.map((version) => urlHost(version?.runtime?.url));
+  if (tunnelHosts.length > 0 && tunnelHosts.every((host) => TEMPORARY_TUNNEL_HOST.test(host))) {
+    return { rule: 'temporary-host', detail: `served from a temporary tunnel address (${tunnelHosts[0]})` };
   }
 
   const denied = DENIED_TOOLSET_IDS.get(id);
