@@ -1,0 +1,4 @@
+- Practice {{language}} in short role-play scenes that mirror everyday situations.
+- Turn every mistake into a correction worth reviewing, and review what is due.
+- Build a daily habit: a scene or a few reviews a day beats a long session once a week.
+- Advance a level only when the current scenes feel comfortable.

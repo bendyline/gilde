@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Training tracker</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f3f2ee; --card: #fdfcf8; --surface: #fdfcf8; --ink: #25262b; --muted: #62646d; --line: #d8d6cf;
+        --accent: #4a5a8a; --late: #a3341f; --late-bg: #f7e1da; --soon: #8a5a12; --soon-bg: #f6ead2;
+        --ok: #3f6b4a; --ok-bg: #e2eedf; --chip: #ebe9e2;
+      }
+      :root[data-theme='dark'] {
+        --bg: #16171a; --card: #1f2024; --surface: #1f2024; --ink: #e8e8ec; --muted: #a2a4ae; --line: #36373d;
+        --accent: #9fb0e0; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+        --ok: #8fc29b; --ok-bg: #22301f; --chip: #2b2c31;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #16171a; --card: #1f2024; --surface: #1f2024; --ink: #e8e8ec; --muted: #a2a4ae; --line: #36373d;
+          --accent: #9fb0e0; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+          --ok: #8fc29b; --ok-bg: #22301f; --chip: #2b2c31;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body, system-ui, sans-serif); font-size: 15px; line-height: 1.5; padding: 1.5rem 1.25rem; }
+      main { max-width: 960px; margin: 0 auto; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.5rem; font-weight: 400; margin: 0 0 0.2rem; }
+      h2 { font-family: var(--font-heading, Georgia, serif); font-size: 1.1rem; font-weight: 400; margin: 0 0 0.6rem; }
+      .sub { color: var(--muted); margin: 0 0 1rem; }
+      .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; margin: 0 0 1.2rem; }
+      .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem 0.9rem; }
+      .tile b { display: block; font-size: 1.5rem; font-weight: 600; line-height: 1.1; }
+      .tile span { color: var(--muted); font-size: 0.85rem; }
+      .tile.late b { color: var(--late); }
+      .tile.soon b { color: var(--soon); }
+      section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin: 0 0 1rem; }
+      .due { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+      .due li { display: grid; grid-template-columns: 7rem minmax(0, 1fr); gap: 0.75rem; align-items: start; }
+      .due li.empty { display: block; }
+      .when { font-size: 0.8rem; font-weight: 600; padding: 0.15rem 0.45rem; border-radius: 4px; text-align: center; background: var(--chip); color: var(--muted); }
+      .when.late { background: var(--late-bg); color: var(--late); }
+      .when.soon { background: var(--soon-bg); color: var(--soon); }
+      .what b { font-weight: 600; }
+      .what small, .meta { display: block; color: var(--muted); font-size: 0.82rem; overflow-wrap: anywhere; }
+      .empty { color: var(--muted); font-style: italic; margin: 0; }
+      .table-wrap { overflow-x: auto; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+      th { text-align: left; font-weight: 600; color: var(--muted); font-size: 0.76rem; padding: 0 0.45rem 0.4rem; border-bottom: 1px solid var(--line); vertical-align: bottom; }
+      th small { display: block; font-weight: 400; }
+      td { padding: 0.45rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+      tr:last-child td { border-bottom: 0; }
+      td.who { min-width: 8.5rem; }
+      td.who, thead th:first-child { position: sticky; left: 0; z-index: 1; background: var(--card); }
+      .cell { display: inline-block; white-space: nowrap; font-size: 0.78rem; padding: 0.05rem 0.4rem; border-radius: 4px; background: var(--chip); }
+      .cell.current, .cell.done { background: var(--ok-bg); color: var(--ok); }
+      .cell.expiring { background: var(--soon-bg); color: var(--soon); }
+      .cell.expired { background: var(--late-bg); color: var(--late); font-weight: 600; }
+      .cell.missing { background: transparent; color: var(--late); border: 1px dashed var(--late); }
+      .cell.optional { background: transparent; color: var(--muted); }
+      .booked { display: block; font-size: 0.74rem; color: var(--accent); margin-top: 0.15rem; white-space: nowrap; }
+      .quizzes { display: grid; gap: 0.6rem; }
+      .quiz { border: 1px solid var(--line); border-radius: 6px; padding: 0.6rem 0.75rem; }
+      .quiz summary { cursor: pointer; font-weight: 600; }
+      .quiz summary span { font-weight: 400; color: var(--muted); font-size: 0.85rem; }
+      .quiz ol { margin: 0.6rem 0 0; padding-left: 1.3rem; display: grid; gap: 0.7rem; }
+      .quiz p { margin: 0 0 0.35rem; }
+      .choices { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+      .choice { font: inherit; font-size: 0.86rem; min-height: 36px; padding: 0.3rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; text-align: left; }
+      .choice.right { border-color: var(--ok); background: var(--ok-bg); color: var(--ok); }
+      .choice.wrong { border-color: var(--late); background: var(--late-bg); color: var(--late); }
+      .verdict { font-size: 0.82rem; color: var(--muted); min-height: 1.2em; margin: 0.25rem 0 0 !important; }
+      .files { display: grid; gap: 0.5rem; margin: 0 0 0.75rem; }
+      .demo-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 0 0 1rem; padding: 0.5rem 0.65rem; border: 1px solid var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--card) 88%, var(--accent)); font-size: 0.85rem; }
+      .demo-banner[hidden] { display: none; }
+      .demo-reset { flex: none; min-height: 36px; padding: 0.3rem 0.7rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; }
+      .note { color: var(--muted); font-size: 0.85rem; margin: 0.75rem 0 0; }
+      @media (max-width: 640px) {
+        .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .due li { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
+        .when { justify-self: start; }
+      }
+    </style>
+    <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:0 0 12px;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--line,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+    <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script>
+  </head>
+  <body>
+    <main>
+      <p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong>: Harbor Street Café’s sample training records for 12 staff. Changes stay in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Training tracker</h1>
+      <p class="sub" id="sub">Loading the tracker…</p>
+      <div class="tiles">
+        <div class="tile late"><b id="t-expired">0</b><span>Lapsed</span></div>
+        <div class="tile soon"><b id="t-expiring">0</b><span>Run out in 30 days</span></div>
+        <div class="tile"><b id="t-missing">0</b><span>Never done</span></div>
+        <div class="tile"><b id="t-people">0</b><span>People</span></div>
+      </div>
+      <section id="due-section">
+        <h2>Coming up</h2>
+        <ul class="due" id="due"></ul>
+      </section>
+      <section id="matrix-section">
+        <h2>Who has what</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr id="matrix-head"></tr></thead>
+            <tbody id="matrix-body"></tbody>
+          </table>
+        </div>
+      </section>
+      <section id="quizzes-section">
+        <h2>Quizzes</h2>
+        <div class="quizzes" id="quizzes"></div>
+      </section>
+      <section id="docs-section">
+        <h2>Your documents</h2>
+        <div class="files" id="doc-files"></div>
+        <div id="add-doc"></div>
+        <p class="note">Checklists and guides added here become quizzes and refreshers. The tracker records what the business has done; certificate rules come from the agency or course provider that issues them.</p>
+      </section>
+    </main>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        var DAY = 86400000;
+        function pad(n) { return n < 10 ? '0' + n : String(n); }
+        function iso(ms) { var d = new Date(ms); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+        function daysFromNow(n) { return iso(Date.now() + n * DAY); }
+        function addMonths(day, months) {
+          var d = new Date(String(day).slice(0, 10) + 'T12:00:00'), date = d.getDate();
+          d.setDate(1); d.setMonth(d.getMonth() + months);
+          d.setDate(Math.min(date, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+          return iso(d.getTime());
+        }
+        function daysLeft(day) { return Math.round((Date.parse(String(day).slice(0, 10) + 'T00:00:00') - Date.parse(iso(Date.now()) + 'T00:00:00')) / DAY); }
+        function parseDay(text, past) {
+          var raw = String(text || '').trim().toLowerCase();
+          if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+          if (raw === 'today') return daysFromNow(0);
+          if (raw === 'tomorrow') return daysFromNow(1);
+          if (raw === 'yesterday') return daysFromNow(-1);
+          var m = raw.match(/^(?:next |this |on |coming )?(sun|mon|tue|wed|thu|fri|sat)[a-z]*$/);
+          if (!m) return null;
+          var target = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].indexOf(m[1]), now = new Date().getDay();
+          return past ? daysFromNow(-((now - target + 7) % 7)) : daysFromNow(((target - now + 6) % 7) + 1);
+        }
+
+        // ── demo records (used only when the page opens outside Gezel); dates are relative so they never go stale ──
+        var demoCourses = { version: 1, stages: ['active', 'retired'], records: [
+          { id: 'c-1', status: 'active', fields: { title: 'Food handler card', validMonths: 36, requiredFor: 'everyone', provider: 'County Health Department' } },
+          { id: 'c-2', status: 'active', fields: { title: 'Allergen awareness', validMonths: 12, requiredFor: 'everyone', provider: 'In-house, with Dana' } },
+          { id: 'c-3', status: 'active', fields: { title: 'Food safety refresher', validMonths: 12, requiredFor: 'everyone', provider: 'County Health Department online' } },
+          { id: 'c-4', status: 'active', fields: { title: 'First aid and CPR', validMonths: 24, requiredFor: 'manager, shift lead, kitchen lead', provider: 'Community first aid class' } },
+          { id: 'c-5', status: 'active', fields: { title: 'Espresso bar basics', validMonths: 0, requiredFor: 'barista, shift lead', provider: 'In-house, with Hana' } },
+          { id: 'c-6', status: 'active', fields: { title: 'Opening procedures', validMonths: 0, requiredFor: 'barista, shift lead', provider: 'In-house, with Rosa' } },
+        ] };
+        var demoPeople = { version: 1, stages: ['active', 'left'], records: [
+          ['p-1', 'Dana Whitfield', 'Manager', -2190], ['p-2', 'Luis Romero', 'Kitchen lead', -1460], ['p-3', 'Priya Nair', 'Owner', -2555],
+          ['p-4', 'Marco Bellini', 'Cook', -1095], ['p-5', 'Hana Sato', 'Barista', -730], ['p-6', 'Kofi Mensah', 'Barista', -540],
+          ['p-7', 'Rosa Delgado', 'Shift lead', -760], ['p-8', 'Eli Novak', 'Dishwasher', -380], ['p-9', 'June Park', 'Barista', -240],
+          ['p-10', 'Jamal Reed', 'Cook', -12], ['p-11', 'Tess Walker', 'Barista', -150], ['p-12', 'Mira Okafor', 'Barista', 4],
+        ].map(function (p) { return { id: p[0], status: 'active', fields: { name: p[1], role: p[2], startedAt: daysFromNow(p[3]) } }; }) };
+        var demoLog = { version: 1, events: [] };
+        function courseById(id) { return demoCourses.records.find(function (c) { return c.id === id; }); }
+        function sampleDone(personId, courseId, completedAt, certificate) {
+          var months = courseById(courseId).fields.validMonths || 0;
+          demoLog.events.push({ at: completedAt + 'T15:00:00.000Z', kind: 'completed', note: certificate ? 'Certificate ' + certificate + '.' : 'Completed.', data: { personId: personId, courseId: courseId, completedAt: completedAt, expiresAt: months ? addMonths(completedAt, months) : null, certificate: certificate } });
+        }
+        // A completion whose certificate runs out `days` from today.
+        function runsOutIn(personId, courseId, days, certificate) { sampleDone(personId, courseId, addMonths(daysFromNow(days), -courseById(courseId).fields.validMonths), certificate); }
+        [['p-1', 400], ['p-2', 610], ['p-3', 820], ['p-4', 230], ['p-5', 300], ['p-6', 45], ['p-7', 520], ['p-8', 700], ['p-9', 850], ['p-10', 1075], ['p-11', 940]].forEach(function (x, i) { runsOutIn(x[0], 'c-1', x[1], 'FH-' + (41207 + i * 389)); });
+        [['p-1', 160], ['p-2', 210], ['p-3', 95], ['p-4', 120], ['p-5', 240], ['p-6', 70], ['p-7', 180], ['p-8', 260], ['p-9', -3], ['p-11', 200]].forEach(function (x) { runsOutIn(x[0], 'c-2', x[1]); });
+        [['p-1', 210], ['p-2', 6], ['p-3', 150], ['p-4', -8], ['p-5', 11], ['p-6', 95], ['p-7', 19], ['p-8', 27], ['p-9', 170], ['p-11', 130]].forEach(function (x) { runsOutIn(x[0], 'c-3', x[1]); });
+        [['p-1', 300], ['p-2', 400], ['p-7', 200]].forEach(function (x) { runsOutIn(x[0], 'c-4', x[1]); });
+        [['p-5', -700], ['p-6', -520], ['p-7', -740], ['p-9', -230], ['p-11', -140]].forEach(function (x) { sampleDone(x[0], 'c-5', daysFromNow(x[1])); sampleDone(x[0], 'c-6', daysFromNow(x[1] + 2)); });
+        sampleDone('p-10', 'c-1', daysFromNow(-20), 'FH-47102');
+        demoLog.events.push({ at: new Date(Date.now() - 2 * DAY).toISOString(), kind: 'booked', note: 'Booked.', data: { personId: 'p-4', courseId: 'c-3', on: daysFromNow(3) } });
+
+        // The training-store rules, mirrored for the demo so the sample behaves like the live tracker.
+        function buildQuestions(text) {
+          var out = [];
+          String(text || '').split(/\r?\n/).forEach(function (line) {
+            var parts = line.replace(/^\s*(?:q?\d{1,2}[.):]|[-*])\s*/i, '').split('|').map(function (s) { return s.trim(); }).filter(Boolean);
+            if (parts.length < 2) return;
+            var choices = parts.slice(1), shift = out.length % choices.length;
+            out.push({ q: parts[0], choices: choices.slice(choices.length - shift).concat(choices.slice(0, choices.length - shift)), answer: shift });
+          });
+          return out;
+        }
+        var demoQuizzes = { version: 1, stages: ['ready', 'retired'], records: [
+          { id: 'qz-1', status: 'ready', fields: { title: 'Allergen awareness check', courseId: 'c-2', courseTitle: 'Allergen awareness', source: 'docs/allergen-guide.md', questions: buildQuestions([
+            'Which allergens must our pastry labels name? | Milk, eggs, fish, shellfish, tree nuts, peanuts, wheat, soy and sesame | Only nuts and gluten | Whatever the supplier happens to list',
+            'A customer says they have a nut allergy. What do you do first? | Show them which items contain or may contain nuts, using the labels | Tell them everything is probably fine | Suggest the banana muffin',
+            'Which milk on our bar can contain tree nuts? | Almond milk | Oat milk | Whole milk',
+            'Before making a drink for someone with an allergy, what do you clean? | The steam wand, pitcher and blender jar | Only the cup | Nothing, it is a quick drink',
+            'Where is the allergen binder kept? | By the register | In the office | In the walk-in',
+          ].join('\n')) } },
+        ] };
+        var demoFiles = [
+          { path: 'docs/opening-checklist.md', name: 'opening-checklist.md', size: 3420, mtime: Date.now() - 40 * DAY },
+          { path: 'docs/allergen-guide.md', name: 'allergen-guide.md', size: 5180, mtime: Date.now() - 95 * DAY },
+          { path: 'docs/closing-checklist.md', name: 'closing-checklist.md', size: 2960, mtime: Date.now() - 40 * DAY },
+        ];
+
+        function roleKey(text) { return String(text || '').trim().toLowerCase().replace(/\s+/g, ' ').replace(/([a-z]{3,}[^s])s$/, '$1'); }
+        function requires(course, person) {
+          var rf = String(course.fields.requiredFor || 'everyone').toLowerCase(), mine = roleKey(person.fields.role);
+          if (!rf.trim() || /\b(everyone|everybody|all|whole team|all staff)\b/.test(rf)) return true;
+          return !!mine && rf.split(/\s*[,;]\s*/).map(roleKey).some(function (r) { return r && (r === mine || mine.indexOf(r) >= 0 || r.indexOf(mine) >= 0); });
+        }
+        function cell(person, course, events) {
+          var done = events.filter(function (e) { return e.kind === 'completed' && e.data && e.data.personId === person.id && e.data.courseId === course.id; })
+            .sort(function (a, b) { return String(a.data.completedAt).localeCompare(String(b.data.completedAt)); });
+          var last = done[done.length - 1] || null, since = last ? String(last.at) : '';
+          var booking = events.filter(function (e) { return e.kind === 'booked' && e.data && e.data.personId === person.id && e.data.courseId === course.id && daysLeft(e.data.on) >= 0 && String(e.at) > since; })
+            .sort(function (a, b) { return String(a.data.on).localeCompare(String(b.data.on)); })[0] || null;
+          var required = requires(course, person), expiresAt = last ? last.data.expiresAt || null : null, days = expiresAt ? daysLeft(expiresAt) : null, state;
+          if (last) state = !expiresAt ? 'done' : days < 0 ? 'expired' : days <= 30 ? 'expiring' : 'current';
+          else state = required ? 'missing' : 'optional';
+          if (!required && (state === 'expired' || state === 'expiring')) state = 'optional';
+          return { state: state, required: required, last: last, booking: booking, expiresAt: expiresAt, days: days };
+        }
+        function find(records, text, labelOf, noun) {
+          var wanted = String(text || '').trim().toLowerCase().replace(/['’]s\b/g, '');
+          var hits = records.filter(function (r) { return r.id === wanted || labelOf(r).toLowerCase() === wanted; });
+          if (!hits.length) hits = records.filter(function (r) { return wanted && (' ' + labelOf(r).toLowerCase() + ' ').indexOf(' ' + wanted) >= 0; });
+          if (!hits.length) hits = records.filter(function (r) { return wanted && wanted.indexOf(labelOf(r).toLowerCase()) >= 0; });
+          if (hits.length === 1) return hits[0];
+          throw new Error(hits.length ? 'More than one ' + noun + " matches '" + text + "'. Pass the id." : 'No ' + noun + " matches '" + text + "'.");
+        }
+        function findCourse(text) { return find(demoCourses.records, text, function (c) { return c.fields.title; }, 'course'); }
+        function findPeople(text) {
+          if (!text) throw new Error("Pass 'person'.");
+          var active = demoPeople.records.filter(function (p) { return p.status !== 'left'; });
+          return String(text).split(/\s*(?:,|;|&|\band\b)\s*/i).filter(Boolean).map(function (one) { return find(active, one, function (p) { return p.fields.name; }, 'person'); });
+        }
+        function nextId(records, prefix) { return prefix + '-' + (records.reduce(function (m, r) { return Math.max(m, Number(String(r.id).split('-')[1]) || 0); }, 0) + 1); }
+        function demoSummary(note) {
+          var counts = { expired: 0, expiring: 0, missing: 0 }, staff = demoPeople.records.filter(function (p) { return p.status !== 'left'; });
+          staff.forEach(function (p) { demoCourses.records.forEach(function (c) { var s = cell(p, c, demoLog.events).state; if (counts[s] !== undefined) counts[s] += 1; }); });
+          return { expired: counts.expired, expiringSoon: counts.expiring, missing: counts.missing, people: staff.length, summary: (note ? note + ' ' : '') + counts.expired + ' lapsed, ' + counts.expiring + ' running out within 30 days, ' + counts.missing + ' never done.' };
+        }
+        function demoAddPerson(input) {
+          if (!input.name) throw new Error("add_person needs 'name'.");
+          var name = String(input.name).trim(), startedAt = input.startedAt ? parseDay(input.startedAt) : null;
+          if (input.startedAt && !startedAt) throw new Error("startedAt must be a date or a weekday like 'monday'.");
+          var p = demoPeople.records.find(function (x) { return x.fields.name.toLowerCase() === name.toLowerCase(); });
+          var fields = {};
+          if (input.role) fields.role = String(input.role).trim();
+          if (startedAt) fields.startedAt = startedAt;
+          if (p) { Object.assign(p.fields, fields); if (input.personStatus) p.status = input.personStatus; return demoSummary('Updated ' + name + '.'); }
+          var id = nextId(demoPeople.records, 'p');
+          demoPeople.records.push({ id: id, status: input.personStatus || 'active', fields: Object.assign({ name: name, role: '' }, fields) });
+          return demoSummary('Added ' + name + ' (' + id + ').');
+        }
+        function demoAddCourse(input) {
+          if (!input.title) throw new Error("add_course needs 'title'.");
+          var title = String(input.title).trim(), c = demoCourses.records.find(function (x) { return x.fields.title.toLowerCase() === title.toLowerCase(); });
+          var fields = {};
+          if (input.validMonths !== undefined) fields.validMonths = Math.max(0, Math.round(Number(input.validMonths)) || 0);
+          if (input.requiredFor) fields.requiredFor = String(input.requiredFor).trim();
+          if (input.provider) fields.provider = String(input.provider).trim();
+          if (c) { Object.assign(c.fields, fields); return demoSummary('Updated ' + title + '.'); }
+          var id = nextId(demoCourses.records, 'c');
+          demoCourses.records.push({ id: id, status: 'active', fields: Object.assign({ title: title, validMonths: 0, requiredFor: 'everyone' }, fields) });
+          return demoSummary('Added ' + title + ' (' + id + ').');
+        }
+        function demoComplete(input) {
+          var course = findCourse(input.course), who = findPeople(input.person);
+          var completedAt = input.completedAt ? parseDay(input.completedAt, true) : daysFromNow(0);
+          if (!completedAt) throw new Error("completedAt must be a date like '2026-11-02'.");
+          var months = course.fields.validMonths || 0, expiresAt = months ? addMonths(completedAt, months) : null, cert = input.certificate ? String(input.certificate).trim() : '';
+          who.forEach(function (p) {
+            var data = { personId: p.id, courseId: course.id, completedAt: completedAt, expiresAt: expiresAt };
+            if (cert) data.certificate = cert;
+            demoLog.events.push({ at: new Date().toISOString(), kind: 'completed', note: cert ? 'Certificate ' + cert + '.' : 'Completed.', data: data });
+          });
+          return demoSummary(who.map(function (p) { return p.fields.name; }).join(', ') + ' completed ' + course.fields.title + ' on ' + completedAt + (expiresAt ? '; valid until ' + expiresAt : '; it does not expire') + (cert ? ', certificate ' + cert : '') + '.');
+        }
+        function demoBook(input) {
+          var course = findCourse(input.course), on = parseDay(input.on);
+          if (!on) throw new Error("book needs 'on': a date or a weekday like 'thursday'.");
+          var who = input.everyoneDue
+            ? demoPeople.records.filter(function (p) { var c = cell(p, course, demoLog.events); return p.status !== 'left' && c.required && !c.booking && (c.state === 'expired' || c.state === 'expiring' || c.state === 'missing'); })
+            : findPeople(input.person);
+          who = who.filter(function (p) { return !demoLog.events.some(function (e) { return e.kind === 'booked' && e.data.personId === p.id && e.data.courseId === course.id && e.data.on === on; }); });
+          who.forEach(function (p) { demoLog.events.push({ at: new Date().toISOString(), kind: 'booked', note: 'Booked.', data: { personId: p.id, courseId: course.id, on: on } }); });
+          return demoSummary(who.length ? 'Booked ' + course.fields.title + ' on ' + on + ' for ' + who.map(function (p) { return p.fields.name; }).join(', ') + '.' : 'Nothing new booked.');
+        }
+        function demoSaveQuiz(input) {
+          var questions = buildQuestions(input.questions);
+          if (questions.length < 3) throw new Error("A quiz needs at least 3 questions, one per line: 'Question? | right | wrong | wrong'.");
+          var course = input.course ? findCourse(input.course) : null;
+          var title = String(input.title || (course ? course.fields.title + ' quiz' : 'Quiz')).trim();
+          var fields = { title: title, questions: questions };
+          if (course) { fields.courseId = course.id; fields.courseTitle = course.fields.title; }
+          if (input.source) fields.source = String(input.source).trim();
+          var q = demoQuizzes.records.find(function (x) { return x.fields.title.toLowerCase() === title.toLowerCase(); });
+          if (q) Object.assign(q.fields, fields);
+          else demoQuizzes.records.push({ id: nextId(demoQuizzes.records, 'qz'), status: 'ready', fields: fields });
+          return demoSummary('Saved the quiz ' + title + ' with ' + questions.length + ' questions.');
+        }
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'tracker/index.html', typeName: 'Training Tracker', params: { business: 'Harbor Street Café' } },
+          tools: {
+            page_add_person: demoAddPerson,
+            add_person: demoAddPerson,
+            page_add_course: demoAddCourse,
+            add_course: demoAddCourse,
+            page_record_completion: demoComplete,
+            record_completion: demoComplete,
+            page_book_training: demoBook,
+            book_training: demoBook,
+            save_quiz: demoSaveQuiz,
+            training_status: function () { return demoSummary(''); },
+            list_training: function () { return demoSummary(''); },
+          },
+          data: {
+            'people.json': function () { return demoPeople; },
+            'courses.json': function () { return demoCourses; },
+            'completions.json': function () { return demoLog; },
+            'quizzes.json': function () { return demoQuizzes; },
+            docs: function () { return demoFiles.map(function (f) { return { name: f.name, kind: 'file', size: f.size, mtime: f.mtime }; }); },
+          },
+          existingPaths: demoFiles.map(function (f) { return f.path; }),
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+        var components = gezel.ui.components;
+        function applyTheme(mode) { document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light'); }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function el(tag, text, cls) { var e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
+        function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+        function niceDate(day, withYear) { var d = new Date(String(day).slice(0, 10) + 'T12:00:00'); return isFinite(d) ? d.toLocaleDateString(undefined, withYear ? { month: 'short', year: 'numeric' } : { weekday: 'short', month: 'short', day: 'numeric' }) : String(day); }
+        function inDays(days) { return days < 0 ? -days + (days === -1 ? ' day late' : ' days late') : days === 0 ? 'Today' : 'In ' + days + (days === 1 ? ' day' : ' days'); }
+        var openQuizzes = {};
+
+        function render(peopleDoc, courseDoc, logDoc, quizDoc) {
+          var people = (Array.isArray(peopleDoc.records) ? peopleDoc.records : []).filter(function (p) { return p.status !== 'left'; });
+          var courses = (Array.isArray(courseDoc.records) ? courseDoc.records : []).filter(function (c) { return c.status !== 'retired'; });
+          var events = Array.isArray(logDoc.events) ? logDoc.events : [];
+          var quizzes = (Array.isArray(quizDoc.records) ? quizDoc.records : []).filter(function (q) { return q.status !== 'retired'; });
+          var cells = {}, counts = { expired: 0, expiring: 0, missing: 0 };
+          people.forEach(function (p) { courses.forEach(function (c) { var x = cell(p, c, events); cells[p.id + '|' + c.id] = x; if (counts[x.state] !== undefined) counts[x.state] += 1; }); });
+
+          document.getElementById('t-expired').textContent = counts.expired;
+          document.getElementById('t-expiring').textContent = counts.expiring;
+          document.getElementById('t-missing').textContent = counts.missing;
+          document.getElementById('t-people').textContent = people.length;
+          document.getElementById('sub').textContent = !people.length || !courses.length
+            ? 'Add the people who work here and the courses each role needs, and the tracker shows who is current.'
+            : (counts.expired ? plural(counts.expired, 'certificate has', 'certificates have') + ' lapsed. ' : 'Nothing has lapsed. ') +
+              (counts.expiring ? plural(counts.expiring, 'more runs', 'more run') + ' out in the next 30 days.' : 'Nothing else runs out in the next 30 days.');
+
+          var due = document.getElementById('due');
+          due.replaceChildren();
+          var items = [];
+          people.forEach(function (p) {
+            courses.forEach(function (c) {
+              var x = cells[p.id + '|' + c.id];
+              if (x.state === 'expired' || x.state === 'expiring') items.push({ p: p, c: c, x: x, sort: x.days });
+            });
+            var missing = courses.filter(function (c) { return cells[p.id + '|' + c.id].state === 'missing'; });
+            if (missing.length) items.push({ p: p, missing: missing, sort: 1000 });
+          });
+          items.sort(function (a, b) { return a.sort - b.sort; });
+          if (!items.length) due.append(el('li', 'Everyone is current for the next 30 days.', 'empty'));
+          items.forEach(function (it) {
+            var li = el('li'), what = el('div', undefined, 'what');
+            if (it.missing) {
+              var starts = it.p.fields.startedAt && daysLeft(it.p.fields.startedAt) > 0;
+              li.append(el('span', starts ? 'Before day one' : 'Not done yet', 'when'));
+              what.append(el('b', it.p.fields.name));
+              what.append(el('small', it.missing.map(function (c) { return c.fields.title; }).join(', ') + (starts ? ' · starts ' + niceDate(it.p.fields.startedAt) : '')));
+            } else {
+              li.append(el('span', it.x.state === 'expired' ? inDays(it.x.days) : inDays(it.x.days), 'when ' + (it.x.state === 'expired' ? 'late' : 'soon')));
+              what.append(el('b', it.p.fields.name + ' · ' + it.c.fields.title));
+              what.append(el('small', [(it.x.state === 'expired' ? 'Lapsed ' : 'Runs out ') + niceDate(it.x.expiresAt), it.x.booking ? 'booked ' + niceDate(it.x.booking.data.on) : 'not booked yet'].join(' · ')));
+            }
+            li.append(what);
+            due.append(li);
+          });
+
+          var head = document.getElementById('matrix-head');
+          head.replaceChildren();
+          head.append(el('th', 'Person'));
+          courses.forEach(function (c) {
+            var th = el('th', c.fields.title);
+            th.append(el('small', c.fields.validMonths ? 'every ' + c.fields.validMonths + ' mo' : 'once'));
+            head.append(th);
+          });
+          var body = document.getElementById('matrix-body');
+          body.replaceChildren();
+          if (!people.length) { var tr0 = el('tr'), td0 = el('td', 'Nobody on the tracker yet.', 'empty'); td0.colSpan = courses.length + 1; tr0.append(td0); body.append(tr0); }
+          people.slice().sort(function (a, b) { return a.fields.name.localeCompare(b.fields.name); }).forEach(function (p) {
+            var tr = el('tr'), who = el('td', undefined, 'who');
+            who.append(el('span', p.fields.name));
+            var starts = p.fields.startedAt && daysLeft(p.fields.startedAt) > 0;
+            who.append(el('span', (p.fields.role || 'No role') + (starts ? ' · starts ' + niceDate(p.fields.startedAt) : ''), 'meta'));
+            tr.append(who);
+            courses.forEach(function (c) {
+              var x = cells[p.id + '|' + c.id], td = el('td');
+              var label = x.state === 'current' ? 'Until ' + niceDate(x.expiresAt, true) : x.state === 'expiring' ? inDays(x.days) : x.state === 'expired' ? 'Lapsed' : x.state === 'missing' ? 'Not done' : x.state === 'done' ? 'Done' : '–';
+              var chip = el('span', label, 'cell ' + x.state);
+              if (x.last && x.last.data.certificate) chip.title = 'Certificate ' + x.last.data.certificate;
+              td.append(chip);
+              if (x.booking) td.append(el('span', 'Booked ' + niceDate(x.booking.data.on), 'booked'));
+              tr.append(td);
+            });
+            body.append(tr);
+          });
+
+          var qz = document.getElementById('quizzes');
+          qz.replaceChildren();
+          if (!quizzes.length) qz.append(el('p', 'Ask your training coordinator for a quiz from one of your documents.', 'empty'));
+          quizzes.forEach(function (q) {
+            var box = el('details', undefined, 'quiz'), summary = el('summary'), list = el('ol');
+            box.open = !!openQuizzes[q.id];
+            box.addEventListener('toggle', function () { openQuizzes[q.id] = box.open; });
+            summary.append(el('b', q.fields.title + ' '));
+            summary.append(el('span', [plural((q.fields.questions || []).length, 'question', 'questions'), q.fields.courseTitle || '', q.fields.source ? 'from ' + q.fields.source : ''].filter(Boolean).join(' · ')));
+            box.append(summary);
+            (q.fields.questions || []).forEach(function (item) {
+              var li = el('li'), choices = el('div', undefined, 'choices'), verdict = el('p', '', 'verdict');
+              verdict.setAttribute('aria-live', 'polite');
+              li.append(el('p', item.q));
+              var buttons = (item.choices.length > 1 ? item.choices : ['Show the answer']).map(function (text, i) {
+                var b = el('button', text, 'choice');
+                b.type = 'button';
+                b.addEventListener('click', function () {
+                  if (item.choices.length === 1) { b.textContent = item.choices[0]; b.classList.add('right'); return; }
+                  buttons.forEach(function (x) { x.classList.remove('right', 'wrong'); });
+                  buttons[item.answer].classList.add('right');
+                  if (i !== item.answer) b.classList.add('wrong');
+                  verdict.textContent = i === item.answer ? 'Right.' : 'Not quite. The answer is: ' + item.choices[item.answer];
+                });
+                choices.append(b);
+                return b;
+              });
+              li.append(choices, verdict);
+              list.append(li);
+            });
+            box.append(list);
+            qz.append(box);
+          });
+        }
+
+        var cards = [];
+        function renderFiles(files) {
+          cards.forEach(function (c) { c.destroy(); }); cards = [];
+          var holder = document.getElementById('doc-files');
+          holder.replaceChildren();
+          if (!files.length) holder.append(el('p', 'Checklists, guides and handbooks you add appear here.', 'empty'));
+          if (!components || !components.fileCard) return;
+          files.forEach(function (file) {
+            var mount = el('div'); holder.append(mount);
+            cards.push(components.fileCard(mount, { file: Object.assign({ source: 'workspace' }, file), variant: 'row' }));
+          });
+        }
+        function listFiles() {
+          if (demoMode) return Promise.resolve(demoFiles.concat(components && components.demo ? components.demo.files() : []));
+          return gezel.data.list('docs').then(function (entries) {
+            return (entries || []).filter(function (e) { return e.kind !== 'dir' && e.kind !== 'directory'; }).map(function (e) { return { path: 'docs/' + e.name, name: e.name, size: e.size, mtime: e.mtime }; });
+          }, function () { return []; });
+        }
+
+        window.addEventListener('gezel-app-data-changed', function () { loadTracker(); });
+        window.loadTracker = loadTracker;
+        function loadTracker() {
+          var revision = ++appLoadRevision;
+          return Promise.all([gezel.data.read('people.json'), gezel.data.read('courses.json'), gezel.data.read('completions.json'), gezel.data.read('quizzes.json'), listFiles()]).then(function (values) {
+            if (appDisposed || revision !== appLoadRevision) return;
+            reportAppError(null);
+            render(values[0] || {}, values[1] || {}, values[2] || {}, values[3] || {});
+            renderFiles(values[4]);
+          }).catch(function (error) { if (!appDisposed && revision === appLoadRevision) reportAppError(error); });
+        }
+
+        if (components && components.fileAdder) {
+          components.fileAdder('#add-doc', { target: 'docs', onAdded: function () { loadTracker(); } });
+        }
+        loadTracker();
+        ['people.json', 'courses.json', 'completions.json', 'quizzes.json'].forEach(function (path) {
+          appSubscriptions.push(gezel.data.watch(path, function () { loadTracker(); }));
+        });
+      })();
+    </script>
+    <script src="application.js" defer></script>
+  </body>
+</html>

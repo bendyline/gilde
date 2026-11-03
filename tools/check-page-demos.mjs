@@ -62,6 +62,12 @@ for (const item of listItems(dataRoot, 'project-type')) {
   for (const marker of required) {
     if (!pageSource.includes(marker)) failures.push(`${item.id}@${manifest.version}: missing ${marker}`);
   }
+  // A page that offers a conversation shows one in its demo: the sample
+  // conversation scripted in demo-chat.js (docs/page-authoring.md).
+  const conversational = /appLayout|components\.chat\(/.test(pageSource) && !/"chat"\s*:\s*false/.test(pageSource);
+  if (conversational && !/\bchat\s*:\s*window\.demoChat\b/.test(pageSource)) {
+    failures.push(`${item.id}@${manifest.version}: missing a sample conversation (chat: window.demoChat in makeDemoGezel)`);
+  }
   if (/Read-only view|Could not resolve this project/.test(pageSource)) {
     failures.push(`${item.id}@${manifest.version}: retains a standalone dead-end message`);
   }

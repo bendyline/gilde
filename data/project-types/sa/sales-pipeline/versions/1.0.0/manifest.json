@@ -1,0 +1,450 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "releasedAt": "2026-11-02T18:00:00.000Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "business": {
+        "type": "string",
+        "title": "What kind of business is this?",
+        "description": "e.g. 'a three-person electrical contractor', 'a design studio in Austin'.",
+        "default": "the business"
+      }
+    },
+    "required": [
+      "business"
+    ]
+  },
+  "nameTemplate": "Sales Pipeline",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "account-manager",
+      "voorman": true
+    },
+    {
+      "templateId": "researcher"
+    }
+  ],
+  "scripts": {
+    "pipeline-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { logStore, rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'pipeline-store',\n  description:\n    \"Read and update the sales pipeline (deals.json) and its activity log (activity.json). action:'status' for the follow-ups due, every open deal by stage and the weighted forecast; 'add' to save a deal (an existing title is updated, never duplicated; valueChange adds to its value); 'move' to change its stage (won and lost close it); 'log' to record a call, email, meeting or note (valueChange there too moves the value); 'follow_up' to set the next touch; 'list' for every deal.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'status', 'add', 'move', 'log', 'follow_up', or 'list'.\",\n      required: true,\n    },\n    id: { type: 'string', description: \"Deal id, e.g. 'deal-3'.\" },\n    title: {\n      type: 'string',\n      description: \"The deal's name, e.g. 'Harbor Street Café kitchen rewire'. Also finds it (or its company) when no id is given.\",\n    },\n    company: { type: 'string', description: 'The customer.' },\n    contact: { type: 'string', description: 'The person you deal with there.' },\n    value: { type: 'number', description: \"The deal's whole value in dollars, e.g. 12400.\" },\n    valueChange: {\n      type: 'number',\n      description: 'Dollars to add to the current value (negative to take off), e.g. 3400 or -500.',\n    },\n    probability: { type: 'number', description: \"Chance to win, 0-100, when it differs from the stage's usual chance.\" },\n    status: { type: 'string', description: 'lead, qualified, proposal, negotiation, won, or lost.' },\n    closeAt: { type: 'string', description: 'Expected close date, YYYY-MM-DD.' },\n    followUpAt: { type: 'string', description: 'Next follow-up date, YYYY-MM-DD.' },\n    inDays: { type: 'number', description: 'Next follow-up this many days from today, instead of followUpAt.' },\n    nextStep: { type: 'string', description: 'What the next follow-up is for.' },\n    kind: { type: 'string', description: 'For log: call, email, meeting, or note.' },\n    source: { type: 'string', description: \"Where the lead came from, e.g. 'referral'.\" },\n    note: { type: 'string', description: 'What happened, or why a deal was lost, in the words given.' },\n    withinDays: { type: 'number', description: 'How many days ahead counts for follow-ups (default 7).' },\n  },\n  outputs: {\n    open: { type: 'number', description: 'Open deals.' },\n    openValue: { type: 'number', description: 'Value of the open deals, in dollars.' },\n    weightedForecast: { type: 'number', description: 'Weighted forecast of the open deals, in dollars.' },\n    followUpsDue: { type: 'number', description: 'Follow-ups overdue or due today.' },\n    summary: { type: 'string', description: 'What changed, then the pipeline picture, or the listing.' },\n  },\n  requires: ['workspace.read', 'workspace.write', 'reminders'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── pipeline-rules-start ──\n// Pure derivations: money in integer cents, a deal's chance and weighted\n// value, local calendar days for follow-ups, finding a deal by name, and the\n// pipeline picture the crew reads. Kept self-contained between these\n// sentinels so unit tests execute the shipped bytes.\nvar DAY_MS = 86400000;\nvar STAGES = ['lead', 'qualified', 'proposal', 'negotiation', 'won', 'lost'];\nvar OPEN_STAGES = ['lead', 'qualified', 'proposal', 'negotiation'];\nvar CHANCE = { lead: 10, qualified: 25, proposal: 50, negotiation: 75, won: 100, lost: 0 };\nvar KINDS = ['call', 'email', 'meeting', 'note'];\nvar TOUCHES = ['call', 'email', 'meeting', 'note', 'stage', 'won', 'lost'];\nvar NAME_STOP = ['the', 'and', 'for', 'with', 'our', 'deal', 'job', 'quote', 'bid'];\n\nfunction pad(n) {\n  return n < 10 ? '0' + n : String(n);\n}\nfunction localDay(ms) {\n  var d = new Date(ms);\n  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());\n}\nfunction normalizeDate(text) {\n  var raw = String(text || '').trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}/.test(raw)) return raw.slice(0, 10);\n  var parsed = Date.parse(raw);\n  return isFinite(parsed) ? localDay(parsed) : null;\n}\nfunction daysLeft(day, nowMs) {\n  var due = Date.parse(String(day).slice(0, 10) + 'T00:00:00');\n  var today = Date.parse(localDay(nowMs) + 'T00:00:00');\n  return Math.round((due - today) / DAY_MS);\n}\nfunction addDays(day, n) {\n  var d = new Date(String(day).slice(0, 10) + 'T12:00:00');\n  d.setDate(d.getDate() + n);\n  return localDay(d.getTime());\n}\nfunction when(days) {\n  if (days < 0) return -days + (days === -1 ? ' day late' : ' days late');\n  if (days === 0) return 'today';\n  if (days === 1) return 'tomorrow';\n  return 'in ' + days + ' days';\n}\nfunction ago(days) {\n  return days <= 0 ? 'today' : days === 1 ? 'yesterday' : days + ' days ago';\n}\n// Dollars as a number or text ('$12,400', '95.50') to integer cents; null when it is not money.\nfunction toCents(value) {\n  if (typeof value === 'string') value = Number(value.replace(/[$,\\s]/g, ''));\n  if (typeof value !== 'number' || !isFinite(value)) return null;\n  return (value < 0 ? -1 : 1) * Math.round(Math.abs(value) * 100);\n}\nfunction money(cents) {\n  var n = Math.round(Number(cents) || 0);\n  var abs = Math.abs(n);\n  var whole = String(Math.floor(abs / 100)).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',');\n  return (n < 0 ? '-$' : '$') + whole + (abs % 100 ? '.' + pad(abs % 100) : '');\n}\nfunction fold(text) {\n  return String(text || '')\n    .normalize('NFD')\n    .replace(/[̀-ͯ]/g, '')\n    .replace(/[‘’]/g, \"'\")\n    .toLowerCase()\n    .trim();\n}\nfunction isOpen(record) {\n  return OPEN_STAGES.indexOf(record.status) >= 0;\n}\nfunction chanceOf(record) {\n  var p = record.fields && record.fields.probability;\n  return typeof p === 'number' && p >= 0 && p <= 100 ? p : CHANCE[record.status] || 0;\n}\nfunction valueOf(record) {\n  return Number(record.fields && record.fields.valueCents) || 0;\n}\n// Value times chance, rounded half up to the cent.\nfunction weighted(record) {\n  return Math.floor((valueOf(record) * chanceOf(record) + 50) / 100);\n}\nfunction sum(records, of) {\n  return records.reduce(function (total, r) {\n    return total + of(r);\n  }, 0);\n}\n// The deal a person means: its id, its exact title, a title or company that\n// contains what they wrote, or one whose name holds every word they used.\n// Several matches prefer the open deals; a tie is an error that names them.\nfunction findDeal(records, input) {\n  if (input.id) {\n    var byId = records.filter(function (r) {\n      return r.id === String(input.id).trim();\n    });\n    if (byId.length) return byId[0];\n    if (!input.title && !input.company) throw new Error(\"No deal '\" + input.id + \"'. \" + roll(records));\n  }\n  var wanted = fold(input.title || input.company);\n  if (!wanted) throw new Error(\"Pass 'id' (e.g. 'deal-3') or the deal's 'title'. \" + roll(records));\n  var name = function (r) {\n    return fold(r.fields.title);\n  };\n  var both = function (r) {\n    return name(r) + ' ' + fold(r.fields.company);\n  };\n  var words = wanted.split(/[^a-z0-9']+/).filter(function (w) {\n    return w.length > 2 && NAME_STOP.indexOf(w) < 0;\n  });\n  var tiers = [\n    function (r) {\n      return name(r) === wanted;\n    },\n    function (r) {\n      return name(r).indexOf(wanted) >= 0 || fold(r.fields.company) === wanted;\n    },\n    function (r) {\n      return (\n        words.length > 0 &&\n        words.every(function (w) {\n          return both(r).indexOf(w) >= 0 || both(r).indexOf(w.replace(/s$/, '')) >= 0;\n        })\n      );\n    },\n  ];\n  for (var i = 0; i < tiers.length; i++) {\n    var hits = records.filter(tiers[i]);\n    if (hits.length > 1) {\n      var open = hits.filter(isOpen);\n      if (open.length) hits = open;\n    }\n    if (hits.length === 1) return hits[0];\n    if (hits.length > 1) {\n      throw new Error(\n        \"More than one deal matches '\" + (input.title || input.company) + \"': \" +\n          hits.map(function (r) { return r.id + ' ' + r.fields.title; }).join(', ') + '. Pass id.',\n      );\n    }\n  }\n  throw new Error(\"No deal matches '\" + (input.title || input.company) + \"'. \" + roll(records));\n}\nfunction roll(records) {\n  var open = records.filter(isOpen);\n  return open.length\n    ? 'Open deals: ' + open.map(function (r) { return r.id + ' ' + r.fields.title; }).join(', ') + '.'\n    : 'There are no open deals.';\n}\nfunction lastTouch(record, events) {\n  var mine = events.filter(function (e) {\n    return e.data && e.data.dealId === record.id && TOUCHES.indexOf(e.kind) >= 0;\n  });\n  return mine.length ? mine[mine.length - 1].at : record.createdAt;\n}\nfunction dealLine(record, events, nowMs) {\n  var f = record.fields || {};\n  var head = record.id;\n  if (f.company && fold(f.title).indexOf(fold(f.company)) < 0) head += ', ' + f.company;\n  if (f.contact) head += ', contact ' + f.contact;\n  head += ', ' + record.status + ', ' + money(valueOf(record));\n  if (isOpen(record)) head += ' at ' + chanceOf(record) + '% = ' + money(weighted(record)) + ' weighted';\n  var parts = [head];\n  if (f.followUpAt) parts.push('follow up ' + when(daysLeft(f.followUpAt, nowMs)) + ' (' + f.followUpAt + ')' + (f.nextStep ? ': ' + f.nextStep : ''));\n  else if (isOpen(record)) parts.push('no follow-up set');\n  if (isOpen(record) && f.closeAt) parts.push('expected to close ' + f.closeAt);\n  if (!isOpen(record) && f.closedAt) parts.push(record.status + ' ' + f.closedAt + (f.lostReason ? ': ' + f.lostReason : ''));\n  var touched = lastTouch(record, events);\n  if (touched) parts.push('last touch ' + ago(-daysLeft(localDay(Date.parse(touched)), nowMs)));\n  return f.title + ' (' + parts.join('; ') + ')';\n}\nfunction followLine(record, nowMs) {\n  var f = record.fields;\n  return (\n    f.title + ' (' + record.id + (f.contact ? ', ' + f.contact : '') + ') ' + when(daysLeft(f.followUpAt, nowMs)) +\n    (f.nextStep ? ': ' + f.nextStep : '')\n  );\n}\nfunction picture(records, events, nowMs, withinDays) {\n  var open = records.filter(isOpen);\n  var byFollow = function (a, b) {\n    return String(a.fields.followUpAt).localeCompare(String(b.fields.followUpAt));\n  };\n  var due = open\n    .filter(function (r) {\n      return r.fields.followUpAt && daysLeft(r.fields.followUpAt, nowMs) <= withinDays;\n    })\n    .sort(byFollow);\n  var dueNow = due.filter(function (r) {\n    return daysLeft(r.fields.followUpAt, nowMs) <= 0;\n  });\n  var unset = open.filter(function (r) {\n    return !r.fields.followUpAt;\n  });\n  var month = localDay(nowMs).slice(0, 7);\n  var closing = open.filter(function (r) {\n    return String(r.fields.closeAt || '').slice(0, 7) === month;\n  });\n  var recent = function (status) {\n    return records.filter(function (r) {\n      return r.status === status && r.fields.closedAt && -daysLeft(r.fields.closedAt, nowMs) <= 30;\n    });\n  };\n  var won = recent('won');\n  var lost = recent('lost');\n  var decided = records.filter(function (r) {\n    return r.status === 'won' || r.status === 'lost';\n  });\n  var wonAll = decided.filter(function (r) {\n    return r.status === 'won';\n  });\n  var parts = [\n    open.length + (open.length === 1 ? ' open deal' : ' open deals') + ' worth ' + money(sum(open, valueOf)) +\n      '; weighted forecast ' + money(sum(open, weighted)) + '.',\n  ];\n  // One list, overdue first: a model asked about today reads a separate overdue list as out of scope.\n  parts.push(\n    due.length\n      ? 'Follow-ups within ' + withinDays + ' days, overdue first: ' + due.map(function (r) { return followLine(r, nowMs); }).join(' | ') + '.'\n      : 'No follow-ups due in the next ' + withinDays + ' days.',\n  );\n  if (unset.length) parts.push('No follow-up set: ' + unset.map(function (r) { return r.fields.title + ' (' + r.id + ')'; }).join(', ') + '.');\n  var stages = OPEN_STAGES.filter(function (s) {\n    return open.some(function (r) { return r.status === s; });\n  }).map(function (s) {\n    var here = open.filter(function (r) { return r.status === s; });\n    return s + ' (' + here.length + ', ' + money(sum(here, valueOf)) + '): ' + here.map(function (r) { return dealLine(r, events, nowMs); }).join(' | ');\n  });\n  if (stages.length) parts.push('Open deals by stage: ' + stages.join('. ') + '.');\n  if (closing.length) {\n    parts.push(\n      'Expected to close this month: ' + closing.length + (closing.length === 1 ? ' deal, ' : ' deals, ') + money(sum(closing, valueOf)) +\n        ', weighted ' + money(sum(closing, weighted)) + '.',\n    );\n  }\n  if (won.length || lost.length) {\n    parts.push(\n      'Last 30 days: won ' + won.length + ' (' + money(sum(won, valueOf)) + ')' +\n        (won.length ? ': ' + won.map(function (r) { return r.fields.title; }).join(', ') : '') +\n        '; lost ' + lost.length + ' (' + money(sum(lost, valueOf)) + ')' +\n        (lost.length ? ': ' + lost.map(function (r) { return r.fields.title + (r.fields.lostReason ? ' (' + r.fields.lostReason + ')' : ''); }).join('; ') : '') + '.',\n    );\n  }\n  if (decided.length) {\n    parts.push('Win rate: ' + wonAll.length + ' of ' + decided.length + ' decided deals (' + Math.round((wonAll.length / decided.length) * 100) + '%).');\n  }\n  return {\n    open: open.length,\n    openValueCents: sum(open, valueOf),\n    weightedCents: sum(open, weighted),\n    followUpsDue: dueNow.length,\n    summary: records.length ? parts.join(' ') : 'No deals on the pipeline yet.',\n  };\n}\n// ── pipeline-rules-end ──\n\ntype Deal = { id: string; status: string; fields: Record<string, unknown>; createdAt: string };\n\nconst deals = rosterStore(gezel.fs, 'deals.json', {\n  stages: ['lead', 'qualified', 'proposal', 'negotiation', 'won', 'lost'],\n  idPrefix: 'deal',\n});\nconst activity = logStore(gezel.fs, 'activity.json');\nconst now = Date.now();\nconst today = localDay(now);\n\nfunction given(value: unknown): boolean {\n  return value !== undefined && value !== null && value !== '';\n}\n\nfunction followUpInput(): string | undefined {\n  if (typeof input.inDays === 'number' && isFinite(input.inDays)) return addDays(today, Math.max(0, Math.round(input.inDays)));\n  if (given(input.followUpAt)) {\n    const day = normalizeDate(input.followUpAt);\n    if (!day) throw new Error(\"followUpAt must be a date, e.g. '2026-11-20', or pass inDays.\");\n    return day;\n  }\n  return undefined;\n}\n\nasync function move(record: Deal, to: string, why?: string): Promise<string> {\n  if (STAGES.indexOf(to) < 0) throw new Error(\"status must be one of: \" + STAGES.join(', ') + '.');\n  const title = String(record.fields.title);\n  if (record.status === to) return title + ' is already ' + to + '.';\n  const closing = to === 'won' || to === 'lost';\n  await deals.update(record.id, {\n    fields: {\n      probability: null,\n      closedAt: closing ? today : null,\n      ...(closing ? { followUpAt: null, nextStep: null } : {}),\n      ...(to === 'lost' && why ? { lostReason: why } : {}),\n    },\n  });\n  await deals.transition(record.id, to, why ? { note: why } : {});\n  await activity.append({\n    kind: closing ? to : 'stage',\n    note: why || 'Moved from ' + record.status + ' to ' + to + '.',\n    data: { dealId: record.id, from: record.status, to },\n  });\n  return (\n    title + ' moved from ' + record.status + ' to ' + to +\n    (to === 'won' ? ': ' + money(valueOf(record)) + ' won' : to === 'lost' && why ? ': ' + why : '') + '.'\n  );\n}\n\n// The pipeline's one reminder sits on the soonest follow-up, the morning it is due.\nasync function remindNextFollowUp(): Promise<void> {\n  const next = (await deals.list())\n    .filter((r) => isOpen(r) && typeof r.fields.followUpAt === 'string')\n    .map((r) => ({ record: r, at: Date.parse(String(r.fields.followUpAt) + 'T09:00:00') }))\n    .filter((r) => r.at > now)\n    .sort((a, b) => a.at - b.at)[0];\n  try {\n    if (!next || next.at - now > 30 * DAY_MS) await gezel.reminder.clear();\n    else {\n      const f = next.record.fields;\n      await gezel.reminder.set({\n        at: new Date(next.at).toISOString(),\n        title: ('Follow up: ' + String(f.company || f.title)).slice(0, 80),\n        body: (String(f.nextStep || f.title) + ' (' + String(f.title) + ', ' + money(valueOf(next.record)) + ').').slice(0, 160),\n      });\n    }\n  } catch {\n    // Reminders are a convenience; the pipeline is the record.\n  }\n}\n\nconst withinDays = typeof input.withinDays === 'number' && input.withinDays > 0 ? Math.round(input.withinDays) : 7;\nlet note = '';\n\nif (input.action === 'add') {\n  const all = (await deals.list()) as Deal[];\n  const title = String(input.title || input.company || '').trim();\n  let existing: Deal | null = null;\n  if (given(input.id)) existing = findDeal(all, { id: input.id, title: input.title });\n  // A change to the value is a change to a deal that exists, never a new one.\n  else if (given(input.valueChange)) existing = findDeal(all, input);\n  else if (title) existing = all.find((r) => fold(r.fields.title) === fold(title)) ?? null;\n  if (!existing && !title) throw new Error(\"add needs 'title': the job or opportunity, e.g. 'Fernwood Studio lighting retrofit'.\");\n  const status = given(input.status) ? String(input.status).trim().toLowerCase() : '';\n  if (status && STAGES.indexOf(status) < 0) throw new Error('status must be one of: ' + STAGES.join(', ') + '.');\n  const fields: Record<string, unknown> = {};\n  if (input.company) fields.company = input.company.trim();\n  if (input.contact) fields.contact = input.contact.trim();\n  if (input.source) fields.source = input.source.trim();\n  if (input.nextStep) fields.nextStep = input.nextStep.trim();\n  if (given(input.closeAt)) {\n    const closeAt = normalizeDate(input.closeAt);\n    if (!closeAt) throw new Error(\"closeAt must be a date, e.g. '2026-12-15'.\");\n    fields.closeAt = closeAt;\n  }\n  const follow = followUpInput();\n  if (follow) fields.followUpAt = follow;\n  if (given(input.probability)) {\n    const p = Number(input.probability);\n    if (!isFinite(p) || p < 0 || p > 100) throw new Error('probability is a percent from 0 to 100.');\n    fields.probability = Math.round(p);\n  }\n  if (given(input.value) && !given(input.valueChange)) {\n    const cents = toCents(input.value);\n    if (cents === null || cents < 0) throw new Error('value is the amount in dollars, e.g. 12400.');\n    fields.valueCents = cents;\n  }\n  if (existing) {\n    let valueNote = '';\n    if (given(input.valueChange)) {\n      const change = toCents(input.valueChange);\n      if (change === null) throw new Error('valueChange is an amount in dollars, e.g. 3400 or -500.');\n      const before = valueOf(existing);\n      if (before + change < 0) throw new Error(String(existing.fields.title) + ' is ' + money(before) + '; that change would take it below zero.');\n      fields.valueCents = before + change;\n      valueNote = ': value ' + money(before) + (change < 0 ? ' - ' + money(-change) : ' + ' + money(change)) + ' = ' + money(before + change);\n    } else if (fields.valueCents !== undefined) {\n      valueNote = ': value now ' + money(fields.valueCents);\n    }\n    if (given(input.id) && input.title && fold(input.title) !== fold(existing.fields.title)) fields.title = input.title.trim();\n    await deals.update(existing.id, { fields });\n    note = 'Updated ' + String(existing.fields.title) + valueNote + '.';\n    if (status && status !== existing.status) {\n      note += ' ' + (await move({ ...existing, fields: { ...existing.fields, ...fields } }, status, input.note));\n    } else if (input.note) {\n      await activity.append({ kind: 'note', note: input.note, data: { dealId: existing.id } });\n    }\n  } else {\n    const start = status || 'lead';\n    const closing = start === 'won' || start === 'lost';\n    const record = await deals.add({\n      status: start,\n      fields: { title, valueCents: 0, ...fields, ...(closing ? { closedAt: today } : {}) },\n    });\n    await activity.append({\n      kind: closing ? start : 'note',\n      note: input.note || 'Deal added at ' + start + '.',\n      data: { dealId: record.id },\n    });\n    note = 'Added ' + record.id + ': ' + title + ', ' + money(valueOf(record)) + ', ' + start + '.';\n  }\n} else if (input.action === 'move') {\n  const record = findDeal((await deals.list()) as Deal[], input);\n  if (!given(input.status)) throw new Error(\"move needs 'status': qualified, proposal, negotiation, won, or lost.\");\n  note = await move(record, String(input.status).trim().toLowerCase(), input.note);\n} else if (input.action === 'log') {\n  const record = findDeal((await deals.list()) as Deal[], input);\n  if (!input.note) throw new Error(\"log needs 'note': what happened.\");\n  const kind = KINDS.indexOf(String(input.kind)) >= 0 ? String(input.kind) : 'note';\n  await activity.append({ kind, note: input.note, data: { dealId: record.id } });\n  const next = followUpInput();\n  const due = typeof record.fields.followUpAt === 'string' && daysLeft(record.fields.followUpAt, now) <= 0;\n  const fields: Record<string, unknown> = {};\n  let valueNote = '';\n  if (given(input.valueChange)) {\n    const change = toCents(input.valueChange);\n    if (change === null) throw new Error('valueChange is an amount in dollars, e.g. 3400 or -500.');\n    const before = valueOf(record);\n    if (before + change < 0) throw new Error(String(record.fields.title) + ' is ' + money(before) + '; that change would take it below zero.');\n    fields.valueCents = before + change;\n    valueNote = ' Value ' + money(before) + (change < 0 ? ' - ' + money(-change) : ' + ' + money(change)) + ' = ' + money(before + change) + '.';\n  } else if (/\\$\\s?\\d/.test(input.note)) {\n    // A note that names an amount usually means the value moved; say it did not.\n    valueNote = ' Its value is unchanged at ' + money(valueOf(record)) + '; if the note changes it, call add_deal with valueChange.';\n  }\n  if (next) {\n    fields.followUpAt = next;\n    if (input.nextStep) fields.nextStep = input.nextStep.trim();\n  } else if (kind !== 'note' && due) {\n    // The touch was the follow-up that was due.\n    fields.followUpAt = null;\n    fields.nextStep = null;\n  }\n  await deals.update(record.id, { fields });\n  note =\n    'Logged ' + (kind === 'email' ? 'an ' : 'a ') + kind + ' on ' + String(record.fields.title) +\n    (next ? '; next follow-up ' + next + (input.nextStep ? ': ' + input.nextStep.trim() : '') + '.' : kind !== 'note' && due ? '; that was the follow-up that was due, so none is set now.' : '.') +\n    valueNote;\n} else if (input.action === 'follow_up') {\n  const record = findDeal((await deals.list()) as Deal[], input);\n  const next = followUpInput();\n  if (!next) throw new Error(\"follow_up needs followUpAt (YYYY-MM-DD) or inDays.\");\n  if (!isOpen(record)) throw new Error(String(record.fields.title) + ' is ' + record.status + '; move it back to an open stage first.');\n  await deals.update(record.id, { fields: { followUpAt: next, ...(input.nextStep ? { nextStep: input.nextStep.trim() } : {}) } });\n  await activity.append({\n    kind: 'follow-up',\n    note: 'Follow up ' + next + (input.nextStep ? ': ' + input.nextStep.trim() : '') + '.',\n    data: { dealId: record.id },\n  });\n  note = String(record.fields.title) + ': follow up ' + when(daysLeft(next, now)) + ' (' + next + ')' + (input.nextStep ? ', ' + input.nextStep.trim() : '') + '.';\n} else if (input.action !== 'status' && input.action !== 'list') {\n  throw new Error(\"Unknown action '\" + input.action + \"'. Use status, add, move, log, follow_up, or list.\");\n}\n\nconst records = (await deals.list()) as Deal[];\nconst events = await activity.list();\nconst view = picture(records, events, now, withinDays);\nawait remindNextFollowUp();\n\ngezel.output({\n  open: view.open,\n  openValue: view.openValueCents / 100,\n  weightedForecast: Math.round(view.weightedCents) / 100,\n  followUpsDue: view.followUpsDue,\n  summary:\n    input.action === 'list'\n      ? records\n          .slice()\n          .sort((a, b) => Number(!isOpen(a)) - Number(!isOpen(b)))\n          .map((r) => '[' + r.status + '] ' + dealLine(r, events, now))\n          .join('\\n') || 'No deals on the pipeline yet.'\n      : (note ? note + ' ' : '') + view.summary,\n});\n"
+  },
+  "tools": [
+    {
+      "name": "pipeline_status",
+      "description": "The whole pipeline: follow-ups due (overdue first), every open deal by stage with its id, value, chance and weighted value, the weighted forecast, and what was won or lost lately. Call it first when asked about deals, follow-ups or the forecast.",
+      "script": "pipeline-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "withinDays": {
+            "type": "number"
+          }
+        }
+      },
+      "bind": {
+        "action": "status"
+      },
+      "state": true
+    },
+    {
+      "name": "add_deal",
+      "description": "Save a deal the moment it is mentioned, before you describe it: title, company, contact, value in dollars, stage, expected close date and next follow-up. An existing title (or id) is updated, never duplicated. When a deal’s value grows or shrinks, pass its title and valueChange (e.g. 3400) instead of working out the new total.",
+      "script": "pipeline-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Pass it to change an existing deal."
+          },
+          "title": {
+            "type": "string",
+            "description": "The job or opportunity, e.g. \"Fernwood Studio lighting retrofit\"."
+          },
+          "company": {
+            "type": "string"
+          },
+          "contact": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number",
+            "description": "The whole value in dollars."
+          },
+          "valueChange": {
+            "type": "number",
+            "description": "When the value grows or shrinks: the dollars added (or, negative, taken off). The tool works out the new total."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "lead",
+              "qualified",
+              "proposal",
+              "negotiation",
+              "won",
+              "lost"
+            ]
+          },
+          "probability": {
+            "type": "number",
+            "description": "Chance to win, 0-100, only when it differs from the stage’s usual chance."
+          },
+          "closeAt": {
+            "type": "string",
+            "description": "Expected close date, YYYY-MM-DD."
+          },
+          "followUpAt": {
+            "type": "string",
+            "description": "Next follow-up date, YYYY-MM-DD."
+          },
+          "inDays": {
+            "type": "number",
+            "description": "Or: the next follow-up this many days from today."
+          },
+          "nextStep": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add"
+      }
+    },
+    {
+      "name": "move_deal",
+      "description": "Move a deal to another stage the moment the person says it moved: lead, qualified, proposal, negotiation, won, or lost (with the reason in note). Won and lost close the deal and clear its follow-up.",
+      "script": "pipeline-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "description": "The deal’s title or company, when no id."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "lead",
+              "qualified",
+              "proposal",
+              "negotiation",
+              "won",
+              "lost"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "description": "Why, or what was agreed."
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "bind": {
+        "action": "move"
+      }
+    },
+    {
+      "name": "log_activity",
+      "description": "Record a call, email, meeting or note on a deal as soon as it is mentioned, in the person’s words. Pass followUpAt or inDays when they name the next touch; a call, email or meeting on a due follow-up clears it. When what happened changes the deal’s value, pass valueChange too.",
+      "script": "pipeline-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "description": "The deal’s title or company, when no id."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "call",
+              "email",
+              "meeting",
+              "note"
+            ]
+          },
+          "note": {
+            "type": "string"
+          },
+          "valueChange": {
+            "type": "number",
+            "description": "When the value grows or shrinks: the dollars added (or, negative, taken off). The tool works out the new total."
+          },
+          "followUpAt": {
+            "type": "string",
+            "description": "Next follow-up date, YYYY-MM-DD."
+          },
+          "inDays": {
+            "type": "number",
+            "description": "Or: the next follow-up this many days from today."
+          },
+          "nextStep": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "note"
+        ]
+      },
+      "bind": {
+        "action": "log"
+      }
+    },
+    {
+      "name": "schedule_follow_up",
+      "description": "Set a deal’s next follow-up: a date (followUpAt, YYYY-MM-DD) or a number of days from today (inDays), and what it is for.",
+      "script": "pipeline-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "description": "The deal’s title or company, when no id."
+          },
+          "followUpAt": {
+            "type": "string"
+          },
+          "inDays": {
+            "type": "number"
+          },
+          "nextStep": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "follow_up"
+      }
+    },
+    {
+      "name": "list_deals",
+      "description": "Every deal, open and closed, with its stage, value, follow-up and last touch.",
+      "script": "pipeline-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "list"
+      }
+    },
+    {
+      "name": "page_add_deal",
+      "description": "Add or update a deal.",
+      "script": "pipeline-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Pass it to change an existing deal."
+          },
+          "title": {
+            "type": "string",
+            "description": "The job or opportunity, e.g. \"Fernwood Studio lighting retrofit\"."
+          },
+          "company": {
+            "type": "string"
+          },
+          "contact": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number",
+            "description": "The whole value in dollars."
+          },
+          "valueChange": {
+            "type": "number",
+            "description": "When the value grows or shrinks: the dollars added (or, negative, taken off). The tool works out the new total."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "lead",
+              "qualified",
+              "proposal",
+              "negotiation",
+              "won",
+              "lost"
+            ]
+          },
+          "probability": {
+            "type": "number",
+            "description": "Chance to win, 0-100, only when it differs from the stage’s usual chance."
+          },
+          "closeAt": {
+            "type": "string",
+            "description": "Expected close date, YYYY-MM-DD."
+          },
+          "followUpAt": {
+            "type": "string",
+            "description": "Next follow-up date, YYYY-MM-DD."
+          },
+          "inDays": {
+            "type": "number",
+            "description": "Or: the next follow-up this many days from today."
+          },
+          "nextStep": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add"
+      }
+    },
+    {
+      "name": "page_log_activity",
+      "description": "Record a call, email, meeting or note on a deal.",
+      "script": "pipeline-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "description": "The deal’s title or company, when no id."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "call",
+              "email",
+              "meeting",
+              "note"
+            ]
+          },
+          "note": {
+            "type": "string"
+          },
+          "followUpAt": {
+            "type": "string",
+            "description": "Next follow-up date, YYYY-MM-DD."
+          },
+          "inDays": {
+            "type": "number",
+            "description": "Or: the next follow-up this many days from today."
+          },
+          "nextStep": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "note"
+        ]
+      },
+      "bind": {
+        "action": "log"
+      }
+    },
+    {
+      "name": "page_move_deal",
+      "description": "Move a deal to another stage.",
+      "script": "pipeline-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "description": "The deal’s title or company, when no id."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "lead",
+              "qualified",
+              "proposal",
+              "negotiation",
+              "won",
+              "lost"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "description": "Why, or what was agreed."
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "bind": {
+        "action": "move"
+      },
+      "reaction": {
+        "gezel": "account-manager",
+        "hideSeed": true,
+        "prompt": "The person just moved a deal on the pipeline page. The pipeline now reads (its first sentence is what changed):\n{{output.summary}}\nIn two short sentences, confirm the move and the weighted forecast now, and name the next follow-up to make. Do not call tools."
+      }
+    }
+  ],
+  "craftbooks": [
+    "proposal-sow",
+    "meeting-prep-brief",
+    "lead-enrichment"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "pipeline/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "deals.json"
+      },
+      {
+        "source": "workspace",
+        "path": "activity.json"
+      }
+    ],
+    "tools": [
+      "page_add_deal",
+      "page_log_activity",
+      "page_move_deal"
+    ]
+  },
+  "workspaceSeed": [
+    "deals.json",
+    "activity.json"
+  ],
+  "minGezelVersion": "1.26280"
+}

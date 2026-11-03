@@ -1,0 +1,428 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "releasedAt": "2026-11-02T18:00:00.000Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "business": {
+        "type": "string",
+        "title": "What kind of business is hiring?",
+        "description": "e.g. 'a café in Portland', 'a six-person design studio'.",
+        "default": "the business"
+      }
+    },
+    "required": [
+      "business"
+    ]
+  },
+  "nameTemplate": "Hiring Desk",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "recruiter",
+      "voorman": true
+    },
+    {
+      "templateId": "mock-interviewer"
+    }
+  ],
+  "scripts": {
+    "hiring-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { logStore, rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'hiring-store',\n  description:\n    \"Read and update the hiring desk: roles.json (open roles and their requirements), candidates.json (each candidate's stage) and feedback.json (interview scorecards and notes). action:'status' for every pipeline, the interviews coming up and the scorecards still missing; 'add_role' to open or update a role; 'add_candidate' to add a candidate (an existing name in that role is updated, never duplicated); 'move' to change a stage or book an interview; 'feedback' to record a scorecard; 'list' for every candidate.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'status', 'add_role', 'add_candidate', 'move', 'feedback', or 'list'.\",\n      required: true,\n    },\n    title: { type: 'string', description: \"For add_role: the role's title, e.g. 'Barista'.\" },\n    requirements: {\n      type: 'string',\n      description: \"For add_role: the job-related requirements interviewers rate, separated by commas, e.g. 'Coffee and milk skills, Warm customer service'.\",\n    },\n    openings: { type: 'number', description: 'For add_role: how many people the role will hire.' },\n    manager: { type: 'string', description: 'For add_role: the hiring manager.' },\n    pay: { type: 'string', description: \"For add_role: pay as the business states it, e.g. '$19-21 an hour plus tips'.\" },\n    roleStatus: { type: 'string', description: 'For add_role: open, paused, filled, or closed.' },\n    role: { type: 'string', description: \"Role id (e.g. 'role-1') or title.\" },\n    candidate: {\n      type: 'string',\n      description: \"Candidate id (e.g. 'cand-3') or name; a first name is enough when it is unique.\",\n    },\n    name: { type: 'string', description: \"For add_candidate: the candidate's full name.\" },\n    source: { type: 'string', description: 'For add_candidate: where they came from, e.g. referral or job board.' },\n    status: { type: 'string', description: 'The stage: sourced, screen, interview, offer, hired, or closed.' },\n    interviewOn: {\n      type: 'string',\n      description: \"The interview date, YYYY-MM-DD or a weekday such as 'thursday'.\",\n    },\n    interviewTime: { type: 'string', description: \"The interview time as said, e.g. '2:30 pm'.\" },\n    interviewer: { type: 'string', description: 'Who will interview.' },\n    by: { type: 'string', description: 'For feedback: who did the interview.' },\n    ratings: {\n      type: 'string',\n      description: \"For feedback: 1 to 4 per requirement, e.g. 'Coffee and milk skills 3, Warm customer service 4'.\",\n    },\n    note: { type: 'string', description: 'What happened, in job-related terms.' },\n    withinDays: { type: 'number', description: 'How many days ahead count as coming up (default 7).' },\n  },\n  outputs: {\n    openRoles: { type: 'number', description: 'Roles open or paused.' },\n    inPipeline: { type: 'number', description: 'Candidates not yet hired or closed.' },\n    interviewsSoon: { type: 'number', description: 'Interviews booked within the window.' },\n    summary: { type: 'string', description: 'What changed, then the desk picture or the listing.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── hiring-rules-start ──\n// Pure derivations: dates in local calendar days, record matching, the\n// protected-characteristics guard, scorecard parsing and the desk picture the\n// crew reads. Kept self-contained between these sentinels so tests execute the\n// shipped bytes.\nvar DAY_MS = 86400000;\nvar WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];\nvar MONTH_KEYS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];\n\nfunction pad(n) {\n  return n < 10 ? '0' + n : String(n);\n}\nfunction localDay(ms) {\n  var d = new Date(ms);\n  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());\n}\nfunction noon(day) {\n  return new Date(String(day).slice(0, 10) + 'T12:00:00');\n}\nfunction addDays(day, n) {\n  var d = noon(day);\n  d.setDate(d.getDate() + n);\n  return localDay(d.getTime());\n}\nfunction addMonths(day, months) {\n  var d = noon(day);\n  var date = d.getDate();\n  d.setDate(1);\n  d.setMonth(d.getMonth() + months);\n  // The 31st rolls to the last day of a shorter month, not into the next one.\n  d.setDate(Math.min(date, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));\n  return localDay(d.getTime());\n}\nfunction daysLeft(day, nowMs) {\n  var due = Date.parse(String(day).slice(0, 10) + 'T00:00:00');\n  var today = Date.parse(localDay(nowMs) + 'T00:00:00');\n  return Math.round((due - today) / DAY_MS);\n}\nfunction dayName(day) {\n  return WEEKDAYS[noon(day).getDay()];\n}\nfunction parseDay(text, nowMs, direction) {\n  var raw = String(text == null ? '' : text).trim().toLowerCase().replace(/[.,]/g, ' ').replace(/\\s+/g, ' ').trim();\n  if (!raw) return null;\n  var iso = raw.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})(?:t.*)?$/);\n  if (iso) return iso[1] + '-' + pad(Number(iso[2])) + '-' + pad(Number(iso[3]));\n  var today = localDay(nowMs);\n  if (raw === 'today' || raw === 'now') return today;\n  if (raw === 'tomorrow') return addDays(today, 1);\n  if (raw === 'yesterday') return addDays(today, -1);\n  var rel = raw.match(/^(?:in )?(\\d{1,3}) (day|days|week|weeks)( ago| from now)?$/);\n  if (rel) {\n    var n = Number(rel[1]) * (rel[2].charAt(0) === 'w' ? 7 : 1);\n    return addDays(today, rel[3] === ' ago' ? -n : n);\n  }\n  var wd = raw.match(/^(this |next |last |on |coming )?(sun|mon|tue|wed|thu|fri|sat)[a-z]*$/);\n  if (wd) {\n    var target = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].indexOf(wd[2]);\n    var now = noon(today).getDay();\n    if (direction === 'past' || wd[1] === 'last ') {\n      var back = (now - target + 7) % 7;\n      return addDays(today, -(wd[1] === 'last ' && back === 0 ? 7 : back));\n    }\n    if (wd[1] === 'this ') return addDays(today, (target - now + 7) % 7);\n    return addDays(today, ((target - now + 6) % 7) + 1);\n  }\n  var md = raw.match(/^(?:[a-z]+day )?([a-z]{3,9}) (\\d{1,2})(?:st|nd|rd|th)?(?: (\\d{4}))?$/);\n  var dm = raw.match(/^(?:[a-z]+day )?(\\d{1,2})(?:st|nd|rd|th)? (?:of )?([a-z]{3,9})(?: (\\d{4}))?$/);\n  var parts = md ? { month: md[1], date: md[2], year: md[3] } : dm ? { month: dm[2], date: dm[1], year: dm[3] } : null;\n  if (parts) {\n    var m = MONTH_KEYS.indexOf(parts.month.slice(0, 3));\n    if (m < 0) return null;\n    var date = Number(parts.date);\n    if (date < 1 || date > 31) return null;\n    if (parts.year) return parts.year + '-' + pad(m + 1) + '-' + pad(date);\n    var year = noon(today).getFullYear();\n    var guess = year + '-' + pad(m + 1) + '-' + pad(date);\n    var d = daysLeft(guess, nowMs);\n    if (direction === 'past' && d > 0) guess = year - 1 + guess.slice(4);\n    if (direction !== 'past' && d < 0) guess = year + 1 + guess.slice(4);\n    return guess;\n  }\n  return null;\n}\nfunction matches(records, text, labelOf) {\n  var wanted = String(text == null ? '' : text).trim().toLowerCase().replace(/['\\u2019]s\\b/g, '').replace(/\\s+/g, ' ');\n  if (!wanted) return [];\n  var tiers = [\n    function (r) { return String(r.id).toLowerCase() === wanted; },\n    function (r) { return labelOf(r).toLowerCase() === wanted; },\n    function (r) { return labelOf(r).toLowerCase().indexOf(wanted) === 0; },\n    function (r) { return (' ' + labelOf(r).toLowerCase() + ' ').indexOf(' ' + wanted + ' ') >= 0; },\n    function (r) { return labelOf(r).toLowerCase().indexOf(wanted) >= 0; },\n    function (r) { var l = labelOf(r).toLowerCase(); return l.length >= 3 && wanted.indexOf(l) >= 0; },\n  ];\n  for (var i = 0; i < tiers.length; i++) {\n    var hit = records.filter(tiers[i]);\n    if (hit.length) return hit;\n  }\n  return [];\n}\nfunction describe(records, labelOf) {\n  return records.map(function (r) { return r.id + ' ' + labelOf(r); }).join(', ');\n}\nfunction splitList(text) {\n  var raw = String(text == null ? '' : text).trim();\n  if (/^\\[/.test(raw)) {\n    try {\n      var parsed = JSON.parse(raw);\n      if (Array.isArray(parsed)) return parsed.map(function (s) { return String(s).trim(); }).filter(Boolean);\n    } catch (e) {\n      // Not JSON after all; split it as text.\n    }\n  }\n  return raw\n    .split(/\\s*[,;\\n]+\\s*/)\n    .map(function (s) { return s.replace(/^(and|or|plus)\\s+/i, '').replace(/[.\\s]+$/, '').trim(); })\n    .filter(Boolean);\n}\nvar STAGES = ['sourced', 'screen', 'interview', 'offer', 'hired', 'closed'];\nvar ROLE_STATUSES = ['open', 'paused', 'filled', 'closed'];\nvar STAGE_WORDS = {\n  sourcing: 'sourced', new: 'sourced', applied: 'sourced', screening: 'screen', 'phone screen': 'screen',\n  interviewing: 'interview', interviews: 'interview', offered: 'offer', 'offer out': 'offer', hire: 'hired',\n  rejected: 'closed', reject: 'closed', declined: 'closed', withdrew: 'closed', withdrawn: 'closed',\n  'not moving forward': 'closed', close: 'closed',\n};\n// A requirement or a rating may never name a protected characteristic.\nvar PROTECTED = /\\b(age|aged|ages|young|younger|youthful|older|elderly|race|racial|ethnic|ethnicity|skin colou?r|religion|religious|gender|sex|sexual orientation|male|female|pregnant|pregnancy|maternity|disabled|disability|disabilities|national origin|nationality|native speaker|marital|married|genetic|veteran status)\\b/i;\nvar STOP = ['and', 'the', 'with', 'for', 'skill', 'skills', 'good', 'great', 'strong', 'very', 'their'];\n\nfunction protectedTerm(text) {\n  var m = String(text == null ? '' : text).match(PROTECTED);\n  return m ? m[1].toLowerCase() : null;\n}\nfunction protectedMessage(term) {\n  return (\n    \"Hiring Desk never rates or screens on '\" + term + \"'. Requirements and ratings cover the job only \" +\n    '(skills, experience, availability, how someone works); age, race, religion, sex, pregnancy, disability, ' +\n    'national origin and other protected traits stay out of hiring.'\n  );\n}\nfunction stageOf(text) {\n  var raw = String(text == null ? '' : text).trim().toLowerCase();\n  return STAGE_WORDS[raw] || raw;\n}\nfunction words(text) {\n  return (String(text == null ? '' : text).toLowerCase().match(/[a-z0-9]+/g) || [])\n    .filter(function (w) { return w.length >= 3 && STOP.indexOf(w) < 0; })\n    .map(function (w) { return w.length > 4 ? w.replace(/ies$/, 'y').replace(/s$/, '') : w; });\n}\nfunction matchRequirement(label, requirements) {\n  var want = words(label);\n  var best = null;\n  var score = 0;\n  (requirements || []).forEach(function (req) {\n    var have = words(req);\n    var hits = want.filter(function (w) {\n      return have.some(function (h) { return h === w || (w.length >= 4 && h.indexOf(w) === 0) || (h.length >= 4 && w.indexOf(h) === 0); });\n    }).length;\n    if (hits > score) {\n      best = req;\n      score = hits;\n    }\n  });\n  return best;\n}\nfunction parseRatings(text, requirements) {\n  var out = { ratings: {}, unmatched: [], problems: [] };\n  var re = /([a-z][a-z '&\\/-]*?)\\s*[:=(-]?\\s*(\\d+(?:\\.\\d+)?)\\s*(?:\\/\\s*\\d+|out of \\d+)?\\)?/gi;\n  var m;\n  while ((m = re.exec(String(text == null ? '' : text)))) {\n    var label = m[1].replace(/^\\s*(and|plus|also|then)\\s+/i, '').replace(/\\s+(is|was|got|scored|a|an)$/i, '').trim();\n    if (!label) continue;\n    var term = protectedTerm(label);\n    if (term) throw new Error(protectedMessage(term));\n    var score = Number(m[2]);\n    if (!(score >= 1 && score <= 4) || Math.round(score) !== score) {\n      out.problems.push(label + ' ' + m[2] + ' is not a whole rating from 1 to 4');\n      continue;\n    }\n    var req = matchRequirement(label, requirements);\n    var key = req || label.charAt(0).toUpperCase() + label.slice(1);\n    if (!req && out.unmatched.indexOf(key) < 0) out.unmatched.push(key);\n    out.ratings[key] = score;\n  }\n  return out;\n}\nfunction cardsFor(candidate, events) {\n  return events.filter(function (e) { return e.kind === 'scorecard' && e.data && e.data.candidateId === candidate.id; });\n}\nfunction averages(candidate, events) {\n  var sums = {};\n  cardsFor(candidate, events).forEach(function (e) {\n    Object.keys(e.data.ratings || {}).forEach(function (k) {\n      sums[k] = sums[k] || { total: 0, count: 0 };\n      sums[k].total += Number(e.data.ratings[k]);\n      sums[k].count += 1;\n    });\n  });\n  var out = {};\n  Object.keys(sums).forEach(function (k) { out[k] = Math.round((sums[k].total / sums[k].count) * 10) / 10; });\n  return out;\n}\nfunction interviewText(c) {\n  var f = c.fields || {};\n  return f.interviewAt\n    ? dayName(f.interviewAt) + ' ' + f.interviewAt + (f.interviewTime ? ' at ' + f.interviewTime : '') + (f.interviewer ? ' with ' + f.interviewer : '')\n    : 'no date booked';\n}\nfunction waitingOnCard(c, events, nowMs) {\n  var f = c.fields || {};\n  if (c.status !== 'interview' || !f.interviewAt || daysLeft(f.interviewAt, nowMs) >= 0) return false;\n  return !cardsFor(c, events).some(function (e) { return String(e.at).slice(0, 10) >= String(f.interviewAt); });\n}\nfunction candidateLine(c, events) {\n  var f = c.fields || {};\n  var avg = averages(c, events);\n  var keys = Object.keys(avg);\n  return (\n    f.name + ' (' + c.id + ')' +\n    (c.status === 'interview' ? ', interview ' + interviewText(c) : '') +\n    (keys.length ? ', ratings ' + keys.map(function (k) { return k + ' ' + avg[k]; }).join(', ') : '')\n  );\n}\nfunction picture(roles, candidates, events, nowMs, withinDays) {\n  var live = roles.filter(function (r) { return r.status === 'open' || r.status === 'paused'; });\n  var active = candidates.filter(function (c) { return c.status !== 'hired' && c.status !== 'closed'; });\n  var titleOf = function (c) {\n    var r = roles.filter(function (x) { return x.id === c.fields.roleId; })[0];\n    return r ? r.fields.title : c.fields.roleTitle || 'a role';\n  };\n  var byDay = function (a, b) { return String(a.fields.interviewAt).localeCompare(String(b.fields.interviewAt)); };\n  var soon = active\n    .filter(function (c) {\n      if (c.status !== 'interview' || !c.fields.interviewAt) return false;\n      var d = daysLeft(c.fields.interviewAt, nowMs);\n      return d >= 0 && d <= withinDays;\n    })\n    .sort(byDay);\n  var waiting = active.filter(function (c) { return waitingOnCard(c, events, nowMs); }).sort(byDay);\n  var parts = [];\n  // The interview list comes first and whole: \"who's interviewing this week\" is answered from it alone.\n  parts.push(\n    soon.length\n      ? 'Interviews in the next ' + withinDays + ' days: ' + soon.map(function (c) { return c.fields.name + ' (' + c.id + ') for ' + titleOf(c) + ' on ' + interviewText(c); }).join('; ') + '.'\n      : 'No interviews booked in the next ' + withinDays + ' days.',\n  );\n  if (waiting.length) {\n    parts.push('Interviewed but no scorecard yet: ' + waiting.map(function (c) { return c.fields.name + ' (' + c.id + ', ' + titleOf(c) + ', interviewed ' + c.fields.interviewAt + ')'; }).join('; ') + '.');\n  }\n  parts.push(live.length ? live.length + (live.length === 1 ? ' open role' : ' open roles') + ', ' + active.length + ' candidates in play.' : 'No open roles.');\n  live.forEach(function (r) {\n    var mine = candidates.filter(function (c) { return c.fields.roleId === r.id; });\n    var hired = mine.filter(function (c) { return c.status === 'hired'; }).length;\n    var stages = STAGES.slice(0, 4).map(function (s) {\n      var list = mine.filter(function (c) { return c.status === s; });\n      return s + ': ' + (list.length ? list.map(function (c) { return candidateLine(c, events); }).join('; ') : 'none');\n    });\n    parts.push(\n      r.fields.title + ' (' + r.id + (r.status === 'paused' ? ', paused' : '') + ', ' + hired + ' of ' + (r.fields.openings || 1) + ' hired' +\n        (r.fields.manager ? ', manager ' + r.fields.manager : '') +\n        '; requirements: ' + ((r.fields.requirements || []).join(', ') || 'none written yet') + ') ' + stages.join(' | ') + '.',\n    );\n  });\n  return { openRoles: live.length, inPipeline: active.length, interviewsSoon: soon.length, summary: parts.join(' ') };\n}\n// ── hiring-rules-end ──\n\nconst roles = rosterStore(gezel.fs, 'roles.json', { stages: ['open', 'paused', 'filled', 'closed'], idPrefix: 'role' });\nconst candidates = rosterStore(gezel.fs, 'candidates.json', {\n  stages: ['sourced', 'screen', 'interview', 'offer', 'hired', 'closed'],\n  idPrefix: 'cand',\n});\nconst feedback = logStore(gezel.fs, 'feedback.json');\nconst now = Date.now();\nconst roleTitle = (r: { fields: Record<string, unknown> }) => String(r.fields.title ?? '');\nconst candName = (r: { fields: Record<string, unknown> }) => String(r.fields.name ?? '');\n\nasync function resolveRole(text?: string) {\n  const all = await roles.list();\n  if (!text) {\n    const open = all.filter((r) => r.status === 'open');\n    if (open.length === 1) return open[0]!;\n    throw new Error(\"Pass 'role' (id or title). Roles: \" + (describe(all, roleTitle) || 'none yet; open one with add_role') + '.');\n  }\n  const hits = matches(all, text, roleTitle);\n  if (hits.length === 1) return hits[0]!;\n  if (hits.length > 1) throw new Error(\"More than one role matches '\" + text + \"': \" + describe(hits, roleTitle) + '. Pass the id.');\n  throw new Error(\"No role matches '\" + text + \"'. Roles: \" + (describe(all, roleTitle) || 'none yet; open one with add_role') + '.');\n}\n\nasync function resolveCandidate(text?: string) {\n  if (!text) throw new Error(\"Pass 'candidate': an id like 'cand-3' or a name. Call list_candidates to see them.\");\n  const all = await candidates.list();\n  const active = all.filter((c) => c.status !== 'hired' && c.status !== 'closed');\n  let hits = matches(active, text, candName);\n  if (!hits.length) hits = matches(all, text, candName);\n  if (hits.length === 1) return hits[0]!;\n  if (hits.length > 1) throw new Error(\"More than one candidate matches '\" + text + \"': \" + describe(hits, candName) + '. Pass the id.');\n  throw new Error(\"No candidate matches '\" + text + \"'. Candidates: \" + (describe(all, candName) || 'none yet') + '.');\n}\n\nconst withinDays = typeof input.withinDays === 'number' && input.withinDays > 0 ? Math.round(input.withinDays) : 7;\nlet note = '';\n\nif (input.action === 'add_role') {\n  if (!input.title || !input.title.trim()) throw new Error(\"add_role needs 'title'.\");\n  const title = input.title.trim();\n  const reqs = input.requirements === undefined ? [] : splitList(input.requirements);\n  for (const text of [title, ...reqs]) {\n    const term = protectedTerm(text);\n    if (term) throw new Error(protectedMessage(term));\n  }\n  let openings: number | undefined;\n  if (input.openings !== undefined) {\n    openings = Math.round(Number(input.openings));\n    if (!(openings >= 1)) throw new Error(\"openings must be 1 or more.\");\n  }\n  const roleStatus = input.roleStatus ? String(input.roleStatus).trim().toLowerCase() : '';\n  if (roleStatus && !ROLE_STATUSES.includes(roleStatus)) throw new Error(\"roleStatus must be open, paused, filled, or closed.\");\n  const fields: Record<string, unknown> = {\n    ...(reqs.length ? { requirements: reqs } : {}),\n    ...(openings ? { openings } : {}),\n    ...(input.manager ? { manager: input.manager.trim() } : {}),\n    ...(input.pay ? { pay: input.pay.trim() } : {}),\n    ...(input.note ? { notes: input.note.trim() } : {}),\n  };\n  const existing = (await roles.list()).find((r) => roleTitle(r).toLowerCase() === title.toLowerCase());\n  if (existing) {\n    await roles.update(existing.id, { fields });\n    if (roleStatus && roleStatus !== existing.status) await roles.transition(existing.id, roleStatus);\n    note = 'Updated the ' + roleTitle(existing) + ' role (' + existing.id + ').';\n  } else {\n    const record = await roles.add({\n      status: roleStatus || 'open',\n      fields: { title, requirements: [], openings: 1, openedAt: localDay(now), ...fields },\n    });\n    note = 'Opened ' + title + ' (' + record.id + ')' + (reqs.length ? ' with ' + reqs.length + ' requirements.' : '; add its job-related requirements next.');\n  }\n} else if (input.action === 'add_candidate') {\n  if (!input.name || !input.name.trim()) throw new Error(\"add_candidate needs 'name'.\");\n  const name = input.name.trim();\n  const role = await resolveRole(input.role);\n  const interviewAt = input.interviewOn ? parseDay(input.interviewOn, now, 'future') : null;\n  if (input.interviewOn && !interviewAt) throw new Error(\"interviewOn must be a date like '2026-11-12' or a weekday like 'thursday'.\");\n  // A booked interview puts a new candidate straight at the interview stage.\n  const stage = input.status ? stageOf(input.status) : interviewAt ? 'interview' : '';\n  if (stage && !STAGES.includes(stage)) throw new Error('status must be one of ' + STAGES.join(', ') + '.');\n  const fields: Record<string, unknown> = {\n    ...(input.source ? { source: input.source.trim() } : {}),\n    ...(input.note ? { notes: input.note.trim() } : {}),\n    ...(interviewAt ? { interviewAt } : {}),\n    ...(input.interviewTime ? { interviewTime: input.interviewTime.trim() } : {}),\n    ...(input.interviewer ? { interviewer: input.interviewer.trim() } : {}),\n  };\n  const existing = (await candidates.list()).find((c) => candName(c).toLowerCase() === name.toLowerCase() && c.fields.roleId === role.id);\n  let id = '';\n  if (existing) {\n    id = existing.id;\n    await candidates.update(existing.id, { fields, ...(input.note ? { note: input.note } : {}) });\n    if (stage && stage !== existing.status) await candidates.transition(existing.id, stage);\n    note = 'Updated ' + name + ' (' + existing.id + ') for ' + roleTitle(role) + '.';\n  } else {\n    const record = await candidates.add({\n      status: stage || 'sourced',\n      fields: { name, roleId: role.id, roleTitle: roleTitle(role), ...fields },\n      ...(input.note ? { note: input.note } : {}),\n    });\n    id = record.id;\n    note = 'Added ' + name + ' (' + record.id + ') to ' + roleTitle(role) + ' at ' + record.status + '.';\n  }\n  if (interviewAt) {\n    const after = (await candidates.get(id))!;\n    await feedback.append({ kind: 'booked', note: 'Interview booked for ' + interviewText(after) + '.', data: { candidateId: id, roleId: role.id, on: interviewAt } });\n    note += ' Interview ' + interviewText(after) + '.';\n  }\n} else if (input.action === 'move') {\n  const cand = await resolveCandidate(input.candidate ?? input.name);\n  let to = input.status ? stageOf(input.status) : '';\n  const interviewAt = input.interviewOn ? parseDay(input.interviewOn, now, 'future') : null;\n  if (input.interviewOn && !interviewAt) throw new Error(\"interviewOn must be a date like '2026-11-12' or a weekday like 'thursday'.\");\n  if (!to && interviewAt) to = 'interview';\n  if (!to) throw new Error(\"move needs 'status' (\" + STAGES.join(', ') + \") or 'interviewOn'.\");\n  if (!STAGES.includes(to)) throw new Error('status must be one of ' + STAGES.join(', ') + '.');\n  const fields: Record<string, unknown> = {\n    ...(interviewAt ? { interviewAt } : {}),\n    ...(input.interviewTime ? { interviewTime: input.interviewTime.trim() } : {}),\n    ...(input.interviewer ? { interviewer: input.interviewer.trim() } : {}),\n  };\n  if (Object.keys(fields).length) await candidates.update(cand.id, { fields });\n  if (to !== cand.status) await candidates.transition(cand.id, to, input.note ? { note: input.note } : {});\n  else if (input.note) await candidates.update(cand.id, { note: input.note });\n  const after = (await candidates.get(cand.id))!;\n  if (interviewAt) {\n    await feedback.append({\n      kind: 'booked',\n      note: 'Interview booked for ' + interviewText(after) + '.',\n      data: { candidateId: cand.id, roleId: cand.fields.roleId, on: interviewAt },\n    });\n  }\n  note = candName(cand) + (to !== cand.status ? ' moved from ' + cand.status + ' to ' + to : ' stays at ' + to) + (to === 'interview' ? ', interview ' + interviewText(after) : '') + '.';\n  if (to === 'hired') {\n    const role = await roles.get(String(cand.fields.roleId));\n    if (role) {\n      const hired = (await candidates.list()).filter((c) => c.fields.roleId === role.id && c.status === 'hired').length;\n      const openings = Number(role.fields.openings) || 1;\n      if (hired >= openings && role.status === 'open') {\n        await roles.transition(role.id, 'filled', { note: hired + ' of ' + openings + ' hired' });\n        note += ' ' + roleTitle(role) + ' is now filled.';\n      } else {\n        note += ' ' + roleTitle(role) + ': ' + hired + ' of ' + openings + ' hired.';\n      }\n    }\n  }\n} else if (input.action === 'feedback') {\n  const cand = await resolveCandidate(input.candidate ?? input.name);\n  const role = await roles.get(String(cand.fields.roleId));\n  const reqs = role && Array.isArray(role.fields.requirements) ? (role.fields.requirements as string[]) : [];\n  const parsed = parseRatings(input.ratings, reqs);\n  if (parsed.problems.length) throw new Error(parsed.problems.join('; ') + '. Rate each requirement from 1 (no evidence) to 4 (strong evidence).');\n  const keys = Object.keys(parsed.ratings);\n  if (!keys.length && !input.note && !input.ratings) throw new Error(\"feedback needs 'ratings' (e.g. '\" + (reqs[0] || 'Customer service') + \" 3') or a 'note'.\");\n  const by = input.by && input.by.trim() ? input.by.trim() : 'an interviewer';\n  const text = input.note ? input.note.trim() : !keys.length && input.ratings ? input.ratings.trim() : undefined;\n  await feedback.append({\n    kind: keys.length ? 'scorecard' : 'note',\n    ...(text ? { note: text } : {}),\n    data: {\n      candidateId: cand.id,\n      roleId: cand.fields.roleId,\n      by,\n      ...(keys.length ? { ratings: parsed.ratings } : {}),\n      ...(parsed.unmatched.length ? { unmatched: parsed.unmatched } : {}),\n    },\n  });\n  note = keys.length\n    ? 'Scorecard from ' + by + ' for ' + candName(cand) + ': ' + keys.map((k) => k + ' ' + parsed.ratings[k]).join(', ') + '.'\n    : 'Note from ' + by + ' on ' + candName(cand) + ' saved.';\n  if (!keys.length && input.ratings) note += ' No ratings found in that text; rate each requirement 1 to 4, e.g. ' + (reqs[0] || 'Customer service') + ' 3.';\n  if (parsed.unmatched.length) note += ' Not among the role’s requirements: ' + parsed.unmatched.join(', ') + '.';\n} else if (input.action !== 'status' && input.action !== 'list') {\n  throw new Error(\"Unknown action '\" + input.action + \"'. Use status, add_role, add_candidate, move, feedback, or list.\");\n}\n\nconst allRoles = await roles.list();\nconst allCandidates = await candidates.list();\nconst events = await feedback.list();\nconst view = picture(allRoles, allCandidates, events, now, withinDays);\n\ngezel.output({\n  openRoles: view.openRoles,\n  inPipeline: view.inPipeline,\n  interviewsSoon: view.interviewsSoon,\n  summary:\n    input.action === 'list'\n      ? allCandidates\n          .map((c) => {\n            const role = allRoles.find((r) => r.id === c.fields.roleId);\n            return '[' + c.status + '] ' + candidateLine(c, events) + ', ' + (role ? roleTitle(role) : String(c.fields.roleTitle ?? '')) + (c.fields.source ? ', from ' + String(c.fields.source) : '') + (c.fields.notes ? '; ' + String(c.fields.notes) : '');\n          })\n          .join('\\n') || 'No candidates yet.'\n      : (note ? note + ' ' : '') + view.summary,\n});\n"
+  },
+  "tools": [
+    {
+      "name": "hiring_status",
+      "description": "The whole hiring desk: interviews coming up (with dates and interviewers), candidates interviewed but missing a scorecard, and every open role’s pipeline by stage with ids and average ratings. Call it first when asked who is interviewing, where a search stands, or how candidates compare.",
+      "script": "hiring-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "withinDays": {
+            "type": "number"
+          }
+        }
+      },
+      "bind": {
+        "action": "status"
+      },
+      "state": true
+    },
+    {
+      "name": "add_role",
+      "description": "Open a role or update one: title, the job-related requirements interviewers will rate (comma-separated), openings, hiring manager and pay. An existing title is updated, never duplicated. Call it as soon as a role is mentioned, before you describe it. Requirements are about the job only, never age, family, religion, health, origin or any other protected trait.",
+      "script": "hiring-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "requirements": {
+            "type": "string"
+          },
+          "openings": {
+            "type": "number"
+          },
+          "manager": {
+            "type": "string"
+          },
+          "pay": {
+            "type": "string"
+          },
+          "roleStatus": {
+            "type": "string",
+            "enum": [
+              "open",
+              "paused",
+              "filled",
+              "closed"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add_role"
+      }
+    },
+    {
+      "name": "add_candidate",
+      "description": "Add a candidate to a role’s pipeline: full name, role, where they came from, a short job-related note, and the interview date when one is already booked. An existing name in that role is updated, never duplicated. Call it as soon as a candidate is mentioned, before you describe them.",
+      "script": "hiring-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "sourced",
+              "screen",
+              "interview",
+              "offer",
+              "hired",
+              "closed"
+            ]
+          },
+          "interviewOn": {
+            "type": "string"
+          },
+          "interviewTime": {
+            "type": "string"
+          },
+          "interviewer": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "bind": {
+        "action": "add_candidate"
+      }
+    },
+    {
+      "name": "move_candidate",
+      "description": "Move a candidate to the stage the person names (sourced, screen, interview, offer, hired or closed) and book the interview: interviewOn takes YYYY-MM-DD or a weekday like \"thursday\", which the desk turns into the date. Call it the moment the person asks. Never move anyone on your own judgment; hiring decisions are the person’s.",
+      "script": "hiring-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "candidate": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "sourced",
+              "screen",
+              "interview",
+              "offer",
+              "hired",
+              "closed"
+            ]
+          },
+          "interviewOn": {
+            "type": "string"
+          },
+          "interviewTime": {
+            "type": "string"
+          },
+          "interviewer": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate"
+        ]
+      },
+      "bind": {
+        "action": "move"
+      }
+    },
+    {
+      "name": "log_feedback",
+      "description": "Record how an interview went: who interviewed, ratings from 1 to 4 on the role’s requirements (e.g. \"Coffee and milk skills 3, Warm customer service 4\"), and what the candidate said or did. Call it as soon as the person reports an interview, before you summarize it.",
+      "script": "hiring-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "candidate": {
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "ratings": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate"
+        ]
+      },
+      "bind": {
+        "action": "feedback"
+      }
+    },
+    {
+      "name": "list_candidates",
+      "description": "Every candidate with their role, stage, interview, average ratings and latest note.",
+      "script": "hiring-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "list"
+      }
+    },
+    {
+      "name": "page_add_role",
+      "description": "Open or update a role.",
+      "script": "hiring-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "requirements": {
+            "type": "string"
+          },
+          "openings": {
+            "type": "number"
+          },
+          "manager": {
+            "type": "string"
+          },
+          "pay": {
+            "type": "string"
+          },
+          "roleStatus": {
+            "type": "string",
+            "enum": [
+              "open",
+              "paused",
+              "filled",
+              "closed"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add_role"
+      }
+    },
+    {
+      "name": "page_add_candidate",
+      "description": "Add a candidate to a role.",
+      "script": "hiring-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "sourced",
+              "screen",
+              "interview",
+              "offer",
+              "hired",
+              "closed"
+            ]
+          },
+          "interviewOn": {
+            "type": "string"
+          },
+          "interviewTime": {
+            "type": "string"
+          },
+          "interviewer": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "bind": {
+        "action": "add_candidate"
+      }
+    },
+    {
+      "name": "page_move_candidate",
+      "description": "Move a candidate or book an interview.",
+      "script": "hiring-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "candidate": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "sourced",
+              "screen",
+              "interview",
+              "offer",
+              "hired",
+              "closed"
+            ]
+          },
+          "interviewOn": {
+            "type": "string"
+          },
+          "interviewTime": {
+            "type": "string"
+          },
+          "interviewer": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate"
+        ]
+      },
+      "bind": {
+        "action": "move"
+      },
+      "reaction": {
+        "gezel": "recruiter",
+        "hideSeed": true,
+        "prompt": "The person just moved a candidate on the hiring desk page. The desk now reads (its first sentence is what changed):\n{{output.summary}}\nIn two short sentences, confirm the move and name the one next step for that candidate: book the interview, collect the scorecard, or prepare the offer for the person to approve. Do not call tools."
+      }
+    },
+    {
+      "name": "page_log_feedback",
+      "description": "Record an interview scorecard.",
+      "script": "hiring-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "candidate": {
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "ratings": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate"
+        ]
+      },
+      "bind": {
+        "action": "feedback"
+      }
+    }
+  ],
+  "craftbooks": [
+    "structured-interview-kit",
+    "contract-template"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "desk/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "roles.json"
+      },
+      {
+        "source": "workspace",
+        "path": "candidates.json"
+      },
+      {
+        "source": "workspace",
+        "path": "feedback.json"
+      }
+    ],
+    "tools": [
+      "page_add_role",
+      "page_add_candidate",
+      "page_move_candidate",
+      "page_log_feedback"
+    ]
+  },
+  "workspaceSeed": [
+    "roles.json",
+    "candidates.json",
+    "feedback.json"
+  ],
+  "minGezelVersion": "1.26280"
+}

@@ -1,0 +1,325 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "releasedAt": "2026-11-02T18:00:00.000Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "business": {
+        "type": "string",
+        "title": "What kind of business is this?",
+        "description": "e.g. 'a café with 12 staff', 'a six-person design studio'.",
+        "default": "the business"
+      }
+    },
+    "required": [
+      "business"
+    ]
+  },
+  "nameTemplate": "New Hire Onboarding",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "training-coordinator",
+      "voorman": true
+    },
+    {
+      "templateId": "kantoormeester"
+    }
+  ],
+  "scripts": {
+    "onboarding-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'onboarding-store',\n  description:\n    \"Read and update the onboarding plans: hires.json (each new hire, their start date, manager and buddy) and tasks.json (every step of every plan, with a phase, an owner and a due date). action:'status' for open steps due soon (overdue first) and each hire's progress; 'add_hire' to add a hire with the standard plan (an existing name is updated, never duplicated); 'add_task' to add a step to a plan; 'complete' to check steps off; 'list' for whole plans.\",\n  inputs: {\n    action: { type: 'string', description: \"One of 'status', 'add_hire', 'add_task', 'complete', or 'list'.\", required: true },\n    name: { type: 'string', description: \"For add_hire: the new hire's full name.\" },\n    role: { type: 'string', description: \"For add_hire: their job, e.g. 'Barista'.\" },\n    startOn: { type: 'string', description: \"For add_hire: their first day, YYYY-MM-DD or a weekday like 'monday'.\" },\n    manager: { type: 'string', description: 'For add_hire: their manager.' },\n    buddy: { type: 'string', description: 'For add_hire: the teammate who shows them around the first week.' },\n    hire: { type: 'string', description: \"Hire id (e.g. 'h-2') or name; a first name is enough when it is unique.\" },\n    title: { type: 'string', description: 'For add_task: what needs doing.' },\n    phase: {\n      type: 'string',\n      description: \"before day one, day one, first week, 30 days, 60 days, or 90 days. For complete: checks off every open step in that phase.\",\n    },\n    owner: { type: 'string', description: 'For add_task: who does it.' },\n    dueOn: { type: 'string', description: 'For add_task: the due date, YYYY-MM-DD; default the phase’s usual day.' },\n    task: { type: 'string', description: \"For complete: a step's id (e.g. 't-4') or words from its title; several separated by commas.\" },\n    reopen: { type: 'boolean', description: 'For complete: put a checked step back on the list.' },\n    note: { type: 'string', description: 'What happened.' },\n    withinDays: { type: 'number', description: 'How many days ahead count as due soon (default 7).' },\n  },\n  outputs: {\n    active: { type: 'number', description: 'Hires still onboarding.' },\n    overdue: { type: 'number', description: 'Open steps past their due date.' },\n    dueSoon: { type: 'number', description: 'Open steps due within the window.' },\n    summary: { type: 'string', description: 'What changed, then the onboarding picture or the listing.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── onboarding-rules-start ──\n// Pure derivations: dates in local calendar days, record matching, the\n// standard plan, phase names, task matching, and the picture the crew reads.\n// Kept self-contained between these sentinels so tests execute the shipped\n// bytes.\nvar DAY_MS = 86400000;\nvar WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];\nvar MONTH_KEYS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];\n\nfunction pad(n) {\n  return n < 10 ? '0' + n : String(n);\n}\nfunction localDay(ms) {\n  var d = new Date(ms);\n  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());\n}\nfunction noon(day) {\n  return new Date(String(day).slice(0, 10) + 'T12:00:00');\n}\nfunction addDays(day, n) {\n  var d = noon(day);\n  d.setDate(d.getDate() + n);\n  return localDay(d.getTime());\n}\nfunction addMonths(day, months) {\n  var d = noon(day);\n  var date = d.getDate();\n  d.setDate(1);\n  d.setMonth(d.getMonth() + months);\n  // The 31st rolls to the last day of a shorter month, not into the next one.\n  d.setDate(Math.min(date, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));\n  return localDay(d.getTime());\n}\nfunction daysLeft(day, nowMs) {\n  var due = Date.parse(String(day).slice(0, 10) + 'T00:00:00');\n  var today = Date.parse(localDay(nowMs) + 'T00:00:00');\n  return Math.round((due - today) / DAY_MS);\n}\nfunction dayName(day) {\n  return WEEKDAYS[noon(day).getDay()];\n}\nfunction parseDay(text, nowMs, direction) {\n  var raw = String(text == null ? '' : text).trim().toLowerCase().replace(/[.,]/g, ' ').replace(/\\s+/g, ' ').trim();\n  if (!raw) return null;\n  var iso = raw.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})(?:t.*)?$/);\n  if (iso) return iso[1] + '-' + pad(Number(iso[2])) + '-' + pad(Number(iso[3]));\n  var today = localDay(nowMs);\n  if (raw === 'today' || raw === 'now') return today;\n  if (raw === 'tomorrow') return addDays(today, 1);\n  if (raw === 'yesterday') return addDays(today, -1);\n  var rel = raw.match(/^(?:in )?(\\d{1,3}) (day|days|week|weeks)( ago| from now)?$/);\n  if (rel) {\n    var n = Number(rel[1]) * (rel[2].charAt(0) === 'w' ? 7 : 1);\n    return addDays(today, rel[3] === ' ago' ? -n : n);\n  }\n  var wd = raw.match(/^(this |next |last |on |coming )?(sun|mon|tue|wed|thu|fri|sat)[a-z]*$/);\n  if (wd) {\n    var target = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].indexOf(wd[2]);\n    var now = noon(today).getDay();\n    if (direction === 'past' || wd[1] === 'last ') {\n      var back = (now - target + 7) % 7;\n      return addDays(today, -(wd[1] === 'last ' && back === 0 ? 7 : back));\n    }\n    if (wd[1] === 'this ') return addDays(today, (target - now + 7) % 7);\n    return addDays(today, ((target - now + 6) % 7) + 1);\n  }\n  var md = raw.match(/^(?:[a-z]+day )?([a-z]{3,9}) (\\d{1,2})(?:st|nd|rd|th)?(?: (\\d{4}))?$/);\n  var dm = raw.match(/^(?:[a-z]+day )?(\\d{1,2})(?:st|nd|rd|th)? (?:of )?([a-z]{3,9})(?: (\\d{4}))?$/);\n  var parts = md ? { month: md[1], date: md[2], year: md[3] } : dm ? { month: dm[2], date: dm[1], year: dm[3] } : null;\n  if (parts) {\n    var m = MONTH_KEYS.indexOf(parts.month.slice(0, 3));\n    if (m < 0) return null;\n    var date = Number(parts.date);\n    if (date < 1 || date > 31) return null;\n    if (parts.year) return parts.year + '-' + pad(m + 1) + '-' + pad(date);\n    var year = noon(today).getFullYear();\n    var guess = year + '-' + pad(m + 1) + '-' + pad(date);\n    var d = daysLeft(guess, nowMs);\n    if (direction === 'past' && d > 0) guess = year - 1 + guess.slice(4);\n    if (direction !== 'past' && d < 0) guess = year + 1 + guess.slice(4);\n    return guess;\n  }\n  return null;\n}\nfunction matches(records, text, labelOf) {\n  var wanted = String(text == null ? '' : text).trim().toLowerCase().replace(/['\\u2019]s\\b/g, '').replace(/\\s+/g, ' ');\n  if (!wanted) return [];\n  var tiers = [\n    function (r) { return String(r.id).toLowerCase() === wanted; },\n    function (r) { return labelOf(r).toLowerCase() === wanted; },\n    function (r) { return labelOf(r).toLowerCase().indexOf(wanted) === 0; },\n    function (r) { return (' ' + labelOf(r).toLowerCase() + ' ').indexOf(' ' + wanted + ' ') >= 0; },\n    function (r) { return labelOf(r).toLowerCase().indexOf(wanted) >= 0; },\n    function (r) { var l = labelOf(r).toLowerCase(); return l.length >= 3 && wanted.indexOf(l) >= 0; },\n  ];\n  for (var i = 0; i < tiers.length; i++) {\n    var hit = records.filter(tiers[i]);\n    if (hit.length) return hit;\n  }\n  return [];\n}\nfunction describe(records, labelOf) {\n  return records.map(function (r) { return r.id + ' ' + labelOf(r); }).join(', ');\n}\nfunction splitList(text) {\n  var raw = String(text == null ? '' : text).trim();\n  if (/^\\[/.test(raw)) {\n    try {\n      var parsed = JSON.parse(raw);\n      if (Array.isArray(parsed)) return parsed.map(function (s) { return String(s).trim(); }).filter(Boolean);\n    } catch (e) {\n      // Not JSON after all; split it as text.\n    }\n  }\n  return raw\n    .split(/\\s*[,;\\n]+\\s*/)\n    .map(function (s) { return s.replace(/^(and|or|plus)\\s+/i, '').replace(/[.\\s]+$/, '').trim(); })\n    .filter(Boolean);\n}\nvar PHASES = ['before day one', 'day one', 'first week', '30 days', '60 days', '90 days'];\nvar PHASE_OFFSET = { 'before day one': -2, 'day one': 0, 'first week': 4, '30 days': 30, '60 days': 60, '90 days': 90 };\n// The standard plan every new hire starts with; offsets are days from the first day.\nvar PLAN = [\n  ['before day one', 'Send a welcome note with the start time, place and what to bring', 'manager', -5],\n  ['before day one', 'Set up email and scheduling accounts', 'office', -3],\n  ['before day one', 'Prepare uniform, keys and workspace', 'office', -2],\n  ['before day one', 'Collect tax, payroll and emergency-contact forms', 'office', -1],\n  ['day one', 'Tour, introductions and safety basics', 'manager', 0],\n  ['day one', 'Pair with a buddy for the first week', 'manager', 0],\n  ['first week', 'Shadow shifts with the buddy', 'buddy', 3],\n  ['first week', 'Enroll in the training the role needs', 'training', 4],\n  ['first week', 'First-week check-in', 'manager', 5],\n  ['30 days', '30-day check-in: what is going well, what is unclear', 'manager', 30],\n  ['30 days', 'Required certificates on file', 'training', 30],\n  ['60 days', '60-day check-in', 'manager', 60],\n  ['90 days', '90-day review and goals for the next quarter', 'manager', 90],\n];\nvar TASK_STOP = ['with', 'from', 'that', 'this', 'have', 'done', 'were', 'they', 'their', 'into', 'about', 'what'];\n\nfunction ownerFor(kind, hire) {\n  var f = (hire && hire.fields) || {};\n  if (kind === 'manager') return f.manager || 'Manager';\n  if (kind === 'buddy') return f.buddy || 'Buddy';\n  if (kind === 'office') return 'Office';\n  if (kind === 'training') return 'Training';\n  return String(kind || '');\n}\nfunction planFor(hire) {\n  return PLAN.map(function (p) {\n    return { phase: p[0], title: p[1], ownerKind: p[2], owner: ownerFor(p[2], hire), offset: p[3], dueAt: addDays(hire.fields.startOn, p[3]) };\n  });\n}\nfunction phaseOf(text) {\n  var raw = String(text == null ? '' : text).trim().toLowerCase();\n  if (!raw) return null;\n  if (PHASES.indexOf(raw) >= 0) return raw;\n  if (/before|prior|ahead|pre-?start|preboard/.test(raw)) return 'before day one';\n  if (/\\b(day (one|1)|first day|start day|day of)\\b/.test(raw)) return 'day one';\n  if (/\\b(first|1st) week\\b|\\bweek (one|1)\\b|^week$/.test(raw)) return 'first week';\n  if (/\\b(30|thirty)\\b|first month|one month/.test(raw)) return '30 days';\n  if (/\\b(60|sixty)\\b|two months/.test(raw)) return '60 days';\n  if (/\\b(90|ninety)\\b|three months/.test(raw)) return '90 days';\n  return null;\n}\nfunction keyWords(text) {\n  return (String(text == null ? '' : text).toLowerCase().match(/[a-z0-9]+/g) || [])\n    .filter(function (w) { return w.length >= 4 && TASK_STOP.indexOf(w) < 0; })\n    .map(function (w) { return w.length > 4 ? w.replace(/s$/, '') : w; });\n}\nfunction taskMatches(tasks, text) {\n  var hit = matches(tasks, text, function (t) { return String(t.fields.title || ''); });\n  if (hit.length) return hit;\n  var want = keyWords(text);\n  if (!want.length) return [];\n  var best = [];\n  var score = 0;\n  tasks.forEach(function (t) {\n    var have = keyWords(t.fields.title);\n    var s = want.filter(function (w) { return have.indexOf(w) >= 0; }).length;\n    if (s > score) {\n      best = [t];\n      score = s;\n    } else if (s === score && s > 0) best.push(t);\n  });\n  return score >= Math.min(2, want.length) ? best : [];\n}\nfunction whenText(day, nowMs) {\n  var d = daysLeft(day, nowMs);\n  return d < 0 ? -d + (d === -1 ? ' day late' : ' days late') : d === 0 ? 'due today' : d === 1 ? 'due tomorrow' : 'due ' + dayName(day) + ' ' + day;\n}\nfunction startText(hire, nowMs) {\n  var d = daysLeft(hire.fields.startOn, nowMs);\n  return d > 0 ? 'starts ' + dayName(hire.fields.startOn) + ' ' + hire.fields.startOn + ', in ' + d + (d === 1 ? ' day' : ' days') : d === 0 ? 'starts today' : 'day ' + (1 - d) + ', started ' + hire.fields.startOn;\n}\nfunction taskLine(t, nowMs) {\n  return t.fields.title + ' (' + t.id + ', ' + (t.fields.owner || 'no owner') + ', ' + whenText(t.fields.dueAt, nowMs) + ')';\n}\nfunction picture(hires, tasks, nowMs, withinDays) {\n  var active = hires.filter(function (h) { return h.status !== 'done'; }).sort(function (a, b) { return String(a.fields.startOn).localeCompare(String(b.fields.startOn)); });\n  var byDue = function (a, b) { return String(a.fields.dueAt).localeCompare(String(b.fields.dueAt)); };\n  var open = tasks.filter(function (t) { return t.status !== 'done' && active.some(function (h) { return h.id === t.fields.hireId; }); });\n  var overdue = open.filter(function (t) { return daysLeft(t.fields.dueAt, nowMs) < 0; }).sort(byDue);\n  var soon = open.filter(function (t) { var d = daysLeft(t.fields.dueAt, nowMs); return d >= 0 && d <= withinDays; }).sort(byDue);\n  var parts = [active.length + (active.length === 1 ? ' new hire' : ' new hires') + ' onboarding, ' + overdue.length + (overdue.length === 1 ? ' step' : ' steps') + ' overdue.'];\n  // One list, overdue first: \"what's due this week\" and \"what's overdue\" are both answered from it.\n  var due = overdue.concat(soon);\n  parts.push(\n    due.length\n      ? 'Open steps due within ' + withinDays + ' days, overdue first: ' + due.map(function (t) { return t.fields.hireName + ': ' + taskLine(t, nowMs); }).join(' | ') + '.'\n      : 'Nothing due in the next ' + withinDays + ' days.',\n  );\n  active.forEach(function (h) {\n    var mine = tasks.filter(function (t) { return t.fields.hireId === h.id; });\n    var left = mine.filter(function (t) { return t.status !== 'done'; }).sort(byDue);\n    var before = daysLeft(h.fields.startOn, nowMs) > 0 ? left.filter(function (t) { return t.fields.phase === 'before day one'; }) : [];\n    parts.push(\n      h.fields.name + ' (' + h.id + ', ' + (h.fields.role || 'no role') + ', ' + startText(h, nowMs) +\n        (h.fields.manager ? ', manager ' + h.fields.manager : '') + (h.fields.buddy ? ', buddy ' + h.fields.buddy : '') + '): ' +\n        (mine.length - left.length) + ' of ' + mine.length + ' steps done' +\n        (before.length ? '; still to do before day one: ' + before.map(function (t) { return taskLine(t, nowMs); }).join('; ') : left.length ? '; next: ' + taskLine(left[0], nowMs) : '') + '.',\n    );\n  });\n  return { active: active.length, overdue: overdue.length, dueSoon: soon.length, summary: parts.join(' ') };\n}\n// ── onboarding-rules-end ──\n\nconst hires = rosterStore(gezel.fs, 'hires.json', { stages: ['active', 'done'], idPrefix: 'h' });\nconst tasks = rosterStore(gezel.fs, 'tasks.json', { stages: ['todo', 'done'], idPrefix: 't' });\nconst now = Date.now();\nconst withinDays = typeof input.withinDays === 'number' && input.withinDays > 0 ? Math.round(input.withinDays) : 7;\nconst nameOf = (r: { fields: Record<string, unknown> }) => String(r.fields.name ?? '');\nconst titleOf = (r: { fields: Record<string, unknown> }) => String(r.fields.title ?? '');\n\nasync function resolveHire(text?: string) {\n  const all = await hires.list();\n  if (!text) {\n    const active = all.filter((h) => h.status !== 'done');\n    if (active.length === 1) return active[0]!;\n    throw new Error(\"Pass 'hire' (id or name). New hires: \" + (describe(all, nameOf) || 'none yet; add one with add_hire') + '.');\n  }\n  let hits = matches(all.filter((h) => h.status !== 'done'), text, nameOf);\n  if (!hits.length) hits = matches(all, text, nameOf);\n  if (hits.length === 1) return hits[0]!;\n  if (hits.length > 1) throw new Error(\"More than one hire matches '\" + text + \"': \" + describe(hits, nameOf) + '. Pass the id.');\n  throw new Error(\"No new hire matches '\" + text + \"'. New hires: \" + (describe(all, nameOf) || 'none yet; add one with add_hire') + '.');\n}\n\n// A plan whose every step is checked off is finished; a new or reopened step puts it back.\nasync function settle(hireId: string): Promise<string> {\n  const hire = await hires.get(hireId);\n  if (!hire) return '';\n  const mine = (await tasks.list()).filter((t) => t.fields.hireId === hireId);\n  const left = mine.filter((t) => t.status !== 'done').length;\n  if (!left && mine.length && hire.status !== 'done') {\n    await hires.transition(hireId, 'done', { note: 'Every step done' });\n    return ' ' + nameOf(hire) + \"'s plan is complete.\";\n  }\n  if (left && hire.status === 'done') await hires.transition(hireId, 'active');\n  return '';\n}\n\nlet note = '';\n\nif (input.action === 'add_hire') {\n  if (!input.name || !input.name.trim()) throw new Error(\"add_hire needs 'name'.\");\n  const name = input.name.trim();\n  const startOn = input.startOn ? parseDay(input.startOn, now, 'future') : null;\n  if (input.startOn && !startOn) throw new Error(\"startOn must be a date like '2026-11-09' or a weekday like 'monday'.\");\n  const fields: Record<string, unknown> = {\n    ...(input.role ? { role: input.role.trim() } : {}),\n    ...(startOn ? { startOn } : {}),\n    ...(input.manager ? { manager: input.manager.trim() } : {}),\n    ...(input.buddy ? { buddy: input.buddy.trim() } : {}),\n    ...(input.note ? { notes: input.note.trim() } : {}),\n  };\n  const existing = (await hires.list()).find((h) => nameOf(h).toLowerCase() === name.toLowerCase());\n  if (existing) {\n    const updated = await hires.update(existing.id, { fields });\n    // A moved start date or a named manager/buddy carries into the open standard steps.\n    let moved = 0;\n    for (const t of (await tasks.list()).filter((x) => x.fields.hireId === existing.id && x.status !== 'done')) {\n      const patch: Record<string, unknown> = {};\n      if (typeof t.fields.offset === 'number' && startOn && startOn !== existing.fields.startOn) patch.dueAt = addDays(startOn, t.fields.offset);\n      if (t.fields.ownerKind && (input.manager || input.buddy)) patch.owner = ownerFor(t.fields.ownerKind, updated);\n      if (Object.keys(patch).length) {\n        await tasks.update(t.id, { fields: patch });\n        if (patch.dueAt) moved += 1;\n      }\n    }\n    note = 'Updated ' + name + ' (' + existing.id + ')' + (moved ? '; moved ' + moved + ' open steps to the new start date.' : '.');\n  } else {\n    if (!startOn) throw new Error(\"A new hire needs 'startOn', their first day (YYYY-MM-DD or a weekday).\");\n    const hire = await hires.add({ status: 'active', fields: { name, role: '', ...fields } });\n    for (const step of planFor(hire)) {\n      await tasks.add({\n        status: 'todo',\n        fields: {\n          hireId: hire.id,\n          hireName: name,\n          title: step.title,\n          phase: step.phase,\n          owner: step.owner,\n          ownerKind: step.ownerKind,\n          offset: step.offset,\n          dueAt: step.dueAt,\n        },\n      });\n    }\n    note = 'Added ' + name + ' (' + hire.id + '), first day ' + dayName(startOn) + ' ' + startOn + ', with the standard ' + PLAN.length + '-step plan.';\n  }\n} else if (input.action === 'add_task') {\n  if (!input.title || !input.title.trim()) throw new Error(\"add_task needs 'title'.\");\n  const hire = await resolveHire(input.hire);\n  const phase = input.phase ? phaseOf(input.phase) : null;\n  if (input.phase && !phase) throw new Error('phase must be one of ' + PHASES.join(', ') + '.');\n  const dueAt = input.dueOn ? parseDay(input.dueOn, now, 'future') : null;\n  if (input.dueOn && !dueAt) throw new Error(\"dueOn must be a date like '2026-11-12'.\");\n  const title = input.title.trim();\n  const existing = (await tasks.list()).find((t) => t.fields.hireId === hire.id && titleOf(t).toLowerCase() === title.toLowerCase());\n  const usePhase = phase ?? (existing ? String(existing.fields.phase) : 'first week');\n  const fields: Record<string, unknown> = {\n    phase: usePhase,\n    ...(input.owner ? { owner: input.owner.trim() } : {}),\n    ...(input.note ? { notes: input.note.trim() } : {}),\n    dueAt: dueAt ?? (existing && !phase ? existing.fields.dueAt : addDays(String(hire.fields.startOn), PHASE_OFFSET[usePhase])),\n  };\n  if (existing) {\n    await tasks.update(existing.id, { fields });\n    note = 'Updated the step ' + title + ' (' + existing.id + ') for ' + nameOf(hire) + '.';\n  } else {\n    const record = await tasks.add({ status: 'todo', fields: { hireId: hire.id, hireName: nameOf(hire), title, owner: '', ...fields } });\n    note = 'Added ' + title + ' (' + record.id + ') to ' + nameOf(hire) + \"'s \" + usePhase + ', ' + whenText(String(record.fields.dueAt), now) + '.';\n  }\n  note += await settle(hire.id);\n} else if (input.action === 'complete') {\n  const all = await tasks.list();\n  const hire = input.hire ? await resolveHire(input.hire) : null;\n  const scope = all.filter((t) => (!hire || t.fields.hireId === hire.id) && (input.reopen ? t.status === 'done' : t.status !== 'done'));\n  let picked: typeof all = [];\n  if (input.task) {\n    for (const piece of String(input.task).split(/\\s*[,;]\\s*/).filter(Boolean)) {\n      const hits = taskMatches(scope, piece);\n      if (hits.length > 1) throw new Error(\"More than one step matches '\" + piece + \"': \" + hits.map((t: (typeof all)[number]) => t.id + ' ' + String(t.fields.hireName) + ': ' + titleOf(t)).join('; ') + '. Pass the id or the hire.');\n      if (!hits.length) {\n        const done = all.find((t) => t.id === piece.trim() || (!input.reopen && t.status === 'done' && titleOf(t).toLowerCase() === piece.trim().toLowerCase()));\n        if (done && !input.reopen) continue;\n        throw new Error(\"No open step matches '\" + piece + \"'\" + (hire ? ' for ' + nameOf(hire) : '') + '. Open steps: ' + (scope.slice(0, 12).map((t) => t.id + ' ' + String(t.fields.hireName) + ': ' + titleOf(t)).join('; ') || 'none') + '.');\n      }\n      if (!picked.some((t) => t.id === hits[0].id)) picked.push(hits[0]);\n    }\n  } else if (input.phase) {\n    const phase = phaseOf(input.phase);\n    if (!phase) throw new Error('phase must be one of ' + PHASES.join(', ') + '.');\n    if (!hire) throw new Error(\"Pass 'hire' with 'phase'.\");\n    picked = scope.filter((t) => t.fields.phase === phase);\n  } else {\n    throw new Error(\"complete needs 'task' (an id or words from the step) or 'hire' with 'phase'.\");\n  }\n  for (const t of picked) {\n    if (input.reopen) await tasks.transition(t.id, 'todo', input.note ? { note: input.note } : {});\n    else {\n      await tasks.update(t.id, { fields: { doneAt: localDay(now), ...(input.note ? { notes: input.note.trim() } : {}) } });\n      await tasks.transition(t.id, 'done', input.note ? { note: input.note } : {});\n    }\n  }\n  const hireIds = Array.from(new Set(picked.map((t) => String(t.fields.hireId))));\n  note = picked.length\n    ? (input.reopen ? 'Reopened ' : 'Checked off ') + picked.map((t) => String(t.fields.hireName) + ': ' + titleOf(t)).join('; ') + '.'\n    : 'Nothing left to check off there.';\n  for (const id of hireIds) note += await settle(id);\n} else if (input.action !== 'status' && input.action !== 'list') {\n  throw new Error(\"Unknown action '\" + input.action + \"'. Use status, add_hire, add_task, complete, or list.\");\n}\n\nconst allHires = await hires.list();\nconst allTasks = await tasks.list();\nconst view = picture(allHires, allTasks, now, withinDays);\nlet summary = (note ? note + ' ' : '') + view.summary;\nif (input.action === 'list') {\n  const wanted = input.hire ? [await resolveHire(input.hire)] : allHires;\n  summary =\n    wanted\n      .map((h) => {\n        const mine = allTasks.filter((t) => t.fields.hireId === h.id).sort((a, b) => String(a.fields.dueAt).localeCompare(String(b.fields.dueAt)));\n        return (\n          nameOf(h) + ' (' + h.id + ', ' + String(h.fields.role || 'no role') + ', ' + startText(h, now) + (h.status === 'done' ? ', plan complete' : '') + '):\\n' +\n          mine.map((t) => '[' + t.status + '] ' + String(t.fields.phase) + ': ' + taskLine(t, now)).join('\\n')\n        );\n      })\n      .join('\\n\\n') || 'No new hires yet.';\n}\ngezel.output({ active: view.active, overdue: view.overdue, dueSoon: view.dueSoon, summary });\n"
+  },
+  "tools": [
+    {
+      "name": "onboarding_status",
+      "description": "Every new hire's onboarding at a glance: open steps due within 7 days with overdue first, then each hire's start date, progress and what is still to do before day one, with hire and step ids. Call it first when asked what is due, what is overdue, or how someone's first weeks are going.",
+      "script": "onboarding-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "withinDays": {
+            "type": "number"
+          }
+        }
+      },
+      "bind": {
+        "action": "status"
+      },
+      "state": true
+    },
+    {
+      "name": "add_hire",
+      "description": "Add a new hire with the standard plan (accounts, equipment and paperwork before day one, a first-day welcome, a first week with a buddy, and 30, 60 and 90-day check-ins), or update one: full name, role, first day (YYYY-MM-DD or a weekday like 'monday'), manager and buddy. An existing name is updated, never duplicated, and a new start date moves the open steps. Call it as soon as a new hire is mentioned.",
+      "script": "onboarding-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "startOn": {
+            "type": "string"
+          },
+          "manager": {
+            "type": "string"
+          },
+          "buddy": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "bind": {
+        "action": "add_hire"
+      }
+    },
+    {
+      "name": "add_task",
+      "description": "Add a step to a new hire's plan: the hire, what needs doing, the phase (before day one, day one, first week, 30 days, 60 days or 90 days), who owns it, and a due date if one was given. An existing title is updated, never duplicated. Call it as soon as the person asks.",
+      "script": "onboarding-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "hire": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "before day one",
+              "day one",
+              "first week",
+              "30 days",
+              "60 days",
+              "90 days"
+            ]
+          },
+          "owner": {
+            "type": "string"
+          },
+          "dueOn": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add_task"
+      }
+    },
+    {
+      "name": "complete_task",
+      "description": "Check off steps the moment the person says they are done: task (a step's id or words from its title, several separated by commas) and the hire's name, or the hire with a phase to check off everything in it. Call it before you reply.",
+      "script": "onboarding-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "hire": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "before day one",
+              "day one",
+              "first week",
+              "30 days",
+              "60 days",
+              "90 days"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "complete"
+      }
+    },
+    {
+      "name": "list_plan",
+      "description": "A whole plan, or every plan: each step with its phase, owner, due date and whether it is done.",
+      "script": "onboarding-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "hire": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "list"
+      }
+    },
+    {
+      "name": "page_add_hire",
+      "description": "Add or update a new hire with the standard plan.",
+      "script": "onboarding-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "startOn": {
+            "type": "string"
+          },
+          "manager": {
+            "type": "string"
+          },
+          "buddy": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "bind": {
+        "action": "add_hire"
+      }
+    },
+    {
+      "name": "page_complete_task",
+      "description": "Check off or reopen a step.",
+      "script": "onboarding-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "hire": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "before day one",
+              "day one",
+              "first week",
+              "30 days",
+              "60 days",
+              "90 days"
+            ]
+          },
+          "note": {
+            "type": "string"
+          },
+          "reopen": {
+            "type": "boolean"
+          }
+        }
+      },
+      "bind": {
+        "action": "complete"
+      }
+    },
+    {
+      "name": "page_add_task",
+      "description": "Add a step to a plan.",
+      "script": "onboarding-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "hire": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "before day one",
+              "day one",
+              "first week",
+              "30 days",
+              "60 days",
+              "90 days"
+            ]
+          },
+          "owner": {
+            "type": "string"
+          },
+          "dueOn": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add_task"
+      },
+      "reaction": {
+        "gezel": "training-coordinator",
+        "hideSeed": true,
+        "prompt": "The person just added a step to a new hire's plan on the onboarding page. The plans now read (the first sentence is what changed):\n{{output.summary}}\nIn two short sentences, confirm the step with its owner and due date, and name that hire's next open step. Do not call tools."
+      }
+    }
+  ],
+  "craftbooks": [
+    "onboarding-checklist",
+    "handbook-section"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "plans/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "hires.json"
+      },
+      {
+        "source": "workspace",
+        "path": "tasks.json"
+      }
+    ],
+    "tools": [
+      "page_add_hire",
+      "page_complete_task",
+      "page_add_task"
+    ]
+  },
+  "workspaceSeed": [
+    "hires.json",
+    "tasks.json"
+  ],
+  "minGezelVersion": "1.26280"
+}

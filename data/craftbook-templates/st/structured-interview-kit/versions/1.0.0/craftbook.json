@@ -1,0 +1,213 @@
+{
+  "id": "structured-interview-kit",
+  "name": "Structured Interview Kit",
+  "description": "Write a structured interview kit for one role from the hiring desk: a job description built on the role's job-related requirements, two questions per requirement with follow-ups, a 1-to-4 scorecard with what each score looks like, and the questions to leave out. Every candidate gets the same questions and is rated on the same evidence; the person hiring makes the decision.",
+  "entryStepId": "describe",
+  "triggers": [
+    "interview kit",
+    "interview questions",
+    "structured interview",
+    "scorecard for",
+    "job description for"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "role": {
+        "type": "string",
+        "title": "Which role is the kit for?",
+        "description": "The role's title as it appears on the hiring desk, e.g. 'Barista'.",
+        "default": "the newest open role",
+        "fromMessage": true
+      },
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "describe",
+      "name": "Write the job description",
+      "description": "the role's job-related requirements, duties and terms as the desk records them",
+      "prompt": "Write the job description for {{role}} before any question. Step 1: call hiring_status, then read roles.json from the workspace and find the role that matches {{role}} (the newest open role when none is named). Step 2: copy its requirements exactly as recorded; if it has none, write three to five job-related ones from the role's title and duties and mark them 'proposed'. Every requirement is about the work (skills, experience, availability, how someone works) and never about age, family, religion, health, origin or any other protected trait. Step 3: write {{workPath}}/job-description.md with a one-paragraph summary, the main duties, a '## Requirements' section listing each requirement, and the schedule, pay and openings exactly as recorded (write 'to confirm' for any the desk does not hold). Call write_task_note with the role id and the requirements list.\n\nThe deliverable `{{workPath}}/job-description.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the hiring desk's own files stay untouched.",
+      "suggestedRole": "Recruiter",
+      "advanceWhen": {
+        "file": "{{workPath}}/job-description.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/job-description.md",
+            "bytes": 300,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/job-description.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+Requirements",
+            "flags": "i",
+            "label": "a Requirements section",
+            "artifact": true
+          }
+        ],
+        "onReject": "describe",
+        "maxAttempts": 3
+      },
+      "next": "kit",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "kit",
+      "name": "Write the interview kit",
+      "description": "the same questions for every candidate, and a scorecard tied to the requirements",
+      "prompt": "Turn {{workPath}}/job-description.md into the interview kit for {{role}}. Step 1: a '## Questions' section with a subsection per requirement: one question about a time the candidate did it ('Tell me about a time…'), one practical or situational question, and one follow-up that asks what they did themselves. Step 2: a '## Scorecard' section with a markdown table: one row per requirement and columns for the rating (1 to 4) and the evidence heard; below it, what a 1, 2, 3 and 4 look like for each requirement in one line each. There is no overall score. Step 3: a '## Questions to leave out' section: never ask about age, family plans, pregnancy, religion, health or disability, national origin, or anything else the law protects; ask whether someone can work the stated schedule instead of why not. Step 4: a closing line that the interviewers record evidence and the person hiring makes the decision, and that local rules come from an employment lawyer or the labor agency. Write {{workPath}}/interview-kit.md and call write_task_note with its path and the question count.\n\nThe deliverable `{{workPath}}/interview-kit.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the hiring desk's own files stay untouched.\n\nIf the task notes hold a review of an earlier pass, fix exactly the gaps it names and keep everything that already passed.",
+      "suggestedRole": "Recruiter",
+      "advanceWhen": {
+        "file": "{{workPath}}/interview-kit.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/interview-kit.md",
+            "bytes": 900,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/interview-kit.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/interview-kit.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+Scorecard",
+            "flags": "i",
+            "label": "a Scorecard section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/interview-kit.md",
+            "pattern": "\\|",
+            "label": "the scorecard is a table",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/interview-kit.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+Questions to leave out",
+            "flags": "i",
+            "label": "a Questions to leave out section",
+            "artifact": true
+          }
+        ],
+        "onReject": "kit",
+        "maxAttempts": 4
+      },
+      "next": "finish",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "Stamp a short summary and report DONE.",
+      "prompt": "The kit is written. Write a one-paragraph DONE summary to task notes via `write_task_note`: both file paths, the requirements the kit covers, and a reminder that the person hiring makes the decision. Then report DONE.",
+      "suggestedRole": "Recruiter",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write",
+          "artifacts"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-11-02T18:00:00Z",
+  "minGezelVersion": "1.26233"
+}

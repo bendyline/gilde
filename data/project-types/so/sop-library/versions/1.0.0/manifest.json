@@ -1,0 +1,347 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "releasedAt": "2026-11-02T18:00:00.000Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "business": {
+        "type": "string",
+        "title": "What kind of business is this?",
+        "description": "e.g. 'a café in Portland', 'a three-person electrical contractor'.",
+        "default": "the business"
+      }
+    },
+    "required": [
+      "business"
+    ]
+  },
+  "nameTemplate": "SOP Library",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "boekwachter",
+      "voorman": true
+    },
+    {
+      "templateId": "copywriter"
+    }
+  ],
+  "scripts": {
+    "sop-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'sop-store',\n  description:\n    \"Read and update the SOP library: its index (sops/index.json) and one markdown file per procedure under sops/. action:'status' for what is flagged, past its review date or due soon; 'find' to answer a 'how do I…' question from the written steps; 'save' to write or rewrite a procedure (an existing id or title is updated, never duplicated); 'review' when someone checked one and it is still right; 'flag' when one no longer matches the work; 'retire' when it is no longer used; 'list' for the whole library by area.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'status', 'find', 'save', 'review', 'flag', 'retire', or 'list'.\",\n      required: true,\n    },\n    id: { type: 'string', description: \"Procedure id, e.g. 'sop-3'.\" },\n    title: {\n      type: 'string',\n      description: \"The procedure's name, e.g. 'Closing the espresso machine'. Also finds it when no id is given.\",\n    },\n    area: { type: 'string', description: 'opening, closing, customers, kitchen, cleaning, safety, money, stock, people, equipment, office, or other.' },\n    owner: { type: 'string', description: 'Who keeps it right: usually the person who does the job.' },\n    steps: {\n      type: 'string',\n      description: 'The procedure in markdown: numbered steps, one action each, with any warnings. Replaces the written steps.',\n    },\n    summary: { type: 'string', description: 'One line on when to use it.' },\n    reviewEveryDays: { type: 'number', description: 'How often it should be checked, in days (default 180).' },\n    reviewedAt: {\n      type: 'string',\n      description: 'When it was last checked, YYYY-MM-DD, if not today (for procedures filed from an existing binder).',\n    },\n    note: { type: 'string', description: 'What changed or who checked it, in the words used.' },\n    query: { type: 'string', description: \"For find: the question as asked, e.g. 'how do I close the espresso machine'.\" },\n  },\n  outputs: {\n    outOfDate: { type: 'number', description: 'Procedures flagged for an update or past their review date.' },\n    dueSoon: { type: 'number', description: 'Procedures due for review within 30 days.' },\n    procedures: { type: 'number', description: 'Procedures in use (not retired).' },\n    summary: { type: 'string', description: 'The library picture, the answer to a find, or the listing.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── sop-rules-start ──\n// Pure derivations: when each procedure is next due for review, which ones\n// are out of date, the \"how do I…\" match score, and the lines the crew reads.\n// Kept self-contained between these sentinels so unit tests execute the\n// shipped bytes.\nvar DAY_MS = 86400000;\nvar WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];\nvar MONTH_KEYS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];\n\nfunction pad(n) {\n  return n < 10 ? '0' + n : String(n);\n}\nfunction localDay(ms) {\n  var d = new Date(ms);\n  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());\n}\nfunction noon(day) {\n  return new Date(String(day).slice(0, 10) + 'T12:00:00');\n}\nfunction addDays(day, n) {\n  var d = noon(day);\n  d.setDate(d.getDate() + n);\n  return localDay(d.getTime());\n}\nfunction addMonths(day, months) {\n  var d = noon(day);\n  var date = d.getDate();\n  d.setDate(1);\n  d.setMonth(d.getMonth() + months);\n  // The 31st rolls to the last day of a shorter month, not into the next one.\n  d.setDate(Math.min(date, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));\n  return localDay(d.getTime());\n}\nfunction daysLeft(day, nowMs) {\n  var due = Date.parse(String(day).slice(0, 10) + 'T00:00:00');\n  var today = Date.parse(localDay(nowMs) + 'T00:00:00');\n  return Math.round((due - today) / DAY_MS);\n}\nfunction dayName(day) {\n  return WEEKDAYS[noon(day).getDay()];\n}\nfunction parseDay(text, nowMs, direction) {\n  var raw = String(text == null ? '' : text).trim().toLowerCase().replace(/[.,]/g, ' ').replace(/\\s+/g, ' ').trim();\n  if (!raw) return null;\n  var iso = raw.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})(?:t.*)?$/);\n  if (iso) return iso[1] + '-' + pad(Number(iso[2])) + '-' + pad(Number(iso[3]));\n  var today = localDay(nowMs);\n  if (raw === 'today' || raw === 'now') return today;\n  if (raw === 'tomorrow') return addDays(today, 1);\n  if (raw === 'yesterday') return addDays(today, -1);\n  var rel = raw.match(/^(?:in )?(\\d{1,3}) (day|days|week|weeks)( ago| from now)?$/);\n  if (rel) {\n    var n = Number(rel[1]) * (rel[2].charAt(0) === 'w' ? 7 : 1);\n    return addDays(today, rel[3] === ' ago' ? -n : n);\n  }\n  var wd = raw.match(/^(this |next |last |on |coming )?(sun|mon|tue|wed|thu|fri|sat)[a-z]*$/);\n  if (wd) {\n    var target = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].indexOf(wd[2]);\n    var now = noon(today).getDay();\n    if (direction === 'past' || wd[1] === 'last ') {\n      var back = (now - target + 7) % 7;\n      return addDays(today, -(wd[1] === 'last ' && back === 0 ? 7 : back));\n    }\n    if (wd[1] === 'this ') return addDays(today, (target - now + 7) % 7);\n    return addDays(today, ((target - now + 6) % 7) + 1);\n  }\n  var md = raw.match(/^(?:[a-z]+day )?([a-z]{3,9}) (\\d{1,2})(?:st|nd|rd|th)?(?: (\\d{4}))?$/);\n  var dm = raw.match(/^(?:[a-z]+day )?(\\d{1,2})(?:st|nd|rd|th)? (?:of )?([a-z]{3,9})(?: (\\d{4}))?$/);\n  var parts = md ? { month: md[1], date: md[2], year: md[3] } : dm ? { month: dm[2], date: dm[1], year: dm[3] } : null;\n  if (parts) {\n    var m = MONTH_KEYS.indexOf(parts.month.slice(0, 3));\n    if (m < 0) return null;\n    var date = Number(parts.date);\n    if (date < 1 || date > 31) return null;\n    if (parts.year) return parts.year + '-' + pad(m + 1) + '-' + pad(date);\n    var year = noon(today).getFullYear();\n    var guess = year + '-' + pad(m + 1) + '-' + pad(date);\n    var d = daysLeft(guess, nowMs);\n    if (direction === 'past' && d > 0) guess = year - 1 + guess.slice(4);\n    if (direction !== 'past' && d < 0) guess = year + 1 + guess.slice(4);\n    return guess;\n  }\n  return null;\n}\nfunction matches(records, text, labelOf) {\n  var wanted = String(text == null ? '' : text).trim().toLowerCase().replace(/['\\u2019]s\\b/g, '').replace(/\\s+/g, ' ');\n  if (!wanted) return [];\n  var tiers = [\n    function (r) { return String(r.id).toLowerCase() === wanted; },\n    function (r) { return labelOf(r).toLowerCase() === wanted; },\n    function (r) { return labelOf(r).toLowerCase().indexOf(wanted) === 0; },\n    function (r) { return (' ' + labelOf(r).toLowerCase() + ' ').indexOf(' ' + wanted + ' ') >= 0; },\n    function (r) { return labelOf(r).toLowerCase().indexOf(wanted) >= 0; },\n    function (r) { var l = labelOf(r).toLowerCase(); return l.length >= 3 && wanted.indexOf(l) >= 0; },\n  ];\n  for (var i = 0; i < tiers.length; i++) {\n    var hit = records.filter(tiers[i]);\n    if (hit.length) return hit;\n  }\n  return [];\n}\nfunction describe(records, labelOf) {\n  return records.map(function (r) { return r.id + ' ' + labelOf(r); }).join(', ');\n}\nfunction splitList(text) {\n  var raw = String(text == null ? '' : text).trim();\n  if (/^\\[/.test(raw)) {\n    try {\n      var parsed = JSON.parse(raw);\n      if (Array.isArray(parsed)) return parsed.map(function (s) { return String(s).trim(); }).filter(Boolean);\n    } catch (e) {\n      // Not JSON after all; split it as text.\n    }\n  }\n  return raw\n    .split(/\\s*[,;\\n]+\\s*/)\n    .map(function (s) { return s.replace(/^(and|or|plus)\\s+/i, '').replace(/[.\\s]+$/, '').trim(); })\n    .filter(Boolean);\n}\nvar AREAS = [\"opening\",\"closing\",\"customers\",\"kitchen\",\"cleaning\",\"safety\",\"money\",\"stock\",\"people\",\"equipment\",\"office\",\"other\"];\nvar DEFAULT_REVIEW_DAYS = 180;\nvar SOON_DAYS = 30;\nvar STOP = ['how', 'do', 'does', 'did', 'done', 'we', 'you', 'they', 'an', 'the', 'to', 'of', 'in', 'on', 'at', 'for', 'with', 'and', 'or', 'is', 'are', 'was', 'what', 'when', 'where', 'who', 'which', 'should', 'can', 'could', 'our', 'my', 'your', 'it', 'its', 'this', 'that', 'there', 'about', 'get', 'me', 'us', 'be', 'have', 'has', 'if', 'then', 'up', 'out', 'into', 'again', 'any', 'some', 'need', 'procedure', 'procedures', 'sop', 'steps', 'step', 'way', 'right', 'properly', 'please', 'tell', 'show'];\n\n// \"closing\", \"closed\" and \"close\" all become \"clos\"; \"machines\" and \"machine\" become \"machin\".\nfunction stem(word) {\n  var w = word;\n  if (w.length > 5 && /ing$/.test(w)) w = w.slice(0, -3);\n  else if (w.length > 4 && /ed$/.test(w)) w = w.slice(0, -2);\n  else if (w.length > 4 && /es$/.test(w)) w = w.slice(0, -2);\n  else if (w.length > 3 && /s$/.test(w) && !/ss$/.test(w)) w = w.slice(0, -1);\n  if (w.length > 4 && /e$/.test(w)) w = w.slice(0, -1);\n  return w;\n}\nfunction tokens(text) {\n  var seen = [];\n  String(text == null ? '' : text).toLowerCase().split(/[^a-z0-9]+/).forEach(function (w) {\n    if (w.length < 2 || STOP.indexOf(w) >= 0) return;\n    var s = stem(w);\n    if (seen.indexOf(s) < 0) seen.push(s);\n  });\n  return seen;\n}\n// Title words count three times, area and summary twice, the steps once.\nfunction score(record, body, query) {\n  var q = tokens(query);\n  if (!q.length) return 0;\n  var f = record.fields || {};\n  var title = tokens(f.title), meta = tokens((f.area || '') + ' ' + (f.summary || '')), text = tokens(body);\n  var total = 0, hit = 0;\n  q.forEach(function (w) {\n    var s = title.indexOf(w) >= 0 ? 3 : meta.indexOf(w) >= 0 ? 2 : text.indexOf(w) >= 0 ? 1 : 0;\n    if (s) hit += 1;\n    total += s;\n  });\n  return hit ? total + hit / q.length : 0;\n}\nfunction reviewDays(f) {\n  var n = Number(f.reviewEveryDays);\n  return n > 0 ? Math.round(n) : DEFAULT_REVIEW_DAYS;\n}\nfunction nextReview(f) {\n  return f.lastReviewedAt ? addDays(String(f.lastReviewedAt).slice(0, 10), reviewDays(f)) : null;\n}\n// retired, flagged (needs-update), draft, unreviewed, stale (past its review date), soon, ok.\nfunction reviewState(record, nowMs) {\n  if (record.status === 'retired') return 'retired';\n  if (record.status === 'needs-update') return 'flagged';\n  if (record.status === 'draft') return 'draft';\n  var f = record.fields || {};\n  if (!f.lastReviewedAt) return 'unreviewed';\n  var d = daysLeft(nextReview(f), nowMs);\n  return d < 0 ? 'stale' : d <= SOON_DAYS ? 'soon' : 'ok';\n}\nfunction flagNote(record) {\n  var history = record.history || [];\n  for (var i = history.length - 1; i >= 0; i--) {\n    if (history[i].to === 'needs-update' && history[i].note) return history[i].note;\n  }\n  return '';\n}\nfunction ago(days) {\n  return days === 0 ? 'today' : days === 1 ? 'yesterday' : days + ' days ago';\n}\nfunction line(record, nowMs) {\n  var f = record.fields || {};\n  var state = reviewState(record, nowMs);\n  var next = nextReview(f);\n  var reviewed = f.lastReviewedAt ? 'last reviewed ' + f.lastReviewedAt + ' (' + ago(-daysLeft(f.lastReviewedAt, nowMs)) + ')' : 'never reviewed';\n  var what =\n    state === 'flagged' ? 'flagged for an update' + (flagNote(record) ? ': \"' + flagNote(record) + '\"' : '') + '; ' + reviewed\n    : state === 'draft' ? 'draft, no steps written yet'\n    : state === 'retired' ? 'retired'\n    : state === 'unreviewed' ? 'never reviewed'\n    : state === 'stale' ? reviewed + '; review overdue by ' + -daysLeft(next, nowMs) + ' days (every ' + reviewDays(f) + ' days)'\n    : state === 'soon' ? reviewed + '; review due in ' + daysLeft(next, nowMs) + ' days'\n    : reviewed + '; next review ' + next;\n  return f.title + ' (' + record.id + ', ' + (f.area || 'other') + ', owner ' + (f.owner || 'none yet') + '): ' + what;\n}\n// Known-wrong first, then the most overdue, then reviews coming due.\nfunction urgency(record, nowMs) {\n  var state = reviewState(record, nowMs);\n  if (state === 'flagged') return -1000000;\n  if (state === 'unreviewed') return -500000;\n  var next = nextReview(record.fields || {});\n  return next ? daysLeft(next, nowMs) : 0;\n}\nfunction picture(records, nowMs) {\n  var live = records.filter(function (r) { return r.status !== 'retired'; });\n  var states = live.map(function (r) { return reviewState(r, nowMs); });\n  var pick = function (names) { return live.filter(function (r, i) { return names.indexOf(states[i]) >= 0; }); };\n  var outOfDate = pick(['flagged', 'unreviewed', 'stale']);\n  var soon = pick(['soon']);\n  var drafts = pick(['draft']);\n  var areas = [];\n  live.forEach(function (r) { var a = (r.fields && r.fields.area) || 'other'; if (areas.indexOf(a) < 0) areas.push(a); });\n  areas.sort(function (a, b) { return AREAS.indexOf(a) - AREAS.indexOf(b); });\n  var parts = [\n    live.length + (live.length === 1 ? ' procedure' : ' procedures') + ' in ' + areas.length + (areas.length === 1 ? ' area' : ' areas') + '; ' +\n      outOfDate.length + ' out of date, ' + soon.length + ' due for review within ' + SOON_DAYS + ' days.',\n  ];\n  // One list, most urgent first: a model asked what is out of date reads one list, not side lists.\n  var attention = outOfDate.concat(soon).sort(function (a, b) { return urgency(a, nowMs) - urgency(b, nowMs); });\n  parts.push(\n    attention.length\n      ? 'Out of date or due for review, most urgent first: ' + attention.map(function (r) { return line(r, nowMs); }).join(' | ') + '.'\n      : live.length ? 'Every procedure is current.' : 'The library is empty.',\n  );\n  if (drafts.length) parts.push('Drafts with no steps yet: ' + drafts.map(function (r) { return r.fields.title + ' (' + r.id + ')'; }).join(', ') + '.');\n  if (areas.length) {\n    parts.push(\n      'By area: ' + areas.map(function (a) {\n        return a + ': ' + live.filter(function (r) { return ((r.fields && r.fields.area) || 'other') === a; }).map(function (r) { return r.fields.title + ' (' + r.id + ')'; }).join(', ');\n      }).join('; ') + '.',\n    );\n    // The steps live in the files: a model answering from this summary alone would invent them.\n    parts.push(\"Steps are not in this summary; for a 'how do I…' question, call find_procedure with the question and answer from its steps.\");\n  }\n  return { outOfDate: outOfDate.length, dueSoon: soon.length, procedures: live.length, summary: parts.join(' ') };\n}\nfunction procedureLabel(r) {\n  return String((r.fields && r.fields.title) || '');\n}\n// By id or title first, then every telling word of the request.\nfunction findProcedures(records, text) {\n  var hit = matches(records, text, procedureLabel);\n  if (hit.length) return hit;\n  var want = tokens(text);\n  if (!want.length) return [];\n  return records.filter(function (r) {\n    var have = tokens(procedureLabel(r));\n    return want.every(function (w) { return have.indexOf(w) >= 0; });\n  });\n}\nfunction slugOf(title) {\n  var slug = String(title).toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');\n  return slug || 'procedure';\n}\n// The title is the file's one heading; a pasted copy of it is dropped.\nfunction bodyOf(title, steps) {\n  var text = String(steps).replace(/\\r\\n/g, '\\n').trim().replace(/^#\\s+[^\\n]*\\n+/, '');\n  return '# ' + title + '\\n\\n' + text + '\\n';\n}\n// ── sop-rules-end ──\n\nconst library = rosterStore(gezel.fs, 'sops/index.json', {\n  stages: ['draft', 'current', 'needs-update', 'retired'],\n  idPrefix: 'sop',\n});\ntype Procedure = Awaited<ReturnType<typeof library.list>>[number];\n\nconst now = Date.now();\nconst today = localDay(now);\nlet note = '';\nlet answer = '';\n\nfunction clip(text: string, max: number): string {\n  return text.length > max ? text.slice(0, max - 1) + '…' : text;\n}\nfunction known(all: Procedure[]): string {\n  return describe(all, procedureLabel) || 'none yet';\n}\nasync function readBody(file: unknown): Promise<string> {\n  if (typeof file !== 'string' || !file) return '';\n  try {\n    return await gezel.fs.read(file);\n  } catch {\n    return '';\n  }\n}\n\nasync function resolveProcedure(): Promise<Procedure> {\n  const all = await library.list();\n  const text = input.id || input.title;\n  if (!text) throw new Error(\"Pass 'id' (e.g. 'sop-3') or the procedure's 'title'. Procedures: \" + known(all) + '.');\n  const hits = findProcedures(all, text);\n  if (hits.length === 1) return hits[0]!;\n  if (hits.length > 1) throw new Error(\"More than one procedure matches '\" + text + \"': \" + describe(hits, procedureLabel) + '. Pass id.');\n  throw new Error(\"No procedure matches '\" + text + \"'. Procedures: \" + known(all) + '.');\n}\n\nif (input.action === 'save') {\n  const all = await library.list();\n  const wanted = String(input.title ?? '').trim().toLowerCase();\n  let existing = input.id\n    ? all.find((r) => r.id === input.id)\n    : all.find((r) => String(r.fields.title ?? '').toLowerCase() === wanted);\n  if (input.id && !existing) throw new Error('No procedure ' + input.id + '. Procedures: ' + known(all) + '.');\n  if (!existing && !wanted) throw new Error(\"save needs 'title'.\");\n  const steps = typeof input.steps === 'string' && input.steps.trim() ? input.steps : '';\n  // A reworded title (\"Espresso machine closing\") is the same procedure.\n  if (!existing) {\n    const words = tokens(input.title).sort().join(' ');\n    const same = all.filter((r) => words && tokens(r.fields.title).sort().join(' ') === words);\n    if (same.length === 1) existing = same[0];\n  }\n  // A loose title names an existing procedure when the call only changes its details. New steps\n  // never overwrite a loosely matched one: the caller names it by id or gives the new one its own title.\n  if (!existing) {\n    const loose = findProcedures(all, input.title).filter((r) => r.status !== 'retired');\n    if (loose.length > 1) {\n      throw new Error(\"More than one procedure matches '\" + input.title + \"': \" + describe(loose, procedureLabel) + '. Pass id to change one, or give a new procedure its own full title.');\n    }\n    if (loose.length === 1 && !steps) existing = loose[0];\n    else if (loose.length === 1) {\n      throw new Error(\"'\" + input.title + \"' looks like \" + String(loose[0]!.fields.title) + ' (' + loose[0]!.id + \"). To rewrite it, pass id '\" + loose[0]!.id + \"'; to add a separate procedure, give it its own full title.\");\n    }\n  }\n  const area = AREAS.indexOf(String(input.area ?? '').toLowerCase()) >= 0 ? String(input.area).toLowerCase() : undefined;\n  let reviewedAt: string | null = null;\n  if (input.reviewedAt) {\n    reviewedAt = parseDay(input.reviewedAt, now, 'past');\n    if (!reviewedAt) throw new Error(\"reviewedAt must be a date, e.g. '2026-03-14'.\");\n    if (daysLeft(reviewedAt, now) > 0) reviewedAt = today;\n  }\n  const fields: Record<string, unknown> = {\n    ...(area ? { area } : {}),\n    ...(input.owner ? { owner: input.owner.trim() } : {}),\n    ...(input.summary ? { summary: input.summary.trim() } : {}),\n    ...(typeof input.reviewEveryDays === 'number' && input.reviewEveryDays > 0 ? { reviewEveryDays: Math.round(input.reviewEveryDays) } : {}),\n  };\n  if (existing) {\n    const title = input.id && input.title && input.title.trim() ? input.title.trim() : String(existing.fields.title);\n    if (title !== existing.fields.title) fields.title = title;\n    if (steps) {\n      await gezel.fs.write(String(existing.fields.file), bodyOf(title, steps));\n      fields.lastReviewedAt = reviewedAt ?? today;\n    } else if (reviewedAt) {\n      fields.lastReviewedAt = reviewedAt;\n    }\n    await library.update(existing.id, { fields, ...(steps ? { note: input.note ?? 'Steps rewritten.' } : input.note ? { note: input.note } : {}) });\n    if (steps && existing.status !== 'current') await library.transition(existing.id, 'current', { note: 'Steps rewritten.' });\n    note = 'Updated ' + title + (steps ? ' with new steps' : '') + '.';\n  } else {\n    const title = String(input.title).trim();\n    const taken = all.map((r) => String(r.fields.file ?? ''));\n    const slug = slugOf(title);\n    let file = 'sops/' + slug + '.md';\n    for (let n = 2; taken.indexOf(file) >= 0; n++) file = 'sops/' + slug + '-' + n + '.md';\n    await gezel.fs.write(file, bodyOf(title, steps || '_No steps yet. Ask the person who does this job to walk through it once, and write down each action in order._'));\n    const record = await library.add({\n      status: steps ? 'current' : 'draft',\n      fields: { title, area: area ?? 'other', file, ...fields, ...(steps ? { lastReviewedAt: reviewedAt ?? today } : {}) },\n    });\n    note = 'Added ' + record.id + ' ' + title + ' at ' + file + (steps ? '' : ' as a draft') + '.';\n  }\n} else if (input.action === 'find') {\n  const query = String(input.query ?? input.title ?? '').trim();\n  if (!query) throw new Error(\"find needs 'query': the question as asked.\");\n  const live = (await library.list()).filter((r) => r.status !== 'retired');\n  const scored: Array<{ r: Procedure; body: string; s: number }> = [];\n  for (const r of live) {\n    const body = await readBody(r.fields.file);\n    const s = score(r, body, query);\n    if (s > 0) scored.push({ r, body, s });\n  }\n  scored.sort((a, b) => b.s - a.s);\n  const best = scored[0];\n  if (!best) {\n    answer = \"No procedure in the library matches '\" + query + \"'. Say so plainly, and offer to write one down with the person who does that job.\";\n  } else {\n    const state = reviewState(best.r, now);\n    answer =\n      \"Best match for '\" + query + \"': \" + line(best.r, now) + '. File ' + String(best.r.fields.file) + '.\\n\\n' +\n      clip(best.body.trim() || '(The file is empty.)', 4000) +\n      (state === 'stale' || state === 'flagged' || state === 'unreviewed' ? '\\n\\nThis procedure is out of date; say so when you answer, and suggest the owner checks it.' : '') +\n      (state === 'draft' ? '\\n\\nThis is a draft with no steps yet; say so rather than inventing steps.' : '') +\n      (scored.length > 1 ? '\\n\\nAlso related: ' + scored.slice(1, 4).map((x) => String(x.r.fields.title) + ' (' + x.r.id + ')').join(', ') + '.' : '');\n  }\n} else if (input.action === 'review') {\n  const r = await resolveProcedure();\n  if (r.status === 'retired') throw new Error(String(r.fields.title) + ' is retired; save it again with steps to bring it back.');\n  if (r.status === 'draft') throw new Error(String(r.fields.title) + ' is a draft with no steps yet; save its steps first.');\n  await library.update(r.id, { fields: { lastReviewedAt: today }, note: input.note ?? 'Reviewed; still right.' });\n  if (r.status === 'needs-update') await library.transition(r.id, 'current', { note: 'Reviewed; still right.' });\n  note = String(r.fields.title) + ' marked reviewed today; next review ' + addDays(today, reviewDays(r.fields)) + '.';\n} else if (input.action === 'flag') {\n  if (!input.note || !input.note.trim()) throw new Error(\"flag needs 'note': what changed or what is wrong, in the person's words.\");\n  const r = await resolveProcedure();\n  await library.transition(r.id, 'needs-update', { note: input.note.trim() });\n  note = String(r.fields.title) + ' flagged for an update: ' + input.note.trim().replace(/[.\\s]+$/, '') + '.';\n} else if (input.action === 'retire') {\n  const r = await resolveProcedure();\n  await library.transition(r.id, 'retired', { note: input.note ?? 'Retired.' });\n  note = String(r.fields.title) + ' retired; its file stays at ' + String(r.fields.file) + '.';\n} else if (input.action !== 'status' && input.action !== 'list') {\n  throw new Error(\"Unknown action '\" + input.action + \"'. Use status, find, save, review, flag, retire, or list.\");\n}\n\nconst records = await library.list();\nconst shelf = picture(records, now);\nconst listing = () =>\n  records\n    .slice()\n    .sort((a, b) => AREAS.indexOf(String(a.fields.area)) - AREAS.indexOf(String(b.fields.area)) || String(a.fields.title).localeCompare(String(b.fields.title)))\n    .map((r) => '[' + r.status + '] ' + line(r, now) + '; file ' + String(r.fields.file))\n    .join('\\n') || 'The library is empty.';\n\ngezel.output({\n  outOfDate: shelf.outOfDate,\n  dueSoon: shelf.dueSoon,\n  procedures: shelf.procedures,\n  summary: input.action === 'list' ? listing() : input.action === 'find' ? answer : (note ? note + ' ' : '') + shelf.summary,\n});\n"
+  },
+  "tools": [
+    {
+      "name": "library_status",
+      "description": "What in the library is out of date (flagged for an update or past its review date, most urgent first) and what is due for review within 30 days, each with owner and last-reviewed date, plus every procedure by area. Call it first when asked what needs reviewing or which procedures exist.",
+      "script": "sop-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "status"
+      },
+      "state": true
+    },
+    {
+      "name": "find_procedure",
+      "description": "Answer a 'how do I…' question from the library: returns the best-matching procedure's steps exactly as written, with its owner and last-reviewed date. Call it before answering any how-to question, and answer from those steps, never from general knowledge.",
+      "script": "sop-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "bind": {
+        "action": "find"
+      }
+    },
+    {
+      "name": "save_procedure",
+      "description": "Write a procedure into the library: title, area, owner and the steps in markdown (numbered, one action each). An existing id or title is rewritten, never duplicated, and saving new steps counts as a review. Call it as soon as the person describes how a job is done, before you describe it.",
+      "script": "sop-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string",
+            "enum": [
+              "opening",
+              "closing",
+              "customers",
+              "kitchen",
+              "cleaning",
+              "safety",
+              "money",
+              "stock",
+              "people",
+              "equipment",
+              "office",
+              "other"
+            ]
+          },
+          "owner": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "reviewEveryDays": {
+            "type": "number"
+          },
+          "reviewedAt": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "save"
+      }
+    },
+    {
+      "name": "mark_reviewed",
+      "description": "Record that someone checked a procedure and it is still right; it restarts the review clock. Call it the moment the person says it's been checked.",
+      "script": "sop-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "review"
+      }
+    },
+    {
+      "name": "flag_procedure",
+      "description": "Flag a procedure that no longer matches how the work is done, with what changed in the words the person used. Call it the moment a change is mentioned, then offer to rewrite the steps.",
+      "script": "sop-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "note"
+        ]
+      },
+      "bind": {
+        "action": "flag"
+      }
+    },
+    {
+      "name": "retire_procedure",
+      "description": "Retire a procedure the business no longer uses. Its file stays in sops/, but it leaves the library and its answers.",
+      "script": "sop-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "retire"
+      }
+    },
+    {
+      "name": "list_procedures",
+      "description": "Every procedure by area with owner, status, file path and review dates.",
+      "script": "sop-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "list"
+      }
+    },
+    {
+      "name": "page_save_procedure",
+      "description": "Write or rewrite a procedure.",
+      "script": "sop-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string",
+            "enum": [
+              "opening",
+              "closing",
+              "customers",
+              "kitchen",
+              "cleaning",
+              "safety",
+              "money",
+              "stock",
+              "people",
+              "equipment",
+              "office",
+              "other"
+            ]
+          },
+          "owner": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "reviewEveryDays": {
+            "type": "number"
+          },
+          "reviewedAt": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "save"
+      }
+    },
+    {
+      "name": "page_mark_reviewed",
+      "description": "Record that a procedure was checked and is still right.",
+      "script": "sop-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "review"
+      },
+      "reaction": {
+        "gezel": "boekwachter",
+        "hideSeed": true,
+        "prompt": "The person just marked a procedure reviewed on the library page. The library now reads (its first sentence is what changed):\n{{output.summary}}\nIn two short sentences, confirm the next review date and name the next procedure that is out of date or due. Do not call tools."
+      }
+    },
+    {
+      "name": "page_flag_procedure",
+      "description": "Flag a procedure for an update.",
+      "script": "sop-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "note"
+        ]
+      },
+      "bind": {
+        "action": "flag"
+      },
+      "reaction": {
+        "gezel": "boekwachter",
+        "hideSeed": true,
+        "prompt": "The person just flagged a procedure for an update on the library page. The library now reads (its first sentence is what changed):\n{{output.summary}}\nIn two short sentences, confirm what was flagged and offer to redraft its steps with the person who does the job. Do not call tools."
+      }
+    }
+  ],
+  "craftbooks": [
+    "handbook-section",
+    "doc-rewrite",
+    "knowledge-base-article"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "library/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "sops",
+        "subtree": true
+      }
+    ],
+    "tools": [
+      "page_save_procedure",
+      "page_mark_reviewed",
+      "page_flag_procedure"
+    ]
+  },
+  "workspaceSeed": [
+    "sops/index.json"
+  ],
+  "minGezelVersion": "1.26280"
+}

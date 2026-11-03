@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Vendor and contract desk</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f5f2ec; --card: #fffdf8; --ink: #27241f; --muted: #6a6257; --line: #dcd4c6;
+        --accent: #2f6470; --late: #a3341f; --late-bg: #f7e1da; --soon: #8a5a12; --soon-bg: #f6ead2;
+        --ok: #3f6b4a; --ok-bg: #e2eedf; --chip: #eee8dd; --bar: #2f6470;
+        --gezel-component-accent: var(--accent);
+      }
+      :root[data-theme='dark'] {
+        --bg: #171615; --card: #211f1c; --ink: #eee8de; --muted: #a79d8f; --line: #39342d;
+        --accent: #86c1cc; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+        --ok: #8fc29b; --ok-bg: #22301f; --chip: #2c2823; --bar: #6fa9b5;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #171615; --card: #211f1c; --ink: #eee8de; --muted: #a79d8f; --line: #39342d;
+          --accent: #86c1cc; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+          --ok: #8fc29b; --ok-bg: #22301f; --chip: #2c2823; --bar: #6fa9b5;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body, system-ui, sans-serif); font-size: 15px; line-height: 1.5; padding: 1.5rem 1.25rem; }
+      main { max-width: 900px; margin: 0 auto; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.5rem; font-weight: 400; margin: 0 0 0.2rem; }
+      h2 { font-family: var(--font-heading, Georgia, serif); font-size: 1.1rem; font-weight: 400; margin: 0 0 0.6rem; }
+      .sub { color: var(--muted); margin: 0 0 1rem; }
+      .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; margin: 0 0 1.2rem; }
+      .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem 0.9rem; min-width: 0; }
+      .tile b { display: block; font-size: 1.5rem; font-weight: 600; line-height: 1.1; overflow-wrap: anywhere; }
+      .tile span { color: var(--muted); font-size: 0.85rem; }
+      .tile.late b { color: var(--late); }
+      .tile.soon b { color: var(--soon); }
+      section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin: 0 0 1rem; min-width: 0; }
+      .due { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
+      .due li { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 0.75rem; align-items: start; }
+      .when { font-size: 0.8rem; font-weight: 600; padding: 0.15rem 0.45rem; border-radius: 4px; text-align: center; background: var(--chip); color: var(--muted); }
+      .when.late { background: var(--late-bg); color: var(--late); }
+      .when.soon { background: var(--soon-bg); color: var(--soon); }
+      .due .what b { font-weight: 600; }
+      .due .what small, .meta { display: block; color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
+      .auto { display: inline-block; margin-left: 0.35rem; font-size: 0.75rem; font-weight: 600; padding: 0 0.35rem; border-radius: 4px; background: var(--late-bg); color: var(--late); vertical-align: 1px; }
+      .empty { color: var(--muted); font-style: italic; margin: 0; }
+      .table-wrap { overflow-x: auto; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+      th { text-align: left; font-weight: 600; color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 0.5rem 0.4rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+      td { padding: 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+      td.num { white-space: nowrap; }
+      tr:last-child td { border-bottom: 0; }
+      tr.gone td { color: var(--muted); }
+      .status { display: inline-block; font-size: 0.78rem; padding: 0.05rem 0.4rem; border-radius: 4px; background: var(--chip); white-space: nowrap; }
+      .status.reviewing { background: var(--soon-bg); color: var(--soon); }
+      .status.cancelling { background: var(--late-bg); color: var(--late); }
+      .status.ended { background: var(--ok-bg); color: var(--ok); }
+      .bars { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.45rem; }
+      .bars li { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) 8.5rem; gap: 0.6rem; align-items: center; font-size: 0.9rem; }
+      .bars .track { height: 0.7rem; border-radius: 4px; background: var(--chip); overflow: hidden; }
+      .bars .track i { display: block; height: 100%; background: var(--bar); border-radius: 4px; }
+      .bars .amt { text-align: right; color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+      .vendors { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: 0.6rem; }
+      .vendors li { border: 1px solid var(--line); border-radius: 6px; padding: 0.6rem 0.7rem; min-width: 0; }
+      .vendors b { display: block; font-weight: 600; overflow-wrap: anywhere; }
+      .files { display: grid; gap: 0.5rem; margin: 0 0 0.75rem; }
+      .demo-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 0 0 1rem; padding: 0.5rem 0.65rem; border: 1px solid var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--card) 88%, var(--accent)); font-size: 0.85rem; }
+      .demo-banner[hidden] { display: none; }
+      .demo-reset { flex: none; min-height: 36px; padding: 0.3rem 0.7rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; }
+      .note { color: var(--muted); font-size: 0.85rem; margin: 0.75rem 0 0; }
+      @media (max-width: 640px) {
+        .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .due li { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
+        .when { justify-self: start; }
+        .bars li { grid-template-columns: 5rem minmax(0, 1fr); }
+        .bars .amt { grid-column: 1 / -1; text-align: left; }
+        table { min-width: 640px; }
+      }
+    </style>
+    <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:0 0 12px;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--line,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+    <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script>
+  </head>
+  <body>
+    <main>
+      <p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong>: Harbor Street Café’s sample vendors and contracts. Changes stay in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Vendor &amp; contract desk</h1>
+      <p class="sub" id="sub">Loading the desk…</p>
+      <div class="tiles">
+        <div class="tile"><b id="t-spend">$0</b><span>Spent a year</span></div>
+        <div class="tile soon"><b id="t-due">0</b><span>Decisions in 90 days</span></div>
+        <div class="tile late"><b id="t-auto">0</b><span>Renew on their own soon</span></div>
+        <div class="tile"><b id="t-vendors">0</b><span>Vendors</span></div>
+      </div>
+      <section id="due-section">
+        <h2>Coming up</h2>
+        <ul class="due" id="due"></ul>
+      </section>
+      <section id="contracts-section">
+        <h2>Contracts</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Contract</th><th>Kind</th><th>Per year</th><th>Term ends</th><th>Notice by</th><th>Renews</th><th>Status</th></tr></thead>
+            <tbody id="contracts-body"></tbody>
+          </table>
+        </div>
+      </section>
+      <section id="spend-section">
+        <h2>Where the money goes</h2>
+        <ul class="bars" id="spend"></ul>
+      </section>
+      <section id="vendors-section">
+        <h2>Vendors</h2>
+        <ul class="vendors" id="vendors"></ul>
+      </section>
+      <section id="files-section">
+        <h2>Contract files</h2>
+        <div class="files" id="contract-files"></div>
+        <div id="add-file"></div>
+        <p class="note">The desk records what the business agreed and the dates it set. It is not legal advice; when a clause or a notice rule is unclear, ask the vendor in writing or a lawyer.</p>
+      </section>
+    </main>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        var DAY = 86400000;
+        var WINDOW = 90;
+        function pad(n) { return n < 10 ? '0' + n : String(n); }
+        function iso(ms) { var d = new Date(ms); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+        function daysFromNow(n) { return iso(Date.now() + n * DAY); }
+
+        // ── demo desk (used only when the page opens outside Gezel); dates are relative so it never goes stale ──
+        var demoVendors = { version: 1, stages: ['active', 'inactive'], records: [
+          { id: 'vn-1', status: 'active', fields: { name: 'Fogline Roasters', category: 'food', contact: 'Marco Ruiz, orders@foglineroasters.example' } },
+          { id: 'vn-2', status: 'active', fields: { name: 'Bayside Linen', category: 'linen', contact: 'Route desk, (503) 555-0112' } },
+          { id: 'vn-3', status: 'active', fields: { name: 'Harbor Produce Co.', category: 'food', contact: 'Jen Okafor, (503) 555-0175' } },
+          { id: 'vn-4', status: 'active', fields: { name: 'Clearwater Water Co.', category: 'equipment', contact: 'accounts@clearwater.example' } },
+          { id: 'vn-5', status: 'active', fields: { name: 'Tidewater Waste', category: 'services', contact: 'Customer care, (503) 555-0190' } },
+          { id: 'vn-6', status: 'active', fields: { name: 'Squarepoint POS', category: 'software', contact: 'Online account' } },
+          { id: 'vn-7', status: 'active', fields: { name: 'Pier Street Properties', category: 'premises', contact: 'Helen Park, property manager' } },
+          { id: 'vn-8', status: 'active', fields: { name: 'Coastline Espresso Tech', category: 'equipment', contact: 'Service line, (503) 555-0133' } },
+          { id: 'vn-9', status: 'active', fields: { name: 'Brightline Electric', category: 'services', contact: 'Sam, (503) 555-0148' } },
+        ] };
+        function contract(id, vendor, status, fields) {
+          var v = demoVendors.records.find(function (x) { return x.id === vendor; });
+          return { id: id, status: status, fields: Object.assign({ vendor: v.fields.name, vendorId: v.id, category: v.fields.category }, fields), history: [] };
+        }
+        var demoContracts = { version: 1, stages: ['active', 'reviewing', 'cancelling', 'ended'], records: [
+          contract('ct-1', 'vn-1', 'active', { title: 'Coffee beans supply', endAt: daysFromNow(165), autoRenew: 'yes', renewMonths: 12, noticeDays: 60, annualCents: 1440000, owner: 'Dana' }),
+          contract('ct-2', 'vn-2', 'active', { title: 'Linen and apron service', endAt: daysFromNow(42), autoRenew: 'yes', renewMonths: 12, noticeDays: 30, annualCents: 360000, owner: 'Priya', file: 'contract-files/bayside-linen-2025.pdf' }),
+          contract('ct-3', 'vn-3', 'active', { title: 'Produce delivery', endAt: daysFromNow(75), autoRenew: 'no', noticeDays: 30, annualCents: 2160000, owner: 'Dana' }),
+          contract('ct-4', 'vn-4', 'active', { title: 'Water cooler and filter rental', endAt: daysFromNow(58), autoRenew: 'yes', renewMonths: 12, noticeDays: 30, annualCents: 114000, owner: 'Luis' }),
+          contract('ct-5', 'vn-5', 'active', { title: 'Waste and recycling pickup', endAt: daysFromNow(20), autoRenew: 'yes', renewMonths: 12, noticeDays: 60, annualCents: 432000, owner: 'Luis' }),
+          contract('ct-6', 'vn-6', 'active', { title: 'Point-of-sale software', endAt: daysFromNow(230), autoRenew: 'yes', renewMonths: 12, noticeDays: 30, annualCents: 118800, owner: 'Priya' }),
+          contract('ct-7', 'vn-7', 'active', { title: 'Lease, 14 Harbor Street', endAt: daysFromNow(900), autoRenew: 'no', noticeDays: 180, annualCents: 5400000, owner: 'Priya', file: 'contract-files/pier-street-lease.pdf' }),
+          contract('ct-8', 'vn-8', 'reviewing', { title: 'Espresso machine service plan', endAt: daysFromNow(88), autoRenew: 'yes', renewMonths: 12, noticeDays: 30, annualCents: 96000, owner: 'Luis' }),
+        ] };
+        var demoFiles = [
+          { path: 'contract-files/bayside-linen-2025.pdf', name: 'bayside-linen-2025.pdf', size: 212480, mtime: Date.now() - 323 * DAY },
+          { path: 'contract-files/pier-street-lease.pdf', name: 'pier-street-lease.pdf', size: 905216, mtime: Date.now() - 560 * DAY },
+        ];
+
+        // The contracts-store rules, mirrored for the demo and the board so both read like the live desk.
+        var CATEGORIES = ['food', 'supplies', 'linen', 'equipment', 'software', 'utilities', 'services', 'premises', 'insurance', 'other'];
+        function noon(day) { return new Date(String(day).slice(0, 10) + 'T12:00:00'); }
+        function addDays(day, n) { var d = noon(day); d.setDate(d.getDate() + n); return iso(d.getTime()); }
+        function addMonths(day, months) {
+          var d = noon(day), date = d.getDate();
+          d.setDate(1); d.setMonth(d.getMonth() + months);
+          d.setDate(Math.min(date, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+          return iso(d.getTime());
+        }
+        function daysLeft(day) { return Math.round((Date.parse(String(day).slice(0, 10) + 'T00:00:00') - Date.parse(iso(Date.now()) + 'T00:00:00')) / DAY); }
+        function yes(value) { return value === true || /^(yes|true|y)$/i.test(String(value == null ? '' : value).trim()); }
+        function months(f) { return Number(f.renewMonths) > 0 ? Math.round(Number(f.renewMonths)) : 12; }
+        function view(r) {
+          var f = r.fields || {}, end = f.endAt ? String(f.endAt).slice(0, 10) : null, first = end;
+          if (end && yes(f.autoRenew) && r.status !== 'cancelling' && r.status !== 'ended') {
+            for (var k = 1; k <= 600 && daysLeft(end) < 0; k++) end = addMonths(first, k * months(f));
+          }
+          var notice = f.noticeDays === undefined || f.noticeDays === null || f.noticeDays === '' ? null : Math.round(Number(f.noticeDays));
+          var by = end ? addDays(end, -(notice === null ? 30 : notice)) : null;
+          return { end: end, noticeBy: by, notice: notice, auto: yes(f.autoRenew), toNotice: by ? daysLeft(by) : null, toEnd: end ? daysLeft(end) : null };
+        }
+        function stateOf(r) {
+          var v = view(r);
+          if (r.status === 'ended') return 'ended';
+          if (!v.end) return 'undated';
+          if (r.status === 'cancelling') return v.toEnd < 0 ? 'ended' : 'cancelling';
+          if (v.auto) return v.toNotice < 0 ? 'locked' : v.toNotice <= WINDOW ? 'notice' : 'later';
+          if (v.toEnd < 0) return 'expired';
+          return v.toNotice <= WINDOW ? 'ending' : 'later';
+        }
+        function urgency(r) { var v = view(r), s = stateOf(r); return s === 'expired' ? -100000 + v.toEnd : s === 'locked' ? -50000 + v.toEnd : v.toNotice; }
+        function money(cents) { return '$' + (Math.round(Number(cents) || 0) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 }); }
+        function demoFind(input) {
+          var all = demoContracts.records;
+          if (input.id) { var byId = all.find(function (r) { return r.id === input.id; }); if (byId) return byId; }
+          var wanted = String(input.title || input.vendor || '').trim().toLowerCase();
+          var hits = all.filter(function (r) { return r.fields.title.toLowerCase() === wanted; });
+          if (!hits.length) hits = all.filter(function (r) { return wanted && (r.fields.title + ' ' + r.fields.vendor).toLowerCase().indexOf(wanted) >= 0; });
+          if (!hits.length) {
+            var words = wanted.split(/[^a-z0-9]+/).filter(function (w) { return w.length > 2 && ['the', 'our', 'contract', 'and', 'with', 'for'].indexOf(w) < 0; });
+            hits = words.length ? all.filter(function (r) { var have = (r.fields.title + ' ' + r.fields.vendor).toLowerCase(); return words.every(function (w) { return have.indexOf(w.replace(/s$/, '')) >= 0; }); }) : [];
+          }
+          if (hits.length === 1) return hits[0];
+          throw new Error((hits.length ? 'More than one contract matches' : 'No contract matches') + " '" + (input.title || input.vendor || input.id || '') + "'. Pass id.");
+        }
+        function demoSummary(note) {
+          var live = demoContracts.records.filter(function (r) { return stateOf(r) !== 'ended'; });
+          var due = demoContracts.records.filter(function (r) { return ['expired', 'locked', 'notice', 'ending'].indexOf(stateOf(r)) >= 0; });
+          var warnings = demoContracts.records.filter(function (r) { return ['locked', 'notice'].indexOf(stateOf(r)) >= 0; });
+          var annual = live.reduce(function (s, r) { return s + (Number(r.fields.annualCents) || 0); }, 0);
+          return { decisionsDue: due.length, autoRenewWarnings: warnings.length, annualSpend: annual / 100, contracts: demoContracts.records.length, summary: (note ? note + ' ' : '') + live.length + ' live contracts, ' + money(annual) + ' a year; ' + due.length + ' need a decision within ' + WINDOW + ' days.' };
+        }
+        function priced(input, current) {
+          var cents = typeof input.annualCost === 'number' ? Math.round(input.annualCost * 100) : typeof input.monthlyCost === 'number' ? Math.round(input.monthlyCost * 100) * 12 : undefined;
+          if (typeof input.percentChange !== 'number' && typeof input.monthlyChange !== 'number') return { cents: cents, change: '' };
+          var base = cents !== undefined ? cents : current;
+          if (typeof base !== 'number') throw new Error('There is no recorded cost to change yet; pass annualCost or monthlyCost.');
+          var next = base;
+          if (typeof input.percentChange === 'number') next = Math.round(next * (1 + input.percentChange / 100));
+          if (typeof input.monthlyChange === 'number') next += Math.round(input.monthlyChange * 100) * 12;
+          return { cents: Math.max(0, next), change: 'price from ' + money(base) + ' to ' + money(Math.max(0, next)) + ' a year' };
+        }
+        function ensureVendor(name, category) {
+          var found = demoVendors.records.find(function (v) { return v.fields.name.toLowerCase() === String(name).trim().toLowerCase(); });
+          if (found) return found;
+          var id = 'vn-' + (demoVendors.records.reduce(function (m, x) { return Math.max(m, Number(x.id.split('-')[1]) || 0); }, 0) + 1);
+          var v = { id: id, status: 'active', fields: { name: String(name).trim(), category: category || 'other' } };
+          demoVendors.records.push(v);
+          return v;
+        }
+        function demoAdd(input) {
+          var wanted = String(input.title || '').trim().toLowerCase();
+          var r = input.id ? demoContracts.records.find(function (x) { return x.id === input.id; }) : demoContracts.records.find(function (x) { return x.fields.title.toLowerCase() === wanted; });
+          var relative = typeof input.percentChange === 'number' || typeof input.monthlyChange === 'number';
+          if (!r && wanted && (!input.endAt || relative)) r = demoFind({ title: input.title });
+          var category = CATEGORIES.indexOf(input.category) >= 0 ? input.category : undefined;
+          var vendor = input.vendor ? ensureVendor(input.vendor, category) : null;
+          var price = priced(input, r && r.fields.annualCents);
+          var fields = {};
+          if (vendor) { fields.vendor = vendor.fields.name; fields.vendorId = vendor.id; }
+          if (category) fields.category = category;
+          if (input.endAt) fields.endAt = String(input.endAt).slice(0, 10);
+          if (input.autoRenew) fields.autoRenew = yes(input.autoRenew) ? 'yes' : 'no';
+          if (typeof input.renewMonths === 'number' && input.renewMonths > 0) fields.renewMonths = Math.round(input.renewMonths);
+          if (typeof input.noticeDays === 'number') fields.noticeDays = Math.round(input.noticeDays);
+          if (price.cents !== undefined) fields.annualCents = price.cents;
+          if (input.owner) fields.owner = String(input.owner).trim();
+          if (r) { Object.assign(r.fields, fields); return demoSummary('Updated ' + r.fields.title + (price.change ? ': ' + price.change : '') + '.'); }
+          if (!fields.endAt) throw new Error("A new contract needs 'endAt': when its current term ends.");
+          var id = 'ct-' + (demoContracts.records.reduce(function (m, x) { return Math.max(m, Number(x.id.split('-')[1]) || 0); }, 0) + 1);
+          demoContracts.records.push({ id: id, status: 'active', fields: Object.assign({ title: String(input.title).trim(), category: vendor ? vendor.fields.category : 'other', autoRenew: 'no' }, fields), history: [] });
+          return demoSummary('Added ' + id + ' ' + String(input.title).trim() + '.');
+        }
+        function demoRenew(input) {
+          var r = demoFind(input), v = view(r);
+          var term = typeof input.renewMonths === 'number' && input.renewMonths > 0 ? Math.round(input.renewMonths) : months(r.fields);
+          var next = input.endAt ? String(input.endAt).slice(0, 10) : addMonths(v.end, term);
+          var price = priced(input, r.fields.annualCents);
+          r.fields.endAt = next; r.fields.lastRenewedAt = iso(Date.now());
+          if (price.cents !== undefined) r.fields.annualCents = price.cents;
+          r.history.push({ at: new Date().toISOString(), from: r.status, to: 'active', note: input.note || 'Renewed through ' + next + '.' });
+          r.status = 'active';
+          var after = view(r);
+          return demoSummary(r.fields.title + ' renewed through ' + next + (price.cents !== undefined ? ' at ' + money(price.cents) + ' a year' : '') + (after.auto ? '; next notice date ' + after.noticeBy : '') + '.');
+        }
+        function demoCancel(input) {
+          var r = demoFind(input), v = view(r);
+          if (r.status === 'ended') throw new Error(r.fields.title + ' has already ended.');
+          r.history.push({ at: new Date().toISOString(), from: r.status, to: 'cancelling', note: input.note || 'Notice given.' });
+          r.fields.endAt = v.end; r.status = 'cancelling';
+          return demoSummary('Notice recorded for ' + r.fields.title + '; it ends ' + v.end + '.' + (v.auto && v.toNotice < 0 ? ' Its notice date ' + v.noticeBy + ' had already passed, so confirm with ' + r.fields.vendor + ' whether it renews for one more term first.' : ''));
+        }
+        function demoSetStatus(input) {
+          if (['active', 'reviewing', 'ended'].indexOf(input.status) < 0) throw new Error("set_status needs status 'active', 'reviewing' or 'ended'.");
+          var r = demoFind(input); r.status = input.status;
+          return demoSummary(r.fields.title + (input.status === 'reviewing' ? ' is under review.' : input.status === 'ended' ? ' has ended.' : ' is active.'));
+        }
+        function demoVendor(input) {
+          var name = String(input.vendor || input.title || '').trim();
+          if (!name) throw new Error("add_vendor needs 'vendor': the vendor's name.");
+          var existed = demoVendors.records.some(function (v) { return v.fields.name.toLowerCase() === name.toLowerCase(); });
+          var v = ensureVendor(name, CATEGORIES.indexOf(input.category) >= 0 ? input.category : undefined);
+          if (CATEGORIES.indexOf(input.category) >= 0) v.fields.category = input.category;
+          if (input.contact) v.fields.contact = String(input.contact).trim();
+          return demoSummary((existed ? 'Updated vendor ' : 'Added vendor ' + v.id + ' ') + v.fields.name + '.');
+        }
+        function demoAttach(input) {
+          var raw = String(input.file || '').trim();
+          if (!raw) throw new Error("attach_file needs 'file'.");
+          var file = raw.indexOf('/') < 0 ? 'contract-files/' + raw : raw, r = demoFind(input);
+          r.fields.file = file;
+          return demoSummary('Linked ' + file + ' to ' + r.fields.title + '.');
+        }
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'desk/index.html', typeName: 'Vendor & Contract Desk', params: { business: 'Harbor Street Café' } },
+          tools: {
+            page_add_contract: demoAdd,
+            add_contract: demoAdd,
+            page_renew_contract: demoRenew,
+            renew_contract: demoRenew,
+            page_cancel_contract: demoCancel,
+            cancel_contract: demoCancel,
+            page_add_vendor: demoVendor,
+            add_vendor: demoVendor,
+            set_contract_status: demoSetStatus,
+            attach_contract_file: demoAttach,
+            contracts_status: function () { return demoSummary(''); },
+            list_contracts: function () { return demoSummary(''); },
+          },
+          data: {
+            'contracts.json': function () { return demoContracts; },
+            'vendors.json': function () { return demoVendors; },
+            'contract-files': function () { return demoFiles.map(function (f) { return { name: f.name, kind: 'file', size: f.size, mtime: f.mtime }; }); },
+          },
+          existingPaths: demoFiles.map(function (f) { return f.path; }),
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+        var components = gezel.ui.components;
+        function applyTheme(mode) { document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light'); }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function el(tag, text, cls) { var e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
+        function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+        function niceDate(day) { var d = noon(day); return isFinite(d) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : String(day); }
+        function shortDate(day) { var d = noon(day); return isFinite(d) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : String(day); }
+        function inDays(n) { return n < 0 ? plural(-n, 'day', 'days') + ' ago' : n === 0 ? 'today' : 'in ' + plural(n, 'day', 'days'); }
+        function termText(f) { var m = months(f); return m === 1 ? 'for another month' : 'for another ' + m + ' months'; }
+        var STATUS_LABEL = { active: 'active', reviewing: 'under review', cancelling: 'notice given', ended: 'ended' };
+
+        function render(contractDoc, vendorDoc) {
+          var records = Array.isArray(contractDoc.records) ? contractDoc.records : [];
+          var vendors = Array.isArray(vendorDoc.records) ? vendorDoc.records : [];
+          var live = records.filter(function (r) { return stateOf(r) !== 'ended'; });
+          var due = records.filter(function (r) { return ['expired', 'locked', 'notice', 'ending'].indexOf(stateOf(r)) >= 0; }).sort(function (a, b) { return urgency(a) - urgency(b); });
+          var warnings = records.filter(function (r) { return ['locked', 'notice'].indexOf(stateOf(r)) >= 0; });
+          var annual = live.reduce(function (s, r) { return s + (Number(r.fields.annualCents) || 0); }, 0);
+          var activeVendors = vendors.filter(function (v) { return v.status !== 'inactive'; });
+
+          document.getElementById('t-spend').textContent = money(annual).replace(/\.\d+$/, '');
+          document.getElementById('t-due').textContent = due.length;
+          document.getElementById('t-auto').textContent = warnings.length;
+          document.getElementById('t-vendors').textContent = activeVendors.length;
+          document.getElementById('sub').textContent = !records.length
+            ? 'Nothing on the desk yet. Tell your office administrator about a contract, or add one below.'
+            : plural(live.length, 'live contract', 'live contracts') + ' with ' + plural(activeVendors.length, 'vendor', 'vendors') + ', ' + money(annual) + ' a year. ' +
+              (due.length ? plural(due.length, 'contract needs', 'contracts need') + ' a decision in the next ' + WINDOW + ' days.' : 'Nothing needs a decision in the next ' + WINDOW + ' days.');
+
+          var list = document.getElementById('due');
+          list.replaceChildren();
+          var ending = records.filter(function (r) { return stateOf(r) === 'cancelling' && view(r).toEnd <= WINDOW; }).sort(function (a, b) { return view(a).toEnd - view(b).toEnd; });
+          if (!due.length && !ending.length) {
+            var later = live.filter(function (r) { return stateOf(r) === 'later'; }).sort(function (a, b) { return view(a).toNotice - view(b).toNotice; })[0];
+            list.append(el('li', later ? 'Nothing in the next ' + WINDOW + ' days. Next: ' + later.fields.title + ', notice by ' + niceDate(view(later).noticeBy) + '.' : 'Nothing to decide.', 'empty'));
+          }
+          due.forEach(function (r) {
+            var v = view(r), s = stateOf(r), f = r.fields, li = el('li'), what = el('div', undefined, 'what');
+            var chip = s === 'expired' ? 'Ended ' + inDays(v.toEnd) : s === 'locked' ? 'Renews ' + inDays(v.toEnd) : s === 'notice' ? 'Notice ' + inDays(v.toNotice) : 'Ends ' + inDays(v.toEnd);
+            var tone = s === 'expired' || s === 'locked' ? 'late' : v.toNotice <= 30 ? 'soon' : '';
+            li.append(el('span', chip.charAt(0).toUpperCase() + chip.slice(1), 'when ' + tone));
+            what.append(el('b', f.title));
+            what.append(document.createTextNode(' · ' + (f.vendor || 'no vendor')));
+            if (v.auto && s !== 'cancelling') what.append(el('span', 'Auto-renews', 'auto'));
+            var detail = s === 'locked' ? 'Notice date passed (' + shortDate(v.noticeBy) + '). It renews automatically on ' + shortDate(v.end) + ' ' + termText(f) + '.'
+              : s === 'notice' ? 'Give notice by ' + shortDate(v.noticeBy) + ', or it renews automatically on ' + shortDate(v.end) + ' ' + termText(f) + '.'
+              : s === 'expired' ? 'Ended ' + shortDate(v.end) + ' with no renewal on record. Record a renewal or mark it ended.'
+              : 'Does not renew on its own. Decide by ' + shortDate(v.noticeBy) + ' whether to renew or replace it; it ends ' + shortDate(v.end) + '.';
+            what.append(el('small', [detail, typeof f.annualCents === 'number' ? money(f.annualCents) + ' a year' : '', f.owner ? 'Owner: ' + f.owner : '', r.status === 'reviewing' ? 'under review' : ''].filter(Boolean).join(' · ')));
+            li.append(what);
+            list.append(li);
+          });
+          ending.forEach(function (r) {
+            var v = view(r), f = r.fields, li = el('li'), what = el('div', undefined, 'what');
+            li.append(el('span', 'Ends ' + inDays(v.toEnd), 'when'));
+            what.append(el('b', f.title));
+            what.append(document.createTextNode(' · ' + (f.vendor || 'no vendor')));
+            what.append(el('small', ['Notice given. It ends ' + shortDate(v.end) + '; ask the vendor to confirm in writing.', typeof f.annualCents === 'number' ? money(f.annualCents) + ' a year' : '', f.owner ? 'Owner: ' + f.owner : ''].filter(Boolean).join(' · ')));
+            li.append(what);
+            list.append(li);
+          });
+
+          var body = document.getElementById('contracts-body');
+          body.replaceChildren();
+          if (!records.length) { var tr0 = el('tr'), td0 = el('td', 'No contracts yet.', 'empty'); td0.colSpan = 7; tr0.append(td0); body.append(tr0); }
+          records.slice().sort(function (a, b) {
+            var ga = stateOf(a) === 'ended', gb = stateOf(b) === 'ended';
+            return ga - gb || (view(a).toNotice === null) - (view(b).toNotice === null) || view(a).toNotice - view(b).toNotice;
+          }).forEach(function (r) {
+            var v = view(r), s = stateOf(r), f = r.fields, tr = el('tr', undefined, s === 'ended' ? 'gone' : ''), name = el('td');
+            name.append(el('span', f.title));
+            name.append(el('span', [f.vendor || 'no vendor', f.owner ? 'owner ' + f.owner : '', f.file ? 'file: ' + String(f.file).split('/').pop() : ''].filter(Boolean).join(' · '), 'meta'));
+            tr.append(name, el('td', f.category || 'other'), el('td', typeof f.annualCents === 'number' ? money(f.annualCents) : '–', 'num'));
+            tr.append(el('td', v.end ? niceDate(v.end) : '–', 'num'));
+            var notice = el('td', undefined, 'num');
+            notice.append(el('span', s === 'ended' || s === 'cancelling' || !v.noticeBy ? '–' : niceDate(v.noticeBy)));
+            if (v.noticeBy && s !== 'ended' && s !== 'cancelling') notice.append(el('span', v.toNotice < 0 ? 'passed' : v.notice === null ? '30 days assumed' : plural(v.notice, 'day', 'days') + ' notice', 'meta'));
+            tr.append(notice);
+            tr.append(el('td', s === 'cancelling' ? 'No, notice given' : s === 'ended' ? '–' : v.auto ? (months(f) === 1 ? 'Monthly' : 'Every ' + months(f) + ' months') : 'No'));
+            var st = el('td'), shown = s === 'ended' ? 'ended' : r.status;
+            st.append(el('span', STATUS_LABEL[shown] || shown, 'status ' + shown));
+            tr.append(st);
+            body.append(tr);
+          });
+
+          var spend = {};
+          live.forEach(function (r) { var k = r.fields.category || 'other'; spend[k] = (spend[k] || 0) + (Number(r.fields.annualCents) || 0); });
+          var kinds = Object.keys(spend).filter(function (k) { return spend[k] > 0; }).sort(function (a, b) { return spend[b] - spend[a]; });
+          var bars = document.getElementById('spend');
+          bars.replaceChildren();
+          if (!kinds.length) bars.append(el('li', 'Yearly costs appear here once contracts have one.', 'empty'));
+          kinds.forEach(function (k) {
+            var li = el('li'), track = el('span', undefined, 'track'), fill = el('i');
+            fill.style.width = Math.max(2, Math.round((spend[k] / spend[kinds[0]]) * 100)) + '%';
+            track.append(fill);
+            li.append(el('span', k.charAt(0).toUpperCase() + k.slice(1)), track, el('span', money(spend[k]).replace(/\.\d+$/, '') + ' · ' + Math.round((spend[k] / annual) * 100) + '%', 'amt'));
+            bars.append(li);
+          });
+
+          var vendorList = document.getElementById('vendors');
+          vendorList.replaceChildren();
+          if (!vendors.length) vendorList.append(el('li', 'Vendors appear here as contracts are added.', 'empty'));
+          vendors.slice().sort(function (a, b) { return String(a.fields.name).localeCompare(String(b.fields.name)); }).forEach(function (vn) {
+            var own = live.filter(function (r) { return r.fields.vendorId === vn.id || String(r.fields.vendor || '').toLowerCase() === String(vn.fields.name).toLowerCase(); });
+            var cents = own.reduce(function (s, r) { return s + (Number(r.fields.annualCents) || 0); }, 0), li = el('li');
+            li.append(el('b', vn.fields.name));
+            li.append(el('span', [vn.fields.category || 'other', vn.fields.contact || ''].filter(Boolean).join(' · '), 'meta'));
+            li.append(el('span', own.length ? plural(own.length, 'contract', 'contracts') + ' · ' + money(cents) + ' a year' : 'No contract on the desk', 'meta'));
+            vendorList.append(li);
+          });
+        }
+
+        var cards = [];
+        function renderFiles(files) {
+          cards.forEach(function (c) { c.destroy(); }); cards = [];
+          var holder = document.getElementById('contract-files');
+          holder.replaceChildren();
+          if (!files.length) holder.append(el('p', 'Signed contracts, renewal letters and quotes you add appear here.', 'empty'));
+          if (!components || !components.fileCard) return;
+          files.forEach(function (file) {
+            var mount = el('div'); holder.append(mount);
+            cards.push(components.fileCard(mount, { file: Object.assign({ source: 'workspace' }, file), variant: 'row' }));
+          });
+        }
+        function listFiles() {
+          if (demoMode) return Promise.resolve(demoFiles.concat(components && components.demo ? components.demo.files() : []));
+          return gezel.data.list('contract-files').then(function (entries) {
+            return (entries || []).filter(function (e) { return e.kind !== 'dir' && e.kind !== 'directory'; }).map(function (e) { return { path: 'contract-files/' + e.name, name: e.name, size: e.size, mtime: e.mtime }; });
+          }, function () { return []; });
+        }
+
+        window.addEventListener('gezel-app-data-changed', function () { loadDesk(); });
+        window.loadDesk = loadDesk;
+        function loadDesk() {
+          var revision = ++appLoadRevision;
+          return Promise.all([gezel.data.read('contracts.json'), gezel.data.read('vendors.json'), listFiles()]).then(function (values) {
+            if (appDisposed || revision !== appLoadRevision) return;
+            reportAppError(null);
+            render(values[0] || {}, values[1] || {});
+            renderFiles(values[2]);
+          }).catch(function (error) { if (!appDisposed && revision === appLoadRevision) reportAppError(error); });
+        }
+
+        if (components && components.fileAdder) {
+          components.fileAdder('#add-file', { target: 'contract-files', onAdded: function () { loadDesk(); } });
+        }
+        loadDesk();
+        appSubscriptions.push(gezel.data.watch('contracts.json', function () { loadDesk(); }));
+        appSubscriptions.push(gezel.data.watch('vendors.json', function () { loadDesk(); }));
+      })();
+    </script>
+    <script src="application.js" defer></script>
+  </body>
+</html>

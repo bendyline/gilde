@@ -1,0 +1,395 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "releasedAt": "2026-11-02T18:00:00.000Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "business": {
+        "type": "string",
+        "title": "What kind of business is this?",
+        "description": "e.g. 'a small publisher', 'a café in Portland'.",
+        "default": "the business"
+      },
+      "voice": {
+        "type": "string",
+        "title": "How should replies sound?",
+        "description": "e.g. 'warm and plain', 'brief and formal'.",
+        "default": "warm and plain"
+      }
+    },
+    "required": [
+      "business"
+    ]
+  },
+  "nameTemplate": "Support Desk",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "support-lead",
+      "voorman": true
+    },
+    {
+      "templateId": "boekwachter"
+    }
+  ],
+  "scripts": {
+    "support-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'support-store',\n  description:\n    \"Read and update the support desk: its tickets (tickets.json) and the help articles in kb/. action:'status' for what needs a reply, what waits on the customer and the questions no help article answers; 'add' to log a ticket (the same subject from the same customer updates the open ticket, never duplicates it); 'reply' to save a suggested reply and the article or gap behind it; 'set_status' to move a ticket; 'save_article' to write a help article in kb/ and close the gap it answers; 'list' for every ticket.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'status', 'add', 'reply', 'set_status', 'save_article', or 'list'.\",\n      required: true,\n    },\n    id: { type: 'string', description: \"Ticket id, e.g. 'tk-3'.\" },\n    subject: {\n      type: 'string',\n      description: \"The ticket's subject, e.g. 'Book arrived with a torn cover'. Also finds it when no id is given.\",\n    },\n    customer: { type: 'string', description: 'Who wrote in.' },\n    channel: { type: 'string', description: 'email, phone, chat, social, in-person, or other.' },\n    category: {\n      type: 'string',\n      description: 'order, delivery, billing, product, account, business, complaint, or other.',\n    },\n    priority: { type: 'string', description: 'normal, urgent, or low.' },\n    message: { type: 'string', description: 'What the customer asked, in their words.' },\n    receivedAt: { type: 'string', description: 'The day it came in, YYYY-MM-DD (default today).' },\n    reply: { type: 'string', description: 'The suggested reply, ready for the person to send.' },\n    article: { type: 'string', description: \"The help article the reply draws on, e.g. 'kb/refunds.md'.\" },\n    gap: {\n      type: 'string',\n      description: \"A short topic for a question no help article answers yet, e.g. 'wholesale terms'.\",\n    },\n    status: { type: 'string', description: 'For set_status: new, open, waiting, or resolved.' },\n    note: { type: 'string', description: 'What happened.' },\n    title: { type: 'string', description: \"For save_article: the article's title.\" },\n    body: { type: 'string', description: 'For save_article: the article in markdown.' },\n    topic: { type: 'string', description: 'For save_article: the gap it answers, as the status names it.' },\n  },\n  outputs: {\n    needsReply: { type: 'number', description: 'Tickets that are new or open.' },\n    waiting: { type: 'number', description: 'Tickets waiting on the customer.' },\n    gaps: { type: 'number', description: 'Questions no help article answers yet.' },\n    summary: { type: 'string', description: 'The desk picture, or the listing.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── support-rules-start ──\n// Pure derivations: a ticket's age in local calendar days, the reply queue\n// (urgent first, then oldest), the knowledge-base gaps grouped by topic, and\n// the desk picture the crew reads. Kept self-contained between these\n// sentinels so unit tests execute the shipped bytes.\nvar DAY_MS = 86400000;\nvar STAGES = ['new', 'open', 'waiting', 'resolved'];\nvar CATEGORIES = ['order', 'delivery', 'billing', 'product', 'account', 'business', 'complaint', 'other'];\nvar CHANNELS = ['email', 'phone', 'chat', 'social', 'in-person', 'other'];\nvar PRIORITIES = ['normal', 'urgent', 'low'];\nvar CATEGORY_ALIASES = {\n  orders: 'order', shipping: 'delivery', shipment: 'delivery', damaged: 'delivery', refund: 'billing', refunds: 'billing',\n  payment: 'billing', invoice: 'billing', charge: 'billing', question: 'product', products: 'product', login: 'account',\n  download: 'account', subscription: 'account', wholesale: 'business', partnership: 'business', press: 'business',\n  booking: 'business', feedback: 'complaint', complaints: 'complaint',\n};\n\nfunction pad(n) {\n  return n < 10 ? '0' + n : String(n);\n}\nfunction localDay(ms) {\n  var d = new Date(ms);\n  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());\n}\nfunction normalizeDate(text) {\n  var raw = String(text || '').trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(raw)) return raw;\n  var parsed = Date.parse(raw);\n  return isFinite(parsed) ? localDay(parsed) : null;\n}\nfunction ageDays(day, nowMs) {\n  var start = Date.parse(String(day || '').slice(0, 10) + 'T00:00:00');\n  if (!isFinite(start)) return 0;\n  var today = Date.parse(localDay(nowMs) + 'T00:00:00');\n  return Math.max(0, Math.round((today - start) / DAY_MS));\n}\nfunction age(days) {\n  return days === 0 ? 'came in today' : days === 1 ? '1 day old' : days + ' days old';\n}\nfunction categoryOf(text) {\n  var key = String(text || '').trim().toLowerCase();\n  if (CATEGORIES.indexOf(key) >= 0) return key;\n  return CATEGORY_ALIASES[key] || null;\n}\nfunction topicKey(text) {\n  return String(text || '').trim().toLowerCase().replace(/\\s+/g, ' ');\n}\nfunction sameTopic(a, b) {\n  var x = topicKey(a), y = topicKey(b);\n  return !!x && !!y && (x === y || x.indexOf(y) >= 0 || y.indexOf(x) >= 0);\n}\nfunction slug(text) {\n  var s = String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');\n  return s || 'article';\n}\nfunction articlePath(text) {\n  var p = String(text || '').trim().replace(/\\\\/g, '/').replace(/^\\.?\\/+/, '');\n  if (!p || p.split('/').indexOf('..') >= 0) return null;\n  return p.indexOf('kb/') === 0 ? p : 'kb/' + p;\n}\nfunction urgency(record) {\n  var p = record.fields && record.fields.priority;\n  return p === 'urgent' ? 0 : p === 'low' ? 2 : 1;\n}\nfunction oldestFirst(a, b) {\n  return String(a.fields.receivedAt || '').localeCompare(String(b.fields.receivedAt || '')) || String(a.id).localeCompare(String(b.id), undefined, { numeric: true });\n}\nfunction replyQueue(records) {\n  return records\n    .filter(function (r) { return r.status === 'new' || r.status === 'open'; })\n    .slice()\n    .sort(function (a, b) { return urgency(a) - urgency(b) || oldestFirst(a, b); });\n}\nfunction waitingList(records) {\n  return records.filter(function (r) { return r.status === 'waiting'; }).slice().sort(oldestFirst);\n}\n// A gap is a question no help article answers yet: a ticket with a kbGap\n// topic and no kbArticle. Tickets are grouped by topic, the most asked first.\nfunction openGaps(records) {\n  var groups = [];\n  records.forEach(function (r) {\n    var f = r.fields || {};\n    if (!f.kbGap || f.kbArticle) return;\n    var group = groups.find(function (g) { return topicKey(g.topic) === topicKey(f.kbGap); });\n    if (!group) {\n      group = { topic: String(f.kbGap).trim(), tickets: [] };\n      groups.push(group);\n    }\n    group.tickets.push(r);\n  });\n  return groups.sort(function (a, b) { return b.tickets.length - a.tickets.length || a.topic.localeCompare(b.topic); });\n}\nfunction excerpt(text, length) {\n  var t = String(text || '').replace(/\\s+/g, ' ').trim();\n  return t.length > length ? t.slice(0, length - 1).trim() + '…' : t;\n}\n// The gap topic already on the desk that a new mention means, so one question keeps one name.\nfunction knownTopic(records, text) {\n  var hit = openGaps(records).find(function (g) { return sameTopic(g.topic, text); });\n  return hit ? hit.topic : String(text || '').trim();\n}\nfunction line(record, nowMs, withMessage) {\n  var f = record.fields || {};\n  var active = record.status === 'new' || record.status === 'open';\n  return (\n    f.subject +\n    ' (' + record.id + ', ' + (f.category || 'other') + (f.customer ? ', from ' + f.customer : '') + ', ' + age(ageDays(f.receivedAt, nowMs)) + ')' +\n    (f.priority === 'urgent' ? ', urgent' : '') +\n    (active ? ', ' + record.status : '') +\n    (f.suggestedReply ? ', reply drafted' : active ? ', no reply drafted yet' : '') +\n    (f.kbArticle ? ', help article ' + f.kbArticle : f.kbGap ? ', no help article for \"' + f.kbGap + '\"' : '') +\n    (withMessage && f.message ? ': \"' + excerpt(f.message, 140) + '\"' : '')\n  );\n}\nfunction picture(records, articles, nowMs) {\n  var counts = {};\n  STAGES.forEach(function (s) { counts[s] = 0; });\n  records.forEach(function (r) { counts[r.status] = (counts[r.status] || 0) + 1; });\n  var queue = replyQueue(records);\n  var waiting = waitingList(records);\n  var gaps = openGaps(records);\n  var parts = [\n    records.length + (records.length === 1 ? ' ticket' : ' tickets') + ' on the desk: ' + counts.new + ' new, ' + counts.open + ' open, ' +\n      counts.waiting + ' waiting on the customer, ' + counts.resolved + ' resolved.',\n  ];\n  parts.push(\n    queue.length\n      ? 'Needs a reply, urgent first, then oldest: ' + queue.map(function (r) { return line(r, nowMs, true); }).join(' | ') + '.'\n      : 'Nothing needs a reply.',\n  );\n  if (waiting.length) parts.push('Waiting on the customer: ' + waiting.map(function (r) { return line(r, nowMs, false); }).join(' | ') + '.');\n  parts.push(\n    gaps.length\n      ? 'Questions no help article answers yet, most asked first: ' +\n          gaps.map(function (g) {\n            return '\"' + g.topic + '\" (' + g.tickets.length + (g.tickets.length === 1 ? ' ticket: ' : ' tickets: ') + g.tickets.map(function (r) { return r.id; }).join(', ') + ')';\n          }).join(' | ') + '.'\n      : 'No knowledge-base gaps recorded.',\n  );\n  parts.push(articles.length ? 'Help articles in kb/: ' + articles.join(', ') + '.' : 'No help articles in kb/ yet.');\n  return { needsReply: queue.length, waiting: waiting.length, gaps: gaps.length, summary: parts.join(' ') };\n}\n// ── support-rules-end ──\n\nconst tickets = rosterStore(gezel.fs, 'tickets.json', {\n  stages: ['new', 'open', 'waiting', 'resolved'],\n  idPrefix: 'tk',\n});\n\nasync function articles(): Promise<string[]> {\n  try {\n    return (await gezel.fs.list('kb'))\n      .filter((e) => !e.isDirectory)\n      .map((e) => 'kb/' + e.name)\n      .sort();\n  } catch {\n    return [];\n  }\n}\n\n// By id, or by (partial) subject; a missing id is tried as a subject too.\nasync function resolve(): Promise<string> {\n  const all = await tickets.list();\n  if (input.id) {\n    const byId = all.find((r) => r.id === input.id!.trim().toLowerCase());\n    if (byId) return byId.id;\n  }\n  const text = input.subject ?? input.id;\n  if (text) {\n    const wanted = text.trim().toLowerCase();\n    const exact = all.filter((r) => String(r.fields.subject ?? '').toLowerCase() === wanted);\n    if (exact.length === 1) return exact[0]!.id;\n    let partial = all.filter((r) => String(r.fields.subject ?? '').toLowerCase().includes(wanted));\n    if (partial.length > 1) {\n      const active = partial.filter((r) => r.status !== 'resolved');\n      if (active.length === 1) return active[0]!.id;\n      partial = active.length ? active : partial;\n      throw new Error(\"More than one ticket matches '\" + text + \"': \" + partial.map((r) => r.id + ' ' + String(r.fields.subject)).join(', ') + '. Pass id.');\n    }\n    if (partial.length === 1) return partial[0]!.id;\n  }\n  throw new Error(\n    \"Pass 'id' (e.g. 'tk-3') or the ticket's 'subject'. Tickets: \" +\n      (all.map((r) => r.id + ' ' + String(r.fields.subject)).join(', ') || 'none yet') + '.',\n  );\n}\n\nconst LABELS: Record<string, string> = {\n  new: 'back to new',\n  open: 'open',\n  waiting: 'waiting on the customer',\n  resolved: 'resolved',\n};\nlet note = '';\n\nif (input.action === 'add') {\n  const subject = (input.subject ?? '').trim();\n  if (!subject) throw new Error(\"add needs 'subject'.\");\n  const receivedAt = input.receivedAt ? normalizeDate(input.receivedAt) : null;\n  if (input.receivedAt && !receivedAt) throw new Error(\"receivedAt must be a date, e.g. '2026-11-02'.\");\n  const category = categoryOf(input.category);\n  const channel = CHANNELS.includes(String(input.channel)) ? String(input.channel) : undefined;\n  const priority = PRIORITIES.includes(String(input.priority)) ? String(input.priority) : undefined;\n  const who = (input.customer ?? '').trim().toLowerCase();\n  const all = await tickets.list();\n  const existing = all.find(\n    (r) =>\n      r.status !== 'resolved' &&\n      String(r.fields.subject ?? '').toLowerCase() === subject.toLowerCase() &&\n      (!who || !r.fields.customer || String(r.fields.customer).toLowerCase() === who),\n  );\n  const fields: Record<string, unknown> = {\n    ...(input.customer && !existing?.fields.customer ? { customer: input.customer.trim() } : {}),\n    ...(channel ? { channel } : {}),\n    ...(category ? { category } : {}),\n    ...(priority ? { priority } : {}),\n    ...(input.message ? { message: input.message.trim() } : {}),\n    ...(receivedAt ? { receivedAt } : {}),\n    ...(input.gap?.trim() ? { kbGap: knownTopic(all, input.gap) } : {}),\n  };\n  if (existing) {\n    await tickets.update(existing.id, { fields });\n    note = 'Updated ' + existing.id + ' (' + String(existing.fields.subject) + ').';\n  } else {\n    const record = await tickets.add({\n      status: 'new',\n      fields: {\n        subject,\n        category: 'other',\n        channel: 'other',\n        priority: 'normal',\n        receivedAt: localDay(Date.now()),\n        ...fields,\n      },\n    });\n    note = 'Logged ' + record.id + ': ' + subject + '.';\n  }\n} else if (input.action === 'reply') {\n  if (!input.reply?.trim() && !input.gap?.trim() && !input.article?.trim()) {\n    throw new Error(\"reply needs 'reply' (the suggested reply), 'article' or 'gap'.\");\n  }\n  const article = input.article ? articlePath(input.article) : null;\n  if (input.article && !article) throw new Error(\"article must be a path inside kb/, e.g. 'kb/refunds.md'.\");\n  const id = await resolve();\n  const record = (await tickets.get(id))!;\n  const gap = input.gap?.trim() ? knownTopic(await tickets.list(), input.gap) : '';\n  await tickets.update(id, {\n    fields: {\n      ...(input.reply?.trim() ? { suggestedReply: input.reply.trim() } : {}),\n      ...(article ? { kbArticle: article } : {}),\n      ...(gap ? { kbGap: gap } : {}),\n    },\n  });\n  if (record.status === 'new' && input.reply?.trim()) await tickets.transition(id, 'open', { note: 'Reply drafted' });\n  note =\n    (input.reply?.trim() ? 'Saved a suggested reply on ' : 'Updated ') + String(record.fields.subject) + ' (' + id + ')' +\n    (article ? ', drawn from ' + article : '') +\n    (gap && !article ? '; noted the gap \"' + gap + '\"' : '') + '.';\n} else if (input.action === 'set_status') {\n  const status = String(input.status ?? '').trim().toLowerCase();\n  if (!STAGES.includes(status)) throw new Error(\"set_status needs status 'new', 'open', 'waiting' or 'resolved'.\");\n  const id = await resolve();\n  const record = (await tickets.get(id))!;\n  await tickets.transition(id, status, input.note ? { note: input.note } : {});\n  if (status === 'resolved') await tickets.update(id, { fields: { resolvedAt: localDay(Date.now()) } });\n  note = String(record.fields.subject) + ' (' + id + ') is ' + LABELS[status] + '.';\n} else if (input.action === 'save_article') {\n  const title = (input.title ?? '').trim();\n  const body = (input.body ?? '').trim();\n  if (!title || !body) throw new Error(\"save_article needs 'title' and 'body' (markdown).\");\n  const path = 'kb/' + slug(title) + '.md';\n  await gezel.fs.write(path, (/^#\\s/.test(body) ? body : '# ' + title + '\\n\\n' + body) + '\\n');\n  let closed = 0;\n  if (input.topic?.trim()) {\n    for (const r of await tickets.list()) {\n      if (r.fields.kbGap && !r.fields.kbArticle && sameTopic(r.fields.kbGap, input.topic)) {\n        await tickets.update(r.id, { fields: { kbArticle: path } });\n        closed += 1;\n      }\n    }\n  }\n  note =\n    'Saved ' + path +\n    (closed ? '; it answers the \"' + input.topic!.trim() + '\" gap on ' + closed + (closed === 1 ? ' ticket' : ' tickets') : input.topic?.trim() ? '; no open gap matched \"' + input.topic.trim() + '\"' : '') + '.';\n} else if (input.action !== 'status' && input.action !== 'list') {\n  throw new Error(\"Unknown action '\" + input.action + \"'. Use status, add, reply, set_status, save_article, or list.\");\n}\n\nconst records = await tickets.list();\nconst kb = await articles();\nconst now = Date.now();\nconst view = picture(records, kb, now);\n\ngezel.output({\n  needsReply: view.needsReply,\n  waiting: view.waiting,\n  gaps: view.gaps,\n  summary:\n    input.action === 'list'\n      ? records.map((r) => '[' + r.status + '] ' + line(r, now, true)).join('\\n') || 'No tickets yet.'\n      : (note ? note + ' ' : '') + view.summary,\n});\n"
+  },
+  "tools": [
+    {
+      "name": "desk_status",
+      "description": "The support desk now: every ticket that needs a reply (urgent first, then oldest) with what the customer asked and whether a reply is drafted, what waits on the customer, the questions no help article answers yet, and the help articles in kb/. Every ticket has its id. Call it first when asked about the queue.",
+      "script": "support-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "status"
+      },
+      "state": true
+    },
+    {
+      "name": "add_ticket",
+      "description": "Log a customer request as a ticket: subject, customer, channel, category, priority, their message in their words, and the day it came in (YYYY-MM-DD, default today). The same subject from the same customer updates the open ticket, never duplicates it. Call it as soon as a request is mentioned, before you describe it.",
+      "script": "support-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string"
+          },
+          "customer": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "email",
+              "phone",
+              "chat",
+              "social",
+              "in-person",
+              "other"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "order",
+              "delivery",
+              "billing",
+              "product",
+              "account",
+              "business",
+              "complaint",
+              "other"
+            ]
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "urgent",
+              "low"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "receivedAt": {
+            "type": "string"
+          },
+          "gap": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "subject"
+        ]
+      },
+      "bind": {
+        "action": "add"
+      }
+    },
+    {
+      "name": "suggest_reply",
+      "description": "Save a suggested reply on a ticket, ready for the person to send, with the help article in kb/ it draws on. When no article answers the question, pass gap with a short topic (reuse a topic from the status) so it shows as a knowledge-base gap. Call it as soon as the reply is drafted, before you show it.",
+      "script": "support-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "reply": {
+            "type": "string"
+          },
+          "article": {
+            "type": "string"
+          },
+          "gap": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "reply"
+      }
+    },
+    {
+      "name": "set_ticket_status",
+      "description": "Move a ticket: open (being worked on), waiting (on the customer), resolved, or back to new. Call it the moment the person says a ticket moved.",
+      "script": "support-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "new",
+              "open",
+              "waiting",
+              "resolved"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "bind": {
+        "action": "set_status"
+      }
+    },
+    {
+      "name": "save_kb_article",
+      "description": "Write a help article to kb/ (title and markdown body) and close the knowledge-base gap it answers (topic, as the status names it). Saving the same title again updates the article. Leave prices, dates and policies the business has not stated as [bracketed] blanks. Call it as soon as the article is written, before you describe it.",
+      "script": "support-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "topic": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "body"
+        ]
+      },
+      "bind": {
+        "action": "save_article"
+      }
+    },
+    {
+      "name": "list_tickets",
+      "description": "Every ticket, resolved ones too, with its status, category, customer, age and message.",
+      "script": "support-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "list"
+      }
+    },
+    {
+      "name": "page_add_ticket",
+      "description": "Log a ticket.",
+      "script": "support-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string"
+          },
+          "customer": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "email",
+              "phone",
+              "chat",
+              "social",
+              "in-person",
+              "other"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "order",
+              "delivery",
+              "billing",
+              "product",
+              "account",
+              "business",
+              "complaint",
+              "other"
+            ]
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "urgent",
+              "low"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "receivedAt": {
+            "type": "string"
+          },
+          "gap": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "subject"
+        ]
+      },
+      "bind": {
+        "action": "add"
+      }
+    },
+    {
+      "name": "page_suggest_reply",
+      "description": "Save a reply on a ticket.",
+      "script": "support-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "reply": {
+            "type": "string"
+          },
+          "article": {
+            "type": "string"
+          },
+          "gap": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "reply"
+      }
+    },
+    {
+      "name": "page_set_ticket_status",
+      "description": "Move a ticket.",
+      "script": "support-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "new",
+              "open",
+              "waiting",
+              "resolved"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "bind": {
+        "action": "set_status"
+      },
+      "reaction": {
+        "gezel": "support-lead",
+        "hideSeed": true,
+        "prompt": "The person just moved a ticket on the support desk page. The desk now reads (its first sentence is what changed):\n{{output.summary}}\nIn two short sentences, confirm what changed and name the next ticket that needs a reply, and whether its reply is drafted. Do not call tools."
+      }
+    }
+  ],
+  "craftbooks": [
+    "inbox-triage",
+    "faq-from-docs",
+    "knowledge-base-article"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "desk/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "tickets.json"
+      },
+      {
+        "source": "workspace",
+        "path": "kb",
+        "subtree": true
+      }
+    ],
+    "imports": [
+      {
+        "id": "kb",
+        "source": "workspace",
+        "path": "kb",
+        "accept": [
+          ".md",
+          ".markdown",
+          ".txt",
+          ".html",
+          ".docx",
+          ".pdf"
+        ],
+        "maxFileBytes": 26214400
+      }
+    ],
+    "tools": [
+      "page_add_ticket",
+      "page_suggest_reply",
+      "page_set_ticket_status"
+    ]
+  },
+  "workspaceSeed": [
+    "tickets.json"
+  ],
+  "minGezelVersion": "1.26280"
+}

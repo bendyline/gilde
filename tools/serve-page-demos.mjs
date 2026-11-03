@@ -7,7 +7,7 @@ import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { loadResolvedManifest } from './lib/manifest-merge.mjs';
 import { listItems } from './lib/walk.mjs';
-import { assets, demoHtml } from './lib/page-demo.mjs';
+import { assets, demoConfig, demoHtml } from './lib/page-demo.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const catalogRoot = resolve(here, '..');
@@ -59,7 +59,7 @@ for (const item of listItems(dataRoot, 'project-type')) {
     version: manifest.version,
     entry,
     pagesRoot,
-    imports: manifest.pages.imports,
+    config: demoConfig(manifest),
     url: demoUrl(item.id, entry),
   });
 }
@@ -234,7 +234,7 @@ const server = createServer((req, res) => {
     return;
   }
 
-  const html = /\.html?$/i.test(file) ? demoHtml(readFileSync(file, 'utf8'), demo.imports) : null;
+  const html = /\.html?$/i.test(file) ? demoHtml(readFileSync(file, 'utf8'), demo.config) : null;
   const size = html === null ? statSync(file).size : Buffer.byteLength(html);
   res.writeHead(200, {
     'Content-Type': contentType(file),

@@ -1,0 +1,3 @@
+- Every open deal has a next step and a date, so nothing goes cold by accident.
+- Follow-ups happen on the day they are due, the late ones first.
+- The weighted forecast is honest enough to plan the month around.

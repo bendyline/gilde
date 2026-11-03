@@ -144,6 +144,11 @@ gezel.com and the fastest way to dogfood a project type in a browser.
   state.
 - Keep the page's meaningful controls usable in demo mode. Mutations stay in
   memory, and a `Reset demo` control restores the initial sample state.
+- A page with a conversation scripts its companion for the demo: a
+  `demo-chat.js` beside the entry page, passed as `chat: window.demoChat`
+  (see [the sample conversation](docs/page-authoring.md#the-sample-conversation)).
+  Each suggestion does real work through the app's tools. Re-read state in
+  replies and reactions; a queued reaction may run after the page moved on.
 - Demo mode must not fetch private project URLs, post messages to an arbitrary
   parent, require credentials, or use external network assets.
 - Live behavior uses the injected shared API: the embedded host relays calls;

@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>SOP library</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f6f2ec; --card: #fffdf8; --ink: #28241f; --muted: #6a6157; --line: #ddd4c6;
+        --accent: #6b4a73; --late: #a3341f; --late-bg: #f7e1da; --soon: #8a5a12; --soon-bg: #f6ead2;
+        --ok: #3f6b4a; --ok-bg: #e2eedf; --chip: #eee7dc; --mark: #f3e7c4;
+        --gezel-component-accent: var(--accent);
+      }
+      :root[data-theme='dark'] {
+        --bg: #181615; --card: #221f1d; --ink: #efe8de; --muted: #a99e90; --line: #3a342e;
+        --accent: #c9a3d3; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+        --ok: #8fc29b; --ok-bg: #22301f; --chip: #2d2824; --mark: #4a3d1e;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #181615; --card: #221f1d; --ink: #efe8de; --muted: #a99e90; --line: #3a342e;
+          --accent: #c9a3d3; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+          --ok: #8fc29b; --ok-bg: #22301f; --chip: #2d2824; --mark: #4a3d1e;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body, system-ui, sans-serif); font-size: 15px; line-height: 1.5; padding: 1.5rem 1.25rem; }
+      main { max-width: 860px; margin: 0 auto; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.5rem; font-weight: 400; margin: 0 0 0.2rem; }
+      h2 { font-family: var(--font-heading, Georgia, serif); font-size: 1.1rem; font-weight: 400; margin: 0 0 0.6rem; }
+      h3 { font-family: var(--font-heading, Georgia, serif); font-size: 1rem; font-weight: 600; margin: 1rem 0 0.4rem; }
+      h3:first-child { margin-top: 0; }
+      .sub { color: var(--muted); margin: 0 0 1rem; }
+      .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; margin: 0 0 1.2rem; }
+      .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem 0.9rem; }
+      .tile b { display: block; font-size: 1.5rem; font-weight: 600; line-height: 1.1; }
+      .tile span { color: var(--muted); font-size: 0.85rem; }
+      .tile.late b { color: var(--late); }
+      .tile.soon b { color: var(--soon); }
+      section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin: 0 0 1rem; min-width: 0; }
+      .ask { display: block; max-width: 560px; }
+      .ask span { display: block; font-size: 0.9rem; margin-bottom: 0.35rem; }
+      .ask input { width: 100%; min-height: 44px; padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: inherit; font: inherit; }
+      .tries { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0.6rem 0 0; font-size: 0.85rem; color: var(--muted); }
+      .tries button { min-height: 36px; padding: 0.25rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; }
+      .tries button:hover { border-color: var(--accent); }
+      .answer { margin: 0.9rem 0 0; padding: 0.9rem 1rem; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 6px; background: var(--bg); }
+      .answer h3 { margin: 0 0 0.15rem; }
+      .meta { display: block; color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
+      .steps { margin: 0.6rem 0 0; overflow-wrap: anywhere; }
+      .steps ol, .steps ul { margin: 0 0 0.5rem; padding-left: 1.4rem; }
+      .steps li { margin: 0.2rem 0; }
+      .steps p { margin: 0 0 0.5rem; }
+      .steps h4 { font-size: 0.95rem; margin: 0.6rem 0 0.25rem; }
+      .also { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0.6rem 0 0; font-size: 0.85rem; color: var(--muted); }
+      .also button, .open-file { min-height: 32px; padding: 0.15rem 0.55rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; font-size: 0.85rem; }
+      .due { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+      .due li { display: grid; grid-template-columns: 8rem minmax(0, 1fr); gap: 0.75rem; align-items: start; }
+      .when { font-size: 0.8rem; font-weight: 600; padding: 0.15rem 0.45rem; border-radius: 4px; text-align: center; background: var(--chip); color: var(--muted); }
+      .when.late { background: var(--late-bg); color: var(--late); }
+      .when.soon { background: var(--soon-bg); color: var(--soon); }
+      .due b { font-weight: 600; }
+      .empty { color: var(--muted); font-style: italic; margin: 0; }
+      .procs { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+      .procs details { border: 1px solid var(--line); border-radius: 6px; padding: 0.5rem 0.7rem; }
+      .procs details[open] { background: var(--bg); }
+      .procs summary { cursor: pointer; list-style-position: inside; }
+      .procs summary .t { font-weight: 600; }
+      .procs summary .meta { display: inline; margin-left: 0.4rem; }
+      .chip { display: inline-block; margin-left: 0.4rem; font-size: 0.75rem; font-weight: 600; padding: 0 0.35rem; border-radius: 4px; background: var(--chip); color: var(--muted); vertical-align: 1px; white-space: nowrap; }
+      .chip.late { background: var(--late-bg); color: var(--late); }
+      .chip.soon { background: var(--soon-bg); color: var(--soon); }
+      .file { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.4rem 0 0; color: var(--muted); font-size: 0.8rem; }
+      .demo-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 0 0 1rem; padding: 0.5rem 0.65rem; border: 1px solid var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--card) 88%, var(--accent)); font-size: 0.85rem; }
+      .demo-banner[hidden] { display: none; }
+      .demo-reset { flex: none; min-height: 36px; padding: 0.3rem 0.7rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; }
+      .note { color: var(--muted); font-size: 0.85rem; margin: 0.75rem 0 0; }
+      @media (max-width: 640px) {
+        .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .due li { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
+        .when { justify-self: start; }
+        .procs summary .meta { display: block; margin-left: 0; }
+      }
+    </style>
+    <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:0 0 12px;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--line,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+    <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script>
+  </head>
+  <body>
+    <main>
+      <p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong>: Harbor Street Café’s sample procedures. Changes stay in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>SOP library</h1>
+      <p class="sub" id="sub">Loading the library…</p>
+      <div class="tiles">
+        <div class="tile"><b id="t-count">0</b><span>Procedures</span></div>
+        <div class="tile late"><b id="t-late">0</b><span>Out of date</span></div>
+        <div class="tile soon"><b id="t-soon">0</b><span>Review in 30 days</span></div>
+        <div class="tile"><b id="t-areas">0</b><span>Areas</span></div>
+      </div>
+      <section id="ask-section">
+        <h2>How do I…</h2>
+        <label class="ask"><span>Ask the library</span><input id="ask" type="search" placeholder="close the espresso machine" autocomplete="off" /></label>
+        <div class="tries" id="tries"></div>
+        <div id="answer" aria-live="polite"></div>
+      </section>
+      <section id="attention-section">
+        <h2>Needs attention</h2>
+        <ul class="due" id="attention"></ul>
+      </section>
+      <section id="areas-section">
+        <h2>Procedures by area</h2>
+        <div id="areas"></div>
+        <p class="note">Each procedure is a markdown file under sops/. It records how this business does the job; for food safety, health and safety or legal rules, the authority’s own guidance comes first.</p>
+      </section>
+    </main>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        var DAY = 86400000;
+        var AREAS = ['opening', 'closing', 'customers', 'kitchen', 'cleaning', 'safety', 'money', 'stock', 'people', 'equipment', 'office', 'other'];
+        function pad(n) { return n < 10 ? '0' + n : String(n); }
+        function iso(ms) { var d = new Date(ms); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+        function daysFromNow(n) { return iso(Date.now() + n * DAY); }
+
+        // ── demo library (used only when the page opens outside Gezel); dates are relative so it never goes stale ──
+        var demoBodies = {};
+        var demoIndex = { version: 1, stages: ['draft', 'current', 'needs-update', 'retired'], records: [] };
+        function sample(id, status, fields, steps, flag) {
+          var file = 'sops/' + slugOf(fields.title) + '.md';
+          demoBodies[file] = '# ' + fields.title + '\n\n' + steps + '\n';
+          var history = [{ at: new Date(Date.now() - 400 * DAY).toISOString(), from: null, to: status === 'draft' ? 'draft' : 'current' }];
+          if (flag) history.push({ at: new Date(Date.now() - 18 * DAY).toISOString(), from: 'current', to: 'needs-update', note: flag });
+          demoIndex.records.push({ id: id, status: status, fields: Object.assign({ file: file }, fields), history: history });
+        }
+        function slugOf(title) { return String(title).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '') || 'procedure'; }
+        sample('sop-1', 'current', { title: 'Opening checklist', area: 'opening', owner: 'Dana', lastReviewedAt: daysFromNow(-40) },
+          '1. Disarm the alarm at the back door (the code is in the manager’s binder).\n2. Turn on the espresso machine first; it needs 25 minutes to come up to temperature.\n3. Switch on the pastry case lights and load the morning bake from the walk-in.\n4. Count a $150 float into the till in small bills.\n5. Dial in the grinder: pull a test shot and aim for 18 grams in, 36 grams out, in about 28 seconds.\n6. Flip the sign to Open at 7:00.');
+        sample('sop-2', 'current', { title: 'Closing the espresso machine', area: 'closing', owner: 'Luis', lastReviewedAt: daysFromNow(-95) },
+          '1. Backflush each group head with a Cafiza tablet, then twice with clear water.\n2. Soak the portafilter baskets in the blue tub overnight.\n3. Purge the steam wands, wipe them down, and leave them pointing into the drip tray.\n4. Empty and rinse the drip tray.\n5. Switch the machine to eco mode. Never turn it fully off overnight.');
+        sample('sop-3', 'current', { title: 'Cash drop and safe count', area: 'money', owner: 'Priya', lastReviewedAt: daysFromNow(-210) },
+          '1. Keep no more than $300 in the till; drop the rest into the safe during the afternoon lull.\n2. Count the safe at 5 pm with a second person watching.\n3. Write the count, both initials and the time in the cash book.\n4. If the count is off by more than $5, tell Priya before you leave.');
+        sample('sop-4', 'current', { title: 'Taking a phone order', area: 'customers', owner: 'Dana', lastReviewedAt: daysFromNow(-30) },
+          '1. Answer with “Harbor Street Café, this is (your name).”\n2. Write down the name, a callback number and the pickup time.\n3. Ask about allergies, and mark any on the ticket in red.\n4. Read the whole order back before you hang up.\n5. Clip the ticket to the pickup rail with the time showing.');
+        sample('sop-5', 'current', { title: 'Allergen questions at the counter', area: 'safety', owner: 'Dana', lastReviewedAt: daysFromNow(-150) },
+          '1. Never guess. Open the allergen binder at the register and read the card for that item.\n2. Say what it contains and what it was made near, using the card’s words.\n3. If the card is missing or unclear, offer something with a complete card instead.\n4. For a severe allergy, tell Dana or the shift lead before the order is made.');
+        sample('sop-6', 'current', { title: 'Receiving a delivery', area: 'stock', owner: 'Luis', lastReviewedAt: daysFromNow(-170) },
+          '1. Check the invoice against what came off the truck before you sign.\n2. Probe one item from every cold case; anything above 41°F goes back.\n3. Put cold items away first, oldest stock to the front.\n4. Note any shortage on the invoice and photograph damaged boxes.\n5. Leave the signed invoice in the office tray for Priya.');
+        sample('sop-7', 'current', { title: 'Cleaning the milk fridge', area: 'cleaning', owner: 'Luis', lastReviewedAt: daysFromNow(-100), reviewEveryDays: 365 },
+          '1. Move everything to the walk-in.\n2. Wipe the shelves and door seals with warm soapy water, then sanitizer.\n3. Check the thermometer reads 38°F or below before restocking.\n4. Restock with the newest dates at the back.');
+        sample('sop-8', 'needs-update', { title: 'Burns and cuts: first aid', area: 'safety', owner: 'Dana', lastReviewedAt: daysFromNow(-120) },
+          '1. For a burn, cool it under cool running water for 20 minutes. No ice, no butter.\n2. For a cut, press a clean cloth on it and raise it above the heart.\n3. The first-aid kit is on the shelf above the dish pit.\n4. Write anything more than a scratch in the incident log, and tell the shift lead.\n5. Call 911 for a deep cut, a large burn, or whenever you are unsure.',
+          'The first-aid kit moved to the back office in October.');
+        sample('sop-9', 'current', { title: 'Closing the till', area: 'closing', owner: 'Priya', lastReviewedAt: daysFromNow(-20) },
+          '1. Print the Z report.\n2. Count the till and match it to the report.\n3. Bag the cash with the report and drop it in the safe.\n4. Leave the $150 float in the drawer for the morning.');
+        sample('sop-10', 'current', { title: 'Weekly deep clean of the grinder', area: 'cleaning', owner: 'Luis', lastReviewedAt: daysFromNow(-200) },
+          '1. Empty the hopper and run the grinder until it is clear.\n2. Run one dose of grinder-cleaning tablets through, then 20 grams of old beans.\n3. Brush out the burr chamber. Do not use water.\n4. Refill the hopper and pull a test shot before service.');
+        sample('sop-11', 'draft', { title: 'A new starter’s first shift', area: 'people', owner: 'Dana' },
+          '_No steps yet. Ask the person who does this job to walk through it once, and write down each action in order._');
+        sample('sop-12', 'current', { title: 'Ordering milk and pastries', area: 'stock', owner: 'Dana', lastReviewedAt: daysFromNow(-10) },
+          '1. Count the milk on Sunday and Wednesday nights.\n2. Order from Harbor Produce by 9 pm for next-morning delivery; par is 24 gallons of whole milk and 12 of oat.\n3. Order pastries on the bakery portal by noon for the following day.\n4. Write what you ordered on the office whiteboard.');
+
+        // The sop-store rules, mirrored for the demo and the board so both read like the live library.
+        var STOP = ['how', 'do', 'does', 'did', 'done', 'we', 'you', 'they', 'an', 'the', 'to', 'of', 'in', 'on', 'at', 'for', 'with', 'and', 'or', 'is', 'are', 'was', 'what', 'when', 'where', 'who', 'which', 'should', 'can', 'could', 'our', 'my', 'your', 'it', 'its', 'this', 'that', 'there', 'about', 'get', 'me', 'us', 'be', 'have', 'has', 'if', 'then', 'up', 'out', 'into', 'again', 'any', 'some', 'need', 'procedure', 'procedures', 'sop', 'steps', 'step', 'way', 'right', 'properly', 'please', 'tell', 'show'];
+        function stem(w) {
+          if (w.length > 5 && /ing$/.test(w)) w = w.slice(0, -3);
+          else if (w.length > 4 && /ed$/.test(w)) w = w.slice(0, -2);
+          else if (w.length > 4 && /es$/.test(w)) w = w.slice(0, -2);
+          else if (w.length > 3 && /s$/.test(w) && !/ss$/.test(w)) w = w.slice(0, -1);
+          if (w.length > 4 && /e$/.test(w)) w = w.slice(0, -1);
+          return w;
+        }
+        function tokens(text) {
+          var seen = [];
+          String(text == null ? '' : text).toLowerCase().split(/[^a-z0-9]+/).forEach(function (w) { if (w.length < 2 || STOP.indexOf(w) >= 0) return; var s = stem(w); if (seen.indexOf(s) < 0) seen.push(s); });
+          return seen;
+        }
+        function score(r, body, query) {
+          var q = tokens(query); if (!q.length) return 0;
+          var f = r.fields || {}, title = tokens(f.title), meta = tokens((f.area || '') + ' ' + (f.summary || '')), text = tokens(body), total = 0, hit = 0;
+          q.forEach(function (w) { var s = title.indexOf(w) >= 0 ? 3 : meta.indexOf(w) >= 0 ? 2 : text.indexOf(w) >= 0 ? 1 : 0; if (s) hit++; total += s; });
+          return hit ? total + hit / q.length : 0;
+        }
+        function addDays(day, n) { var d = new Date(String(day).slice(0, 10) + 'T12:00:00'); d.setDate(d.getDate() + n); return iso(d.getTime()); }
+        function daysLeft(day) { return Math.round((Date.parse(String(day).slice(0, 10) + 'T00:00:00') - Date.parse(iso(Date.now()) + 'T00:00:00')) / DAY); }
+        function reviewDays(f) { return Number(f.reviewEveryDays) > 0 ? Math.round(Number(f.reviewEveryDays)) : 180; }
+        function nextReview(f) { return f.lastReviewedAt ? addDays(f.lastReviewedAt, reviewDays(f)) : null; }
+        function reviewState(r) {
+          if (r.status === 'retired') return 'retired';
+          if (r.status === 'needs-update') return 'flagged';
+          if (r.status === 'draft') return 'draft';
+          if (!r.fields.lastReviewedAt) return 'unreviewed';
+          var d = daysLeft(nextReview(r.fields));
+          return d < 0 ? 'stale' : d <= 30 ? 'soon' : 'ok';
+        }
+        function flagNote(r) { var h = r.history || []; for (var i = h.length - 1; i >= 0; i--) if (h[i].to === 'needs-update' && h[i].note) return h[i].note; return ''; }
+        function urgency(r) { var s = reviewState(r); return s === 'flagged' ? -1000000 : s === 'unreviewed' ? -500000 : daysLeft(nextReview(r.fields)); }
+        function tokenKey(title) { return tokens(title).sort().join(' '); }
+        function demoMatch(input, steps) {
+          var all = demoIndex.records;
+          if (input.id) { var byId = all.find(function (r) { return r.id === input.id; }); if (byId) return [byId]; }
+          var wanted = String(input.title || '').trim().toLowerCase();
+          var hits = all.filter(function (r) { return r.fields.title.toLowerCase() === wanted; });
+          if (!hits.length && wanted) hits = all.filter(function (r) { return tokenKey(r.fields.title) === tokenKey(wanted); });
+          if (!hits.length && wanted && !steps) hits = all.filter(function (r) { var t = r.fields.title.toLowerCase(); return r.status !== 'retired' && (t.indexOf(wanted) >= 0 || tokens(wanted).every(function (w) { return tokens(t).indexOf(w) >= 0; })); });
+          return hits;
+        }
+        function demoOne(input) {
+          var hits = demoMatch(input);
+          if (hits.length === 1) return hits[0];
+          throw new Error((hits.length ? 'More than one procedure matches' : 'No procedure matches') + " '" + (input.title || input.id || '') + "'. Pass id.");
+        }
+        function demoSummary(note) {
+          var live = demoIndex.records.filter(function (r) { return r.status !== 'retired'; });
+          var late = live.filter(function (r) { return ['flagged', 'unreviewed', 'stale'].indexOf(reviewState(r)) >= 0; });
+          var soon = live.filter(function (r) { return reviewState(r) === 'soon'; });
+          return { outOfDate: late.length, dueSoon: soon.length, procedures: live.length, summary: (note ? note + ' ' : '') + live.length + ' procedures; ' + late.length + ' out of date, ' + soon.length + ' due for review within 30 days.' };
+        }
+        function demoSave(input) {
+          var steps = String(input.steps || '').trim(), hits = demoMatch(input, steps);
+          if (hits.length > 1) throw new Error("More than one procedure matches '" + input.title + "'. Pass id.");
+          var loose = !hits.length && steps ? demoMatch({ title: input.title }) : [];
+          if (loose.length) throw new Error("'" + input.title + "' looks like " + loose[0].fields.title + ' (' + loose[0].id + "). To rewrite it, pass id '" + loose[0].id + "'; to add a separate procedure, give it its own full title.");
+          var r = hits[0], area = AREAS.indexOf(String(input.area || '').toLowerCase()) >= 0 ? String(input.area).toLowerCase() : null, title;
+          if (r) {
+            title = r.fields.title;
+            if (area) r.fields.area = area;
+            if (input.owner) r.fields.owner = String(input.owner).trim();
+            if (steps) { demoBodies[r.fields.file] = '# ' + title + '\n\n' + steps.replace(/^#\s+[^\n]*\n+/, '') + '\n'; r.fields.lastReviewedAt = iso(Date.now()); r.status = 'current'; }
+            return demoSummary('Updated ' + title + (steps ? ' with new steps' : '') + '.');
+          }
+          if (!input.title) throw new Error("save needs 'title'.");
+          title = String(input.title).trim();
+          var file = 'sops/' + slugOf(title) + '.md';
+          for (var n = 2; demoBodies[file] !== undefined; n++) file = 'sops/' + slugOf(title) + '-' + n + '.md';
+          demoBodies[file] = '# ' + title + '\n\n' + (steps || '_No steps yet._') + '\n';
+          demoData[file] = function () { return demoBodies[file]; };
+          var id = 'sop-' + (demoIndex.records.reduce(function (m, x) { return Math.max(m, Number(x.id.split('-')[1]) || 0); }, 0) + 1);
+          demoIndex.records.push({ id: id, status: steps ? 'current' : 'draft', fields: Object.assign({ title: title, area: area || 'other', file: file }, input.owner ? { owner: String(input.owner).trim() } : {}, steps ? { lastReviewedAt: iso(Date.now()) } : {}), history: [] });
+          return demoSummary('Added ' + id + ' ' + title + ' at ' + file + (steps ? '' : ' as a draft') + '.');
+        }
+        function demoFind(input) {
+          var query = String(input.query || input.title || '').trim();
+          var ranked = demoIndex.records.filter(function (r) { return r.status !== 'retired'; }).map(function (r) { return { r: r, s: score(r, demoBodies[r.fields.file] || '', query) }; }).filter(function (x) { return x.s > 0; }).sort(function (a, b) { return b.s - a.s; });
+          var out = demoSummary('');
+          out.summary = ranked.length ? "Best match for '" + query + "': " + ranked[0].r.fields.title + ' (' + ranked[0].r.id + ').\n\n' + demoBodies[ranked[0].r.fields.file] : "No procedure in the library matches '" + query + "'.";
+          return out;
+        }
+        function demoReview(input) {
+          var r = demoOne(input);
+          if (r.status === 'draft') throw new Error(r.fields.title + ' is a draft with no steps yet; save its steps first.');
+          r.fields.lastReviewedAt = iso(Date.now());
+          r.history.push({ at: new Date().toISOString(), from: r.status, to: 'current', note: input.note || 'Reviewed; still right.' });
+          if (r.status === 'needs-update' || r.status === 'retired') r.status = 'current';
+          return demoSummary(r.fields.title + ' marked reviewed today; next review ' + nextReview(r.fields) + '.');
+        }
+        function demoFlag(input) {
+          if (!input.note || !String(input.note).trim()) throw new Error("flag needs 'note': what changed or what is wrong.");
+          var r = demoOne(input), note = String(input.note).trim();
+          r.history.push({ at: new Date().toISOString(), from: r.status, to: 'needs-update', note: note });
+          r.status = 'needs-update';
+          return demoSummary(r.fields.title + ' flagged for an update: ' + note.replace(/[.\s]+$/, '') + '.');
+        }
+        function demoRetire(input) {
+          var r = demoOne(input);
+          r.status = 'retired';
+          return demoSummary(r.fields.title + ' retired; its file stays at ' + r.fields.file + '.');
+        }
+
+        var demoData = { 'sops/index.json': function () { return demoIndex; } };
+        Object.keys(demoBodies).forEach(function (file) { demoData[file] = function () { return demoBodies[file]; }; });
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'library/index.html', typeName: 'SOP Library', params: { business: 'Harbor Street Café' } },
+          tools: {
+            page_save_procedure: demoSave,
+            save_procedure: demoSave,
+            page_mark_reviewed: demoReview,
+            mark_reviewed: demoReview,
+            page_flag_procedure: demoFlag,
+            flag_procedure: demoFlag,
+            find_procedure: demoFind,
+            retire_procedure: demoRetire,
+            library_status: function () { return demoSummary(''); },
+            list_procedures: function () { return demoSummary(''); },
+          },
+          data: demoData,
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+        function applyTheme(mode) { document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light'); }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function el(tag, text, cls) { var e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
+        function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+        function niceDate(day) { var d = new Date(String(day).slice(0, 10) + 'T12:00:00'); return isFinite(d) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : String(day); }
+        function cap(text) { return text.charAt(0).toUpperCase() + text.slice(1); }
+        function inline(node, text) {
+          String(text).split(/(\*\*[^*]+\*\*|_[^_]+_)/).forEach(function (part) {
+            if (/^\*\*[^*]+\*\*$/.test(part)) node.append(el('strong', part.slice(2, -2)));
+            else if (/^_[^_]+_$/.test(part)) node.append(el('em', part.slice(1, -1)));
+            else if (part) node.append(document.createTextNode(part));
+          });
+          return node;
+        }
+        // Numbered steps, bullets, subheadings and paragraphs; the file's title heading is shown elsewhere.
+        function renderSteps(target, text) {
+          target.replaceChildren();
+          var list = null, para = null;
+          String(text || '').replace(/\r\n/g, '\n').split('\n').forEach(function (raw) {
+            var line = raw.trim(), m;
+            if (!line) { list = null; para = null; return; }
+            if (/^#\s/.test(line)) return;
+            if ((m = line.match(/^#{2,6}\s+(.*)$/))) { list = null; para = null; target.append(inline(el('h4'), m[1])); return; }
+            if ((m = line.match(/^\d+[.)]\s+(.*)$/))) { if (!list || list.tagName !== 'OL') { list = el('ol'); target.append(list); } list.append(inline(el('li'), m[1])); para = null; return; }
+            if ((m = line.match(/^[-*]\s+(.*)$/))) { if (!list || list.tagName !== 'UL') { list = el('ul'); target.append(list); } list.append(inline(el('li'), m[1])); para = null; return; }
+            list = null;
+            if (!para) { para = el('p'); target.append(para); } else para.append(document.createTextNode(' '));
+            inline(para, line);
+          });
+        }
+        function stateChip(r) {
+          var s = reviewState(r), next = nextReview(r.fields);
+          if (s === 'flagged') return el('span', 'Needs update', 'chip late');
+          if (s === 'stale') return el('span', 'Review overdue', 'chip late');
+          if (s === 'unreviewed') return el('span', 'Never reviewed', 'chip late');
+          if (s === 'soon') return el('span', 'Review in ' + plural(daysLeft(next), 'day', 'days'), 'chip soon');
+          if (s === 'draft') return el('span', 'Draft', 'chip');
+          return null;
+        }
+        function metaLine(r, withoutArea) {
+          return [withoutArea ? '' : cap(r.fields.area || 'other'), r.fields.owner ? 'Owner: ' + r.fields.owner : 'No owner yet', r.fields.lastReviewedAt ? 'Reviewed ' + niceDate(r.fields.lastReviewedAt) : r.status === 'draft' ? 'No steps yet' : 'Never reviewed'].filter(Boolean).join(' · ');
+        }
+        function fileLine(r) {
+          var p = el('p', undefined, 'file');
+          p.append(el('span', r.fields.file));
+          if (gezel.page.mode === 'embedded' && gezel.data.open) {
+            var open = el('button', 'Open', 'open-file'); open.type = 'button';
+            open.onclick = function () { gezel.data.open(r.fields.file, { source: 'workspace' }).catch(function (error) { reportAppError(error); }); };
+            p.append(open);
+          }
+          return p;
+        }
+
+        var current = { records: [], bodies: {} };
+        function rank(query) {
+          return current.records.filter(function (r) { return r.status !== 'retired'; })
+            .map(function (r) { return { r: r, s: score(r, current.bodies[r.fields.file] || '', query) }; })
+            .filter(function (x) { return x.s > 0; })
+            .sort(function (a, b) { return b.s - a.s; });
+        }
+        function showAnswer(query, pinned) {
+          var holder = document.getElementById('answer');
+          holder.replaceChildren();
+          query = String(query || '').trim();
+          if (!query) return;
+          var ranked = rank(query);
+          if (pinned) ranked = [{ r: pinned }].concat(ranked.filter(function (x) { return x.r !== pinned; }));
+          if (!ranked.length) { holder.append(el('p', 'Nothing in the library covers that yet. Ask the librarian to write it down with the person who does the job.', 'empty answer')); return; }
+          var best = ranked[0].r, card = el('article', undefined, 'answer'), title = el('h3', best.fields.title), chip = stateChip(best);
+          if (chip) title.append(chip);
+          card.append(title, el('span', metaLine(best), 'meta'));
+          var steps = el('div', undefined, 'steps');
+          renderSteps(steps, current.bodies[best.fields.file] || '');
+          card.append(steps, fileLine(best));
+          if (reviewState(best) === 'flagged') card.append(el('p', 'Flagged: ' + flagNote(best), 'note'));
+          var others = ranked.slice(1, 4);
+          if (others.length) {
+            var also = el('p', undefined, 'also');
+            also.append(el('span', 'Also see:'));
+            others.forEach(function (x) { var b = el('button', x.r.fields.title); b.type = 'button'; b.onclick = function () { showAnswer(query, x.r); }; also.append(b); });
+            card.append(also);
+          }
+          holder.append(card);
+        }
+
+        function render(index, bodies) {
+          var records = Array.isArray(index.records) ? index.records : [];
+          current = { records: records, bodies: bodies };
+          var live = records.filter(function (r) { return r.status !== 'retired'; });
+          var late = live.filter(function (r) { return ['flagged', 'unreviewed', 'stale'].indexOf(reviewState(r)) >= 0; });
+          var soon = live.filter(function (r) { return reviewState(r) === 'soon'; });
+          var areas = AREAS.filter(function (a) { return live.some(function (r) { return (r.fields.area || 'other') === a; }); });
+          document.getElementById('t-count').textContent = live.length;
+          document.getElementById('t-late').textContent = late.length;
+          document.getElementById('t-soon').textContent = soon.length;
+          document.getElementById('t-areas').textContent = areas.length;
+          document.getElementById('sub').textContent = !live.length
+            ? 'The library is empty. Tell your librarian how a job is done, or write the first procedure below.'
+            : plural(live.length, 'procedure', 'procedures') + ' in ' + plural(areas.length, 'area', 'areas') + '. ' +
+              (late.length ? plural(late.length, 'is', 'are') + ' out of date' : 'Nothing is out of date') +
+              (soon.length ? ', and ' + plural(soon.length, 'is', 'are') + ' due for review within 30 days.' : '.');
+
+          var tries = document.getElementById('tries');
+          tries.replaceChildren();
+          var picks = live.filter(function (r) { return r.status !== 'draft'; }).slice(0, 3);
+          if (picks.length) tries.append(el('span', 'Try:'));
+          picks.forEach(function (r) {
+            var b = el('button', r.fields.title); b.type = 'button';
+            b.onclick = function () { var input = document.getElementById('ask'); input.value = r.fields.title.toLowerCase(); showAnswer(input.value); };
+            tries.append(b);
+          });
+          showAnswer(document.getElementById('ask').value);
+
+          var list = document.getElementById('attention');
+          list.replaceChildren();
+          var attention = late.concat(soon).sort(function (a, b) { return urgency(a) - urgency(b); }).concat(live.filter(function (r) { return r.status === 'draft'; }));
+          if (!attention.length) list.append(el('li', live.length ? 'Every procedure is current.' : 'Nothing yet.', 'empty'));
+          attention.forEach(function (r) {
+            var s = reviewState(r), next = nextReview(r.fields), li = el('li'), what = el('div');
+            var chip = s === 'flagged' ? 'Needs update' : s === 'stale' ? 'Overdue ' + plural(-daysLeft(next), 'day', 'days') : s === 'unreviewed' ? 'Never reviewed' : s === 'soon' ? 'Review in ' + plural(daysLeft(next), 'day', 'days') : 'Draft';
+            li.append(el('span', chip, 'when ' + (s === 'soon' ? 'soon' : s === 'draft' ? '' : 'late')));
+            what.append(el('b', r.fields.title));
+            what.append(el('span', s === 'flagged' ? '“' + flagNote(r) + '” · ' + metaLine(r) : s === 'draft' ? 'No steps written yet · ' + (r.fields.owner ? 'Owner: ' + r.fields.owner : 'No owner yet') : metaLine(r) + ' · checked every ' + reviewDays(r.fields) + ' days', 'meta'));
+            li.append(what);
+            list.append(li);
+          });
+
+          var holder = document.getElementById('areas');
+          holder.replaceChildren();
+          if (!live.length) holder.append(el('p', 'Procedures appear here by area as they are written down.', 'empty'));
+          areas.forEach(function (a) {
+            holder.append(el('h3', cap(a)));
+            var ul = el('ul', undefined, 'procs');
+            live.filter(function (r) { return (r.fields.area || 'other') === a; }).sort(function (x, y) { return x.fields.title.localeCompare(y.fields.title); }).forEach(function (r) {
+              var li = el('li'), details = el('details'), summary = el('summary'), chip = stateChip(r);
+              summary.append(el('span', r.fields.title, 't'));
+              if (chip) summary.append(chip);
+              summary.append(el('span', metaLine(r, true), 'meta'));
+              var steps = el('div', undefined, 'steps');
+              renderSteps(steps, bodies[r.fields.file] || '');
+              details.append(summary, steps, fileLine(r));
+              li.append(details);
+              ul.append(li);
+            });
+            holder.append(ul);
+          });
+        }
+
+        window.addEventListener('gezel-app-data-changed', function () { loadLibrary(); });
+        window.loadLibrary = loadLibrary;
+        function loadLibrary() {
+          var revision = ++appLoadRevision;
+          return gezel.data.read('sops/index.json').then(function (index) {
+            var records = (index && Array.isArray(index.records) ? index.records : []).filter(function (r) { return r.status !== 'retired' && r.fields && typeof r.fields.file === 'string'; }).slice(0, 300);
+            // A missing or unreadable file shows as empty steps; the index is still the record.
+            return Promise.all(records.map(function (r) { return gezel.data.read(r.fields.file).then(function (text) { return typeof text === 'string' ? text : ''; }, function () { return ''; }); })).then(function (texts) {
+              var bodies = {};
+              records.forEach(function (r, i) { bodies[r.fields.file] = texts[i]; });
+              return [index || {}, bodies];
+            });
+          }).then(function (values) {
+            if (appDisposed || revision !== appLoadRevision) return;
+            reportAppError(null);
+            render(values[0], values[1]);
+          }).catch(function (error) { if (!appDisposed && revision === appLoadRevision) reportAppError(error); });
+        }
+
+        var ask = document.getElementById('ask');
+        ask.addEventListener('input', function () { showAnswer(ask.value); });
+        loadLibrary();
+        appSubscriptions.push(gezel.data.watch('sops/index.json', function () { loadLibrary(); }));
+      })();
+    </script>
+    <script src="application.js" defer></script>
+  </body>
+</html>

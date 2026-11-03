@@ -1,0 +1,812 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Cash flow planner</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f6f2ea; --card: #fffcf6; --ink: #29241e; --muted: #6b6155; --line: #ddd3c3;
+        --accent: #0c805a; --on-accent: #ffffff; --late: #a3341f; --late-bg: #f7e1da; --soon: #8a5a12; --soon-bg: #f6ead2;
+        --ok: #2f6b45; --ok-bg: #e2eedf; --chip: #efe7da;
+        --bar: #0c805a; --bar-warn: #b9790a; --bar-crit: #b3321c; --grid: #e7dfd1;
+      }
+      :root[data-theme='dark'] {
+        --bg: #181613; --card: #221f1b; --ink: #efe8dd; --muted: #a99d8d; --line: #3a342c;
+        --accent: #25a278; --on-accent: #0d1712; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+        --ok: #8fc29b; --ok-bg: #22301f; --chip: #2d2822;
+        --bar: #25a278; --bar-warn: #bf8a12; --bar-crit: #e65a8a; --grid: #302b25;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #181613; --card: #221f1b; --ink: #efe8dd; --muted: #a99d8d; --line: #3a342c;
+          --accent: #25a278; --on-accent: #0d1712; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+          --ok: #8fc29b; --ok-bg: #22301f; --chip: #2d2822;
+          --bar: #25a278; --bar-warn: #bf8a12; --bar-crit: #e65a8a; --grid: #302b25;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body, system-ui, sans-serif); font-size: 15px; line-height: 1.5; padding: 1.5rem 1.25rem; }
+      main { max-width: 900px; margin: 0 auto; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.5rem; font-weight: 400; margin: 0 0 0.2rem; }
+      h2 { font-family: var(--font-heading, Georgia, serif); font-size: 1.1rem; font-weight: 400; margin: 0 0 0.6rem; }
+      h3 { font-size: 0.95rem; font-weight: 600; margin: 0 0 0.35rem; }
+      .sub { color: var(--muted); margin: 0 0 1rem; }
+      .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; margin: 0 0 1.2rem; }
+      .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem 0.9rem; min-width: 0; }
+      .tile b { display: block; font-size: 1.5rem; font-weight: 600; line-height: 1.1; overflow-wrap: anywhere; }
+      .tile span { display: block; color: var(--muted); font-size: 0.85rem; }
+      .tile.warn b { color: var(--soon); }
+      .tile.crit b { color: var(--late); }
+      section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin: 0 0 1rem; }
+      .views { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 0.75rem; }
+      .views button { min-height: 36px; padding: 0.3rem 0.7rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); font: inherit; font-size: 0.88rem; cursor: pointer; }
+      .views button[aria-pressed='true'] { border-color: var(--accent); background: color-mix(in srgb, var(--card) 85%, var(--accent)); font-weight: 600; }
+      .headline { margin: 0 0 0.75rem; }
+      .chart { position: relative; margin: 0 0 0.5rem; }
+      .chart svg { display: block; width: 100%; overflow: visible; }
+      .chart text { fill: var(--muted); font-size: 11px; font-family: var(--font-ui, system-ui, sans-serif); }
+      .chart .value { fill: var(--ink); font-weight: 600; }
+      .chart .hit { fill: transparent; cursor: default; }
+      .chart .col { pointer-events: none; }
+      .chart .col.lift { opacity: 0.78; }
+      .tip { position: absolute; z-index: 2; pointer-events: none; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 0.4rem 0.55rem; font-size: 0.82rem; line-height: 1.35; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12); white-space: nowrap; }
+      .tip b { display: block; font-size: 0.95rem; }
+      .tip span { display: block; color: var(--muted); }
+      .key { display: flex; flex-wrap: wrap; gap: 0.9rem; color: var(--muted); font-size: 0.82rem; margin: 0 0 0.75rem; }
+      .key i { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 2px; margin-right: 0.35rem; vertical-align: -0.05rem; }
+      .key .line { width: 1rem; height: 0; border-top: 2px dashed var(--muted); border-radius: 0; vertical-align: 0.2rem; }
+      .table-wrap { overflow-x: auto; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+      th { text-align: left; font-weight: 600; color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 0.5rem 0.4rem; border-bottom: 1px solid var(--line); }
+      td { padding: 0.45rem 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+      tr:last-child td { border-bottom: 0; }
+      .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+      th.num { text-align: right; }
+      .in { color: var(--ok); }
+      .neg { color: var(--late); }
+      .meta { display: block; color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
+      .chip { display: inline-block; font-size: 0.78rem; padding: 0.05rem 0.45rem; border-radius: 4px; background: var(--chip); color: var(--ink); white-space: nowrap; }
+      .chip.warn { background: var(--soon-bg); color: var(--soon); }
+      .chip.crit { background: var(--late-bg); color: var(--late); }
+      .chip.in { background: var(--ok-bg); color: var(--ok); }
+      .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 0.75rem; }
+      .card { border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem 0.85rem; display: grid; gap: 0.4rem; align-content: start; }
+      .card ul { margin: 0; padding-left: 1.1rem; font-size: 0.88rem; }
+      .card p { margin: 0; font-size: 0.88rem; }
+      .card button { justify-self: start; min-height: 36px; padding: 0.3rem 0.7rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); color: var(--ink); font: inherit; font-size: 0.85rem; cursor: pointer; }
+      .empty { color: var(--muted); font-style: italic; margin: 0; }
+      .demo-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 0 0 1rem; padding: 0.5rem 0.65rem; border: 1px solid var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--card) 88%, var(--accent)); font-size: 0.85rem; }
+      .demo-banner[hidden] { display: none; }
+      .demo-reset { flex: none; min-height: 36px; padding: 0.3rem 0.7rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; }
+      .note { color: var(--muted); font-size: 0.85rem; margin: 0.75rem 0 0; }
+      @media (max-width: 640px) {
+        .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .tile b { font-size: 1.2rem; }
+      }
+    </style>
+    <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:0 0 12px;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--line,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+    <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script>
+  </head>
+  <body>
+    <main>
+      <p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong>: Brightline Electric’s sample cash plan. Changes stay in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Cash flow planner</h1>
+      <p class="sub" id="sub">Loading the forecast…</p>
+      <div class="tiles">
+        <div class="tile"><b id="t-bank">–</b><span id="t-bank-label">Cash in the bank</span></div>
+        <div class="tile" id="t-warn-tile"><b id="t-warn">–</b><span id="t-warn-label">Below the cushion</span></div>
+        <div class="tile" id="t-low-tile"><b id="t-low">–</b><span id="t-low-label">Tightest week</span></div>
+        <div class="tile"><b id="t-end">–</b><span>After 13 weeks</span></div>
+      </div>
+      <section id="forecast-section">
+        <h2>13-week forecast</h2>
+        <div class="views" id="views" role="group" aria-label="Show the plan or a what-if"></div>
+        <p class="headline" id="headline"></p>
+        <div class="key" id="key">
+          <span><i style="background: var(--bar)"></i>Ends above the cushion</span>
+          <span><i style="background: var(--bar-warn)"></i>Below the cushion</span>
+          <span><i style="background: var(--bar-crit)"></i>Below zero</span>
+          <span><i class="line"></i><span id="key-cushion">Cushion</span></span>
+        </div>
+        <div class="chart" id="chart"></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Week of</th><th class="num">In</th><th class="num">Out</th><th class="num">Ends at</th><th></th></tr></thead>
+            <tbody id="weeks-body"></tbody>
+          </table>
+        </div>
+      </section>
+      <section id="plan-section">
+        <h2>The plan</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Expected</th><th>Way</th><th class="num">Amount</th><th>Next date</th><th>Repeats</th></tr></thead>
+            <tbody id="plan-body"></tbody>
+          </table>
+        </div>
+      </section>
+      <section id="whatif-section">
+        <h2>What-ifs</h2>
+        <div class="cards" id="whatifs"></div>
+        <p class="note">A forecast is arithmetic on what you expect, not financial advice. For borrowing, credit lines or tax payments, talk to your accountant or banker.</p>
+      </section>
+    </main>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        // ── cashflow-rules-start ──
+        // Pure derivations shared by the script, the page and the sample conversation:
+        // integer-cent money, repeat dates, and the 13-week forecast with its tightest
+        // week, for the plan and for each what-if. Kept self-contained between these
+        // sentinels so unit tests execute the shipped bytes.
+        var DAY_MS = 86400000;
+        var WEEKS = 13;
+        var RECURS = ['none', 'weekly', 'biweekly', 'monthly', 'quarterly'];
+        var RECURS_TEXT = { none: 'once', weekly: 'every week', biweekly: 'every two weeks', monthly: 'every month', quarterly: 'every quarter' };
+        var SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+        function pad(n) {
+          return n < 10 ? '0' + n : String(n);
+        }
+        function localDay(ms) {
+          var d = new Date(ms);
+          return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+        }
+        function normalizeDate(text) {
+          var raw = String(text || '').trim();
+          if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+          var parsed = Date.parse(raw);
+          return isFinite(parsed) ? localDay(parsed) : null;
+        }
+        // Local noon, so adding days never trips over a daylight-saving change.
+        function dayMs(day) {
+          return Date.parse(String(day).slice(0, 10) + 'T12:00:00');
+        }
+        function addDays(day, n) {
+          var d = new Date(dayMs(day));
+          d.setDate(d.getDate() + n);
+          return localDay(d.getTime());
+        }
+        // The same day of the month `months` later; the 31st lands on a shorter month's last day.
+        function addMonths(day, months, dom) {
+          var d = new Date(dayMs(day));
+          var date = dom || d.getDate();
+          d.setDate(1);
+          d.setMonth(d.getMonth() + months);
+          d.setDate(Math.min(date, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+          return localDay(d.getTime());
+        }
+        // The k-th date of a series counted from its anchor, so a monthly 31st never drifts.
+        function occurrence(anchor, recurs, k, dom) {
+          if (recurs === 'weekly') return addDays(anchor, 7 * k);
+          if (recurs === 'biweekly') return addDays(anchor, 14 * k);
+          if (recurs === 'monthly') return addMonths(anchor, k, dom);
+          if (recurs === 'quarterly') return addMonths(anchor, 3 * k, dom);
+          return k === 0 ? anchor : null;
+        }
+        function daysBetween(from, to) {
+          return Math.round((dayMs(to) - dayMs(from)) / DAY_MS);
+        }
+        function mondayOf(day) {
+          return addDays(day, -((new Date(dayMs(day)).getDay() + 6) % 7));
+        }
+        function weekLabel(day) {
+          return SHORT_MONTHS[Number(day.slice(5, 7)) - 1] + ' ' + Number(day.slice(8, 10));
+        }
+        // Integer cents from 9600, '9,600.00' or '-1240', with no float arithmetic.
+        function parseCents(value) {
+          var text = typeof value === 'number' ? (isFinite(value) ? String(value) : '') : String(value == null ? '' : value);
+          var m = /^(-?)(\d+)(?:\.(\d*))?$/.exec(text.replace(/[$,\s]/g, ''));
+          if (!m) return null;
+          var frac = (m[3] || '') + '000';
+          var cents = Number(m[2]) * 100 + Number(frac.slice(0, 2)) + (Number(frac.charAt(2)) >= 5 ? 1 : 0);
+          return m[1] ? -cents : cents;
+        }
+        function toCents(value) {
+          var cents = parseCents(value);
+          return cents !== null && cents > 0 ? cents : null;
+        }
+        function money(cents) {
+          var abs = Math.abs(Math.round(cents));
+          var whole = String(Math.floor(abs / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+          return (cents < 0 ? '-' : '') + whole + '.' + pad(abs % 100);
+        }
+        function normalizeRecurs(text) {
+          var raw = String(text || '').trim().toLowerCase();
+          if (RECURS.indexOf(raw) >= 0) return raw;
+          if (/two weeks|fortnight|bi-?weekly/.test(raw)) return 'biweekly';
+          if (/week/.test(raw)) return 'weekly';
+          if (/quarter/.test(raw)) return 'quarterly';
+          if (/month/.test(raw)) return 'monthly';
+          if (/once|one-?off|single/.test(raw)) return 'none';
+          return null;
+        }
+        function scenarioNames(records) {
+          var names = [];
+          records.forEach(function (r) {
+            var s = r.status === 'whatif' && r.fields && r.fields.scenario;
+            if (s && names.indexOf(s) < 0) names.push(s);
+          });
+          return names;
+        }
+        // The plan's expected items, or the plan with one what-if's changes applied.
+        function planItems(records, scenario) {
+          var changes = records.filter(function (r) {
+            return scenario && r.status === 'whatif' && r.fields.scenario === scenario && r.fields.change !== 'add';
+          });
+          return records
+            .filter(function (r) {
+              return r.status === 'expected' || (scenario && r.status === 'whatif' && r.fields.scenario === scenario && r.fields.change === 'add');
+            })
+            .map(function (r) {
+              var shift = 0;
+              var dropped = false;
+              changes.forEach(function (c) {
+                if (c.fields.itemId !== r.id) return;
+                if (c.fields.change === 'drop') dropped = true;
+                if (c.fields.change === 'delay') shift += Math.round(Number(c.fields.weeks) || 0);
+              });
+              var f = r.fields;
+              return dropped
+                ? null
+                : { id: r.id, name: f.name, direction: f.direction, amountCents: f.amountCents, date: f.date, recurs: f.recurs || 'none', until: f.until || '', dom: f.dom, shiftDays: 7 * shift, whatIf: r.status === 'whatif' };
+            })
+            .filter(Boolean);
+        }
+        // Thirteen weeks from this Monday. A repeat dated before the balance is already in it; a one-off
+        // that never came stays expected and is counted (and flagged late) in the first week.
+        function forecast(file, scenario, nowMs) {
+          var today = localDay(nowMs);
+          var balance = file && file.balance && typeof file.balance.amountCents === 'number' ? file.balance : null;
+          var asOf = balance && balance.asOf ? balance.asOf : today;
+          var start = mondayOf(today);
+          var end = addDays(start, 7 * WEEKS - 1);
+          var from = asOf < start ? asOf : start;
+          var weeks = [];
+          for (var w = 0; w < WEEKS; w++) weeks.push({ start: addDays(start, 7 * w), inCents: 0, outCents: 0, items: [] });
+          var late = [];
+          planItems((file && file.records) || [], scenario).forEach(function (item) {
+            if (!item.date || !(item.amountCents > 0)) return;
+            var k = 0;
+            if (item.recurs !== 'none') {
+              var gap = daysBetween(item.date, from) - item.shiftDays;
+              var period = { weekly: 7, biweekly: 14, monthly: 31, quarterly: 92 }[item.recurs] || 7;
+              if (gap > 0) k = Math.max(0, Math.floor(gap / period) - 1);
+            }
+            for (var guard = 0; guard < 600; guard++, k++) {
+              var raw = occurrence(item.date, item.recurs, k, item.dom);
+              if (!raw || (item.until && raw > item.until)) break;
+              var day = item.shiftDays ? addDays(raw, item.shiftDays) : raw;
+              if (day > end) break;
+              if (item.recurs !== 'none' && day < asOf) continue;
+              var isLate = item.recurs === 'none' && day < today;
+              var hit = { id: item.id, name: item.name, direction: item.direction, amountCents: item.amountCents, day: day, late: isLate, whatIf: item.whatIf };
+              var week = weeks[day < start ? 0 : Math.floor(daysBetween(start, day) / 7)];
+              if (item.direction === 'in') week.inCents += item.amountCents;
+              else week.outCents += item.amountCents;
+              week.items.push(hit);
+              if (isLate) late.push(hit);
+              if (item.recurs === 'none') break;
+            }
+          });
+          var running = balance ? balance.amountCents : 0;
+          var totalIn = 0;
+          var totalOut = 0;
+          weeks.forEach(function (wk) {
+            wk.openCents = running;
+            running += wk.inCents - wk.outCents;
+            wk.closeCents = running;
+            totalIn += wk.inCents;
+            totalOut += wk.outCents;
+          });
+          var cushion = file && typeof file.cushionCents === 'number' ? file.cushionCents : 0;
+          var lowest = weeks[0];
+          weeks.forEach(function (wk) {
+            if (wk.closeCents < lowest.closeCents) lowest = wk;
+          });
+          return {
+            today: today, start: start, asOf: asOf, hasBalance: !!balance, balanceCents: balance ? balance.amountCents : 0,
+            cushionCents: cushion, weeks: weeks, lowest: lowest, late: late, inCents: totalIn, outCents: totalOut, endCents: running,
+            firstLow: weeks.filter(function (wk) { return wk.closeCents < cushion; })[0] || null,
+            firstNegative: weeks.filter(function (wk) { return wk.closeCents < 0; })[0] || null,
+            belowCushion: weeks.filter(function (wk) { return wk.closeCents < cushion; }).length,
+          };
+        }
+        function biggest(week) {
+          return week.items
+            .filter(function (i) { return i.direction === 'out'; })
+            .sort(function (a, b) { return b.amountCents - a.amountCents; })
+            .slice(0, 3)
+            .map(function (i) { return i.name + ' ' + money(i.amountCents); })
+            .reduce(function (text, part, i, all) { return text + (i === 0 ? '' : i === all.length - 1 ? ' and ' : '; ') + part; }, '');
+        }
+        // The answer to "when does cash get tight?": the warning week first, with what goes out in it.
+        function tightLine(f) {
+          var low = f.lowest;
+          var warn = f.firstNegative || f.firstLow;
+          var week = function (w) { return 'the week of ' + weekLabel(w.start) + ' (' + w.start + ')'; };
+          var going = function (w) { var out = biggest(w); return out ? ', when ' + out + ' go out' : ''; };
+          if (!warn) {
+            return 'Cash stays above the ' + money(f.cushionCents) + ' cushion for all ' + WEEKS + ' weeks; the tightest is ' + week(low) + ', ending at ' + money(low.closeCents) + going(low) + '.';
+          }
+          return (
+            (f.firstNegative ? 'Cash runs out in ' : 'Cash first drops below the ' + money(f.cushionCents) + ' cushion in ') + week(warn) +
+            ', ending at ' + money(warn.closeCents) + going(warn) + '. ' +
+            (low === warn ? 'That is the tightest week.' : 'The tightest is ' + week(low) + ', ending at ' + money(low.closeCents) + '.')
+          );
+        }
+        function compareLine(name, plan, alt) {
+          var low = alt.lowest;
+          return (
+            name + ': tightest week ' + weekLabel(low.start) + ' at ' + money(low.closeCents) +
+            ' (plan: ' + weekLabel(plan.lowest.start) + ' at ' + money(plan.lowest.closeCents) + ')' +
+            (alt.firstNegative
+              ? '; runs out in the week of ' + weekLabel(alt.firstNegative.start)
+              : alt.firstLow
+                ? '; below the cushion from the week of ' + weekLabel(alt.firstLow.start)
+                : '; never below the cushion') +
+            '; ends the 13 weeks at ' + money(alt.endCents) + ' (plan ' + money(plan.endCents) + ')'
+          );
+        }
+        function itemLine(r, records) {
+          var f = r.fields || {};
+          if (f.change === 'delay' || f.change === 'drop') {
+            var target = records.filter(function (x) { return x.id === f.itemId; })[0];
+            var what = target ? target.fields.name + ' (' + target.id + ')' : f.itemId;
+            return r.id + ' [what-if ' + f.scenario + '] ' + (f.change === 'drop' ? 'drop ' + what : 'delay ' + what + ' by ' + f.weeks + (Number(f.weeks) === 1 ? ' week' : ' weeks'));
+          }
+          return (
+            r.id + (r.status === 'whatif' ? ' [what-if ' + f.scenario + '] add ' : ' ') + f.name + ': ' + (f.direction === 'in' ? 'in ' : 'out ') +
+            money(f.amountCents || 0) + ' ' + (f.recurs && f.recurs !== 'none' ? RECURS_TEXT[f.recurs] + ' from ' + f.date + (f.until ? ' until ' + f.until : '') : 'on ' + f.date) +
+            (r.status === 'done' ? ' (done)' : '')
+          );
+        }
+        function cashPicture(file, nowMs, scenario) {
+          var records = (file && file.records) || [];
+          var plan = forecast(file, null, nowMs);
+          var view = scenario ? forecast(file, scenario, nowMs) : plan;
+          var planned = records.filter(function (r) { return r.status === 'expected'; }).length;
+          if (!plan.hasBalance && !planned) {
+            return { plan: plan, view: view, summary: 'The plan is empty: no bank balance and no expected income or bills yet. Ask for today’s bank balance, the regular bills (payroll, rent, suppliers) and the invoices still to be paid.' };
+          }
+          var parts = [(scenario ? 'With the what-if ' + scenario + ': ' : '') + tightLine(view)];
+          parts.push(
+            plan.hasBalance
+              ? 'Cash in the bank: ' + money(plan.balanceCents) + ' as of ' + plan.asOf + ' (cushion ' + money(plan.cushionCents) + ').' +
+                  (daysBetween(plan.asOf, plan.today) > 7 ? ' That balance is ' + daysBetween(plan.asOf, plan.today) + ' days old; a fresh one sharpens the forecast.' : '')
+              : 'No bank balance yet, so the forecast starts from zero. Ask for today’s balance.',
+          );
+          if (view.late.length) {
+            parts.push('Late, counted in this week until it arrives or is moved: ' + view.late.map(function (i) { return i.name + ' (' + i.id + ', ' + (i.direction === 'in' ? 'in ' : 'out ') + money(i.amountCents) + ', expected ' + i.day + ')'; }).join('; ') + '.');
+          }
+          parts.push(
+            'Week by week, ending balance: ' +
+              view.weeks.map(function (wk) { return weekLabel(wk.start) + ' ' + money(wk.closeCents) + ' (in ' + money(wk.inCents) + ', out ' + money(wk.outCents) + ')'; }).join(' | ') + '.',
+          );
+          parts.push('Over 13 weeks: in ' + money(view.inCents) + ', out ' + money(view.outCents) + ', ending at ' + money(view.endCents) + '.');
+          var names = scenarioNames(records);
+          if (names.length) {
+            parts.push('What-ifs: ' + names.map(function (n) { return compareLine(n, plan, forecast(file, n, nowMs)); }).join(' | ') + '.');
+          }
+          return { plan: plan, view: view, summary: parts.join(' ') };
+        }
+        // ── cashflow-rules-end ──
+        // Brightline Electric's sample cash plan, dated from today so the demo never goes stale.
+        function demoPlan(nowMs) {
+          var today = localDay(nowMs);
+          var at = function (n) { return addDays(today, n); };
+          var nextFirst = addMonths(today.slice(0, 8) + '01', 1);
+          var rows = [
+            ['Payroll', 'out', 585000, at(4), 'biweekly'],
+            ['Cascade Electric Supply account', 'out', 320000, at(12), 'monthly'],
+            ['Shop rent', 'out', 160000, nextFirst, 'monthly'],
+            ['Van loan', 'out', 68400, at(19), 'monthly'],
+            ['Ridgeway Insurance', 'out', 123600, at(40), 'quarterly'],
+            ['Estimated tax payment', 'out', 450000, at(58), 'none'],
+            ['Delgado Trenching', 'out', 190000, at(26), 'none'],
+            ['Alder Street remodel, final invoice', 'in', 960000, at(-6), 'none'],
+            ['Service calls (weekly average)', 'in', 140000, at(5), 'weekly'],
+            ['Kim residence panel upgrade', 'in', 325000, at(9), 'none'],
+            ['Ridgeview Apartments service contract', 'in', 240000, at(15), 'monthly'],
+            ['Hollis Bakery lighting retrofit', 'in', 720000, at(33), 'none'],
+            ['Juniper Press warehouse lighting', 'in', 1240000, at(47), 'none'],
+            ['Fernwood Studio office rewire', 'in', 580000, at(68), 'none'],
+          ];
+          var stamp = new Date(nowMs).toISOString();
+          var records = rows.map(function (r, i) {
+            return {
+              id: 'cf-' + (i + 1), status: 'expected', createdAt: stamp, updatedAt: stamp, history: [],
+              fields: { name: r[0], direction: r[1], amountCents: r[2], date: r[3], recurs: r[4], dom: Number(r[3].slice(8, 10)) },
+            };
+          });
+          records.push({
+            id: 'cf-15', status: 'whatif', createdAt: stamp, updatedAt: stamp, history: [],
+            fields: { scenario: 'Lose the Ridgeview contract', change: 'drop', itemId: 'cf-11' },
+          });
+          return {
+            version: 1,
+            stages: ['expected', 'whatif', 'done', 'removed'],
+            currency: 'USD',
+            balance: { amountCents: 984000, asOf: today },
+            cushionCents: 1200000,
+            records: records,
+          };
+        }
+
+        // ── demo cash plan (used only when the page opens outside Gezel); dated from today so it never goes stale ──
+        var demoFile = demoPlan(Date.now());
+
+        // The cashflow-store actions, mirrored for the demo so the sample behaves like the live plan.
+        function demoOutput(note, focus, listing) {
+          var pic = cashPicture(demoFile, Date.now(), focus || null);
+          return { balance: pic.plan.balanceCents / 100, lowestBalance: pic.view.lowest.closeCents / 100, lowWeek: pic.view.lowest.start, belowCushion: pic.view.belowCushion, endBalance: pic.view.endCents / 100, summary: listing || (note ? note + ' ' : '') + pic.summary };
+        }
+        function demoNextId() {
+          return 'cf-' + (demoFile.records.reduce(function (m, r) { return Math.max(m, Number(String(r.id).split('-')[1]) || 0); }, 0) + 1);
+        }
+        function demoMatches(text) {
+          var wanted = String(text || '').trim().toLowerCase();
+          var pool = demoFile.records.filter(function (r) { return r.status === 'expected'; });
+          var nameOf = function (r) { return String(r.fields.name || '').toLowerCase(); };
+          var hits = pool.filter(function (r) { return r.id === wanted; });
+          if (!hits.length) hits = pool.filter(function (r) { return nameOf(r) === wanted; });
+          if (!hits.length) hits = pool.filter(function (r) { return wanted && (nameOf(r).indexOf(wanted) >= 0 || wanted.indexOf(nameOf(r)) >= 0); });
+          if (!hits.length) {
+            var words = (wanted.match(/[a-z]{4,}/g) || []).filter(function (w) { return ['invoice', 'payment', 'bill', 'from', 'with', 'final'].indexOf(w) < 0; });
+            hits = pool.filter(function (r) { return words.some(function (w) { return nameOf(r).indexOf(w) >= 0; }); });
+          }
+          return hits;
+        }
+        function demoOne(text) {
+          var hits = demoMatches(text);
+          if (hits.length === 1) return hits[0];
+          throw new Error(hits.length ? "More than one item matches '" + text + "'. Pass the id." : "Nothing expected in the plan matches '" + text + "'.");
+        }
+        function demoFields(input, isNew) {
+          var f = {};
+          if (input.direction) f.direction = /^(in|income)$/i.test(input.direction) ? 'in' : 'out';
+          if (input.amount !== undefined && input.amount !== null && input.amount !== '') { f.amountCents = toCents(input.amount); if (!f.amountCents) throw new Error('amount must be positive.'); }
+          if (input.date) { f.date = normalizeDate(input.date); if (!f.date) throw new Error('date must be a date.'); f.dom = Number(f.date.slice(8, 10)); }
+          if (input.recurs) { f.recurs = normalizeRecurs(input.recurs); if (!f.recurs) throw new Error('Unknown repeat.'); }
+          if (input.until) f.until = normalizeDate(input.until);
+          if (isNew) {
+            if (!f.direction || !f.amountCents || !f.date) throw new Error("A new item needs 'direction', 'amount' and 'date'.");
+            if (!f.recurs) f.recurs = 'none';
+          }
+          return f;
+        }
+        function demoRecord(status, fields) {
+          var stamp = new Date().toISOString();
+          var rec = { id: demoNextId(), status: status, createdAt: stamp, updatedAt: stamp, history: [], fields: fields };
+          demoFile.records.push(rec);
+          return rec;
+        }
+        function demoBalance(input) {
+          var cents = parseCents(input.amount);
+          if (cents === null) throw new Error("set_balance needs 'amount'.");
+          var asOf = input.date ? normalizeDate(input.date) : localDay(Date.now());
+          if (!asOf) throw new Error('date must be a date.');
+          demoFile.balance = { amountCents: cents, asOf: asOf };
+          if (input.cushion !== undefined && input.cushion !== null && input.cushion !== '') demoFile.cushionCents = Math.max(0, parseCents(input.cushion) || 0);
+          return demoOutput('Bank balance set to ' + money(cents) + ' as of ' + asOf + '.');
+        }
+        function demoAdd(input) {
+          var name = String(input.name || '').trim();
+          if (!name) throw new Error("add needs 'name'.");
+          var existing = demoFile.records.filter(function (r) { return r.status === 'expected' && String(r.fields.name).toLowerCase() === name.toLowerCase(); })[0];
+          if (existing) { Object.assign(existing.fields, demoFields(input, false)); return demoOutput('Updated ' + itemLine(existing, demoFile.records) + '.'); }
+          var rec = demoRecord('expected', Object.assign({ name: name }, demoFields(input, true)));
+          return demoOutput('Added ' + itemLine(rec, demoFile.records) + '.');
+        }
+        function demoSettle(input) {
+          var rec = demoOne(input.item || input.name);
+          var f = rec.fields, cents = input.amount !== undefined && input.amount !== null && input.amount !== '' ? toCents(input.amount) : f.amountCents;
+          if (!cents) throw new Error('amount must be positive.');
+          var on = input.date ? normalizeDate(input.date) : localDay(Date.now());
+          var asOf = demoFile.balance ? demoFile.balance.asOf : null, after;
+          if (f.recurs && f.recurs !== 'none') {
+            var from = asOf || localDay(Date.now()), k = 0, day = occurrence(f.date, f.recurs, 0, f.dom);
+            while (day && day < from && k < 1000) day = occurrence(f.date, f.recurs, ++k, f.dom);
+            var next = occurrence(f.date, f.recurs, k + 1, f.dom);
+            if (f.until && next > f.until) { rec.status = 'done'; after = '; that was the last one'; } else { f.date = next; after = '; the next one is due ' + next; }
+          } else { rec.status = 'done'; f.settledOn = on; f.settledCents = cents; after = '; it leaves the forecast'; }
+          var moved = '';
+          if (asOf && on >= asOf) {
+            demoFile.balance.amountCents += f.direction === 'in' ? cents : -cents;
+            moved = ' Cash in the bank is now ' + money(demoFile.balance.amountCents) + '.';
+          }
+          return demoOutput(f.name + (f.direction === 'in' ? ' came in: ' : ' was paid: ') + money(cents) + ' on ' + on + after + '.' + moved);
+        }
+        function demoRemove(input) {
+          var rec = demoOne(input.item || input.name);
+          rec.status = 'removed';
+          return demoOutput('Took ' + rec.fields.name + ' (' + rec.id + ') out of the plan.');
+        }
+        function demoWhatIf(input) {
+          var raw = String(input.scenario || '').trim();
+          if (!raw) throw new Error("what_if needs 'scenario'.");
+          var scenario = scenarioNames(demoFile.records).filter(function (n) { return n.toLowerCase() === raw.toLowerCase(); })[0] || raw;
+          var change = String(input.change || '').toLowerCase(), note;
+          if (change === 'delay' || change === 'drop') {
+            var targets = demoMatches(input.item || input.name);
+            if (!targets.length) throw new Error("A what-if " + change + " needs 'item'.");
+            var weeks = Math.round(Number(input.weeks));
+            if (change === 'delay' && (!isFinite(weeks) || weeks === 0)) throw new Error("A delay needs 'weeks'.");
+            targets.forEach(function (t) {
+              var existing = demoFile.records.filter(function (r) { return r.status === 'whatif' && r.fields.scenario === scenario && r.fields.change === change && r.fields.itemId === t.id; })[0];
+              if (existing) existing.fields.weeks = weeks;
+              else demoRecord('whatif', Object.assign({ scenario: scenario, change: change, itemId: t.id }, change === 'delay' ? { weeks: weeks } : {}));
+            });
+            note = 'What-if ' + scenario + ': ' + change + ' ' + targets.map(function (t) { return t.fields.name + ' (' + t.id + ')'; }).join(' and ') + (change === 'delay' ? ' by ' + weeks + (weeks === 1 ? ' week' : ' weeks') : '') + '. The plan itself is unchanged.';
+          } else if (change === 'add') {
+            var name = String(input.name || '').trim();
+            if (!name) throw new Error("A what-if add needs 'name'.");
+            var found = demoFile.records.filter(function (r) { return r.status === 'whatif' && r.fields.scenario === scenario && r.fields.change === 'add' && String(r.fields.name).toLowerCase() === name.toLowerCase(); })[0];
+            if (found) Object.assign(found.fields, demoFields(input, false));
+            else demoRecord('whatif', Object.assign({ scenario: scenario, change: 'add', name: name }, demoFields(input, true)));
+            note = 'What-if ' + scenario + ': add ' + name + '. The plan itself is unchanged.';
+          } else if (change === 'clear') {
+            var mine = demoFile.records.filter(function (r) { return r.status === 'whatif' && r.fields.scenario === scenario; });
+            if (!mine.length) throw new Error("No what-if is named '" + raw + "'.");
+            mine.forEach(function (r) { r.status = 'removed'; });
+            return demoOutput('Cleared the what-if ' + scenario + '.');
+          } else throw new Error("what_if needs 'change': delay, drop, add, or clear.");
+          return demoOutput(note, scenario);
+        }
+        function demoList() {
+          return demoOutput('', null, demoFile.records.filter(function (r) { return r.status === 'expected' || r.status === 'whatif'; }).map(function (r) { return itemLine(r, demoFile.records); }).join('\n'));
+        }
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'forecast/index.html', typeName: 'Cash Flow Planner', params: { business: 'Brightline Electric', currency: 'USD' } },
+          tools: {
+            page_set_balance: demoBalance,
+            set_balance: demoBalance,
+            page_add_cash_item: demoAdd,
+            add_cash_item: demoAdd,
+            page_settle_cash_item: demoSettle,
+            settle_cash_item: demoSettle,
+            remove_cash_item: demoRemove,
+            page_what_if: demoWhatIf,
+            what_if: demoWhatIf,
+            cash_forecast: function (input) { return demoOutput('', input && input.scenario); },
+            list_cash_items: demoList,
+          },
+          data: { 'cashflow.json': function () { return demoFile; } },
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+        function applyTheme(mode) { document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light'); }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        var SVG = 'http://www.w3.org/2000/svg';
+        function el(tag, text, cls) { var e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
+        function svg(tag, attrs) { var e = document.createElementNS(SVG, tag); Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, attrs[k]); }); return e; }
+        function niceDate(day) { var d = new Date(String(day).slice(0, 10) + 'T12:00:00'); return isFinite(d) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : String(day); }
+        var currency = 'USD';
+        function cash(cents) {
+          try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: currency }).format(cents / 100); } catch (_) { return money(cents); }
+        }
+        function compact(cents) {
+          var v = cents / 100, a = Math.abs(v);
+          return (v < 0 ? '-' : '') + (a >= 1000000 ? Math.round(a / 100000) / 10 + 'M' : a >= 1000 ? Math.round(a / 100) / 10 + 'K' : String(Math.round(a)));
+        }
+        var WAY = { 'in': 'In', out: 'Out' };
+
+        var current = { file: null, selected: null };
+        function weekStatus(f, w) { return w.closeCents < 0 ? 'crit' : w.closeCents < f.cushionCents ? 'warn' : ''; }
+
+        function renderChart(f) {
+          var holder = document.getElementById('chart');
+          holder.replaceChildren();
+          var width = Math.max(260, holder.clientWidth || 600), height = 230;
+          var left = 46, right = 10, top = 22, bottom = 28, plotW = width - left - right, plotH = height - top - bottom;
+          var values = f.weeks.map(function (w) { return w.closeCents; }).concat([f.cushionCents, 0]);
+          var max = Math.max.apply(null, values), min = Math.min.apply(null, values);
+          var step = Math.pow(10, Math.floor(Math.log10(Math.max(1, (max - min) / 4)))), unit = [1, 2, 2.5, 5, 10].map(function (m) { return m * step; }).filter(function (s) { return (max - min) / s <= 5; })[0] || step * 10;
+          var lo = Math.floor(min / unit) * unit, hi = Math.ceil(max / unit) * unit;
+          if (hi === lo) hi = lo + unit;
+          var y = function (v) { return top + ((hi - v) / (hi - lo)) * plotH; };
+          var band = plotW / f.weeks.length, barW = Math.min(24, Math.max(6, band * 0.62));
+          var root = svg('svg', { width: String(width), height: String(height), viewBox: '0 0 ' + width + ' ' + height, role: 'img', 'aria-label': 'Week-end cash balance for 13 weeks' });
+          for (var t = lo; t <= hi + 1; t += unit) {
+            root.append(svg('line', { x1: String(left), x2: String(width - right), y1: String(y(t)), y2: String(y(t)), stroke: t === 0 ? 'var(--muted)' : 'var(--grid)', 'stroke-width': '1' }));
+            var tick = svg('text', { x: String(left - 6), y: String(y(t) + 4), 'text-anchor': 'end' });
+            tick.textContent = compact(t);
+            root.append(tick);
+          }
+          if (f.cushionCents > 0) {
+            root.append(svg('line', { x1: String(left), x2: String(width - right), y1: String(y(f.cushionCents)), y2: String(y(f.cushionCents)), stroke: 'var(--muted)', 'stroke-width': '1.5', 'stroke-dasharray': '5 4' }));
+          }
+          document.getElementById('key-cushion').textContent = f.cushionCents > 0 ? 'Cushion, ' + cash(f.cushionCents) : 'No cushion set';
+          var every = band < 26 ? 3 : band < 44 ? 2 : 1;
+          var tip = el('div', undefined, 'tip');
+          tip.hidden = true;
+          f.weeks.forEach(function (w, i) {
+            var cx = left + band * i + band / 2, base = y(0), end = y(w.closeCents), status = weekStatus(f, w);
+            var fill = status === 'crit' ? 'var(--bar-crit)' : status === 'warn' ? 'var(--bar-warn)' : 'var(--bar)';
+            var x0 = cx - barW / 2, x1 = cx + barW / 2, r = Math.min(4, Math.abs(base - end), barW / 2), d;
+            if (end <= base) d = 'M' + x0 + ',' + base + 'V' + (end + r) + 'Q' + x0 + ',' + end + ' ' + (x0 + r) + ',' + end + 'H' + (x1 - r) + 'Q' + x1 + ',' + end + ' ' + x1 + ',' + (end + r) + 'V' + base + 'Z';
+            else d = 'M' + x0 + ',' + base + 'V' + (end - r) + 'Q' + x0 + ',' + end + ' ' + (x0 + r) + ',' + end + 'H' + (x1 - r) + 'Q' + x1 + ',' + end + ' ' + x1 + ',' + (end - r) + 'V' + base + 'Z';
+            var label = 'Week of ' + weekLabel(w.start) + ': ends at ' + cash(w.closeCents) + ', in ' + cash(w.inCents) + ', out ' + cash(w.outCents) + (status === 'crit' ? ', below zero' : status === 'warn' ? ', below the cushion' : '');
+            var hit = svg('rect', { x: String(left + band * i), y: String(top), width: String(band), height: String(plotH), class: 'hit', tabindex: '0', 'aria-label': label });
+            var col = svg('path', { d: d, fill: fill, class: 'col' });
+            root.append(hit, col);
+            if (w === f.lowest) {
+              var value = svg('text', { x: String(cx), y: String(end <= base ? end - 6 : end + 14), 'text-anchor': 'middle', class: 'value' });
+              value.textContent = compact(w.closeCents);
+              root.append(value);
+            }
+            if (i % every === 0) {
+              var xl = svg('text', { x: String(cx), y: String(height - 8), 'text-anchor': 'middle' });
+              xl.textContent = weekLabel(w.start);
+              root.append(xl);
+            }
+            var show = function () {
+              col.classList.add('lift');
+              tip.replaceChildren(el('b', cash(w.closeCents)), el('span', 'Week of ' + weekLabel(w.start)), el('span', 'In ' + cash(w.inCents) + ' · Out ' + cash(w.outCents)));
+              if (status) tip.append(el('span', status === 'crit' ? 'Below zero' : 'Below the cushion'));
+              tip.hidden = false;
+              var tipW = tip.offsetWidth, px = Math.min(Math.max(cx - tipW / 2, 0), width - tipW);
+              tip.style.left = px + 'px';
+              tip.style.top = Math.max(0, Math.min(end, base) - tip.offsetHeight - 8) + 'px';
+            };
+            var hide = function () { col.classList.remove('lift'); tip.hidden = true; };
+            hit.addEventListener('pointerenter', show);
+            hit.addEventListener('pointerleave', hide);
+            hit.addEventListener('focus', show);
+            hit.addEventListener('blur', hide);
+          });
+          holder.append(root, tip);
+        }
+
+        // The forecast's answer in a person's words: the warning week, what goes out then, and the tightest week.
+        function headline(f) {
+          var warn = f.firstNegative || f.firstLow, low = f.lowest;
+          var outs = function (w) {
+            var names = w.items.filter(function (i) { return i.direction === 'out'; }).sort(function (a, b) { return b.amountCents - a.amountCents; }).slice(0, 3).map(function (i) { return i.name; });
+            return names.length ? ', when ' + (names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : names[0]) + ' go out' : '';
+          };
+          if (!warn) return 'Cash stays above the ' + cash(f.cushionCents) + ' cushion for all 13 weeks. The tightest week is ' + weekLabel(low.start) + ', ending at ' + cash(low.closeCents) + outs(low) + '.';
+          return (f.firstNegative ? 'Cash runs out in the week of ' : 'Cash first drops below the ' + cash(f.cushionCents) + ' cushion in the week of ') + weekLabel(warn.start) + ', ending at ' + cash(warn.closeCents) + outs(warn) + '.' +
+            (low === warn ? '' : ' The tightest week is ' + weekLabel(low.start) + ', at ' + cash(low.closeCents) + '.');
+        }
+        function nextDate(rec, today) {
+          var f = rec.fields;
+          if (!f.recurs || f.recurs === 'none') return f.date;
+          var k = 0, day = occurrence(f.date, f.recurs, 0, f.dom);
+          while (day && day < today && k < 1000) day = occurrence(f.date, f.recurs, ++k, f.dom);
+          return day;
+        }
+        function changeText(r, records) {
+          var f = r.fields, target = records.filter(function (x) { return x.id === f.itemId; })[0], name = target ? target.fields.name : 'An item';
+          if (f.change === 'delay') return name + ' comes ' + f.weeks + (Number(f.weeks) === 1 ? ' week' : ' weeks') + ' later';
+          if (f.change === 'drop') return name + ' does not happen';
+          return 'Add ' + f.name + ': ' + (f.direction === 'in' ? 'in ' : 'out ') + cash(f.amountCents) + ' ' + (f.recurs && f.recurs !== 'none' ? RECURS_TEXT[f.recurs] + ' from ' + niceDate(f.date) : 'on ' + niceDate(f.date));
+        }
+
+        function render(file) {
+          current.file = file;
+          currency = (/^[A-Za-z]{3}$/.test(String(file.currency || '')) && String(file.currency).toUpperCase()) || 'USD';
+          var records = Array.isArray(file.records) ? file.records : [];
+          var now = Date.now(), today = localDay(now);
+          var names = scenarioNames(records);
+          if (current.selected && names.indexOf(current.selected) < 0) current.selected = null;
+          var plan = forecast(file, null, now);
+          var view = current.selected ? forecast(file, current.selected, now) : plan;
+          var expected = records.filter(function (r) { return r.status === 'expected'; });
+          var warn = plan.firstNegative || plan.firstLow;
+
+          document.getElementById('t-bank').textContent = plan.hasBalance ? cash(plan.balanceCents) : '–';
+          document.getElementById('t-bank-label').textContent = plan.hasBalance ? 'In the bank, as of ' + niceDate(plan.asOf) : 'No bank balance yet';
+          document.getElementById('t-warn').textContent = warn ? weekLabel(warn.start) : 'None';
+          document.getElementById('t-warn-tile').className = 'tile' + (plan.firstNegative ? ' crit' : warn ? ' warn' : '');
+          document.getElementById('t-warn-label').textContent = plan.firstNegative ? 'Week cash runs out' : warn ? 'First week below the ' + cash(plan.cushionCents) + ' cushion' : 'Weeks below the cushion';
+          document.getElementById('t-low').textContent = cash(plan.lowest.closeCents);
+          document.getElementById('t-low-tile').className = 'tile' + (plan.lowest.closeCents < 0 ? ' crit' : plan.lowest.closeCents < plan.cushionCents ? ' warn' : '');
+          document.getElementById('t-low-label').textContent = 'Tightest week, ' + weekLabel(plan.lowest.start);
+          document.getElementById('t-end').textContent = cash(plan.endCents);
+          document.getElementById('sub').textContent = !plan.hasBalance && !expected.length
+            ? 'Nothing in the plan yet. Tell your bookkeeper what is in the bank and which invoices and bills are coming.'
+            : (warn ? (plan.firstNegative ? 'Cash runs out in the week of ' : 'Cash dips below the cushion in the week of ') + weekLabel(warn.start) + '. ' : 'Cash stays above the cushion for 13 weeks. ') +
+              expected.length + (expected.length === 1 ? ' item' : ' items') + ' in the plan' + (names.length ? ', ' + names.length + (names.length === 1 ? ' what-if' : ' what-ifs') + ' beside it.' : '.');
+
+          var views = document.getElementById('views');
+          views.replaceChildren();
+          [null].concat(names).forEach(function (name) {
+            var b = el('button', name ? 'What if: ' + name : 'The plan');
+            b.type = 'button';
+            b.setAttribute('aria-pressed', String(current.selected === name));
+            b.addEventListener('click', function () { current.selected = name; render(current.file); });
+            views.append(b);
+          });
+          views.hidden = !names.length;
+          document.getElementById('headline').textContent = (current.selected ? 'What if ' + current.selected + ': ' : '') + (!plan.hasBalance && !expected.length ? 'Add a bank balance and what you expect, and the forecast appears here.' : headline(view));
+          renderChart(view);
+
+          var weeksBody = document.getElementById('weeks-body');
+          weeksBody.replaceChildren();
+          view.weeks.forEach(function (w, i) {
+            var tr = el('tr'), status = weekStatus(view, w), flags = el('td');
+            if (status) flags.append(el('span', status === 'crit' ? 'Below zero' : 'Below cushion', 'chip ' + status));
+            var late = w.items.filter(function (it) { return it.late; }).length;
+            if (late) { flags.append(document.createTextNode(' ')); flags.append(el('span', late + ' late, counted here', 'chip')); }
+            tr.append(el('td', weekLabel(w.start) + (i === 0 ? ' (this week)' : '')), el('td', cash(w.inCents), 'num in'), el('td', cash(w.outCents), 'num'), el('td', cash(w.closeCents), 'num' + (w.closeCents < 0 ? ' neg' : '')), flags);
+            weeksBody.append(tr);
+          });
+
+          var planBody = document.getElementById('plan-body');
+          planBody.replaceChildren();
+          if (!expected.length) { var tr0 = el('tr'), td0 = el('td', 'Nothing expected yet.', 'empty'); td0.colSpan = 5; tr0.append(td0); planBody.append(tr0); }
+          expected.map(function (r) { return { r: r, next: nextDate(r, today) }; }).sort(function (a, b) { return String(a.next).localeCompare(String(b.next)); }).forEach(function (row) {
+            var r = row.r, f = r.fields, tr = el('tr'), name = el('td'), when = el('td'), way = el('td');
+            name.append(el('span', f.name));
+            if (f.note) name.append(el('span', f.note, 'meta'));
+            way.append(el('span', WAY[f.direction] || f.direction, 'chip' + (f.direction === 'in' ? ' in' : '')));
+            when.append(document.createTextNode(niceDate(row.next)));
+            if ((!f.recurs || f.recurs === 'none') && row.next < today) { when.append(document.createTextNode(' ')); when.append(el('span', 'Late', 'chip warn')); }
+            tr.append(name, way, el('td', cash(f.amountCents), 'num' + (f.direction === 'in' ? ' in' : '')), when, el('td', RECURS_TEXT[f.recurs || 'none'].replace(/^./, function (c) { return c.toUpperCase(); }) + (f.until ? ' until ' + niceDate(f.until) : '')));
+            planBody.append(tr);
+          });
+
+          var cards = document.getElementById('whatifs');
+          cards.replaceChildren();
+          if (!names.length) cards.append(el('p', 'No what-ifs yet. Ask “what if a client pays a month late?” or “what if we hire?”, and the plan stays as it is.', 'empty'));
+          names.forEach(function (name) {
+            var alt = forecast(file, name, now), card = el('div', undefined, 'card'), list = el('ul');
+            card.append(el('h3', name));
+            records.filter(function (r) { return r.status === 'whatif' && r.fields.scenario === name; }).forEach(function (r) { list.append(el('li', changeText(r, records))); });
+            card.append(list);
+            card.append(el('p', 'Tightest week: ' + weekLabel(alt.lowest.start) + ', ' + cash(alt.lowest.closeCents) + ' (plan: ' + cash(plan.lowest.closeCents) + ')'));
+            var w = alt.firstNegative || alt.firstLow;
+            card.append(el('p', alt.firstNegative ? 'Runs out in the week of ' + weekLabel(w.start) : w ? 'Below the cushion from the week of ' + weekLabel(w.start) : 'Never below the cushion', alt.firstNegative ? 'neg' : ''));
+            card.append(el('p', 'After 13 weeks: ' + cash(alt.endCents) + ' (plan: ' + cash(plan.endCents) + ')'));
+            var show = el('button', current.selected === name ? 'Showing on the chart' : 'Show on the chart');
+            show.type = 'button';
+            show.addEventListener('click', function () { current.selected = name; render(current.file); document.getElementById('forecast-section').scrollIntoView({ block: 'start' }); });
+            card.append(show);
+            cards.append(card);
+          });
+        }
+
+        var resizeTimer = 0;
+        if (window.ResizeObserver) {
+          var observer = new ResizeObserver(function () { clearTimeout(resizeTimer); resizeTimer = setTimeout(function () { if (current.file && !appDisposed) render(current.file); }, 80); });
+          observer.observe(document.getElementById('chart'));
+          appSubscriptions.push(function () { observer.disconnect(); clearTimeout(resizeTimer); });
+        }
+
+        window.addEventListener('gezel-app-data-changed', function () { loadForecast(); });
+        window.loadForecast = loadForecast;
+        function loadForecast() {
+          var revision = ++appLoadRevision;
+          return gezel.data.read('cashflow.json').then(function (file) {
+            if (appDisposed || revision !== appLoadRevision) return;
+            reportAppError(null);
+            render(file || {});
+          }).catch(function (error) { if (!appDisposed && revision === appLoadRevision) reportAppError(error); });
+        }
+        loadForecast();
+        appSubscriptions.push(gezel.data.watch('cashflow.json', function () { loadForecast(); }));
+      })();
+    </script>
+    <script src="application.js" defer></script>
+  </body>
+</html>

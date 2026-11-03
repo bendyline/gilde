@@ -1,0 +1,781 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Customer voice</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f6f2ec; --card: #fffcf7; --ink: #29241f; --muted: #6a6056; --line: #ddd3c5;
+        --accent: #7b4466; --late: #a3341f; --late-bg: #f7e1da; --soon: #8a5a12; --soon-bg: #f6ead2;
+        --ok: #3f6b4a; --ok-bg: #e2eedf; --chip: #efe7db; --bar: #c99ab3; --quote: #f2ece4;
+      }
+      :root[data-theme='dark'] {
+        --bg: #181615; --card: #221f1d; --ink: #efe8de; --muted: #a99e91; --line: #3b352f;
+        --accent: #e0a8c6; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+        --ok: #8fc29b; --ok-bg: #22301f; --chip: #2e2925; --bar: #8d5a76; --quote: #2a2622;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #181615; --card: #221f1d; --ink: #efe8de; --muted: #a99e91; --line: #3b352f;
+          --accent: #e0a8c6; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+          --ok: #8fc29b; --ok-bg: #22301f; --chip: #2e2925; --bar: #8d5a76; --quote: #2a2622;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body, system-ui, sans-serif); font-size: 15px; line-height: 1.5; padding: 1.5rem 1.25rem; }
+      main { max-width: 860px; margin: 0 auto; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.5rem; font-weight: 400; margin: 0 0 0.2rem; }
+      h2 { font-family: var(--font-heading, Georgia, serif); font-size: 1.1rem; font-weight: 400; margin: 0 0 0.6rem; }
+      h3 { font-family: var(--font-heading, Georgia, serif); font-size: 0.98rem; font-weight: 400; margin: 1rem 0 0.4rem; }
+      .sub { color: var(--muted); margin: 0 0 1rem; }
+      .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; margin: 0 0 1.2rem; }
+      .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem 0.9rem; }
+      .tile b { display: block; font-size: 1.5rem; font-weight: 600; line-height: 1.1; }
+      .tile span { color: var(--muted); font-size: 0.85rem; }
+      .tile.late b { color: var(--late); }
+      section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin: 0 0 1rem; }
+      .themes { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.85rem; }
+      .theme-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem; }
+      .theme-head b { font-weight: 600; }
+      .count { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.6rem; margin: 0.3rem 0 0.15rem; }
+      .bar { height: 8px; border-radius: 4px; background: var(--chip); overflow: hidden; }
+      .bar i { display: block; height: 100%; border-radius: 4px; background: var(--bar); }
+      .count span { font-size: 0.85rem; color: var(--muted); white-space: nowrap; }
+      .chip { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 0.02rem 0.4rem; border-radius: 4px; background: var(--chip); color: var(--muted); }
+      .chip.bad { background: var(--late-bg); color: var(--late); }
+      .chip.good { background: var(--ok-bg); color: var(--ok); }
+      .chip.new { background: var(--soon-bg); color: var(--soon); }
+      .said { margin: 0.1rem 0 0; color: var(--muted); font-style: italic; font-size: 0.9rem; overflow-wrap: anywhere; }
+      .meta, small { display: block; color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
+      .owed { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.9rem; }
+      .owed li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.75rem; align-items: start; }
+      .owed b { font-weight: 600; }
+      .words { margin: 0.2rem 0 0; overflow-wrap: anywhere; }
+      .draft { margin: 0.45rem 0 0; padding: 0.55rem 0.7rem; border-left: 3px solid var(--accent); border-radius: 4px; background: var(--quote); }
+      .draft .label { display: block; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent); }
+      .draft p { margin: 0.15rem 0 0; white-space: pre-line; overflow-wrap: anywhere; }
+      .key { min-height: 36px; padding: 0.3rem 0.7rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; font-size: 0.88rem; white-space: nowrap; }
+      .key:hover { border-color: var(--accent); }
+      .key:disabled { opacity: 0.6; cursor: default; }
+      .empty { color: var(--muted); font-style: italic; margin: 0; }
+      .table-wrap, .action-wrap { overflow-x: auto; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+      th { text-align: left; font-weight: 600; color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 0.5rem 0.4rem; border-bottom: 1px solid var(--line); }
+      td { padding: 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+      tr:last-child td { border-bottom: 0; }
+      td.words-cell { min-width: 14rem; overflow-wrap: anywhere; }
+      .status { display: inline-block; font-size: 0.78rem; padding: 0.05rem 0.4rem; border-radius: 4px; background: var(--chip); }
+      .status.doing { background: var(--soon-bg); color: var(--soon); }
+      .status.done { background: var(--ok-bg); color: var(--ok); }
+      .import { margin: 1rem 0 0; padding: 0.8rem 0 0; border-top: 1px solid var(--line); }
+      .import p { margin: 0 0 0.6rem; color: var(--muted); font-size: 0.88rem; }
+      .files { display: grid; gap: 0.5rem; margin: 0 0 0.75rem; }
+      .import-status { font-size: 0.88rem; }
+      .demo-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 0 0 1rem; padding: 0.5rem 0.65rem; border: 1px solid var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--card) 88%, var(--accent)); font-size: 0.85rem; }
+      .demo-banner[hidden] { display: none; }
+      .demo-reset { flex: none; min-height: 36px; padding: 0.3rem 0.7rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; }
+      @media (max-width: 640px) {
+        .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .owed li { grid-template-columns: minmax(0, 1fr); }
+        .owed .key { justify-self: start; }
+      }
+    </style>
+    <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:0 0 12px;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--line,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+    <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script>
+  </head>
+  <body>
+    <main>
+      <p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong>: Harbor Street Café’s sample reviews and survey answers. Changes stay in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Customer voice</h1>
+      <p class="sub" id="sub">Reading what customers say…</p>
+      <div class="tiles">
+        <div class="tile"><b id="t-month">0</b><span>Feedback, last 30 days</span></div>
+        <div class="tile"><b id="t-stars">–</b><span>Average stars, last 30 days</span></div>
+        <div class="tile late"><b id="t-owed">0</b><span>Replies owed</span></div>
+        <div class="tile"><b id="t-actions">0</b><span>Open actions</span></div>
+      </div>
+      <section id="themes-section">
+        <h2>Themes</h2>
+        <ul class="themes" id="themes"></ul>
+        <p class="meta" id="unsorted" hidden></p>
+      </section>
+      <section id="replies-section">
+        <h2>Replies owed</h2>
+        <ul class="owed" id="owed"></ul>
+      </section>
+      <section id="actions-section">
+        <h2>Actions</h2>
+        <div class="action-wrap">
+          <table>
+            <thead><tr><th>Action</th><th>For</th><th>Owner</th><th>Due</th><th>Status</th></tr></thead>
+            <tbody id="action-body"></tbody>
+          </table>
+        </div>
+      </section>
+      <section id="feedback-section">
+        <h2>All feedback</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>From</th><th>Stars</th><th>What they said</th><th>Themes</th></tr></thead>
+            <tbody id="feedback-body"></tbody>
+          </table>
+        </div>
+        <div class="import">
+          <h3>Import reviews from a spreadsheet</h3>
+          <p>Add a CSV exported from Google, Yelp or your survey tool. A header row names the columns: the review or comment, and if you have them, the date, stars, name and source. Rows already here are skipped.</p>
+          <div class="files" id="import-files"></div>
+          <div id="add-csv"></div>
+          <p class="import-status" id="import-status" role="status" hidden></p>
+        </div>
+      </section>
+    </main>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        function iso(ms) { var d = new Date(ms); return d.getFullYear() + '-' + (d.getMonth() < 9 ? '0' : '') + (d.getMonth() + 1) + '-' + (d.getDate() < 10 ? '0' : '') + d.getDate(); }
+        function daysFromNow(n) { return iso(Date.now() + n * 86400000); }
+        function stampFromNow(n) { return new Date(Date.now() + n * 86400000).toISOString(); }
+
+// ── voice-rules-start ──
+// Pure derivations: the feedback log folded into entries (with their themes,
+// replies and edits), theme counts over the last 30 days against the 30
+// before, the replies still owed, the CSV reader for imports, and the picture
+// the crew reads. Kept self-contained between these sentinels so unit tests
+// execute the shipped bytes.
+var DAY_MS = 86400000;
+var SOURCES = ['google', 'yelp', 'tripadvisor', 'survey', 'email', 'social', 'in-person', 'other'];
+var PUBLIC_SOURCES = ['google', 'yelp', 'tripadvisor', 'social'];
+var THEME_KINDS = ['praise', 'problem', 'request'];
+var FEEDBACK_KINDS = ['review', 'survey', 'comment'];
+var ACTION_STAGES = ['todo', 'doing', 'done'];
+
+function pad(n) {
+  return n < 10 ? '0' + n : String(n);
+}
+function localDay(ms) {
+  var d = new Date(ms);
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+}
+function normalizeDate(text) {
+  var raw = String(text || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  if (/^\d{4}-\d{2}-\d{2}[T ]/.test(raw)) return raw.slice(0, 10);
+  var parsed = Date.parse(raw);
+  return raw && isFinite(parsed) ? localDay(parsed) : null;
+}
+function daysAgo(day, nowMs) {
+  var then = Date.parse(String(day || '').slice(0, 10) + 'T00:00:00');
+  var today = Date.parse(localDay(nowMs) + 'T00:00:00');
+  return isFinite(then) ? Math.round((today - then) / DAY_MS) : 0;
+}
+function nameKey(text) {
+  return String(text || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+function textKey(text, author) {
+  return nameKey(author) + '|' + nameKey(text).slice(0, 160);
+}
+function sourceOf(text) {
+  var s = nameKey(text);
+  if (SOURCES.indexOf(s) >= 0) return s;
+  if (/google/.test(s)) return 'google';
+  if (/yelp/.test(s)) return 'yelp';
+  if (/trip ?advisor/.test(s)) return 'tripadvisor';
+  if (/survey|questionnaire|form|typeform|nps|poll/.test(s)) return 'survey';
+  if (/e-?mail|inbox/.test(s)) return 'email';
+  if (/facebook|instagram|twitter|bluesky|tiktok|social|linkedin|\bx\b/.test(s)) return 'social';
+  if (/in person|in-person|counter|store|shop floor|phone|call/.test(s)) return 'in-person';
+  return 'other';
+}
+function feedbackKind(source) {
+  return source === 'survey' ? 'survey' : PUBLIC_SOURCES.indexOf(source) >= 0 ? 'review' : 'comment';
+}
+// Stars from a number, '4/5', '4 stars' or a row of star characters; null when absent.
+function ratingOf(value, scale) {
+  if (value === undefined || value === null || value === '') return null;
+  var n = typeof value === 'number' ? value : NaN;
+  if (typeof value === 'string') {
+    var starCount = (value.match(/★/g) || []).length;
+    n = starCount ? starCount : parseFloat(value.replace(',', '.'));
+  }
+  if (!isFinite(n)) return null;
+  if (scale === 10) n = n / 2;
+  return Math.min(5, Math.max(1, Math.round(n)));
+}
+function needsReply(source, rating, explicit) {
+  if (explicit === true || explicit === false) return explicit;
+  return PUBLIC_SOURCES.indexOf(source) >= 0 && typeof rating === 'number' && rating <= 3;
+}
+function guessKind(items) {
+  var rated = items.filter(function (e) { return typeof e.rating === 'number'; });
+  var avg = rated.length ? rated.reduce(function (s, e) { return s + e.rating; }, 0) / rated.length : null;
+  var asks = items.some(function (e) { return /\b(wish|please|would love|could you|should|add|bring back|more)\b/i.test(e.text || ''); });
+  if (avg !== null && avg >= 4 && !asks) return 'praise';
+  if (asks && (avg === null || avg >= 3)) return 'request';
+  return avg !== null && avg >= 4 ? 'praise' : 'problem';
+}
+// The log, folded: each feedback event becomes an entry; later events tag it, edit it, reply to it.
+function entries(events) {
+  var list = [], byId = {};
+  (events || []).forEach(function (e) {
+    var d = e.data || {};
+    if (FEEDBACK_KINDS.indexOf(e.kind) >= 0 && d.id && !byId[d.id]) {
+      var entry = {
+        id: d.id, kind: e.kind, text: e.note || '', source: d.source || 'other',
+        rating: typeof d.rating === 'number' ? d.rating : null, author: d.author || '',
+        day: d.day || String(e.at || '').slice(0, 10), themes: Array.isArray(d.themes) ? d.themes.slice() : [],
+        replyNeeded: !!d.replyNeeded, reply: '', posted: false,
+      };
+      list.push(entry);
+      byId[d.id] = entry;
+      return;
+    }
+    var target = byId[d.feedbackId];
+    if (!target) return;
+    if (e.kind === 'tagged') target.themes = Array.isArray(d.themes) ? d.themes.slice() : [];
+    else if (e.kind === 'edited') {
+      if (typeof d.rating === 'number') target.rating = d.rating;
+      if (d.source) target.source = d.source;
+      if (typeof d.replyNeeded === 'boolean') target.replyNeeded = d.replyNeeded;
+      if (Array.isArray(d.themes)) target.themes = d.themes.slice();
+    } else if (e.kind === 'reply') {
+      if (e.note) target.reply = e.note;
+      if (d.posted) target.posted = true;
+    } else if (e.kind === 'replied') target.posted = true;
+  });
+  return list;
+}
+function nextFeedbackNumber(events) {
+  var max = 0;
+  (events || []).forEach(function (e) {
+    var m = /^fb-(\d+)$/.exec(String((e.data && e.data.id) || ''));
+    if (m) max = Math.max(max, Number(m[1]));
+  });
+  return max + 1;
+}
+function themeStats(themes, list, nowMs) {
+  return themes
+    .filter(function (t) { return t.status !== 'retired'; })
+    .map(function (t) {
+      var hits = list.filter(function (e) { return e.themes.indexOf(t.id) >= 0; });
+      var recent = hits.filter(function (e) { var d = daysAgo(e.day, nowMs); return d >= 0 && d < 30; }).length;
+      var before = hits.filter(function (e) { var d = daysAgo(e.day, nowMs); return d >= 30 && d < 60; }).length;
+      var trend = !recent && !before ? 'quiet' : !before ? 'new this month' : recent > before ? 'rising' : recent < before ? 'falling' : 'steady';
+      var latest = hits.slice().sort(function (a, b) { return String(b.day).localeCompare(String(a.day)); })[0] || null;
+      return { id: t.id, name: String(t.fields.name), kind: t.fields.kind || 'problem', total: hits.length, recent: recent, before: before, trend: trend, latest: latest };
+    })
+    .sort(function (a, b) { return b.recent - a.recent || b.total - a.total || a.name.localeCompare(b.name); });
+}
+function repliesOwed(list) {
+  return list
+    .filter(function (e) { return e.replyNeeded && !e.posted; })
+    .sort(function (a, b) { return String(a.day).localeCompare(String(b.day)) || a.id.localeCompare(b.id, undefined, { numeric: true }); });
+}
+function quote(text, length) {
+  var t = String(text || '').replace(/\s+/g, ' ').trim();
+  return t.length > length ? t.slice(0, length - 1).trim() + '…' : t;
+}
+function feedbackLine(e, names) {
+  var themeNames = e.themes.map(function (id) { return names[id] || id; });
+  return (
+    e.id + ' ' + e.source + (e.rating ? ' ' + e.rating + '/5' : '') + (e.author ? ' by ' + e.author : '') + ', ' + e.day + ': "' + quote(e.text, 110) + '"' +
+    (themeNames.length ? ' [' + themeNames.join(', ') + ']' : ' [not sorted]') +
+    (e.replyNeeded && !e.posted ? (e.reply ? ', reply drafted, not posted yet' : ', needs a reply') : e.posted ? ', replied' : '')
+  );
+}
+function capped(items, max, render) {
+  var shown = items.slice(0, max).map(render).join(' | ');
+  return items.length > max ? shown + ' | and ' + (items.length - max) + ' more' : shown;
+}
+function picture(themes, list, actions, nowMs) {
+  var names = {};
+  themes.forEach(function (t) { names[t.id] = String(t.fields.name); });
+  var stats = themeStats(themes, list, nowMs);
+  var month = list.filter(function (e) { var d = daysAgo(e.day, nowMs); return d >= 0 && d < 30; });
+  var rated = month.filter(function (e) { return typeof e.rating === 'number'; });
+  var avg = rated.length ? Math.round((rated.reduce(function (s, e) { return s + e.rating; }, 0) / rated.length) * 10) / 10 : null;
+  var unsorted = list.filter(function (e) { return !e.themes.length; });
+  var owed = repliesOwed(list);
+  var open = actions.filter(function (a) { return a.status !== 'done'; });
+  var parts = [
+    list.length + (list.length === 1 ? ' piece of feedback' : ' pieces of feedback') + ' logged, ' + month.length + ' in the last 30 days' +
+      (avg !== null ? ', averaging ' + avg + ' of 5 stars' : '') + '.',
+  ];
+  parts.push(
+    stats.length
+      ? 'Themes, most mentioned in the last 30 days first: ' +
+          stats.map(function (s) {
+            return s.name + ' (' + s.id + ', ' + s.kind + '): ' + s.recent + ' in the last 30 days, ' + s.before + ' in the 30 before, ' + s.trend +
+              (s.latest ? '; latest: "' + quote(s.latest.text, 80) + '"' : '');
+          }).join(' | ') + '.'
+      : 'No themes yet.',
+  );
+  parts.push(unsorted.length ? 'Not sorted into a theme yet: ' + capped(unsorted, 12, function (e) { return feedbackLine(e, names); }) + '.' : 'Everything is sorted into themes.');
+  parts.push(owed.length ? 'Needs a reply, oldest first: ' + capped(owed, 10, function (e) { return feedbackLine(e, names); }) + '.' : 'No replies owed.');
+  parts.push(
+    open.length
+      ? 'Open actions: ' +
+          open.map(function (a) {
+            var f = a.fields || {};
+            return f.title + ' (' + a.id + ', ' + a.status + (f.theme && names[f.theme] ? ', for ' + names[f.theme] : '') + (f.owner ? ', owner ' + f.owner : '') + (f.dueAt ? ', due ' + f.dueAt : '') + ')';
+          }).join(' | ') + '.'
+      : 'No open actions.',
+  );
+  return { themes: stats.length, repliesNeeded: owed.length, unsorted: unsorted.length, openActions: open.length, summary: parts.join(' ') };
+}
+// ── CSV import: a header row names the columns; anything unrecognized is ignored. ──
+function parseCsv(text) {
+  var src = String(text || '').replace(/^﻿/, '');
+  var first = src.split(/\r?\n/, 1)[0] || '';
+  var delim = [',', ';', '\t'].map(function (d) { return [d, first.split(d).length]; }).sort(function (a, b) { return b[1] - a[1]; })[0][0];
+  var rows = [], row = [], cell = '', quoted = false;
+  for (var i = 0; i < src.length; i++) {
+    var c = src[i];
+    if (quoted) {
+      if (c === '"') {
+        if (src[i + 1] === '"') { cell += '"'; i++; } else quoted = false;
+      } else cell += c;
+    } else if (c === '"' && cell === '') quoted = true;
+    else if (c === delim) { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && src[i + 1] === '\n') i++;
+      row.push(cell); rows.push(row); row = []; cell = '';
+    } else cell += c;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter(function (r) { return r.some(function (v) { return String(v).trim() !== ''; }); });
+}
+function columnOf(header) {
+  var h = nameKey(header);
+  if (/(date|created|submitted|posted|timestamp|time|when)/.test(h)) return 'day';
+  if (/(rating|stars?|score|nps)/.test(h)) return 'rating';
+  if (/(author|reviewer|name|respondent)/.test(h)) return 'author';
+  if (/(source|platform|site|channel)/.test(h)) return 'source';
+  if (/(review|text|comment|feedback|body|message|answer|response|content|said|why)/.test(h)) return 'text';
+  if (/(customer|user|who)/.test(h)) return 'author';
+  return null;
+}
+function csvFeedback(text, defaultSource) {
+  var rows = parseCsv(text);
+  if (!rows.length) return { items: [], blank: 0, columns: {} };
+  var at = {};
+  rows[0].forEach(function (h, i) { var col = columnOf(h); if (col && at[col] === undefined) at[col] = i; });
+  var hasHeader = Object.keys(at).length > 0;
+  var body = hasHeader ? rows.slice(1) : rows;
+  if (at.text === undefined) {
+    // No column says it holds the words: take the one with the longest cells.
+    var widths = (rows[0] || []).map(function (_, i) {
+      if (Object.keys(at).some(function (k) { return at[k] === i; })) return -1;
+      return body.reduce(function (s, r) { return s + String(r[i] || '').length; }, 0);
+    });
+    var widest = widths.indexOf(Math.max.apply(null, widths.concat([-1])));
+    if (widest >= 0) at.text = widest;
+  }
+  var scale = at.rating !== undefined && body.some(function (r) { var v = parseFloat(r[at.rating]); return isFinite(v) && v > 5; }) ? 10 : 5;
+  var items = [], blank = 0;
+  body.forEach(function (r) {
+    var words = at.text === undefined ? '' : String(r[at.text] || '').trim();
+    if (!words) { blank += 1; return; }
+    items.push({
+      text: words,
+      rating: at.rating === undefined ? null : ratingOf(String(r[at.rating] || '').trim(), scale),
+      day: at.day === undefined ? null : normalizeDate(r[at.day]),
+      author: at.author === undefined ? '' : String(r[at.author] || '').trim(),
+      source: at.source !== undefined && String(r[at.source] || '').trim() ? sourceOf(r[at.source]) : defaultSource,
+    });
+  });
+  return { items: items, blank: blank, columns: at };
+}
+// ── voice-rules-end ──
+
+        // ── demo feedback (used only when the page opens outside Gezel); dates are relative so it never goes stale ──
+        var demoThemes = { version: 1, stages: ['active', 'retired'], records: [
+          { id: 'th-1', status: 'active', fields: { name: 'Slow weekend service', kind: 'problem' } },
+          { id: 'th-2', status: 'active', fields: { name: 'Friendly staff', kind: 'praise' } },
+          { id: 'th-3', status: 'active', fields: { name: 'Pastries sell out early', kind: 'problem' } },
+          { id: 'th-4', status: 'active', fields: { name: 'Oat milk charge', kind: 'problem' } },
+          { id: 'th-5', status: 'active', fields: { name: 'Seating and outlets', kind: 'request' } },
+        ] };
+        function sample(n, days, source, rating, author, text, themes, extra) {
+          var data = Object.assign({ id: 'fb-' + n, source: source, day: daysFromNow(-days), themes: themes, replyNeeded: needsReply(source, rating, undefined) }, rating ? { rating: rating } : {}, author ? { author: author } : {}, extra || {});
+          return { at: stampFromNow(-days), kind: feedbackKind(source), note: text, data: data };
+        }
+        var demoFeedback = { version: 1, events: [
+          sample(1, 52, 'google', 5, 'Grace P.', 'Dana remembered my order on my second visit. Lovely team.', ['th-2']),
+          sample(2, 47, 'survey', 3, '', 'Waited 20 minutes for a latte on Saturday morning.', ['th-1']),
+          sample(3, 40, 'yelp', 4, 'Marcus T.', 'Great croissants, but they were gone by 11.', ['th-3']),
+          sample(4, 35, 'survey', 4, '', 'Please add more outlets by the window seats.', ['th-5']),
+          sample(5, 33, 'google', 5, 'Iris W.', 'Best flat white in the neighborhood, and the team is so kind.', ['th-2']),
+          sample(6, 26, 'google', 2, 'Ben K.', 'Saturday line was out the door and only one barista on the bar.', ['th-1']),
+          { at: stampFromNow(-25), kind: 'reply', note: 'Ben, thank you for telling us. You were right about the bar on Saturdays; we are adding a second barista on weekend mornings. We hope to see you back.\n\nThe Harbor Street Café team', data: { feedbackId: 'fb-6', posted: true } },
+          sample(7, 21, 'survey', 3, '', 'Why is oat milk 80 cents extra?', ['th-4']),
+          sample(8, 17, 'yelp', 2, 'Carla M.', 'Forty minutes for two breakfast sandwiches on Sunday. Food was good once it came.', ['th-1']),
+          sample(9, 14, 'in-person', 5, '', 'The staff remembered my dog’s name. Small thing, made my week.', ['th-2']),
+          sample(10, 12, 'survey', 4, '', 'Almond croissants sold out before noon again.', ['th-3']),
+          sample(11, 9, 'google', 5, 'Tom H.', 'Luis made my day, so friendly.', ['th-2']),
+          sample(12, 6, 'google', 3, 'Nadia R.', 'Charging extra for oat milk feels steep for a five-dollar latte.', ['th-4']),
+          { at: stampFromNow(-5), kind: 'reply', note: 'Nadia, thank you for the honest note. Oat milk costs us more than dairy, which is where the charge comes from, but we hear you and are looking at it.\n\nThe Harbor Street Café team', data: { feedbackId: 'fb-12', posted: false } },
+          sample(13, 4, 'survey', 2, '', 'Weekend wait is too long; I left without ordering.', ['th-1']),
+          sample(14, 2, 'google', 1, 'Sam D.', 'Waited 25 minutes on Saturday and my cappuccino was cold.', [], { imported: 'imports/google-reviews.csv' }),
+          sample(15, 1, 'survey', 5, '', 'The new window seats are perfect for reading.', [], { imported: 'imports/survey-november.csv' }),
+        ] };
+        var demoActions = { version: 1, stages: ['todo', 'doing', 'done'], records: [
+          { id: 'ac-1', status: 'doing', fields: { title: 'Add a second barista on weekend mornings', theme: 'th-1', owner: 'Dana', dueAt: daysFromNow(5) } },
+          { id: 'ac-2', status: 'todo', fields: { title: 'Bake a second batch of almond croissants at 10', theme: 'th-3', owner: 'Luis' } },
+          { id: 'ac-3', status: 'done', fields: { title: 'Add power strips along the window bar', theme: 'th-5', owner: 'Priya', doneAt: daysFromNow(-20) } },
+        ] };
+        var demoImports = [
+          { path: 'imports/google-reviews.csv', name: 'google-reviews.csv', size: 18450, mtime: Date.now() - 2 * 86400000 },
+          { path: 'imports/survey-november.csv', name: 'survey-november.csv', size: 6120, mtime: Date.now() - 1 * 86400000 },
+        ];
+
+        // The voice-store actions, mirrored for the demo so the sample behaves like the live board.
+        function upperFirst(text) { return text.charAt(0).toUpperCase() + text.slice(1); }
+        function demoView(note) {
+          var view = picture(demoThemes.records, entries(demoFeedback.events), demoActions.records, Date.now());
+          view.summary = (note ? note + ' ' : '') + view.summary;
+          return view;
+        }
+        function push(kind, note, data) { demoFeedback.events.push({ at: new Date().toISOString(), kind: kind, note: note, data: data }); }
+        function ensureThemes(text, kind) {
+          var all = demoThemes.records, ids = [], created = [];
+          String(text).split(/[,;\n]+/).forEach(function (raw) {
+            var name = raw.trim().replace(/^["']|["']$/g, '');
+            if (!name) return;
+            var theme = all.find(function (t) { return t.id === name.toLowerCase() || nameKey(t.fields.name) === nameKey(name); });
+            if (!theme) {
+              var near = all.filter(function (t) { return t.status !== 'retired' && (nameKey(t.fields.name).indexOf(nameKey(name)) >= 0 || nameKey(name).indexOf(nameKey(t.fields.name)) >= 0); });
+              if (near.length === 1) theme = near[0];
+            }
+            if (!theme) {
+              var n = all.reduce(function (m, t) { return Math.max(m, Number(t.id.split('-')[1]) || 0); }, 0) + 1;
+              theme = { id: 'th-' + n, status: 'active', fields: { name: upperFirst(name), kind: kind } };
+              all.push(theme);
+              created.push(theme.fields.name);
+            }
+            if (ids.indexOf(theme.id) < 0) ids.push(theme.id);
+          });
+          return { ids: ids, created: created };
+        }
+        function themeNames(ids) { return ids.map(function (id) { var t = demoThemes.records.find(function (x) { return x.id === id; }); return t ? t.fields.name : id; }).join(', '); }
+        function demoIds(input, list) {
+          var ids = String(input.id || '').split(/[\s,;]+/).map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean);
+          if (!ids.length) throw new Error("Pass 'id', e.g. 'fb-12'.");
+          var unknown = ids.filter(function (id) { return !list.some(function (e) { return e.id === id; }); });
+          if (unknown.length) throw new Error('No feedback ' + unknown.join(', ') + '.');
+          return ids;
+        }
+        function demoLog(input) {
+          var text = String(input.text || '').trim();
+          if (!text) throw new Error("log needs 'text' (the customer's words).");
+          var day = input.receivedAt ? normalizeDate(input.receivedAt) : iso(Date.now());
+          if (!day) throw new Error("receivedAt must be a date, e.g. '2026-11-02'.");
+          var source = sourceOf(input.source || 'other'), rating = ratingOf(input.rating !== undefined ? input.rating : input.stars, 5);
+          var list = entries(demoFeedback.events);
+          var existing = list.find(function (e) { return textKey(e.text, e.author) === textKey(text, input.author); });
+          var tagged = input.themes && String(input.themes).trim() ? ensureThemes(input.themes, THEME_KINDS.indexOf(input.kind) >= 0 ? input.kind : guessKind([{ rating: rating, text: text }])) : { ids: [], created: [] };
+          if (existing) {
+            var edit = { feedbackId: existing.id };
+            if (rating !== null) edit.rating = rating;
+            if (input.source) edit.source = source;
+            if (tagged.ids.length) edit.themes = tagged.ids;
+            push('edited', 'Logged again.', edit);
+            return demoView('Already in the log as ' + existing.id + '; updated it.');
+          }
+          var id = 'fb-' + nextFeedbackNumber(demoFeedback.events), owed = needsReply(source, rating, input.replyNeeded);
+          var data = { id: id, source: source, day: day, themes: tagged.ids, replyNeeded: owed };
+          if (rating !== null) data.rating = rating;
+          if (input.author && String(input.author).trim()) data.author = String(input.author).trim();
+          push(feedbackKind(source), text, data);
+          return demoView('Logged ' + id + (tagged.ids.length ? ' under ' + themeNames(tagged.ids) : ', not sorted into a theme yet') + (tagged.created.length ? ' (new theme: ' + tagged.created.join(', ') + ')' : '') + (owed ? '; it needs a reply' : '') + '.');
+        }
+        function demoTag(input) {
+          if (!input.themes || !String(input.themes).trim()) throw new Error("tag needs 'themes' (names, comma-separated).");
+          var list = entries(demoFeedback.events), ids = demoIds(input, list);
+          var tagged = ensureThemes(input.themes, THEME_KINDS.indexOf(input.kind) >= 0 ? input.kind : guessKind(list.filter(function (e) { return ids.indexOf(e.id) >= 0; })));
+          ids.forEach(function (id) { push('tagged', 'Sorted into themes.', { feedbackId: id, themes: tagged.ids }); });
+          return demoView('Sorted ' + ids.join(', ') + ' under ' + themeNames(tagged.ids) + (tagged.created.length ? ' (new theme: ' + tagged.created.join(', ') + ')' : '') + '.');
+        }
+        function demoReply(input) {
+          var id = demoIds(input, entries(demoFeedback.events))[0], text = String(input.reply || '').trim();
+          if (!text && input.posted !== true) throw new Error("reply needs 'reply' (the text to post).");
+          if (text) push('reply', text, { feedbackId: id, posted: input.posted === true });
+          else push('replied', 'Reply posted.', { feedbackId: id });
+          return demoView(input.posted === true ? 'Marked ' + id + ' replied.' : 'Saved a reply to ' + id + '; it is not posted yet.');
+        }
+        function demoReplied(input) {
+          var id = demoIds(input, entries(demoFeedback.events))[0];
+          push('replied', input.note || 'Reply posted.', { feedbackId: id });
+          return demoView('Marked ' + id + ' replied.');
+        }
+        function demoAction(input) {
+          var title = String(input.title || '').trim();
+          if (!title) throw new Error("add_action needs 'title'.");
+          var dueAt = input.dueAt ? normalizeDate(input.dueAt) : null;
+          if (input.dueAt && !dueAt) throw new Error("dueAt must be a date, e.g. '2026-12-01'.");
+          var fields = {};
+          if (input.theme && String(input.theme).trim()) fields.theme = ensureThemes(input.theme, 'problem').ids[0];
+          if (input.owner && String(input.owner).trim()) fields.owner = String(input.owner).trim();
+          if (dueAt) fields.dueAt = dueAt;
+          var existing = demoActions.records.find(function (a) { return nameKey(a.fields.title) === nameKey(title); });
+          if (existing) { Object.assign(existing.fields, fields); return demoView('Updated the action ' + existing.fields.title + '.'); }
+          var id = 'ac-' + (demoActions.records.reduce(function (m, a) { return Math.max(m, Number(a.id.split('-')[1]) || 0); }, 0) + 1);
+          demoActions.records.push({ id: id, status: 'todo', fields: Object.assign({ title: title }, fields) });
+          return demoView('Added ' + id + ': ' + title + '.');
+        }
+        function demoSetAction(input) {
+          var status = String(input.status || '').trim().toLowerCase();
+          if (ACTION_STAGES.indexOf(status) < 0) throw new Error("set_action needs status 'todo', 'doing' or 'done'.");
+          var all = demoActions.records, wanted = nameKey(input.title || input.id || '');
+          var a = all.find(function (x) { return x.id === String(input.id || '').trim().toLowerCase(); }) ||
+            all.find(function (x) { return nameKey(x.fields.title) === wanted; }) ||
+            (function () { var hits = all.filter(function (x) { return wanted && nameKey(x.fields.title).indexOf(wanted) >= 0; }); return hits.length === 1 ? hits[0] : null; })();
+          if (!a) throw new Error("Pass 'id' (e.g. 'ac-2') or the action's 'title'.");
+          a.status = status;
+          if (status === 'done') a.fields.doneAt = iso(Date.now());
+          return demoView(a.fields.title + ' (' + a.id + ') is ' + (status === 'todo' ? 'to do' : status === 'doing' ? 'under way' : 'done') + '.');
+        }
+        // Files added in the demo stay in this tab: their text is read here, by name, for the demo import.
+        var demoUploads = {};
+        function readText(file) {
+          return new Promise(function (resolve, reject) {
+            var reader = new FileReader();
+            reader.onload = function () { resolve(String(reader.result)); };
+            reader.onerror = function () { reject(reader.error || new Error('Could not read the file.')); };
+            reader.readAsText(file);
+          });
+        }
+        function demoImport(input) {
+          var file = String(input.file || '').trim();
+          if (!/\.(csv|tsv|txt)$/i.test(file)) return Promise.reject(new Error('import reads a .csv, .tsv or .txt file, e.g. imports/reviews.csv.'));
+          var name = file.split('/').pop(), pending = demoUploads[name] || demoUploads[name.replace(/ \(\d+\)(\.[^.]+)$/, '$1')];
+          if (!pending) return Promise.reject(new Error("Could not read '" + file + "'. In this demo, add the file with the importer first."));
+          return pending.then(function (text) {
+            var parsed = csvFeedback(text, sourceOf(input.source || file));
+            if (parsed.columns.text === undefined) throw new Error('No column of customer comments found in ' + file + '.');
+            var list = entries(demoFeedback.events), seen = {}, repeats = 0, added = 0, next = nextFeedbackNumber(demoFeedback.events);
+            list.forEach(function (e) { seen[textKey(e.text, e.author)] = 1; });
+            parsed.items.slice(0, 2000).forEach(function (item) {
+              var key = textKey(item.text, item.author);
+              if (seen[key]) { repeats++; return; }
+              seen[key] = 1; added++;
+              var data = { id: 'fb-' + next++, source: item.source, day: item.day || iso(Date.now()), themes: [], replyNeeded: needsReply(item.source, item.rating, undefined), imported: file };
+              if (item.rating !== null) data.rating = item.rating;
+              if (item.author) data.author = item.author;
+              push(feedbackKind(item.source), item.text, data);
+            });
+            return demoView('Imported ' + added + (added === 1 ? ' entry' : ' entries') + ' from ' + file + (repeats ? ' (' + repeats + ' already in the log)' : '') + (parsed.blank ? ', skipped ' + parsed.blank + (parsed.blank === 1 ? ' blank row' : ' blank rows') : '') + (added ? '; ' + added + ' new ' + (added === 1 ? 'entry is' : 'entries are') + ' not sorted into themes yet' : '') + '.');
+          });
+        }
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'voice/index.html', typeName: 'Customer Voice', params: { business: 'Harbor Street Café', sources: 'Google, Yelp and a customer survey' } },
+          tools: {
+            page_log_feedback: demoLog,
+            log_feedback: demoLog,
+            tag_feedback: demoTag,
+            save_reply: demoReply,
+            page_mark_replied: demoReplied,
+            page_add_action: demoAction,
+            add_action: demoAction,
+            page_set_action_status: demoSetAction,
+            set_action_status: demoSetAction,
+            page_import_reviews: demoImport,
+            import_reviews: demoImport,
+            voice_status: function () { return demoView(''); },
+            list_feedback: function () { return demoView(''); },
+          },
+          data: {
+            'feedback.json': function () { return demoFeedback; },
+            'themes.json': function () { return demoThemes; },
+            'actions.json': function () { return demoActions; },
+            imports: function () { return demoImports.map(function (f) { return { name: f.name, kind: 'file', size: f.size, mtime: f.mtime }; }); },
+          },
+          existingPaths: demoImports.map(function (f) { return f.path; }),
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+        var components = gezel.ui.components;
+        function applyTheme(mode) { document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light'); }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+        if (demoMode && typeof gezel.data.importFiles === 'function') {
+          var importFiles = gezel.data.importFiles;
+          gezel.data.importFiles = function (files) {
+            Array.from(files || []).forEach(function (f) { if (f && typeof f.name === 'string') demoUploads[f.name] = readText(f); });
+            return importFiles.apply(this, arguments);
+          };
+        }
+
+        function el(tag, text, cls) { var e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
+        function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+        function niceDate(day) { var d = new Date(String(day).slice(0, 10) + 'T12:00:00'); return isFinite(d) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : String(day); }
+        function stars(rating) { return rating ? rating + ' of 5' : '–'; }
+        var SOURCE_LABEL = { google: 'Google', yelp: 'Yelp', tripadvisor: 'Tripadvisor', survey: 'Survey', email: 'Email', social: 'Social', 'in-person': 'In person', other: 'Other' };
+        function trendClass(s) {
+          if (s.trend === 'rising' || s.trend === 'new this month') return s.kind === 'praise' ? 'good' : s.kind === 'request' ? 'new' : 'bad';
+          if (s.trend === 'falling') return s.kind === 'praise' ? 'new' : 'good';
+          return '';
+        }
+
+        function render(themesDoc, log, actionsDoc) {
+          var themeRecords = (Array.isArray(themesDoc.records) ? themesDoc.records : []).filter(function (t) { return t && t.fields; });
+          var actionRecords = (Array.isArray(actionsDoc.records) ? actionsDoc.records : []).filter(function (a) { return a && a.fields; });
+          var list = entries(Array.isArray(log.events) ? log.events : []);
+          var now = Date.now(), names = {};
+          themeRecords.forEach(function (t) { names[t.id] = t.fields.name; });
+          var stats = themeStats(themeRecords, list, now);
+          var month = list.filter(function (e) { var d = daysAgo(e.day, now); return d >= 0 && d < 30; });
+          var rated = month.filter(function (e) { return typeof e.rating === 'number'; });
+          var owed = repliesOwed(list), unsorted = list.filter(function (e) { return !e.themes.length; });
+          var open = actionRecords.filter(function (a) { return a.status !== 'done'; });
+
+          document.getElementById('t-month').textContent = month.length;
+          document.getElementById('t-stars').textContent = rated.length ? (Math.round((rated.reduce(function (s, e) { return s + e.rating; }, 0) / rated.length) * 10) / 10).toFixed(1) : '–';
+          document.getElementById('t-owed').textContent = owed.length;
+          document.getElementById('t-actions').textContent = open.length;
+          var top = stats.filter(function (s) { return s.recent; })[0];
+          document.getElementById('sub').textContent = !list.length
+            ? 'Nothing logged yet. Paste a review to your researcher, or import a CSV below.'
+            : (top ? top.name + ' is the most mentioned theme this month (' + plural(top.recent, 'time', 'times') + ', ' + top.trend + '). ' : '') +
+              (owed.length ? plural(owed.length, 'review still needs', 'reviews still need') + ' a reply.' : 'Every review that needs a reply has one.');
+
+          var themeList = document.getElementById('themes');
+          themeList.replaceChildren();
+          if (!stats.length) themeList.append(el('li', 'No themes yet. Ask your researcher to sort the feedback, and the themes appear here with their counts.', 'empty'));
+          var most = stats.reduce(function (m, s) { return Math.max(m, s.recent, s.before); }, 1);
+          stats.forEach(function (s) {
+            var li = el('li'), head = el('div', undefined, 'theme-head'), count = el('div', undefined, 'count'), bar = el('div', undefined, 'bar'), fill = el('i');
+            head.append(el('b', s.name), el('span', s.kind, 'chip'), el('span', s.trend, 'chip ' + trendClass(s)));
+            fill.style.width = Math.round((s.recent / most) * 100) + '%';
+            bar.append(fill);
+            count.append(bar, el('span', s.recent + ' this month · ' + s.before + ' the month before'));
+            li.append(head, count);
+            if (s.latest) li.append(el('p', '“' + quote(s.latest.text, 140) + '”', 'said'));
+            themeList.append(li);
+          });
+          var unsortedNote = document.getElementById('unsorted');
+          unsortedNote.hidden = !unsorted.length;
+          unsortedNote.textContent = unsorted.length ? plural(unsorted.length, 'piece of feedback is', 'pieces of feedback are') + ' not sorted into a theme yet. Ask your researcher to sort them.' : '';
+
+          var owedList = document.getElementById('owed');
+          owedList.replaceChildren();
+          if (!owed.length) owedList.append(el('li', 'No replies owed. Public reviews of three stars or fewer land here until a reply is posted.', 'empty'));
+          owed.forEach(function (e) {
+            var li = el('li'), body = el('div');
+            body.append(el('b', (e.author ? e.author + ' on ' : '') + (SOURCE_LABEL[e.source] || e.source) + (e.rating ? ', ' + e.rating + ' of 5' : '')));
+            body.append(el('small', niceDate(e.day) + (e.themes.length ? ' · ' + e.themes.map(function (id) { return names[id] || id; }).join(', ') : ' · not sorted')));
+            body.append(el('p', '“' + e.text + '”', 'words'));
+            if (e.reply) {
+              var draft = el('div', undefined, 'draft');
+              draft.append(el('span', 'Reply, not posted yet', 'label'), el('p', e.reply));
+              body.append(draft);
+            }
+            var done = el('button', 'Mark replied', 'key');
+            done.type = 'button';
+            done.setAttribute('aria-label', 'Mark the ' + (SOURCE_LABEL[e.source] || e.source) + ' review' + (e.author ? ' from ' + e.author : '') + ' replied');
+            done.addEventListener('click', function () {
+              done.disabled = true;
+              gezel.tools.invoke('page_mark_replied', { id: e.id }).then(function () { loadVoice(); }, function (error) { done.disabled = false; reportAppError(error); });
+            });
+            li.append(body, done);
+            owedList.append(li);
+          });
+
+          var actionBody = document.getElementById('action-body');
+          actionBody.replaceChildren();
+          if (!actionRecords.length) { var a0 = el('tr'), c0 = el('td', 'No actions yet. When a theme needs fixing, agree an action with your researcher.', 'empty'); c0.colSpan = 5; a0.append(c0); actionBody.append(a0); }
+          var order = { doing: 0, todo: 1, done: 2 };
+          actionRecords.slice().sort(function (a, b) { return (order[a.status] || 0) - (order[b.status] || 0) || String(a.fields.dueAt || '9').localeCompare(String(b.fields.dueAt || '9')); }).forEach(function (a) {
+            var tr = el('tr');
+            tr.append(el('td', a.fields.title), el('td', names[a.fields.theme] || '–'), el('td', a.fields.owner || '–'), el('td', a.status === 'done' ? (a.fields.doneAt ? 'Done ' + niceDate(a.fields.doneAt) : 'Done') : a.fields.dueAt ? niceDate(a.fields.dueAt) : '–'));
+            var st = el('td'); st.append(el('span', a.status === 'todo' ? 'to do' : a.status, 'status ' + a.status)); tr.append(st);
+            actionBody.append(tr);
+          });
+
+          var feedbackBody = document.getElementById('feedback-body');
+          feedbackBody.replaceChildren();
+          if (!list.length) { var f0 = el('tr'), d0 = el('td', 'No feedback logged yet.', 'empty'); d0.colSpan = 5; f0.append(d0); feedbackBody.append(f0); }
+          list.slice().sort(function (a, b) { return String(b.day).localeCompare(String(a.day)) || b.id.localeCompare(a.id, undefined, { numeric: true }); }).slice(0, 200).forEach(function (e) {
+            var tr = el('tr'), from = el('td');
+            from.append(el('span', SOURCE_LABEL[e.source] || e.source));
+            if (e.author) from.append(el('span', e.author, 'meta'));
+            tr.append(el('td', niceDate(e.day)), from, el('td', stars(e.rating)), el('td', e.text, 'words-cell'), el('td', e.themes.length ? e.themes.map(function (id) { return names[id] || id; }).join(', ') : 'not sorted'));
+            feedbackBody.append(tr);
+          });
+        }
+
+        var cards = [];
+        function renderFiles(files) {
+          cards.forEach(function (c) { c.destroy(); }); cards = [];
+          var holder = document.getElementById('import-files');
+          holder.replaceChildren();
+          if (!components || !components.fileCard) return;
+          files.forEach(function (file) {
+            var mount = el('div'); holder.append(mount);
+            cards.push(components.fileCard(mount, { file: Object.assign({ source: 'workspace' }, file), variant: 'row' }));
+          });
+        }
+        function listFiles() {
+          if (demoMode) return Promise.resolve(demoImports.concat(components && components.demo ? components.demo.files() : []));
+          return gezel.data.list('imports').then(function (entries) {
+            return (entries || []).filter(function (e) { return e.kind !== 'dir' && e.kind !== 'directory'; }).map(function (e) { return { path: 'imports/' + e.name, name: e.name, size: e.size, mtime: e.mtime }; });
+          }, function () { return []; });
+        }
+
+        window.addEventListener('gezel-app-data-changed', function () { loadVoice(); });
+        window.loadVoice = loadVoice;
+        function loadVoice() {
+          var revision = ++appLoadRevision;
+          return Promise.all([gezel.data.read('themes.json'), gezel.data.read('feedback.json'), gezel.data.read('actions.json'), listFiles()]).then(function (values) {
+            if (appDisposed || revision !== appLoadRevision) return;
+            reportAppError(null);
+            render(values[0] || {}, values[1] || {}, values[2] || {});
+            renderFiles(values[3]);
+          }).catch(function (error) { if (!appDisposed && revision === appLoadRevision) reportAppError(error); });
+        }
+
+        // An added spreadsheet is read straight away: the page asks the store to import it.
+        function importAdded(files) {
+          var status = document.getElementById('import-status');
+          var sheets = files.filter(function (f) { return /\.(csv|tsv|txt)$/i.test(f.path); });
+          status.hidden = false;
+          status.textContent = sheets.length ? 'Reading ' + sheets.map(function (f) { return f.name; }).join(', ') + '…' : 'Added. Only CSV files are read into the log.';
+          return sheets.reduce(function (chain, f) {
+            return chain.then(function (lines) {
+              return gezel.tools.invoke('page_import_reviews', { file: f.path }).then(function (result) {
+                return lines.concat([String((result && result.output && result.output.summary) || '').split('. ')[0] + '.']);
+              }, function (error) { return lines.concat([f.name + ': ' + (error.message || 'could not be read.')]); });
+            });
+          }, Promise.resolve([])).then(function (lines) {
+            if (lines.length) status.textContent = lines.join(' ');
+            return loadVoice();
+          });
+        }
+        if (components && components.fileAdder) {
+          components.fileAdder('#add-csv', { target: 'reviews', onAdded: importAdded });
+        }
+        loadVoice();
+        appSubscriptions.push(gezel.data.watch('feedback.json', function () { loadVoice(); }));
+        appSubscriptions.push(gezel.data.watch('themes.json', function () { loadVoice(); }));
+        appSubscriptions.push(gezel.data.watch('actions.json', function () { loadVoice(); }));
+      })();
+    </script>
+    <script src="application.js" defer></script>
+  </body>
+</html>

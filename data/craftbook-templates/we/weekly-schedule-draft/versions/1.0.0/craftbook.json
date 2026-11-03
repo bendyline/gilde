@@ -1,0 +1,213 @@
+{
+  "id": "weekly-schedule-draft",
+  "name": "Weekly Schedule Draft",
+  "description": "Draft a week's shift schedule from the roster: every open spot filled from who is available, hours kept inside the limits the business set, the spots nobody can take named plainly, and the whole week left for a person to approve. Use each week before the schedule goes up, or after availability changes.",
+  "entryStepId": "needs",
+  "triggers": [
+    "draft the schedule",
+    "weekly schedule",
+    "draft next week",
+    "make the roster",
+    "schedule draft"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "week": {
+        "type": "string",
+        "title": "Which week?",
+        "description": "Any date in the week to draft (YYYY-MM-DD), or 'next week'.",
+        "default": "next week",
+        "fromMessage": true
+      },
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "needs",
+      "name": "Work out the week",
+      "description": "every shift with its open spots, and everyone with their hours and limits",
+      "prompt": "Work out what {{week}} needs before assigning anyone. Step 1: if roster_status is available, call it with the week's date; either way read staff.json, shifts.json, availability.json and rules.json from the workspace. Step 2: if the week has no shifts and copy_week is available, call it once to start the week from the one before; it keeps only assignments that pass every rule. Step 3: record one row per shift: day, date, time, role, people needed, who is on it, and how many spots are open. Step 4: record one row per person: roles, hours already scheduled that week, their limit (their own, else the business's), and when they are unavailable, without reasons. Write both tables to {{workPath}}/needs.md and call write_task_note with the number of open spots.\n\nThe deliverable `{{workPath}}/needs.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the roster files stay untouched in this step.",
+      "suggestedRole": "Shift Scheduler",
+      "advanceWhen": {
+        "file": "{{workPath}}/needs.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/needs.md",
+            "bytes": 200,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/needs.md",
+            "pattern": "\\|",
+            "label": "the needs are tables",
+            "artifact": true
+          }
+        ],
+        "onReject": "needs",
+        "maxAttempts": 3
+      },
+      "next": "draft",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "draft",
+      "name": "Draft the schedule",
+      "description": "every open spot filled where someone fits every rule, for the person to approve",
+      "prompt": "Fill the open spots in {{workPath}}/needs.md. Step 1: for each open spot, soonest first, pick someone who works that role, is available then, is not on an overlapping shift, and stays inside their hours limit and every rule in rules.json; when several fit, pick whoever has the fewest hours. If assign_shift is available, call it for each pick: it refuses a pick that breaks a rule and names who is free instead. Step 2: write {{workPath}}/schedule.md: a section per day with each shift's time, role and names; a '## Hours' table with each person's total against their limit; a '## Still open' section naming every spot nobody can take and why (write 'None' when every spot is covered); and a closing line that this is a proposal for the person to approve on the roster page. Apply only the rules the business stated; never add labor rules of your own.\n\nThe deliverable `{{workPath}}/schedule.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; assignments reach the roster only through assign_shift.\n\nIf the task notes hold a review of an earlier pass, fix exactly the gaps it names and keep everything that already passed.",
+      "suggestedRole": "Shift Scheduler",
+      "advanceWhen": {
+        "file": "{{workPath}}/schedule.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/schedule.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/schedule.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/schedule.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+Hours",
+            "flags": "i",
+            "label": "an Hours section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/schedule.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+Still open",
+            "flags": "i",
+            "label": "a Still open section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/schedule.md",
+            "pattern": "approv",
+            "flags": "i",
+            "label": "left for the person to approve",
+            "artifact": true
+          }
+        ],
+        "onReject": "draft",
+        "maxAttempts": 4
+      },
+      "next": "finish",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "Stamp a short summary and report DONE.",
+      "prompt": "The schedule is drafted. Write a one-paragraph DONE summary to task notes via `write_task_note`: the schedule path, how many spots were filled and how many are still open, and that the week waits for the person to approve it. Then report DONE.",
+      "suggestedRole": "Shift Scheduler",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write",
+          "artifacts"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-11-02T18:00:00Z",
+  "minGezelVersion": "1.26233"
+}

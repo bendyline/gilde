@@ -75,12 +75,69 @@ The bootstrap installs the shared components with import targets from the
 manifest's `pages.imports`. Demo imports keep Files/object URLs only in memory.
 Merge `components.demo.files()` into the sample listing and call
 `components.demo.reset()` in Reset demo, then reset your own sample state and
-remount the adder to clear results. A demo watch is a no-op: refresh explicitly
-after mutations. Failed live operations must never switch to sample data.
+remount the adder to clear results. A demo watch fires only when the sample
+conversation changes data: refresh explicitly after the page's own mutations. Failed live operations must never switch to sample data.
 
 Older embedded canonical stubs are accepted for compatibility; publishing strips
 the legacy adapter block from generated HTML so it cannot replace the bootstrap.
 New pages must use injection. The structural check rejects per-page component copies.
+
+## The sample conversation
+
+In a standalone demo, `appLayout` draws a sample conversation where Gezel's
+chat would be, so a visitor sees the companion work the page. Script it in a
+`demo-chat.js` beside the entry page, loaded before the inline script, and
+pass it to the demo initializer:
+
+```js
+window.gezel || window.makeDemoGezel({
+  page: { entry: 'dashboard/index.html', typeName: 'Meal Planner' },
+  tools: { page_set_menu: input => setDemoMenu(input), grocery_list: () => demoGroceries() },
+  data: { 'menu.json': () => demoMenu },
+  chat: window.demoChat,
+});
+```
+
+```js
+window.demoChat = {
+  name: 'Mila',               // a sample first name; live crew members get their own
+  role: 'Meal Planner',       // the crew template's plain-English role
+  greeting: 'Hello, I’m Mila. Sunday is still open, and you’re out of limes.',
+  suggestions: ['Plan Sunday around what we have', 'What do I need from the store?'],
+  respond: function (text, ctx) {
+    // Return a reply (string, array of strings, or { reply, suggestions }),
+    // or null for the shared "I can only follow a few sample requests" answer.
+  },
+  reactions: {
+    // Keyed by page tool: the demo form of a manifest `reaction`.
+    page_set_menu: function (input, output, ctx) { return 'Sunday is set.'; },
+  },
+};
+```
+
+`ctx.read(path)` returns a snapshot of the page's sample data.
+`ctx.invoke(tool, input, summary)` runs the page's own demo handler, shows a
+step in the conversation, repaints the page's watches, and briefly highlights
+what changed. Name the **model** tool (`set_menu`); the demo falls back to
+the `page_` alias when only that handler exists. Add demo handlers for model
+tools the page never calls (`grocery_list`, `make_move`) so the conversation
+can use them. `ctx.say(text)` adds a line mid-turn; `ctx.suggest(list)` swaps
+the suggestions without a reply. Replies that return `{ reply, suggestions }`
+may offer earlier wording again.
+
+Write it the way the crew member would act in Gezel:
+
+- Every suggestion does real work on the sample: it calls the app's tools so
+  the page visibly changes, or answers from the current data. Compute replies
+  from `ctx.read`, never from text that assumes the starting sample.
+- Keep the companion's voice from the role template's `about.md`: warm,
+  specific, short. American English, no emojis, no claims beyond what the app
+  can do.
+- Match free text with a few forgiving patterns and return `null` otherwise.
+  The shared fallback says the preview follows sample requests only.
+- For games, react to the person's move with the companion's own move through
+  the model's turn tool, as the live reaction does, and say its `say` text.
+- An app whose layout passes `chat: false` has no conversation.
 
 ## Declaring reads and tools
 

@@ -1,0 +1,428 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "releasedAt": "2026-11-02T18:00:00.000Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "business": {
+        "type": "string",
+        "title": "What kind of business is this?",
+        "description": "e.g. 'a café with 12 staff', 'a three-person electrical contractor'.",
+        "default": "the business"
+      }
+    },
+    "required": [
+      "business"
+    ]
+  },
+  "nameTemplate": "Training Tracker",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "training-coordinator",
+      "voorman": true
+    },
+    {
+      "templateId": "study-buddy"
+    }
+  ],
+  "scripts": {
+    "training-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { logStore, rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'training-store',\n  description:\n    \"Read and update the training tracker: people.json (who works here and their role), courses.json (each course, how long it stays valid and who needs it), completions.json (completions with expiry dates, and bookings) and quizzes.json. action:'status' for who needs what, by course, lapsed first; 'add_person' and 'add_course' to add or update one (an existing name or title is updated, never duplicated); 'complete' to record a completion; 'book' to book a session; 'save_quiz' to save a quiz; 'list' for everyone's training.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'status', 'add_person', 'add_course', 'complete', 'book', 'save_quiz', or 'list'.\",\n      required: true,\n    },\n    name: { type: 'string', description: \"For add_person: the person's full name.\" },\n    role: { type: 'string', description: \"For add_person: their job, e.g. 'Barista'. It decides which courses they need.\" },\n    startedAt: { type: 'string', description: \"For add_person: their first day, YYYY-MM-DD or a weekday like 'monday'.\" },\n    personStatus: { type: 'string', description: \"For add_person: active, or left when someone leaves.\" },\n    title: { type: 'string', description: \"For add_course: the course's title. For save_quiz: the quiz's title.\" },\n    validMonths: { type: 'number', description: 'For add_course: months a completion stays valid; 0 when it never expires.' },\n    requiredFor: { type: 'string', description: \"For add_course: 'everyone', or the roles that need it, e.g. 'barista, cook'.\" },\n    provider: { type: 'string', description: 'For add_course: who runs or certifies it.' },\n    person: { type: 'string', description: \"Person id (e.g. 'p-3') or name; several names separated by commas.\" },\n    course: { type: 'string', description: \"Course id (e.g. 'c-2') or title.\" },\n    completedAt: { type: 'string', description: 'For complete: the day it was finished, YYYY-MM-DD; default today.' },\n    certificate: { type: 'string', description: 'For complete: the certificate or reference number exactly as given.' },\n    on: { type: 'string', description: \"For book: the session date, YYYY-MM-DD or a weekday like 'thursday'.\" },\n    everyoneDue: {\n      type: 'boolean',\n      description: 'For book: true books everyone whose certificate for the course has lapsed, runs out within the window, or was never done.',\n    },\n    source: { type: 'string', description: \"For save_quiz: the document it was written from, e.g. 'docs/opening-checklist.md'.\" },\n    questions: {\n      type: 'string',\n      description: \"For save_quiz: one question per line, 'Question? | right answer | wrong answer | wrong answer'.\",\n    },\n    note: { type: 'string', description: 'Anything else worth keeping.' },\n    withinDays: { type: 'number', description: 'How many days ahead count as due (default 30).' },\n  },\n  outputs: {\n    expired: { type: 'number', description: 'Required certificates that have lapsed.' },\n    expiringSoon: { type: 'number', description: 'Required certificates that run out within the window.' },\n    missing: { type: 'number', description: 'Required courses never done.' },\n    people: { type: 'number', description: 'People on the tracker.' },\n    summary: { type: 'string', description: 'What changed, then who needs what, or the listing.' },\n  },\n  requires: ['workspace.read', 'workspace.write', 'reminders'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── training-rules-start ──\n// Pure derivations: dates in local calendar days, record matching, who needs\n// which course, each person-course cell, the picture the crew reads, and quiz\n// parsing. Kept self-contained between these sentinels so tests execute the\n// shipped bytes.\nvar DAY_MS = 86400000;\nvar WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];\nvar MONTH_KEYS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];\n\nfunction pad(n) {\n  return n < 10 ? '0' + n : String(n);\n}\nfunction localDay(ms) {\n  var d = new Date(ms);\n  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());\n}\nfunction noon(day) {\n  return new Date(String(day).slice(0, 10) + 'T12:00:00');\n}\nfunction addDays(day, n) {\n  var d = noon(day);\n  d.setDate(d.getDate() + n);\n  return localDay(d.getTime());\n}\nfunction addMonths(day, months) {\n  var d = noon(day);\n  var date = d.getDate();\n  d.setDate(1);\n  d.setMonth(d.getMonth() + months);\n  // The 31st rolls to the last day of a shorter month, not into the next one.\n  d.setDate(Math.min(date, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));\n  return localDay(d.getTime());\n}\nfunction daysLeft(day, nowMs) {\n  var due = Date.parse(String(day).slice(0, 10) + 'T00:00:00');\n  var today = Date.parse(localDay(nowMs) + 'T00:00:00');\n  return Math.round((due - today) / DAY_MS);\n}\nfunction dayName(day) {\n  return WEEKDAYS[noon(day).getDay()];\n}\nfunction parseDay(text, nowMs, direction) {\n  var raw = String(text == null ? '' : text).trim().toLowerCase().replace(/[.,]/g, ' ').replace(/\\s+/g, ' ').trim();\n  if (!raw) return null;\n  var iso = raw.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})(?:t.*)?$/);\n  if (iso) return iso[1] + '-' + pad(Number(iso[2])) + '-' + pad(Number(iso[3]));\n  var today = localDay(nowMs);\n  if (raw === 'today' || raw === 'now') return today;\n  if (raw === 'tomorrow') return addDays(today, 1);\n  if (raw === 'yesterday') return addDays(today, -1);\n  var rel = raw.match(/^(?:in )?(\\d{1,3}) (day|days|week|weeks)( ago| from now)?$/);\n  if (rel) {\n    var n = Number(rel[1]) * (rel[2].charAt(0) === 'w' ? 7 : 1);\n    return addDays(today, rel[3] === ' ago' ? -n : n);\n  }\n  var wd = raw.match(/^(this |next |last |on |coming )?(sun|mon|tue|wed|thu|fri|sat)[a-z]*$/);\n  if (wd) {\n    var target = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].indexOf(wd[2]);\n    var now = noon(today).getDay();\n    if (direction === 'past' || wd[1] === 'last ') {\n      var back = (now - target + 7) % 7;\n      return addDays(today, -(wd[1] === 'last ' && back === 0 ? 7 : back));\n    }\n    if (wd[1] === 'this ') return addDays(today, (target - now + 7) % 7);\n    return addDays(today, ((target - now + 6) % 7) + 1);\n  }\n  var md = raw.match(/^(?:[a-z]+day )?([a-z]{3,9}) (\\d{1,2})(?:st|nd|rd|th)?(?: (\\d{4}))?$/);\n  var dm = raw.match(/^(?:[a-z]+day )?(\\d{1,2})(?:st|nd|rd|th)? (?:of )?([a-z]{3,9})(?: (\\d{4}))?$/);\n  var parts = md ? { month: md[1], date: md[2], year: md[3] } : dm ? { month: dm[2], date: dm[1], year: dm[3] } : null;\n  if (parts) {\n    var m = MONTH_KEYS.indexOf(parts.month.slice(0, 3));\n    if (m < 0) return null;\n    var date = Number(parts.date);\n    if (date < 1 || date > 31) return null;\n    if (parts.year) return parts.year + '-' + pad(m + 1) + '-' + pad(date);\n    var year = noon(today).getFullYear();\n    var guess = year + '-' + pad(m + 1) + '-' + pad(date);\n    var d = daysLeft(guess, nowMs);\n    if (direction === 'past' && d > 0) guess = year - 1 + guess.slice(4);\n    if (direction !== 'past' && d < 0) guess = year + 1 + guess.slice(4);\n    return guess;\n  }\n  return null;\n}\nfunction matches(records, text, labelOf) {\n  var wanted = String(text == null ? '' : text).trim().toLowerCase().replace(/['\\u2019]s\\b/g, '').replace(/\\s+/g, ' ');\n  if (!wanted) return [];\n  var tiers = [\n    function (r) { return String(r.id).toLowerCase() === wanted; },\n    function (r) { return labelOf(r).toLowerCase() === wanted; },\n    function (r) { return labelOf(r).toLowerCase().indexOf(wanted) === 0; },\n    function (r) { return (' ' + labelOf(r).toLowerCase() + ' ').indexOf(' ' + wanted + ' ') >= 0; },\n    function (r) { return labelOf(r).toLowerCase().indexOf(wanted) >= 0; },\n    function (r) { var l = labelOf(r).toLowerCase(); return l.length >= 3 && wanted.indexOf(l) >= 0; },\n  ];\n  for (var i = 0; i < tiers.length; i++) {\n    var hit = records.filter(tiers[i]);\n    if (hit.length) return hit;\n  }\n  return [];\n}\nfunction describe(records, labelOf) {\n  return records.map(function (r) { return r.id + ' ' + labelOf(r); }).join(', ');\n}\nfunction splitList(text) {\n  var raw = String(text == null ? '' : text).trim();\n  if (/^\\[/.test(raw)) {\n    try {\n      var parsed = JSON.parse(raw);\n      if (Array.isArray(parsed)) return parsed.map(function (s) { return String(s).trim(); }).filter(Boolean);\n    } catch (e) {\n      // Not JSON after all; split it as text.\n    }\n  }\n  return raw\n    .split(/\\s*[,;\\n]+\\s*/)\n    .map(function (s) { return s.replace(/^(and|or|plus)\\s+/i, '').replace(/[.\\s]+$/, '').trim(); })\n    .filter(Boolean);\n}\nfunction roleKey(text) {\n  return String(text == null ? '' : text)\n    .trim()\n    .toLowerCase()\n    .replace(/\\s+/g, ' ')\n    .replace(/([a-z]{3,}[^s])s$/, '$1');\n}\nfunction requires(course, person) {\n  var rf = String((course.fields && course.fields.requiredFor) || 'everyone').toLowerCase();\n  if (!rf.trim() || /\\b(everyone|everybody|all|whole team|all staff)\\b/.test(rf)) return true;\n  var mine = roleKey(person.fields && person.fields.role);\n  if (!mine) return false;\n  return splitList(rf).map(roleKey).some(function (r) {\n    return r && (r === mine || mine.indexOf(r) >= 0 || r.indexOf(mine) >= 0);\n  });\n}\nfunction eventsFor(events, kind, personId, courseId) {\n  return events.filter(function (e) {\n    return e.kind === kind && e.data && e.data.personId === personId && e.data.courseId === courseId;\n  });\n}\nfunction cell(person, course, events, nowMs, windowDays) {\n  var done = eventsFor(events, 'completed', person.id, course.id).sort(function (a, b) {\n    return String(a.data.completedAt).localeCompare(String(b.data.completedAt));\n  });\n  var last = done.length ? done[done.length - 1] : null;\n  // A booking made before the latest completion was recorded is used up by it.\n  var since = last ? String(last.at) : '';\n  var booking = eventsFor(events, 'booked', person.id, course.id)\n    .filter(function (e) { return daysLeft(e.data.on, nowMs) >= 0 && String(e.at) > since; })\n    .sort(function (a, b) { return String(a.data.on).localeCompare(String(b.data.on)); })[0] || null;\n  var required = requires(course, person);\n  var expiresAt = last ? last.data.expiresAt || null : null;\n  var days = expiresAt ? daysLeft(expiresAt, nowMs) : null;\n  var state;\n  if (last) state = !expiresAt ? 'done' : days < 0 ? 'expired' : days <= windowDays ? 'expiring' : 'current';\n  else state = required ? 'missing' : 'optional';\n  if (!required && (state === 'expired' || state === 'expiring')) state = 'optional';\n  return { state: state, required: required, last: last, booking: booking, expiresAt: expiresAt, days: days };\n}\nfunction needText(person, c, nowMs) {\n  var f = person.fields || {};\n  var starts = f.startedAt && daysLeft(f.startedAt, nowMs) > 0 ? ', starts ' + f.startedAt : '';\n  var what =\n    c.state === 'expired'\n      ? 'lapsed ' + c.expiresAt + ', ' + -c.days + (c.days === -1 ? ' day ago' : ' days ago')\n      : c.state === 'expiring'\n        ? 'runs out ' + c.expiresAt + ', ' + (c.days === 0 ? 'today' : 'in ' + c.days + (c.days === 1 ? ' day' : ' days'))\n        : 'never done';\n  return f.name + ' (' + person.id + starts + ') ' + what + (c.booking ? ', booked ' + dayName(c.booking.data.on) + ' ' + c.booking.data.on : '');\n}\nfunction needs(people, course, events, nowMs, windowDays) {\n  var rank = { expired: 0, missing: 1, expiring: 2 };\n  return people\n    .map(function (p) { return { person: p, cell: cell(p, course, events, nowMs, windowDays) }; })\n    .filter(function (x) { return x.cell.required && rank[x.cell.state] !== undefined; })\n    .sort(function (a, b) {\n      return rank[a.cell.state] - rank[b.cell.state] || (a.cell.days === null ? 0 : a.cell.days) - (b.cell.days === null ? 0 : b.cell.days);\n    });\n}\nfunction validity(course) {\n  var m = Number(course.fields.validMonths) || 0;\n  return m ? 'every ' + m + ' months' : 'once';\n}\nfunction picture(people, courses, events, nowMs, windowDays) {\n  var staff = people.filter(function (p) { return p.status !== 'left'; });\n  var live = courses.filter(function (c) { return c.status !== 'retired'; });\n  var counts = { expired: 0, expiring: 0, missing: 0 };\n  var parts = [];\n  var lines = [];\n  live.forEach(function (course) {\n    var list = needs(staff, course, events, nowMs, windowDays);\n    list.forEach(function (x) { counts[x.cell.state] += 1; });\n    if (list.length) {\n      lines.push(course.fields.title + ' (' + course.id + ', ' + validity(course) + '): ' + list.map(function (x) { return needText(x.person, x.cell, nowMs); }).join('; '));\n    }\n  });\n  parts.push(\n    staff.length + (staff.length === 1 ? ' person, ' : ' people, ') + live.length + (live.length === 1 ? ' course: ' : ' courses: ') +\n      counts.expired + ' lapsed, ' + counts.expiring + ' running out within ' + windowDays + ' days, ' + counts.missing + ' never done.',\n  );\n  // One list per course, lapsed first: \"who needs the refresher this month\" is answered from its line alone.\n  parts.push(lines.length ? 'Who needs what within ' + windowDays + ' days, by course, lapsed first: ' + lines.join(' | ') + '.' : 'Everyone is current for the next ' + windowDays + ' days.');\n  var later = [];\n  staff.forEach(function (p) {\n    live.forEach(function (course) {\n      var c = cell(p, course, events, nowMs, windowDays);\n      if (c.required && c.state === 'current') later.push({ who: p.fields.name, what: course.fields.title, at: c.expiresAt });\n    });\n  });\n  later.sort(function (a, b) { return String(a.at).localeCompare(String(b.at)); });\n  if (later.length) parts.push('Next to run out after that: ' + later[0].who + \"'s \" + later[0].what + ' on ' + later[0].at + '.');\n  return { expired: counts.expired, expiringSoon: counts.expiring, missing: counts.missing, people: staff.length, summary: parts.join(' ') };\n}\nfunction personLine(person, courses, events, nowMs, windowDays) {\n  var f = person.fields || {};\n  var items = courses\n    .filter(function (c) { return c.status !== 'retired'; })\n    .map(function (course) {\n      var c = cell(person, course, events, nowMs, windowDays);\n      if (!c.required && !c.last) return null;\n      var cert = c.last && c.last.data.certificate ? ', ' + c.last.data.certificate : '';\n      var text =\n        c.state === 'missing'\n          ? 'not done'\n          : c.state === 'done'\n            ? 'done ' + c.last.data.completedAt + cert\n            : c.state + (c.expiresAt ? ' (valid until ' + c.expiresAt + ')' : '') + cert;\n      return course.fields.title + ' ' + text + (c.booking ? ', booked ' + c.booking.data.on : '');\n    })\n    .filter(Boolean);\n  return f.name + ' (' + person.id + ', ' + (f.role || 'no role') + (person.status === 'left' ? ', left' : '') + '): ' + (items.join('; ') || 'no courses apply');\n}\nfunction parseQuestions(text) {\n  var raw = String(text == null ? '' : text).trim();\n  var out = [];\n  var skipped = [];\n  function add(q, right, wrong) {\n    q = String(q || '').trim();\n    right = String(right || '').trim();\n    wrong = (wrong || []).map(function (w) { return String(w).trim(); }).filter(Boolean);\n    if (!q || !right) return false;\n    var choices = [right].concat(wrong);\n    var shift = out.length % choices.length;\n    var rotated = choices.slice(choices.length - shift).concat(choices.slice(0, choices.length - shift));\n    out.push({ q: q, choices: rotated, answer: shift });\n    return true;\n  }\n  if (/^\\[/.test(raw)) {\n    try {\n      var parsed = JSON.parse(raw);\n      if (Array.isArray(parsed)) {\n        parsed.forEach(function (o, i) {\n          if (!o || typeof o !== 'object') return skipped.push(i + 1);\n          var right = o.answer || o.correct || o.right;\n          var wrong = o.wrong || o.distractors || (o.options || o.choices || []).filter(function (c) { return c !== right; });\n          if (!add(o.question || o.q, right, wrong)) skipped.push(i + 1);\n        });\n        return { questions: out, skipped: skipped };\n      }\n    } catch (e) {\n      // Not JSON after all; read it line by line.\n    }\n  }\n  raw.split(/\\r?\\n/).forEach(function (line, i) {\n    var clean = line.replace(/^\\s*(?:q?\\d{1,2}[.):]|[-*])\\s*/i, '').trim();\n    if (!clean) return;\n    var parts = clean.split('|').map(function (s) { return s.trim(); });\n    if (parts.length < 2) {\n      var qa = clean.match(/^(.+?\\?)\\s*(?:answer|a)?\\s*[:=-]+\\s*(.+)$/i);\n      if (qa) parts = [qa[1], qa[2]];\n    }\n    if (parts.length < 2 || !add(parts[0], parts[1], parts.slice(2))) skipped.push(i + 1);\n  });\n  return { questions: out, skipped: skipped };\n}\n// ── training-rules-end ──\n\nconst people = rosterStore(gezel.fs, 'people.json', { stages: ['active', 'left'], idPrefix: 'p' });\nconst courses = rosterStore(gezel.fs, 'courses.json', { stages: ['active', 'retired'], idPrefix: 'c' });\nconst log = logStore(gezel.fs, 'completions.json');\nconst quizzes = rosterStore(gezel.fs, 'quizzes.json', { stages: ['ready', 'retired'], idPrefix: 'qz' });\nconst now = Date.now();\nconst withinDays = typeof input.withinDays === 'number' && input.withinDays > 0 ? Math.round(input.withinDays) : 30;\nconst nameOf = (r: { fields: Record<string, unknown> }) => String(r.fields.name ?? '');\nconst titleOf = (r: { fields: Record<string, unknown> }) => String(r.fields.title ?? '');\n\nasync function resolveCourse(text?: string) {\n  const all = await courses.list();\n  if (!text) throw new Error(\"Pass 'course' (id or title). Courses: \" + (describe(all, titleOf) || 'none yet; add one with add_course') + '.');\n  let hits = matches(all.filter((c) => c.status !== 'retired'), text, titleOf);\n  if (!hits.length) hits = matches(all, text, titleOf);\n  if (hits.length === 1) return hits[0]!;\n  if (hits.length > 1) throw new Error(\"More than one course matches '\" + text + \"': \" + describe(hits, titleOf) + '. Pass the id.');\n  throw new Error(\"No course matches '\" + text + \"'. Courses: \" + (describe(all, titleOf) || 'none yet; add one with add_course') + '.');\n}\n\nasync function resolvePeople(text?: string) {\n  const all = await people.list();\n  if (!text) throw new Error(\"Pass 'person': a name or id, or several separated by commas.\");\n  const wanted = String(text).split(/\\s*(?:,|;|&|\\band\\b)\\s*/i).map((s) => s.trim()).filter(Boolean);\n  const found: typeof all = [];\n  for (const one of wanted) {\n    let hits = matches(all.filter((p) => p.status !== 'left'), one, nameOf);\n    if (!hits.length) hits = matches(all, one, nameOf);\n    if (hits.length > 1) throw new Error(\"More than one person matches '\" + one + \"': \" + describe(hits, nameOf) + '. Pass the id.');\n    if (!hits.length) throw new Error(\"No person matches '\" + one + \"'. People: \" + (describe(all, nameOf) || 'none yet; add them with add_person') + '.');\n    if (!found.some((p) => p.id === hits[0]!.id)) found.push(hits[0]!);\n  }\n  return found;\n}\n\n// The tracker's one reminder sits on the next certificate to run out, 14 days ahead of it.\nasync function remindNextExpiry(): Promise<void> {\n  const lead = 14 * DAY_MS;\n  const staff = (await people.list()).filter((p) => p.status !== 'left');\n  const live = (await courses.list()).filter((c) => c.status !== 'retired');\n  const events = await log.list();\n  const upcoming: Array<{ title: string; body: string; at: number }> = [];\n  for (const p of staff) {\n    for (const course of live) {\n      const c = cell(p, course, events, now, withinDays);\n      if (!c.required || !c.expiresAt || c.booking) continue;\n      const at = Date.parse(String(c.expiresAt) + 'T09:00:00') - lead;\n      if (at > now) {\n        upcoming.push({\n          at,\n          title: (nameOf(p) + \"'s \" + titleOf(course)).slice(0, 56) + ' runs out in two weeks',\n          body: 'Valid until ' + c.expiresAt + '. Book the refresher from the training tracker.',\n        });\n      }\n    }\n  }\n  const next = upcoming.sort((a, b) => a.at - b.at)[0];\n  try {\n    if (!next || next.at - now > 30 * DAY_MS) await gezel.reminder.clear();\n    else await gezel.reminder.set({ at: new Date(next.at).toISOString(), title: next.title, body: next.body });\n  } catch {\n    // Reminders are a convenience; the tracker is the record.\n  }\n}\n\nlet note = '';\n\nif (input.action === 'add_person') {\n  if (!input.name || !input.name.trim()) throw new Error(\"add_person needs 'name'.\");\n  const name = input.name.trim();\n  const startedAt = input.startedAt ? parseDay(input.startedAt, now, 'future') : null;\n  if (input.startedAt && !startedAt) throw new Error(\"startedAt must be a date like '2026-11-09' or a weekday like 'monday'.\");\n  const status = input.personStatus ? String(input.personStatus).trim().toLowerCase() : '';\n  if (status && status !== 'active' && status !== 'left') throw new Error(\"personStatus must be 'active' or 'left'.\");\n  const fields: Record<string, unknown> = {\n    ...(input.role ? { role: input.role.trim() } : {}),\n    ...(startedAt ? { startedAt } : {}),\n    ...(input.note ? { notes: input.note.trim() } : {}),\n  };\n  const existing = (await people.list()).find((p) => nameOf(p).toLowerCase() === name.toLowerCase());\n  if (existing) {\n    await people.update(existing.id, { fields });\n    if (status && status !== existing.status) await people.transition(existing.id, status);\n    note = 'Updated ' + name + ' (' + existing.id + ')' + (status === 'left' ? '; they are off the matrix now.' : '.');\n  } else {\n    const record = await people.add({ status: status || 'active', fields: { name, role: '', ...fields } });\n    const needed = (await courses.list()).filter((c) => c.status !== 'retired' && requires(c, record));\n    note = 'Added ' + name + ' (' + record.id + ')' + (needed.length ? '; they need ' + needed.map(titleOf).join(', ') + '.' : '.');\n  }\n} else if (input.action === 'add_course') {\n  if (!input.title || !input.title.trim()) throw new Error(\"add_course needs 'title'.\");\n  const title = input.title.trim();\n  let validMonths: number | undefined;\n  if (input.validMonths !== undefined) {\n    validMonths = Math.round(Number(input.validMonths));\n    if (!(validMonths >= 0)) throw new Error('validMonths must be 0 (never expires) or more.');\n  }\n  const fields: Record<string, unknown> = {\n    ...(validMonths !== undefined ? { validMonths } : {}),\n    ...(input.requiredFor ? { requiredFor: input.requiredFor.trim() } : {}),\n    ...(input.provider ? { provider: input.provider.trim() } : {}),\n    ...(input.note ? { notes: input.note.trim() } : {}),\n  };\n  const existing = (await courses.list()).find((c) => titleOf(c).toLowerCase() === title.toLowerCase());\n  if (existing) {\n    await courses.update(existing.id, { fields });\n    note = 'Updated ' + title + ' (' + existing.id + ').';\n  } else {\n    const record = await courses.add({ status: 'active', fields: { title, validMonths: 0, requiredFor: 'everyone', ...fields } });\n    note = 'Added ' + title + ' (' + record.id + '), ' + validity(record) + ', for ' + String(record.fields.requiredFor) + '.';\n  }\n} else if (input.action === 'complete') {\n  const course = await resolveCourse(input.course);\n  const who = await resolvePeople(input.person);\n  const completedAt = input.completedAt ? parseDay(input.completedAt, now, 'past') : localDay(now);\n  if (!completedAt) throw new Error(\"completedAt must be a date like '2026-11-02', or 'today'.\");\n  const months = Number(course.fields.validMonths) || 0;\n  const expiresAt = months > 0 ? addMonths(completedAt, months) : null;\n  const certificate = input.certificate ? input.certificate.trim() : '';\n  for (const p of who) {\n    await log.append({\n      kind: 'completed',\n      note: input.note ? input.note.trim() : certificate ? 'Certificate ' + certificate + '.' : 'Completed.',\n      data: { personId: p.id, courseId: course.id, completedAt, expiresAt, ...(certificate ? { certificate } : {}) },\n    });\n  }\n  note =\n    who.map(nameOf).join(', ') + ' completed ' + titleOf(course) + ' on ' + completedAt +\n    (expiresAt ? '; valid until ' + expiresAt : '; it does not expire') + (certificate ? ', certificate ' + certificate : '') + '.';\n} else if (input.action === 'book') {\n  const course = await resolveCourse(input.course);\n  const on = parseDay(input.on, now, 'future');\n  if (!on) throw new Error(\"book needs 'on': a date like '2026-11-12' or a weekday like 'thursday'.\");\n  const events = await log.list();\n  let who: Awaited<ReturnType<typeof resolvePeople>> = [];\n  if (input.everyoneDue) {\n    const staff = (await people.list()).filter((p) => p.status !== 'left');\n    who = needs(staff, course, events, now, withinDays).filter((x: { cell: { booking: unknown } }) => !x.cell.booking).map((x: { person: (typeof staff)[number] }) => x.person);\n  } else {\n    who = await resolvePeople(input.person);\n  }\n  const fresh = who.filter((p) => !eventsFor(events, 'booked', p.id, course.id).some((e: { data: { on: string } }) => e.data.on === on));\n  for (const p of fresh) {\n    await log.append({ kind: 'booked', note: input.note ? input.note.trim() : 'Booked.', data: { personId: p.id, courseId: course.id, on } });\n  }\n  note = fresh.length\n    ? 'Booked ' + titleOf(course) + ' on ' + dayName(on) + ' ' + on + ' for ' + fresh.map(nameOf).join(', ') + '.'\n    : input.everyoneDue\n      ? 'Nobody else needs ' + titleOf(course) + ' within ' + withinDays + ' days; nothing new booked.'\n      : 'Already booked; nothing changed.';\n} else if (input.action === 'save_quiz') {\n  if (!input.questions) throw new Error(\"save_quiz needs 'questions', one per line: 'Question? | right answer | wrong answer | wrong answer'.\");\n  const parsed = parseQuestions(input.questions);\n  if (parsed.questions.length < 3) {\n    throw new Error(\"A quiz needs at least 3 questions, one per line: 'Question? | right answer | wrong answer | wrong answer'. Read \" + parsed.questions.length + '.');\n  }\n  const course = input.course ? await resolveCourse(input.course) : null;\n  const title = (input.title && input.title.trim()) || (course ? titleOf(course) + ' quiz' : 'Quiz');\n  const fields: Record<string, unknown> = {\n    title,\n    questions: parsed.questions,\n    ...(course ? { courseId: course.id, courseTitle: titleOf(course) } : {}),\n    ...(input.source ? { source: input.source.trim() } : {}),\n  };\n  const existing = (await quizzes.list()).find((q) => titleOf(q).toLowerCase() === title.toLowerCase());\n  if (existing) await quizzes.update(existing.id, { fields });\n  else await quizzes.add({ status: 'ready', fields });\n  note =\n    'Saved the quiz ' + title + ' with ' + parsed.questions.length + ' questions' + (course ? ' for ' + titleOf(course) : '') +\n    (parsed.skipped.length ? '; skipped line ' + parsed.skipped.join(', ') + \" (write them as 'Question? | right | wrong | wrong')\" : '') + '.';\n} else if (input.action !== 'status' && input.action !== 'list') {\n  throw new Error(\"Unknown action '\" + input.action + \"'. Use status, add_person, add_course, complete, book, save_quiz, or list.\");\n}\n\nconst allPeople = await people.list();\nconst allCourses = await courses.list();\nconst events = await log.list();\nconst view = picture(allPeople, allCourses, events, now, withinDays);\nawait remindNextExpiry();\n\nlet summary = (note ? note + ' ' : '') + view.summary;\nif (input.action === 'list') {\n  const wanted = input.person ? await resolvePeople(input.person) : allPeople;\n  summary = wanted.map((p) => personLine(p, allCourses, events, now, withinDays)).join('\\n') || 'Nobody on the tracker yet.';\n}\ngezel.output({ expired: view.expired, expiringSoon: view.expiringSoon, missing: view.missing, people: view.people, summary });\n"
+  },
+  "tools": [
+    {
+      "name": "training_status",
+      "description": "Who needs which course within the next 30 days, one list per course with lapsed certificates first, then training never done, then certificates about to run out, each with person and course ids and any booking. Call it first when asked who needs a course, what is expiring, or where someone stands.",
+      "script": "training-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "withinDays": {
+            "type": "number"
+          }
+        }
+      },
+      "bind": {
+        "action": "status"
+      },
+      "state": true
+    },
+    {
+      "name": "add_person",
+      "description": "Add someone to the training tracker or update them: full name, job role (it decides which courses they need) and first day. An existing name is updated, never duplicated. Call it as soon as a new person is mentioned, before you describe them. Use personStatus 'left' when someone leaves.",
+      "script": "training-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "personStatus": {
+            "type": "string",
+            "enum": [
+              "active",
+              "left"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "bind": {
+        "action": "add_person"
+      }
+    },
+    {
+      "name": "add_course",
+      "description": "Add or update a course or certificate the business tracks: title, months it stays valid (0 if it never expires), who needs it ('everyone' or roles such as 'barista, cook') and the provider. An existing title is updated, never duplicated. Call it as soon as a course is mentioned.",
+      "script": "training-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "validMonths": {
+            "type": "number"
+          },
+          "requiredFor": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add_course"
+      }
+    },
+    {
+      "name": "record_completion",
+      "description": "Record that one or more people finished a course: person (a name, or several separated by commas), course, the day (default today) and the certificate number exactly as given. The expiry date is worked out from the course. Call it the moment the person reports it, before you reply.",
+      "script": "training-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "person": {
+            "type": "string"
+          },
+          "course": {
+            "type": "string"
+          },
+          "completedAt": {
+            "type": "string"
+          },
+          "certificate": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "person",
+          "course"
+        ]
+      },
+      "bind": {
+        "action": "complete"
+      }
+    },
+    {
+      "name": "book_training",
+      "description": "Book a session: course, the date (YYYY-MM-DD or a weekday like 'thursday', which the tracker turns into the date), and either person (one or several, comma-separated) or everyoneDue: true for everyone whose certificate has lapsed, runs out within 30 days, or was never done. Call it as soon as the person asks.",
+      "script": "training-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "course": {
+            "type": "string"
+          },
+          "on": {
+            "type": "string"
+          },
+          "person": {
+            "type": "string"
+          },
+          "everyoneDue": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "course",
+          "on"
+        ]
+      },
+      "bind": {
+        "action": "book"
+      }
+    },
+    {
+      "name": "save_quiz",
+      "description": "Save a short quiz written from the business's own document: title, the course it supports, the source document, and questions, one per line as 'Question? | right answer | wrong answer | wrong answer'. Read the document first and quote it accurately. An existing title is replaced.",
+      "script": "training-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "course": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "questions": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "questions"
+        ]
+      },
+      "bind": {
+        "action": "save_quiz"
+      }
+    },
+    {
+      "name": "list_training",
+      "description": "Everyone's training, or one person's: each course they need with its status, dates, certificate and booking.",
+      "script": "training-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "person": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "list"
+      }
+    },
+    {
+      "name": "page_add_person",
+      "description": "Add or update a person.",
+      "script": "training-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "personStatus": {
+            "type": "string",
+            "enum": [
+              "active",
+              "left"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "bind": {
+        "action": "add_person"
+      }
+    },
+    {
+      "name": "page_add_course",
+      "description": "Add or update a course.",
+      "script": "training-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "validMonths": {
+            "type": "number"
+          },
+          "requiredFor": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add_course"
+      }
+    },
+    {
+      "name": "page_record_completion",
+      "description": "Record a completion.",
+      "script": "training-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "person": {
+            "type": "string"
+          },
+          "course": {
+            "type": "string"
+          },
+          "completedAt": {
+            "type": "string"
+          },
+          "certificate": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "person",
+          "course"
+        ]
+      },
+      "bind": {
+        "action": "complete"
+      }
+    },
+    {
+      "name": "page_book_training",
+      "description": "Book a session.",
+      "script": "training-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "course": {
+            "type": "string"
+          },
+          "on": {
+            "type": "string"
+          },
+          "person": {
+            "type": "string"
+          },
+          "everyoneDue": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "course",
+          "on"
+        ]
+      },
+      "bind": {
+        "action": "book"
+      },
+      "reaction": {
+        "gezel": "training-coordinator",
+        "hideSeed": true,
+        "prompt": "The person just booked a session on the training page. The tracker now reads (its first sentence is what changed):\n{{output.summary}}\nIn two short sentences, confirm who is booked and when, then name anyone who still needs that course and is not booked. Do not call tools."
+      }
+    }
+  ],
+  "craftbooks": [
+    "interactive-quiz",
+    "handbook-section",
+    "onboarding-checklist"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "tracker/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "people.json"
+      },
+      {
+        "source": "workspace",
+        "path": "courses.json"
+      },
+      {
+        "source": "workspace",
+        "path": "completions.json"
+      },
+      {
+        "source": "workspace",
+        "path": "quizzes.json"
+      },
+      {
+        "source": "workspace",
+        "path": "docs",
+        "subtree": true
+      }
+    ],
+    "imports": [
+      {
+        "id": "docs",
+        "source": "workspace",
+        "path": "docs",
+        "accept": [
+          ".md",
+          ".txt",
+          ".pdf",
+          ".docx",
+          ".png",
+          ".jpg",
+          ".jpeg",
+          ".webp",
+          ".heic"
+        ],
+        "maxFileBytes": 26214400
+      }
+    ],
+    "tools": [
+      "page_add_person",
+      "page_add_course",
+      "page_record_completion",
+      "page_book_training"
+    ]
+  },
+  "workspaceSeed": [
+    "people.json",
+    "courses.json",
+    "completions.json",
+    "quizzes.json"
+  ],
+  "minGezelVersion": "1.26280"
+}

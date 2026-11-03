@@ -1,0 +1,800 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Image feed gallery</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2;
+        --card: #fff;
+        --ink: #2b2620;
+        --muted: #7a7166;
+        --accent: #b5651d;
+        --track: #ece5da;
+        --good: #4a7c59;
+        --warn: #a4552e;
+      }
+      :root[data-theme='dark'] {
+        --bg: #1c1a17;
+        --card: #262320;
+        --ink: #efe9e0;
+        --muted: #a59a8c;
+        --accent: #e0894a;
+        --track: #3a352f;
+        --good: #7fae8d;
+        --warn: #d98a63;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #1c1a17;
+          --card: #262320;
+          --ink: #efe9e0;
+          --muted: #a59a8c;
+          --accent: #e0894a;
+          --track: #3a352f;
+          --good: #7fae8d;
+          --warn: #d98a63;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font: 15px/1.5 var(--font-body, system-ui, sans-serif);
+        background: var(--bg);
+        color: var(--ink);
+        padding: 1.5rem 1.25rem 2rem;
+      }
+      main { max-width: 1080px; margin: 0 auto; }
+      h1 {
+        font-family: var(--font-heading, Georgia, serif);
+        font-size: 1.4rem;
+        font-weight: 600;
+        margin: 0 0 0.15rem;
+        overflow-wrap: anywhere;
+      }
+      .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; }
+      .sub { color: var(--muted); margin: 0 0 1rem; font-size: 0.9rem; }
+      .hint { color: var(--muted); font-size: 0.8rem; margin: 0 0 0.9rem; }
+      .key {
+        font: inherit;
+        font-size: 0.8rem;
+        padding: 0.25rem 0.55rem;
+        border: 1px solid var(--track);
+        border-radius: 6px;
+        background: var(--card);
+        color: var(--ink);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .key:hover { border-color: var(--muted); }
+      .key[aria-pressed='true'] {
+        border-color: var(--accent);
+        color: var(--accent);
+        box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12);
+      }
+      .note {
+        margin: 0 0 0.85rem;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid var(--track);
+        border-radius: 6px;
+        background: var(--card);
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 0.75rem; }
+      .shot {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        justify-content: flex-start;
+        width: 100%;
+        padding: 0;
+        text-align: left;
+        font: inherit;
+        color: var(--ink);
+        background: var(--card);
+        border: 1px solid var(--track);
+        border-radius: 6px;
+        overflow: hidden;
+        cursor: pointer;
+        position: relative;
+      }
+      .shot:hover { border-color: var(--muted); }
+      .shot .pic { display: block; position: relative; aspect-ratio: 1 / 1; background: var(--track); }
+      .shot .pic img { display: block; width: 100%; height: 100%; object-fit: cover; }
+      .shot .pic .tcard {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 100%;
+        padding: 0.75rem;
+        background: color-mix(in srgb, var(--card) 78%, var(--accent));
+        color: var(--ink);
+        font-family: var(--font-heading, Georgia, serif);
+        font-size: 1.02rem;
+        text-align: center;
+        overflow-wrap: anywhere;
+      }
+      .shot .st {
+        position: absolute;
+        top: 0.4rem;
+        left: 0.4rem;
+        border: 1px solid var(--track);
+        border-radius: 4px;
+        padding: 0 0.3rem;
+        font-size: 0.7rem;
+        line-height: 1.5;
+        background: var(--card);
+        color: var(--muted);
+      }
+      .shot .st.st-draft, .shot .st.st-scheduled { color: var(--accent); border-color: var(--accent); }
+      .shot .st.st-in-review { color: var(--warn); border-color: var(--warn); }
+      .shot .st.st-approved, .shot .st.st-published { color: var(--good); border-color: var(--good); }
+      .shot .cap { display: block; padding: 0.45rem 0.6rem 0.55rem; font-size: 0.83rem; }
+      .shot .cap .ti { display: block; font-weight: 600; overflow-wrap: anywhere; }
+      .shot .cap .ft { margin-top: 0.25rem; display: flex; gap: 0.35rem; flex-wrap: wrap; align-items: center; color: var(--muted); font-size: 0.72rem; }
+      .chip {
+        display: inline-block;
+        border: 1px solid var(--track);
+        border-radius: 4px;
+        padding: 0 0.3rem;
+        font-size: 0.7rem;
+        line-height: 1.4;
+        color: var(--muted);
+      }
+      .chip.tag { border-style: dashed; }
+      .chip.st-published { color: var(--good); border-color: var(--good); }
+      .grid-empty {
+        background: var(--card);
+        border: 1px dashed var(--track);
+        border-radius: 10px;
+        padding: 0.85rem 1.25rem;
+        text-align: center;
+        color: var(--muted);
+        margin-bottom: 0.75rem;
+      }
+      .foot { color: var(--muted); font-size: 0.72rem; margin-top: 1rem; }
+      .drawer {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: min(430px, 94vw);
+        background: var(--card);
+        border-left: 1px solid var(--track);
+        box-shadow: -6px 0 18px rgba(0, 0, 0, 0.08);
+        padding: 1rem 1.1rem 1.5rem;
+        overflow-y: auto;
+        z-index: 10;
+      }
+      .drawer[hidden] { display: none; }
+      .drawer .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; }
+      .drawer h2 {
+        font-family: var(--font-heading, Georgia, serif);
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin: 0 0 0.2rem;
+        overflow-wrap: anywhere;
+      }
+      .drawer h3 {
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--muted);
+        margin: 1rem 0 0.35rem;
+        font-weight: 600;
+      }
+      .drawer .meta { color: var(--muted); font-size: 0.8rem; }
+      .drawer .body-text { white-space: pre-wrap; font-size: 0.88rem; overflow-wrap: anywhere; }
+      .drawer .moves { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.35rem; }
+      .drawer .error { color: var(--warn); font-size: 0.8rem; margin: 0.4rem 0 0; }
+      .drawer .thumbs { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+      .drawer .thumbs img {
+        width: 84px;
+        height: 84px;
+        object-fit: cover;
+        border: 1px solid var(--track);
+        border-radius: 4px;
+      }
+      .variant {
+        border: 1px solid var(--track);
+        border-radius: 6px;
+        padding: 0.45rem 0.6rem;
+        margin-bottom: 0.45rem;
+        font-size: 0.83rem;
+      }
+      .variant .vh { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.25rem; }
+      .variant .vh .name { font-weight: 600; }
+      .variant .vb { white-space: pre-wrap; color: var(--ink); overflow-wrap: anywhere; }
+      .variant a { color: var(--accent); }
+      .empty { color: var(--muted); font-style: italic; }
+      .demo-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0 0 0.85rem;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--card) 88%, var(--accent));
+        color: var(--ink);
+        font-size: 0.8rem;
+      }
+      .demo-banner[hidden] { display: none; }
+      .demo-banner strong { font-weight: 700; }
+      .demo-reset {
+        flex: none;
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: var(--card);
+        color: var(--ink);
+        cursor: pointer;
+        font: inherit;
+      }
+      .demo-reset:hover { border-color: var(--ink); }
+    </style>
+  <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:20px 0;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--border,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}html[data-gezel-fullscreen=true] .board{min-width:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}.tiles,.stats,.summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}.board,.columns{max-width:100%;overflow-x:auto}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+  <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script><style>.drawer{margin:0 0 0 auto;height:100dvh;max-height:100dvh;max-width:94vw;border:1px solid var(--track);color:var(--ink)}.drawer::backdrop{background:#0006}</style></head>
+  <body>
+    <main>
+<p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong> — sample data stays in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <p class="note" id="browser-note" hidden>
+        Viewing from a browser tab — the gallery stays live, but moving posts happens in the app's Output pane.
+      </p>
+      <div class="head">
+        <div>
+          <h1 id="title">Image feed</h1>
+          <p class="sub" id="sub">Loading the gallery…</p>
+        </div>
+        <button type="button" class="key" id="toggle-archived" aria-pressed="false">Show archived</button>
+      </div>
+      <p class="hint" id="corpus-hint" hidden>
+        Connected feeds are syncing — reception reports read from the project's artifacts.
+      </p>
+      <div class="grid-empty" id="grid-empty" hidden>
+        No posts yet — ask your social media writer for the first image of the feed.
+      </div>
+      <div class="grid" id="grid"></div>
+    </main>
+    <dialog class="drawer" id="drawer" aria-labelledby="d-title">
+      <div class="top">
+        <div>
+          <h2 id="d-title"></h2>
+          <p class="meta" id="d-meta"></p>
+        </div>
+        <button type="button" class="key" id="d-close">Close</button>
+      </div>
+      <h3>Move to</h3>
+      <div class="moves" id="d-moves"></div>
+      <p class="error" id="d-error" hidden></p>
+      <h3>Media</h3>
+      <div class="thumbs" id="d-thumbs"></div>
+      <p class="meta" id="d-media"></p>
+      <h3>Post</h3>
+      <div class="body-text" id="d-body"></div>
+      <h3>Variants</h3>
+      <div id="d-variants"></div>
+    </dialog>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        var STAGES = ['idea', 'draft', 'in-review', 'approved', 'scheduled', 'published'];
+        var DAY = 24 * 60 * 60 * 1000;
+
+        function legalNext(from) {
+          if (from === 'archived') return [];
+          var at = STAGES.indexOf(from);
+          var next = at >= 0 && at < STAGES.length - 1 ? [STAGES[at + 1]] : [];
+          return next.concat(['archived']);
+        }
+
+        // ── demo dataset (used only when the page opens as a raw file) ──
+        function svgUri(bg, fg, shape) {
+          var art;
+          if (shape === 'arch') {
+            art = '<path d="M100 320 L100 190 A100 100 0 0 1 300 190 L300 320 Z" fill="' + fg + '"/>';
+          } else if (shape === 'bars') {
+            art = '<rect x="80" y="120" width="240" height="34" rx="4" fill="' + fg + '"/>' +
+              '<rect x="80" y="183" width="240" height="34" rx="4" fill="' + fg + '" opacity="0.75"/>' +
+              '<rect x="80" y="246" width="240" height="34" rx="4" fill="' + fg + '" opacity="0.5"/>';
+          } else {
+            art = '<circle cx="200" cy="185" r="95" fill="' + fg + '"/>' +
+              '<rect x="70" y="305" width="260" height="12" rx="4" fill="' + fg + '" opacity="0.55"/>';
+          }
+          var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">' +
+            '<rect width="400" height="400" fill="' + bg + '"/>' + art + '</svg>';
+          return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+        }
+        function demoPost(daysAgo, slug, title, status, platforms, extra) {
+          var created = new Date(Date.now() - daysAgo * DAY).toISOString().slice(0, 10);
+          var post = {
+            id: created + '-' + slug,
+            title: title,
+            status: status,
+            platforms: platforms,
+            created: created,
+            body: extra.body || 'A picture from the studio.',
+            variants: extra.variants || {},
+            media: extra.cover ? ['cover.svg'] : [],
+            cover: extra.cover || null,
+          };
+          if (extra.scheduledFor) post.scheduledFor = extra.scheduledFor;
+          if (extra.campaign) post.campaign = extra.campaign;
+          // Character counts match the sample text, as the posts-store script reports them.
+          Object.keys(post.variants).forEach(function (name) { post.variants[name].charCount = post.variants[name].body.length; });
+          return post;
+        }
+        // The sample captions promise Thursday, so the scheduled post lands on the coming Thursday.
+        function demoNextThursday() {
+          var day = new Date(Date.now() + DAY);
+          while (day.getUTCDay() !== 4) day = new Date(day.getTime() + DAY);
+          return day.toISOString().slice(0, 10);
+        }
+        var demoPosts = [
+          demoPost(0, 'glaze-tests-week-33', 'Glaze tests, week 33', 'idea', ['instagram'], {
+            body: 'Notion: a carousel of this week’s glaze tests, ugly ones included. People love the misses.',
+          }),
+          demoPost(1, 'the-saltpan-series', 'The saltpan series', 'draft', ['instagram', 'bluesky', 'linkedin'], {
+            campaign: 'saltpan',
+            cover: svgUri('#e8ddcb', '#b5651d', 'circle'),
+            body: 'First proper look at the saltpan series — six vessels glazed from one bucket of coastal slip.',
+            variants: {
+              instagram: { charCount: 214, body: 'Six vessels, one bucket of coastal slip. The saltpan series is out of the kiln and sitting in the morning light.' },
+              linkedin: { charCount: 238, body: 'Six vessels, one bucket of coastal slip: the saltpan series is out of the kiln. A note on developing a glaze line from local material — and what it changes about lead times, pricing, and repeatability for a small studio.' },
+            },
+          }),
+          demoPost(3, 'studio-shelves-before-the-kiln', 'Studio shelves, before the kiln', 'in-review', ['instagram'], {
+            cover: svgUri('#26352d', '#a7b89a', 'bars'),
+            body: 'The shelves the night before a firing — everything bone dry, everything still a maybe.',
+            variants: {
+              instagram: { charCount: 156, body: 'The night before a firing. Everything bone dry, everything still a maybe.' },
+            },
+          }),
+          demoPost(5, 'three-mugs-one-morning', 'Three mugs, one morning', 'approved', ['instagram'], {
+            cover: svgUri('#f5ede2', '#8d694d', 'arch'),
+            body: 'Three mugs from the same board, photographed with the first coffee they ever held.',
+            variants: {
+              instagram: { charCount: 132, body: 'Three mugs from the same board, and the first coffee they ever held.' },
+            },
+          }),
+          demoPost(7, 'saltpan-series-first-firing', 'Saltpan series — first firing', 'scheduled', ['instagram', 'bluesky'], {
+            campaign: 'saltpan',
+            cover: svgUri('#19323c', '#9bb8b3', 'circle'),
+            scheduledFor: demoNextThursday(),
+            body: 'Kiln-opening shots from the first saltpan firing, scheduled for Thursday morning.',
+            variants: {
+              instagram: { charCount: 141, body: 'Kiln opening, saltpan firing number one. Thursday morning, first light.' },
+              bluesky: { charCount: 129, body: 'Saltpan firing no. 1 opens Thursday. Kiln shots to follow.' },
+            },
+          }),
+          demoPost(10, 'open-studio-weekend', 'Open studio weekend', 'published', ['instagram'], {
+            cover: svgUri('#ece5da', '#4a7c59', 'bars'),
+            body: 'Photos from open studio weekend — the bench, the visitors, and the shelf that sold out by noon.',
+            variants: {
+              instagram: { charCount: 168, publishedAt: new Date(Date.now() - 9 * DAY).toISOString(), permalink: 'https://www.instagram.com/p/demo3xample/', body: 'Open studio weekend: the bench, the visitors, and the shelf that sold out by noon. Thank you for coming.' },
+            },
+          }),
+          demoPost(24, 'spring-market-recap', 'Spring market recap (superseded)', 'archived', ['instagram'], {
+            cover: svgUri('#e0d6c6', '#7a7166', 'arch'),
+            body: 'Kept for the record: the spring market recap.',
+          }),
+        ];
+        function demoFind(id) {
+          for (var i = 0; i < demoPosts.length; i += 1) {
+            if (demoPosts[i].id === id) return demoPosts[i];
+          }
+          return null;
+        }
+        function demoGet(id) {
+          var post = demoFind(id);
+          if (!post) throw new Error("No post '" + id + "' in the demo gallery.");
+          return { id: post.id, status: post.status, post: post, summary: post.title };
+        }
+        // Like the posts-store script: one stage at a time, archived from anywhere.
+        function demoMove(id, to, fields) {
+          var post = demoFind(id);
+          if (!post) throw new Error("No post '" + id + "' in the demo gallery.");
+          fields = fields && typeof fields === 'object' ? fields : {};
+          if (!to && typeof fields.status === 'string') to = fields.status;
+          if (!to && !Object.keys(fields).length) throw new Error("Nothing to change — pass 'status' and/or 'fields'.");
+          if (to && post.status !== to && legalNext(post.status).indexOf(to) < 0) {
+            var next = legalNext(post.status);
+            throw new Error(
+              "Cannot move '" + post.id + "' from " + post.status + ' to ' + to +
+              ' — posts move one stage at a time.' +
+              (next.length ? ' Legal next: ' + next.join(', ') + '.' : " '" + post.status + "' is final.")
+            );
+          }
+          ['scheduledFor', 'campaign', 'title'].forEach(function (key) {
+            if (!(key in fields)) return;
+            if (fields[key] == null) delete post[key];
+            else post[key] = String(fields[key]);
+          });
+          if (to) post.status = to;
+          return post;
+        }
+        function demoIndex() {
+          return {
+            version: 1,
+            posts: demoPosts.map(function (post) {
+              var entry = {
+                id: post.id,
+                title: post.title,
+                status: post.status,
+                platforms: post.platforms,
+                created: post.created,
+              };
+              if (post.scheduledFor) entry.scheduledFor = post.scheduledFor;
+              if (post.campaign) entry.campaign = post.campaign;
+              return entry;
+            }),
+          };
+        }
+        var demoData = {
+          'posts/index.json': function () { return demoIndex(); },
+          data: function () {
+            return [{ name: 'instagram-media', kind: 'dir', size: 0, mtime: new Date().toISOString() }];
+          },
+        };
+        demoPosts.forEach(function (post) {
+          if (!post.cover) return;
+          demoData['posts/' + post.id + '/media'] = function () {
+            return [{ name: 'cover.svg', kind: 'file', size: 0, mtime: new Date().toISOString() }];
+          };
+          demoData['posts/' + post.id + '/media/cover.svg'] = function () { return post.cover; };
+        });
+
+        window.gezel || window.makeDemoGezel({
+          page: {
+            entry: 'gallery/index.html',
+            typeName: 'Image Feed',
+            params: {
+              brand: 'Veld Ceramics',
+              cadence: '4 images a week',
+              visualStyle: 'Natural light, honest clay, no filters.',
+            },
+          },
+          tools: {
+            page_set_status: function (input) {
+              var post = demoMove(input && input.id, input && input.status, null);
+              return { id: post.id, status: post.status, summary: 'Moved.' };
+            },
+            page_get_post: function (input) { return demoGet(input && input.id); },
+            // The model's own tools, for the sample conversation.
+            list_posts: function (input) {
+              var all = demoIndex().posts;
+              var posts = all.filter(function (post) {
+                return (!input.status || post.status === input.status) && (!input.platform || post.platforms.indexOf(input.platform) >= 0);
+              });
+              return { posts: posts, total: all.length, summary: all.length + ' post(s).' };
+            },
+            get_post: function (input) { return demoGet(input && input.id); },
+            update_post: function (input) {
+              var before = (demoFind(input && input.id) || {}).status;
+              var post = demoMove(input && input.id, input && input.status, input && input.fields);
+              return { id: post.id, status: post.status, summary: before !== post.status ? "Moved '" + post.id + "' from " + before + ' to ' + post.status + '.' : "Updated '" + post.id + "' (" + post.status + ').' };
+            },
+            write_file: function (input) {
+              var match = /^posts\/([^/]+)\/variants\/([a-z0-9-]+)\.md$/.exec(String((input && input.path) || ''));
+              var post = match && demoFind(match[1]);
+              if (!post) throw new Error("This preview only writes caption variants under a post's variants/ folder.");
+              var body = String(input.content || '').replace(/^---[\s\S]*?\n---\n?/, '').trim();
+              post.variants[match[2]] = { charCount: body.length, body: body };
+              return { path: input.path, bytes: body.length };
+            },
+          },
+          chat: window.demoChat,
+          data: demoData,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+        var browserMode = gezel.page.mode === 'browser';
+        var params = gezel.page.params || {};
+        var showArchived = false;
+        var openPostId = null;
+        var lastIndex = { posts: [] };
+        var covers = {};
+
+        function applyTheme(mode) {
+          document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light');
+        }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+        if (browserMode) document.getElementById('browser-note').hidden = false;
+
+        function esc(value) {
+          return String(value).replace(/[&<>"]/g, function (ch) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch];
+          });
+        }
+        function el(id) { return document.getElementById(id); }
+
+        var brand = typeof params.brand === 'string' && params.brand ? params.brand : gezel.page.typeName;
+        el('title').textContent = brand;
+        document.title = brand + ' — image feed gallery';
+
+        function parseFront(text) {
+          var lines = String(text).split(/\r?\n/);
+          if ((lines[0] || '').trim() !== '---') return { fields: {}, body: String(text) };
+          var fields = {};
+          for (var i = 1; i < lines.length; i += 1) {
+            if (lines[i].trim() === '---') {
+              return { fields: fields, body: lines.slice(i + 1).join('\n').replace(/^\n/, '') };
+            }
+            var sep = lines[i].indexOf(':');
+            if (sep <= 0) continue;
+            var key = lines[i].slice(0, sep).trim();
+            var raw = lines[i].slice(sep + 1).trim();
+            if (raw.charAt(0) === '[' && raw.charAt(raw.length - 1) === ']') {
+              fields[key] = raw.slice(1, -1).split(',').map(function (part) { return part.trim(); }).filter(Boolean);
+            } else {
+              fields[key] = raw;
+            }
+          }
+          return { fields: {}, body: String(text) };
+        }
+
+        function isImage(name) {
+          return /\.(png|jpe?g|webp|gif|svg|avif)$/i.test(name);
+        }
+
+        function resolveCover(id) {
+          if (Object.prototype.hasOwnProperty.call(covers, id)) return Promise.resolve(covers[id]);
+          return gezel.data
+            .list('posts/' + id + '/media')
+            .catch(function () { return []; })
+            .then(function (entries) {
+              var first = null;
+              for (var i = 0; i < entries.length; i += 1) {
+                if (entries[i].kind !== 'dir' && isImage(entries[i].name)) { first = entries[i].name; break; }
+              }
+              covers[id] = first ? gezel.data.url('posts/' + id + '/media/' + first) : '';
+              return covers[id];
+            });
+        }
+
+        function renderGrid(index) {
+          lastIndex = index && Array.isArray(index.posts) ? index : { posts: [] };
+          var posts = lastIndex.posts;
+          var visible = posts.filter(function (post) { return showArchived || post.status !== 'archived'; });
+          var live = posts.filter(function (post) { return post.status !== 'archived'; });
+          var published = posts.filter(function (post) { return post.status === 'published'; }).length;
+          var cadence = typeof params.cadence === 'string' && params.cadence ? params.cadence : '';
+          el('sub').textContent =
+            (cadence ? 'Aiming for ' + cadence + ' · ' : '') +
+            live.length + ' post' + (live.length === 1 ? '' : 's') + ' in flight · ' + published + ' published';
+          el('grid-empty').hidden = posts.length > 0;
+
+          el('grid').innerHTML = visible
+            .map(function (post) {
+              var chips = (post.platforms || [])
+                .map(function (platform) { return '<span class="chip">' + esc(platform) + '</span>'; })
+                .join('');
+              if (post.campaign) chips += '<span class="chip tag">' + esc(post.campaign) + '</span>';
+              var when = post.status === 'scheduled' && post.scheduledFor ? 'for ' + esc(String(post.scheduledFor).slice(0, 10)) : esc(String(post.created || '').slice(0, 10));
+              return (
+                '<button type="button" class="shot" data-post="' + esc(post.id) + '">' +
+                '<span class="pic" data-pic="' + esc(post.id) + '"><span class="tcard">' + esc(post.title || post.id) + '</span></span>' +
+                '<span class="st st-' + esc(post.status) + '">' + esc(post.status) + '</span>' +
+                '<span class="cap"><span class="ti">' + esc(post.title || post.id) + '</span>' +
+                '<span class="ft">' + chips + '<span>' + when + '</span></span></span>' +
+                '</button>'
+              );
+            })
+            .join('');
+
+          visible.forEach(function (post) {
+            resolveCover(post.id).then(function (src) {
+              if (!src) return;
+              var pic = document.querySelector('[data-pic="' + post.id + '"]');
+              if (pic) {
+                pic.innerHTML = '<img alt="' + esc(post.title || post.id) + '" src="' + esc(src) + '" />';
+              }
+            });
+          });
+        }
+
+        function loadGrid() {
+          var revision=++appLoadRevision;
+          return gezel.data.read('posts/index.json')
+            .then(function(index){if(appDisposed||revision!==appLoadRevision)return;reportAppError(null);renderGrid(index);})
+            .catch(function(error){if(!appDisposed&&revision===appLoadRevision)reportAppError(error);});
+        }
+
+        function setDrawerError(message) {
+          var node = el('d-error');
+          node.textContent = message || '';
+          node.hidden = !message;
+        }
+
+        function renderDrawer(post) {
+          if(!el('drawer').open)el('drawer').showModal();
+          el('d-title').textContent = post.title || post.id;
+          var meta = [post.status, 'created ' + String(post.created || '').slice(0, 10)];
+          if (post.scheduledFor) meta.push('scheduled for ' + String(post.scheduledFor).slice(0, 10));
+          if (post.campaign) meta.push('campaign: ' + post.campaign);
+          el('d-meta').textContent = meta.join(' · ');
+          el('d-body').textContent = post.body || '(no caption yet)';
+
+          var moves = legalNext(post.status);
+          el('d-moves').innerHTML =
+            moves.length === 0
+              ? '<span class="empty">' + esc(post.status) + ' is the end of the line.</span>'
+              : moves
+                  .map(function (stage) {
+                    return '<button type="button" class="key" data-move="' + esc(stage) + '">' + esc(stage) + '</button>';
+                  })
+                  .join('');
+          if (browserMode && moves.length > 0) {
+            el('d-moves').innerHTML = '<span class="empty">Open the Output pane in the app to move this post.</span>';
+          }
+
+          var media = post.media || [];
+          el('d-media').textContent = media.length === 0 ? 'No media attached yet.' : media.join(', ');
+          el('d-thumbs').innerHTML = media
+            .filter(isImage)
+            .map(function (name) {
+              var src = gezel.data.url('posts/' + post.id + '/media/' + name);
+              return src ? '<img alt="' + esc(name) + '" src="' + esc(src) + '" />' : '';
+            })
+            .join('');
+
+          var variants = post.variants || {};
+          var names = Object.keys(variants);
+          el('d-variants').innerHTML =
+            names.length === 0
+              ? '<p class="meta empty">No platform variants drafted yet.</p>'
+              : names
+                  .map(function (name) {
+                    var variant = variants[name] || {};
+                    var head = '<span class="name">' + esc(name) + '</span>' +
+                      '<span class="chip">' + esc(String(variant.charCount || 0)) + ' chars</span>';
+                    if (variant.publishedAt) head += '<span class="chip st-published">live</span>';
+                    if (variant.permalink) {
+                      head += '<a href="' + esc(variant.permalink) + '" rel="noreferrer">permalink</a>';
+                    }
+                    return '<div class="variant"><div class="vh">' + head + '</div>' +
+                      '<div class="vb">' + esc(variant.body || '') + '</div></div>';
+                  })
+                  .join('');
+        }
+
+        function fallbackDetail(id) {
+          return gezel.data.read('posts/' + id + '/post.md').then(function (raw) {
+            var parsed = parseFront(raw);
+            var post = { id: id };
+            Object.keys(parsed.fields).forEach(function (key) { post[key] = parsed.fields[key]; });
+            post.status = String(parsed.fields.status || 'idea');
+            post.platforms = [].concat(parsed.fields.platforms || []);
+            post.body = parsed.body.trim();
+            post.variants = {};
+            post.media = [];
+            return gezel.data
+              .list('posts/' + id + '/variants')
+              .catch(function () { return []; })
+              .then(function (entries) {
+                var files = entries.filter(function (entry) { return entry.kind !== 'dir' && /\.md$/.test(entry.name); });
+                return Promise.all(
+                  files.map(function (entry) {
+                    return gezel.data
+                      .read('posts/' + id + '/variants/' + entry.name)
+                      .then(function (variantRaw) {
+                        var variantDoc = parseFront(variantRaw);
+                        var body = variantDoc.body.trim();
+                        var variant = { charCount: Number(variantDoc.fields.charCount) || body.length, body: body };
+                        ['publishedAt', 'permalink', 'postId', 'corpusRef'].forEach(function (key) {
+                          if (variantDoc.fields[key]) variant[key] = String(variantDoc.fields[key]);
+                        });
+                        post.variants[entry.name.replace(/\.md$/, '')] = variant;
+                      })
+                      .catch(reportAppError);
+                  }),
+                );
+              })
+              .then(function () {
+                return gezel.data.list('posts/' + id + '/media').catch(function () { return []; });
+              })
+              .then(function (entries) {
+                post.media = entries
+                  .filter(function (entry) { return entry.kind !== 'dir'; })
+                  .map(function (entry) { return entry.name; });
+                return post;
+              });
+          });
+        }
+
+        function openPost(id) {
+          openPostId = id;
+          setDrawerError('');
+          gezel.tools
+            .invoke('page_get_post', { id: id })
+            .then(function (result) {
+              if (openPostId === id) renderDrawer(result.output.post || result.output);
+            })
+            .catch(function (err) {
+              if (err && err.code === 'unavailable') {
+                fallbackDetail(id)
+                  .then(function (post) { if (openPostId === id) renderDrawer(post); })
+                  .catch(function () {
+                    if (openPostId !== id) return;
+                    if(!el('drawer').open)el('drawer').showModal();
+                    el('d-title').textContent = id;
+                    setDrawerError('Could not load this post right now.');
+                  });
+                return;
+              }
+              if(!el('drawer').open)el('drawer').showModal();
+              el('d-title').textContent = id;
+              setDrawerError(err && err.message ? err.message : 'Could not load this post right now.');
+            });
+        }
+
+        function closeDrawer() {
+          openPostId = null;
+          el('drawer').close();
+        }
+
+        function movePost(id, status) {
+          setDrawerError('');
+          gezel.tools
+            .invoke('page_set_status', { id: id, status: status })
+            .then(function () {
+              loadGrid();
+              if (openPostId === id) openPost(id);
+            })
+            .catch(function (err) {
+              setDrawerError(err && err.message ? err.message : 'The move was refused.');
+            });
+        }
+
+        el('grid').addEventListener('click', function (event) {
+          var card = event.target.closest('[data-post]');
+          if (card) openPost(card.getAttribute('data-post'));
+        });
+        el('d-moves').addEventListener('click', function (event) {
+          var key = event.target.closest('[data-move]');
+          if (key && openPostId) movePost(openPostId, key.getAttribute('data-move'));
+        });
+        el('d-close').addEventListener('click', closeDrawer);
+        document.addEventListener('keydown', function (event) {
+          if (event.key === 'Escape') closeDrawer();
+        });
+        el('toggle-archived').addEventListener('click', function () {
+          showArchived = !showArchived;
+          this.setAttribute('aria-pressed', showArchived ? 'true' : 'false');
+          renderGrid(lastIndex);
+        });
+
+        gezel.data
+          .list('data', { source: 'artifacts' })
+          .then(function (entries) {
+            if (entries && entries.length > 0) el('corpus-hint').hidden = false;
+          })
+          .catch(function () { /* Optional connector outputs do not exist in a new project. */ });
+
+        loadGrid();
+        appSubscriptions.push(gezel.data.watch('posts/index.json', function () { loadGrid(); }));
+      })();
+    </script>
+  <script src="application.js" defer></script>
+  </body>
+</html>

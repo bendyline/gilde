@@ -1,0 +1,821 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Books and month close</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f6f2ea; --card: #fffcf6; --ink: #29241e; --muted: #6b6155; --line: #ddd3c3;
+        --accent: #0c805a; --on-accent: #ffffff; --late: #a3341f; --late-bg: #f7e1da; --soon: #8a5a12; --soon-bg: #f6ead2;
+        --ok: #2f6b45; --ok-bg: #e2eedf; --chip: #efe7da;
+      }
+      :root[data-theme='dark'] {
+        --bg: #181613; --card: #221f1b; --ink: #efe8dd; --muted: #a99d8d; --line: #3a342c;
+        --accent: #25a278; --on-accent: #0d1712; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+        --ok: #8fc29b; --ok-bg: #22301f; --chip: #2d2822;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #181613; --card: #221f1b; --ink: #efe8dd; --muted: #a99d8d; --line: #3a342c;
+          --accent: #25a278; --on-accent: #0d1712; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+          --ok: #8fc29b; --ok-bg: #22301f; --chip: #2d2822;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body, system-ui, sans-serif); font-size: 15px; line-height: 1.5; padding: 1.5rem 1.25rem; }
+      main { max-width: 900px; margin: 0 auto; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.5rem; font-weight: 400; margin: 0 0 0.2rem; }
+      h2 { font-family: var(--font-heading, Georgia, serif); font-size: 1.1rem; font-weight: 400; margin: 0 0 0.6rem; }
+      h3 { font-size: 0.8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 0.5rem; }
+      .sub { color: var(--muted); margin: 0 0 1rem; }
+      .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; margin: 0 0 1.2rem; }
+      .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem 0.9rem; min-width: 0; }
+      .tile b { display: block; font-size: 1.5rem; font-weight: 600; line-height: 1.1; overflow-wrap: anywhere; }
+      .tile span { color: var(--muted); font-size: 0.85rem; }
+      .tile.soon b { color: var(--soon); }
+      .tile.late b { color: var(--late); }
+      section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin: 0 0 1rem; }
+      .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.25rem; }
+      .files { display: grid; gap: 0.5rem; margin: 0 0 0.75rem; }
+      .empty { color: var(--muted); font-style: italic; margin: 0; }
+      .meta { display: block; color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
+      .list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
+      .list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.5rem; align-items: baseline; }
+      .list b { font-weight: 600; }
+      .checklist { list-style: none; margin: 0 0 0.9rem; padding: 0; display: grid; gap: 0.45rem; }
+      .checklist li { display: grid; grid-template-columns: 1.25rem minmax(0, 1fr); gap: 0.6rem; align-items: start; }
+      .box { width: 1.1rem; height: 1.1rem; margin-top: 0.15rem; border: 1.5px solid var(--muted); border-radius: 4px; position: relative; }
+      .box.done { background: var(--accent); border-color: var(--accent); }
+      .box.done::after { content: ''; position: absolute; left: 0.32rem; top: 0.08rem; width: 0.3rem; height: 0.6rem; border: solid var(--on-accent); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+      .checklist .done-text { color: var(--muted); }
+      .close-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+      .primary { min-height: 40px; padding: 0.4rem 0.9rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; cursor: pointer; }
+      .primary:disabled { background: transparent; color: var(--muted); border-color: var(--line); cursor: not-allowed; font-weight: 400; }
+      .closed-note { color: var(--ok); font-weight: 600; }
+      .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.75rem 0 0; }
+      .chip { display: inline-block; font-size: 0.78rem; padding: 0.05rem 0.45rem; border-radius: 4px; background: var(--chip); color: var(--ink); }
+      .chip.unsorted { background: var(--soon-bg); color: var(--soon); }
+      .chip.ok { background: var(--ok-bg); color: var(--ok); }
+      .table-wrap { overflow-x: auto; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+      th { text-align: left; font-weight: 600; color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 0.5rem 0.4rem; border-bottom: 1px solid var(--line); }
+      td { padding: 0.45rem 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+      tr:last-child td { border-bottom: 0; }
+      .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+      th.num { text-align: right; }
+      .in { color: var(--ok); }
+      .neg { color: var(--late); }
+      .pnl td { border-bottom: 0; padding: 0.25rem 0.5rem; }
+      .pnl .group td { padding-top: 0.7rem; font-weight: 600; }
+      .pnl .line td:first-child { padding-left: 1.2rem; color: var(--muted); }
+      .pnl .total td { border-top: 1px solid var(--line); font-weight: 600; }
+      .pnl .net td { border-top: 2px solid var(--ink); font-weight: 700; font-size: 1rem; padding-top: 0.5rem; }
+      .demo-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 0 0 1rem; padding: 0.5rem 0.65rem; border: 1px solid var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--card) 88%, var(--accent)); font-size: 0.85rem; }
+      .demo-banner[hidden] { display: none; }
+      .demo-reset { flex: none; min-height: 36px; padding: 0.3rem 0.7rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; }
+      .note { color: var(--muted); font-size: 0.85rem; margin: 0.75rem 0 0; }
+      @media (max-width: 640px) {
+        .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .split { grid-template-columns: minmax(0, 1fr); }
+        .tile b { font-size: 1.25rem; }
+      }
+    </style>
+    <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:0 0 12px;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--line,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+    <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script>
+  </head>
+  <body>
+    <main>
+      <p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong>: Brightline Electric’s sample books. Changes stay in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Books and month close</h1>
+      <p class="sub" id="sub">Loading the books…</p>
+      <div class="tiles">
+        <div class="tile soon"><b id="t-waiting">0</b><span>Receipts waiting</span></div>
+        <div class="tile soon"><b id="t-unsorted">0</b><span>Need a category</span></div>
+        <div class="tile"><b id="t-close">–</b><span id="t-close-label">Month close</span></div>
+        <div class="tile" id="t-net-tile"><b id="t-net">–</b><span id="t-net-label">Net profit</span></div>
+      </div>
+      <section id="inbox-section">
+        <h2>Receipts inbox</h2>
+        <div class="split">
+          <div>
+            <h3>Waiting to be booked</h3>
+            <div class="files" id="inbox-files"></div>
+            <div id="add-receipt"></div>
+            <p class="note" id="booked-note"></p>
+          </div>
+          <div>
+            <h3>Needs a category</h3>
+            <ul class="list" id="unsorted"></ul>
+          </div>
+        </div>
+      </section>
+      <section id="close-section">
+        <h2>Month close</h2>
+        <p class="sub" id="close-sub"></p>
+        <ul class="checklist" id="checklist"></ul>
+        <div class="close-row">
+          <button type="button" class="primary" id="close-button" disabled>Close the month</button>
+          <span id="close-status" role="status"></span>
+        </div>
+        <div class="chips" id="closed-months"></div>
+      </section>
+      <section id="pnl-section">
+        <h2>P&amp;L snapshot</h2>
+        <div class="table-wrap">
+          <table class="pnl">
+            <thead><tr><th>Category</th><th class="num" id="pnl-a">Last month</th><th class="num" id="pnl-b">This month</th></tr></thead>
+            <tbody id="pnl-body"></tbody>
+          </table>
+        </div>
+        <p class="note" id="draw-note" hidden></p>
+        <p class="note">These are the books as recorded, not tax advice. For what is deductible, what you owe or how to file, ask your accountant or a tax professional.</p>
+      </section>
+      <section id="ledger-section">
+        <h2>Ledger</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>Payee</th><th>Category</th><th class="num">Amount</th><th>Receipt</th></tr></thead>
+            <tbody id="ledger-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        var DAY = 86400000;
+        // ── books-rules-start ──
+        // Pure derivations shared by the script, the page and the sample conversation:
+        // integer-cent money, the P&L by category group, the receipts still waiting in
+        // the inbox, and the month-close checklist. Kept self-contained between these
+        // sentinels so unit tests execute the shipped bytes.
+        var CATEGORY_GROUP = {
+          materials: 'cost',
+          subcontractors: 'cost',
+          payroll: 'expense',
+          vehicle: 'expense',
+          tools: 'expense',
+          insurance: 'expense',
+          rent: 'expense',
+          utilities: 'expense',
+          software: 'expense',
+          marketing: 'expense',
+          office: 'expense',
+          'professional-fees': 'expense',
+          'bank-fees': 'expense',
+          licenses: 'expense',
+          meals: 'expense',
+          other: 'expense',
+          sales: 'income',
+          'other-income': 'income',
+          'owner-draw': 'equity',
+          uncategorized: 'unsorted',
+        };
+        var CATEGORIES = Object.keys(CATEGORY_GROUP);
+        var CATEGORY_WORDS = {
+          income: 'sales', revenue: 'sales', sale: 'sales', job: 'sales', jobs: 'sales', interest: 'other-income', refund: 'other-income',
+          material: 'materials', supplies: 'materials', supply: 'materials', parts: 'materials', stock: 'materials',
+          subcontractor: 'subcontractors', contractor: 'subcontractors', contractors: 'subcontractors',
+          wages: 'payroll', salary: 'payroll', salaries: 'payroll',
+          fuel: 'vehicle', gas: 'vehicle', van: 'vehicle', truck: 'vehicle', mileage: 'vehicle',
+          tool: 'tools', equipment: 'tools',
+          advertising: 'marketing', ads: 'marketing',
+          phone: 'utilities', internet: 'utilities', electric: 'utilities',
+          legal: 'professional-fees', accounting: 'professional-fees', accountant: 'professional-fees',
+          fees: 'bank-fees', 'bank-fee': 'bank-fees', license: 'licenses', permit: 'licenses', permits: 'licenses',
+          meal: 'meals', food: 'meals', draw: 'owner-draw', 'owner-draws': 'owner-draw',
+          unknown: 'uncategorized', 'not-sure': 'uncategorized',
+        };
+        var GROUP_ORDER = ['income', 'cost', 'expense', 'equity'];
+        var STEPS = [
+          { id: 'receipts', label: 'Book every receipt in the inbox', words: ['receipt', 'inbox'] },
+          { id: 'categories', label: 'Give every entry a category', words: ['categor'] },
+          { id: 'bank', label: 'Match the bank statement', words: ['bank', 'checking'] },
+          { id: 'card', label: 'Match the card statement', words: ['card', 'credit'] },
+          { id: 'payroll', label: 'Record payroll and subcontractor payments', words: ['payroll', 'wage', 'subcontract'] },
+          { id: 'income', label: 'Record every customer payment', words: ['customer', 'payment', 'invoice', 'income', 'deposit'] },
+          { id: 'review', label: 'Review the P&L with the owner', words: ['review', 'p&l', 'owner', 'profit'] },
+        ];
+        var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+        function pad(n) {
+          return n < 10 ? '0' + n : String(n);
+        }
+        function localDay(ms) {
+          var d = new Date(ms);
+          return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+        }
+        function normalizeDate(text) {
+          var raw = String(text || '').trim();
+          if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+          var parsed = Date.parse(raw);
+          return isFinite(parsed) ? localDay(parsed) : null;
+        }
+        function prevMonth(month) {
+          var y = Number(month.slice(0, 4));
+          var m = Number(month.slice(5, 7)) - 1;
+          if (m < 1) {
+            m = 12;
+            y -= 1;
+          }
+          return y + '-' + pad(m);
+        }
+        function monthName(month) {
+          return MONTHS[Number(String(month).slice(5, 7)) - 1] + ' ' + String(month).slice(0, 4);
+        }
+        // 'YYYY-MM', a date, 'last month', or a month name; a bare name means its latest past or current occurrence.
+        function normalizeMonth(text, nowMs) {
+          var raw = String(text || '').trim().toLowerCase();
+          var current = localDay(nowMs).slice(0, 7);
+          if (/^\d{4}-\d{2}$/.test(raw)) return raw;
+          if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw.slice(0, 7);
+          if (/last|previous/.test(raw)) return prevMonth(current);
+          if (/this|current/.test(raw)) return current;
+          for (var i = 0; i < 12; i++) {
+            if (raw.indexOf(MONTHS[i].toLowerCase().slice(0, 3)) === 0) {
+              var year = raw.match(/\d{4}/);
+              var candidate = (year ? year[0] : current.slice(0, 4)) + '-' + pad(i + 1);
+              if (!year && candidate > current) candidate = Number(current.slice(0, 4)) - 1 + '-' + pad(i + 1);
+              return candidate;
+            }
+          }
+          return null;
+        }
+        // Integer cents from 284.17, '284.17' or '$1,912.40', with no float arithmetic; null unless positive.
+        function toCents(value) {
+          var text = typeof value === 'number' ? (isFinite(value) ? String(value) : '') : String(value == null ? '' : value);
+          var m = /^(\d+)(?:\.(\d*))?$/.exec(text.replace(/[$,\s]/g, ''));
+          if (!m) return null;
+          var frac = (m[2] || '') + '000';
+          var cents = Number(m[1]) * 100 + Number(frac.slice(0, 2)) + (Number(frac.charAt(2)) >= 5 ? 1 : 0);
+          return cents > 0 ? cents : null;
+        }
+        function money(cents) {
+          var abs = Math.abs(Math.round(cents));
+          var whole = String(Math.floor(abs / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+          return (cents < 0 ? '-' : '') + whole + '.' + pad(abs % 100);
+        }
+        function normalizeCategory(text) {
+          var key = String(text || '').trim().toLowerCase().replace(/&/g, 'and').replace(/[\s_]+/g, '-');
+          if (Object.prototype.hasOwnProperty.call(CATEGORY_GROUP, key)) return key;
+          if (Object.prototype.hasOwnProperty.call(CATEGORY_WORDS, key)) return CATEGORY_WORDS[key];
+          var words = key.split('-');
+          for (var i = 0; i < words.length; i++) {
+            if (Object.prototype.hasOwnProperty.call(CATEGORY_GROUP, words[i])) return words[i];
+            if (Object.prototype.hasOwnProperty.call(CATEGORY_WORDS, words[i])) return CATEGORY_WORDS[words[i]];
+          }
+          return null;
+        }
+        function normalizeStep(text) {
+          var raw = String(text || '').trim().toLowerCase();
+          for (var i = 0; i < STEPS.length; i++) if (STEPS[i].id === raw) return STEPS[i].id;
+          for (var j = 0; j < STEPS.length; j++) {
+            for (var k = 0; k < STEPS[j].words.length; k++) if (raw.indexOf(STEPS[j].words[k]) >= 0) return STEPS[j].id;
+          }
+          return null;
+        }
+        function stepLabel(id) {
+          for (var i = 0; i < STEPS.length; i++) if (STEPS[i].id === id) return STEPS[i].label;
+          return id;
+        }
+        function entryDate(entry) {
+          return String((entry.data && entry.data.date) || entry.at || '').slice(0, 10);
+        }
+        function monthOf(entry) {
+          return entryDate(entry).slice(0, 7);
+        }
+        function payeeOf(entry) {
+          return String((entry.data && entry.data.payee) || entry.note || '');
+        }
+        function groupOf(entry) {
+          var group = CATEGORY_GROUP[entry.category] || 'expense';
+          return group === 'unsorted' ? (entry.kind === 'in' ? 'income' : 'expense') : group;
+        }
+        function entryLine(entry) {
+          return (
+            entry.id + ' ' + entryDate(entry) + ' ' + payeeOf(entry) + ' ' + money(entry.amountCents) +
+            (entry.kind === 'in' ? ' in, ' : ' out, ') + entry.category +
+            (entry.data && entry.data.file ? ' (receipt ' + entry.data.file + ')' : '')
+          );
+        }
+        // The month's P&L: income less cost of jobs is gross profit; less expenses is net profit. Owner draws stay off it.
+        function pnl(entries, month) {
+          var rows = {};
+          var totals = { income: 0, cost: 0, expense: 0, equity: 0 };
+          var count = 0;
+          entries.forEach(function (e) {
+            if (monthOf(e) !== month) return;
+            count += 1;
+            var group = groupOf(e);
+            var cents = e.kind === (group === 'income' ? 'in' : 'out') ? e.amountCents : -e.amountCents;
+            totals[group] += cents;
+            var key = group + ':' + e.category;
+            if (!rows[key]) rows[key] = { group: group, category: e.category, cents: 0 };
+            rows[key].cents += cents;
+          });
+          var lines = Object.keys(rows)
+            .map(function (k) { return rows[k]; })
+            .sort(function (a, b) { return GROUP_ORDER.indexOf(a.group) - GROUP_ORDER.indexOf(b.group) || b.cents - a.cents; });
+          var gross = totals.income - totals.cost;
+          return {
+            month: month, count: count, incomeCents: totals.income, costCents: totals.cost, grossCents: gross,
+            expenseCents: totals.expense, netCents: gross - totals.expense, drawCents: totals.equity, lines: lines,
+          };
+        }
+        function pnlLine(p) {
+          if (!p.count) return monthName(p.month) + ': nothing booked.';
+          var part = function (group) {
+            var rows = p.lines.filter(function (l) { return l.group === group; }).map(function (l) { return l.category + ' ' + money(l.cents); });
+            return rows.length ? ' (' + rows.join(', ') + ')' : '';
+          };
+          return (
+            monthName(p.month) + ': income ' + money(p.incomeCents) + part('income') +
+            '; cost of jobs ' + money(p.costCents) + part('cost') +
+            '; gross profit ' + money(p.grossCents) +
+            '; expenses ' + money(p.expenseCents) + part('expense') +
+            '; net profit ' + money(p.netCents) + (p.netCents < 0 ? ' (a loss)' : '') +
+            (p.drawCents ? '; owner draws ' + money(p.drawCents) + ', not on the P&L' : '') + '.'
+          );
+        }
+        // Inbox files that no entry names as its receipt yet.
+        function waitingFiles(names, entries) {
+          var booked = {};
+          entries.forEach(function (e) {
+            if (e.data && e.data.file) booked[String(e.data.file)] = true;
+          });
+          return names
+            .filter(function (n) { return n.charAt(0) !== '.' && !booked['inbox/' + n]; })
+            .map(function (n) { return 'inbox/' + n; });
+        }
+        function needsCategory(entries, month) {
+          return entries.filter(function (e) { return e.category === 'uncategorized' && (!month || monthOf(e) === month); });
+        }
+        function closeRecord(closes, month) {
+          for (var i = 0; i < closes.length; i++) if (closes[i].fields && closes[i].fields.month === month) return closes[i];
+          return null;
+        }
+        function isClosed(closes, month) {
+          var r = closeRecord(closes, month);
+          return !!r && r.status === 'closed';
+        }
+        // The month to close: the earliest finished month with entries that is still open, else last month.
+        function monthToClose(entries, closes, nowMs) {
+          var current = localDay(nowMs).slice(0, 7);
+          var months = {};
+          entries.forEach(function (e) {
+            var m = monthOf(e);
+            if (m && m < current) months[m] = true;
+          });
+          closes.forEach(function (r) {
+            if (r.fields && r.fields.month && r.fields.month < current) months[r.fields.month] = true;
+          });
+          var open = Object.keys(months).filter(function (m) { return !isClosed(closes, m); }).sort();
+          return open.length ? open[0] : prevMonth(current);
+        }
+        function closeView(month, entries, closes, waiting) {
+          var rec = closeRecord(closes, month);
+          var fields = (rec && rec.fields) || {};
+          var done = fields.done || {};
+          var notes = fields.notes || {};
+          var closed = !!rec && rec.status === 'closed';
+          var unsorted = needsCategory(entries, month);
+          var steps = STEPS.map(function (s) {
+            var ticked = !!done[s.id];
+            var auto = s.id === 'receipts' ? waiting.length === 0 : s.id === 'categories' ? unsorted.length === 0 : false;
+            var ok = closed || (s.id === 'categories' ? auto : auto || ticked);
+            return { id: s.id, label: s.label, done: ok, on: done[s.id] || '', note: notes[s.id] || '', auto: auto && !ticked };
+          });
+          var left = steps.filter(function (s) { return !s.done; });
+          return { month: month, closed: closed, closedOn: fields.closedOn || '', steps: steps, left: left, ready: !closed && left.length === 0, unsorted: unsorted };
+        }
+        function closeLine(view) {
+          if (view.closed) return monthName(view.month) + ' is closed' + (view.closedOn ? ' (closed ' + view.closedOn + ')' : '') + '.';
+          var count = view.steps.length - view.left.length;
+          return (
+            'Close of ' + monthName(view.month) + ': ' + count + ' of ' + view.steps.length + ' steps done. ' +
+            (view.ready
+              ? 'Every step is done, so it is ready to close.'
+              : 'Still to do: ' + view.left.map(function (s) { return s.label + ' (' + s.id + ')'; }).join('; ') + '.')
+          );
+        }
+        function picture(entries, closes, inboxNames, nowMs, focusMonth) {
+          var current = localDay(nowMs).slice(0, 7);
+          var last = prevMonth(current);
+          var closing = monthToClose(entries, closes, nowMs);
+          var waiting = waitingFiles(inboxNames, entries);
+          var unsorted = needsCategory(entries);
+          var view = closeView(closing, entries, closes, waiting);
+          var parts = [];
+          var shown = [];
+          function addPnl(month) {
+            if (!month || shown.indexOf(month) >= 0) return;
+            shown.push(month);
+            var label = month === last ? 'P&L for last month, ' : month === current ? 'This month so far, ' : 'P&L for ';
+            parts.push(label + pnlLine(pnl(entries, month)));
+          }
+          addPnl(focusMonth);
+          addPnl(last);
+          addPnl(closing);
+          parts.push(closeLine(view));
+          parts.push(
+            waiting.length
+              ? waiting.length + (waiting.length === 1 ? ' receipt is' : ' receipts are') + ' waiting in the inbox to be booked: ' + waiting.join(', ') + '.'
+              : 'No receipts are waiting in the inbox.',
+          );
+          parts.push(
+            unsorted.length
+              ? unsorted.length + (unsorted.length === 1 ? ' entry needs' : ' entries need') + ' a category: ' + unsorted.map(entryLine).join(' | ') + '.'
+              : 'Every entry has a category.',
+          );
+          addPnl(current);
+          var closedMonths = closes
+            .filter(function (r) { return r.status === 'closed' && r.fields && r.fields.month; })
+            .map(function (r) { return r.fields.month; })
+            .sort();
+          if (closedMonths.length) parts.push('Closed months: ' + closedMonths.map(monthName).join(', ') + '.');
+          return { closing: closing, view: view, waiting: waiting, unsorted: unsorted, netCents: pnl(entries, closing).netCents, summary: parts.join(' ') };
+        }
+        // ── books-rules-end ──
+        var LABELS = {"materials":"Materials","subcontractors":"Subcontractors","payroll":"Payroll","vehicle":"Vehicle and fuel","tools":"Tools and equipment","insurance":"Insurance","rent":"Rent","utilities":"Utilities and phone","software":"Software","marketing":"Marketing","office":"Office","professional-fees":"Professional fees","bank-fees":"Bank and card fees","licenses":"Licenses and permits","meals":"Meals","other":"Other","sales":"Sales","other-income":"Other income","owner-draw":"Owner draw","uncategorized":"Needs a category"};
+
+        // ── demo books (used only when the page opens outside Gezel); dates are relative so it never goes stale ──
+        function inMonth(offset, day) {
+          var now = new Date();
+          var d = new Date(now.getFullYear(), now.getMonth() + offset, 1, 12);
+          var date = Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate());
+          if (offset === 0) date = Math.min(date, now.getDate());
+          d.setDate(date);
+          return localDay(d.getTime());
+        }
+        var demoRows = [
+          [-1, 1, 'Shop rent', 160000, 'out', 'rent'],
+          [-1, 1, 'Ridgeway Insurance', 41200, 'out', 'insurance'],
+          [-1, 3, 'Cascade Electric Supply', 191240, 'out', 'materials', 'inbox/cascade-supply-invoice.pdf'],
+          [-1, 5, 'FieldBook scheduling', 4900, 'out', 'software'],
+          [-1, 6, 'Alder Street remodel', 748000, 'in', 'sales'],
+          [-1, 9, 'Payroll', 292500, 'out', 'payroll'],
+          [-1, 11, 'Delgado Trenching', 95000, 'out', 'subcontractors'],
+          [-1, 12, 'Pacific Fuel', 31840, 'out', 'vehicle'],
+          [-1, 14, 'Kim residence panel upgrade', 325000, 'in', 'sales'],
+          [-1, 17, 'Cascade Electric Supply', 68415, 'out', 'materials'],
+          [-1, 19, 'Hollis Bakery walk-through', 65000, 'in', 'sales'],
+          [-1, 21, 'Brightway Auto', 18950, 'out', 'uncategorized'],
+          [-1, 22, 'Ridgeview Apartments service', 240000, 'in', 'sales'],
+          [-1, 23, 'Payroll', 292500, 'out', 'payroll'],
+          [-1, 28, 'Owner draw', 150000, 'out', 'owner-draw'],
+          [-1, 31, 'Card processing fees', 8672, 'out', 'bank-fees'],
+          [0, 2, 'Hollis Bakery lighting deposit', 240000, 'in', 'sales'],
+          [0, 3, 'Cascade Electric Supply', 114060, 'out', 'materials'],
+        ];
+        var demoLedger = { version: 1, currency: 'USD', entries: demoRows.map(function (row, i) {
+          var date = inMonth(row[0], row[1]);
+          return { id: 'ledger-' + (i + 1), at: date + 'T12:00:00.000Z', amountCents: row[3], kind: row[4], category: row[5], data: Object.assign({ date: date, payee: row[2] }, row[6] ? { file: row[6] } : {}) };
+        }) };
+        var LAST = prevMonth(localDay(Date.now()).slice(0, 7));
+        var demoClose = { version: 1, stages: ['open', 'closed'], records: [
+          { id: 'close-' + LAST, status: 'open', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), history: [],
+            fields: { month: LAST, done: { card: inMonth(0, 1), payroll: inMonth(0, 1), income: inMonth(0, 2) }, notes: { card: 'Card statement ending 4471 matches.' } } },
+        ] };
+        var demoText = {
+          'inbox/hillside-hardware.txt': 'Hillside Hardware\n' + inMonth(-1, 29) + '\n12/2 cable, 250 ft      198.40\nWire connectors, 2 boxes 31.52\nOutlet boxes, 10         32.70\nTax                      21.55\nTotal                   284.17\nBusiness card ending 4471\n',
+          'inbox/pacific-fuel.txt': 'Pacific Fuel #12\n' + inMonth(-1, 30) + '\nDiesel, 14.2 gal, van 2\nTotal 61.20\nBusiness card ending 4471\n',
+        };
+        var demoFiles = [
+          { path: 'inbox/cascade-supply-invoice.pdf', name: 'cascade-supply-invoice.pdf', size: 96256, mtime: Date.now() - 30 * DAY },
+          { path: 'inbox/hillside-hardware.txt', name: 'hillside-hardware.txt', size: 212, mtime: Date.now() - 3 * DAY },
+          { path: 'inbox/pacific-fuel.txt', name: 'pacific-fuel.txt', size: 96, mtime: Date.now() - 2 * DAY },
+        ];
+
+        // The books-store actions, mirrored for the demo so the sample behaves like the live books.
+        function demoNames() {
+          var added = window.gezel && gezel.ui && gezel.ui.components && gezel.ui.components.demo ? gezel.ui.components.demo.files() : [];
+          return demoFiles.concat(added).map(function (f) { return f.name; });
+        }
+        function demoOutput(note, listing) {
+          var pic = picture(demoLedger.entries, demoClose.records, demoNames(), Date.now(), null);
+          return { waiting: pic.waiting.length, uncategorized: pic.unsorted.length, closeMonth: pic.closing, stepsLeft: pic.view.left.length, net: pic.netCents / 100, summary: listing || (note ? note + ' ' : '') + pic.summary };
+        }
+        function demoFind(input) {
+          var all = demoLedger.entries;
+          if (input.id) { var byId = all.filter(function (e) { return e.id === input.id; })[0]; if (byId) return byId; throw new Error("No entry '" + input.id + "'."); }
+          var wanted = String(input.payee || '').trim().toLowerCase();
+          var hits = all.filter(function (e) { return wanted && payeeOf(e).toLowerCase() === wanted; });
+          if (!hits.length) hits = all.filter(function (e) { var p = payeeOf(e).toLowerCase(); return wanted && p && (p.indexOf(wanted) >= 0 || wanted.indexOf(p) >= 0); });
+          if (hits.length > 1) { var unsorted = hits.filter(function (e) { return e.category === 'uncategorized'; }); if (unsorted.length === 1) hits = unsorted; }
+          if (hits.length === 1) return hits[0];
+          throw new Error(hits.length ? "More than one entry matches '" + input.payee + "'. Pass id." : "Pass 'id' (e.g. 'ledger-7') or the entry's 'payee'.");
+        }
+        function assertOpen(month) {
+          if (isClosed(demoClose.records, month)) throw new Error(monthName(month) + ' is closed. Reopen it first, or date the entry in an open month.');
+        }
+        function demoRecord(input) {
+          var cents = toCents(input.amount);
+          if (cents === null) throw new Error("record needs a positive 'amount' in ordinary units, e.g. 284.17.");
+          var payee = String(input.payee || '').trim();
+          if (!payee) throw new Error("record needs 'payee'.");
+          var date = input.date ? normalizeDate(input.date) : localDay(Date.now());
+          if (!date) throw new Error('date must be a date, e.g. 2026-10-29.');
+          var category = input.category ? normalizeCategory(input.category) : null;
+          if (input.category && !category) throw new Error("Unknown category '" + input.category + "'.");
+          var explicit = input.kind === 'income' || input.kind === 'in' ? 'in' : input.kind === 'expense' || input.kind === 'out' ? 'out' : null;
+          var kind = explicit || (CATEGORY_GROUP[category || 'uncategorized'] === 'income' ? 'in' : 'out');
+          var file = input.file ? (String(input.file).indexOf('/') >= 0 ? String(input.file).trim() : 'inbox/' + String(input.file).trim()) : '';
+          assertOpen(date.slice(0, 7));
+          var same = demoLedger.entries.filter(function (e) { return (file && e.data && e.data.file === file) || (entryDate(e) === date && e.amountCents === cents && payeeOf(e).toLowerCase() === payee.toLowerCase()); })[0];
+          if (same) {
+            same.amountCents = cents; same.at = date + 'T12:00:00.000Z';
+            if (category) same.category = category;
+            if (explicit || category) same.kind = kind;
+            same.data = Object.assign({}, same.data, { date: date }, file && same.data && same.data.file === file ? { payee: payee } : {}, file ? { file: file } : {});
+            return demoOutput('Already in the books, so updated it instead of adding it twice: ' + entryLine(same) + '.');
+          }
+          var next = demoLedger.entries.reduce(function (m, e) { return Math.max(m, Number(String(e.id).split('-')[1]) || 0); }, 0) + 1;
+          var entry = { id: 'ledger-' + next, at: date + 'T12:00:00.000Z', amountCents: cents, kind: kind, category: category || 'uncategorized', data: Object.assign({ date: date, payee: payee }, file ? { file: file } : {}) };
+          if (input.note) entry.note = String(input.note).trim();
+          demoLedger.entries.push(entry);
+          return demoOutput('Booked ' + entryLine(entry) + '.');
+        }
+        function demoCategorize(input) {
+          var category = normalizeCategory(input.category);
+          if (!category || category === 'uncategorized') throw new Error("categorize needs 'category'.");
+          var e = demoFind(input);
+          assertOpen(monthOf(e));
+          if (e.category === 'uncategorized') e.kind = CATEGORY_GROUP[category] === 'income' ? 'in' : 'out';
+          e.category = category;
+          return demoOutput(payeeOf(e) + ' (' + e.id + ', ' + money(e.amountCents) + ') is now under ' + category + '.');
+        }
+        function demoEnsure(month) {
+          var rec = closeRecord(demoClose.records, month);
+          if (!rec) { rec = { id: 'close-' + month, status: 'open', fields: { month: month, done: {}, notes: {} }, history: [] }; demoClose.records.push(rec); }
+          return rec;
+        }
+        function demoMonth(input) {
+          var month = input.month ? normalizeMonth(input.month, Date.now()) : monthToClose(demoLedger.entries, demoClose.records, Date.now());
+          if (!month) throw new Error('month must be YYYY-MM.');
+          if (month >= localDay(Date.now()).slice(0, 7)) throw new Error(monthName(month) + " isn't over yet.");
+          return month;
+        }
+        function demoTick(input) {
+          var step = normalizeStep(input.step);
+          if (!step) throw new Error("tick needs 'step'.");
+          var month = demoMonth(input);
+          if (step === 'categories') {
+            var left = needsCategory(demoLedger.entries, month);
+            if (left.length) throw new Error(left.length + ' entries in ' + monthName(month) + ' still need a category.');
+            return demoOutput('Every entry in ' + monthName(month) + ' has a category, so that step checks itself.');
+          }
+          var rec = demoEnsure(month);
+          if (rec.status === 'closed') throw new Error(monthName(month) + ' is already closed.');
+          rec.fields.done = Object.assign({}, rec.fields.done);
+          rec.fields.notes = Object.assign({}, rec.fields.notes);
+          if (input.done === false) { delete rec.fields.done[step]; delete rec.fields.notes[step]; }
+          else { rec.fields.done[step] = localDay(Date.now()); if (input.note) rec.fields.notes[step] = String(input.note).trim(); }
+          return demoOutput(stepLabel(step) + (input.done === false ? ' is unticked' : ' is done') + ' for ' + monthName(month) + '.');
+        }
+        function demoCloseMonth(input) {
+          var month = demoMonth(input);
+          var existing = closeRecord(demoClose.records, month);
+          if (existing && existing.status === 'closed') return demoOutput(monthName(month) + ' was already closed.');
+          var view = closeView(month, demoLedger.entries, demoClose.records, waitingFiles(demoNames(), demoLedger.entries));
+          if (!view.ready) throw new Error(monthName(month) + ' is not ready to close. Still to do: ' + view.left.map(function (s) { return s.label; }).join('; ') + '.');
+          var rec = demoEnsure(month), net = pnl(demoLedger.entries, month).netCents;
+          rec.fields.closedOn = localDay(Date.now()); rec.fields.netCents = net; rec.status = 'closed';
+          return demoOutput(monthName(month) + ' is closed with net profit ' + money(net) + '. Its entries are locked until it is reopened.');
+        }
+        function demoReopen(input) {
+          var closed = demoClose.records.filter(function (r) { return r.status === 'closed'; }).map(function (r) { return r.fields.month; }).sort();
+          var month = input.month ? normalizeMonth(input.month, Date.now()) : closed[closed.length - 1];
+          var rec = month && closeRecord(demoClose.records, month);
+          if (!rec || rec.status !== 'closed') throw new Error((month ? monthName(month) : 'No month') + ' is not closed.');
+          rec.status = 'open';
+          return demoOutput(monthName(month) + ' is open again. Close it once the change is booked.');
+        }
+        function demoList(input) {
+          var month = input.month ? normalizeMonth(input.month, Date.now()) : null;
+          var rows = demoLedger.entries.filter(function (e) { return !month || monthOf(e) === month; });
+          return demoOutput('', rows.map(entryLine).join('\n') || 'No entries.');
+        }
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'books/index.html', typeName: 'Books & Month Close', params: { business: 'Brightline Electric', currency: 'USD' } },
+          tools: {
+            page_record_entry: demoRecord,
+            record_entry: demoRecord,
+            page_categorize_entry: demoCategorize,
+            categorize_entry: demoCategorize,
+            page_tick_close_step: demoTick,
+            tick_close_step: demoTick,
+            page_close_month: demoCloseMonth,
+            close_month: demoCloseMonth,
+            reopen_month: demoReopen,
+            books_status: function () { return demoOutput(''); },
+            list_entries: demoList,
+          },
+          data: {
+            'ledger.json': function () { return demoLedger; },
+            'close.json': function () { return demoClose; },
+            inbox: function () { return demoFiles.map(function (f) { return { name: f.name, kind: 'file', size: f.size, mtime: f.mtime }; }); },
+            'inbox/hillside-hardware.txt': function () { return demoText['inbox/hillside-hardware.txt']; },
+            'inbox/pacific-fuel.txt': function () { return demoText['inbox/pacific-fuel.txt']; },
+          },
+          existingPaths: demoFiles.map(function (f) { return f.path; }),
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+        var components = gezel.ui.components;
+        function applyTheme(mode) { document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light'); }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function el(tag, text, cls) { var e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
+        function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+        function niceDate(day) { var d = new Date(String(day).slice(0, 10) + 'T12:00:00'); return isFinite(d) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : String(day); }
+        var currency = 'USD';
+        function cash(cents) {
+          try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: currency }).format(cents / 100); } catch (_) { return money(cents); }
+        }
+        function label(category) { return LABELS[category] || category; }
+
+        var state = { month: '', ready: false, closed: false };
+        function render(ledgerDoc, closeDoc, files) {
+          currency = (ledgerDoc && /^[A-Za-z]{3}$/.test(String(ledgerDoc.currency || '')) && String(ledgerDoc.currency).toUpperCase()) || 'USD';
+          var entries = Array.isArray(ledgerDoc.entries) ? ledgerDoc.entries : [];
+          var closes = Array.isArray(closeDoc.records) ? closeDoc.records : [];
+          var names = files.map(function (f) { return f.name; });
+          var waiting = waitingFiles(names, entries);
+          var now = Date.now(), current = localDay(now).slice(0, 7);
+          var closing = monthToClose(entries, closes, now);
+          var view = closeView(closing, entries, closes, waiting);
+          var unsorted = needsCategory(entries);
+          var a = pnl(entries, closing), b = pnl(entries, current);
+          state = { month: closing, ready: view.ready, closed: view.closed };
+
+          document.getElementById('t-waiting').textContent = waiting.length;
+          document.getElementById('t-unsorted').textContent = unsorted.length;
+          document.getElementById('t-close').textContent = view.closed ? 'Closed' : (view.steps.length - view.left.length) + ' of ' + view.steps.length;
+          document.getElementById('t-close-label').textContent = monthName(closing).split(' ')[0] + ' close';
+          document.getElementById('t-net').textContent = a.count ? cash(a.netCents) : '–';
+          document.getElementById('t-net-tile').className = 'tile' + (a.netCents < 0 ? ' late' : '');
+          document.getElementById('t-net-label').textContent = 'Net profit, ' + monthName(closing).split(' ')[0];
+          document.getElementById('sub').textContent = !entries.length && !waiting.length
+            ? 'Nothing booked yet. Drop a receipt into the inbox, or tell your bookkeeper about a sale or a bill.'
+            : (waiting.length || unsorted.length
+                ? [waiting.length ? plural(waiting.length, 'receipt', 'receipts') + ' waiting' : '', unsorted.length ? plural(unsorted.length, 'entry', 'entries') + ' without a category' : ''].filter(Boolean).join(' and ') + '. '
+                : 'Nothing waiting. ') +
+              (view.closed ? monthName(closing) + ' is closed.' : view.ready ? monthName(closing) + ' is ready to close.' : monthName(closing) + ' close: ' + plural(view.left.length, 'step', 'steps') + ' to go.');
+
+          var unsortedList = document.getElementById('unsorted');
+          unsortedList.replaceChildren();
+          if (!unsorted.length) unsortedList.append(el('li', 'Every entry has a category.', 'empty'));
+          unsorted.forEach(function (e) {
+            var li = el('li'), what = el('div');
+            what.append(el('b', payeeOf(e)));
+            what.append(el('span', niceDate(entryDate(e)) + ' · ' + e.id + (e.note ? ' · ' + e.note : ''), 'meta'));
+            li.append(what, el('span', (e.kind === 'in' ? '+' : '') + cash(e.amountCents), 'num' + (e.kind === 'in' ? ' in' : '')));
+            unsortedList.append(li);
+          });
+          var bookedCount = names.length - waiting.length;
+          document.getElementById('booked-note').textContent = bookedCount ? (bookedCount === 1 ? '1 receipt is booked and filed with its entry.' : bookedCount + ' receipts are booked and filed with their entries.') : '';
+
+          document.getElementById('close-sub').textContent = view.closed
+            ? monthName(closing) + ' is closed' + (view.closedOn ? ' as of ' + niceDate(view.closedOn) : '') + '. Its entries are locked.'
+            : 'Closing ' + monthName(closing) + '. Two steps check themselves; tell your bookkeeper as the others are done.';
+          var list = document.getElementById('checklist');
+          list.replaceChildren();
+          view.steps.forEach(function (s) {
+            var li = el('li'), box = el('span', undefined, 'box' + (s.done ? ' done' : '')), text = el('div');
+            box.setAttribute('role', 'img');
+            box.setAttribute('aria-label', s.done ? 'Done' : 'Not done');
+            text.append(el('span', s.label, s.done ? 'done-text' : ''));
+            var meta = s.id === 'receipts'
+              ? (s.done ? (s.auto ? 'The inbox is clear' : 'Checked ' + niceDate(s.on) + (s.note ? ' · ' + s.note : '')) : plural(waiting.length, 'receipt', 'receipts') + ' still waiting')
+              : s.id === 'categories'
+                ? (s.done ? 'Every entry in ' + monthName(closing).split(' ')[0] + ' has one' : plural(view.unsorted.length, 'entry', 'entries') + ' still to sort')
+                : s.done ? (s.on ? 'Done ' + niceDate(s.on) : 'Done') + (s.note ? ' · ' + s.note : '') : 'Not done yet';
+            text.append(el('span', meta, 'meta'));
+            li.append(box, text);
+            list.append(li);
+          });
+          var button = document.getElementById('close-button');
+          button.textContent = view.closed ? monthName(closing) + ' is closed' : 'Close ' + monthName(closing);
+          button.disabled = !view.ready;
+          var closedMonths = closes.filter(function (r) { return r.status === 'closed' && r.fields && r.fields.month; }).map(function (r) { return r.fields.month; }).sort().reverse();
+          var chips = document.getElementById('closed-months');
+          chips.replaceChildren();
+          closedMonths.slice(0, 12).forEach(function (m) { chips.append(el('span', monthName(m) + ' closed', 'chip ok')); });
+
+          document.getElementById('pnl-a').textContent = monthName(closing);
+          document.getElementById('pnl-b').textContent = monthName(current).split(' ')[0] + ' so far';
+          var body = document.getElementById('pnl-body');
+          body.replaceChildren();
+          function row(cls, name, x, y) {
+            var tr = el('tr', undefined, cls);
+            tr.append(el('td', name));
+            [x, y].forEach(function (v) { tr.append(el('td', v === null ? '' : cash(v), 'num' + (v !== null && v < 0 ? ' neg' : ''))); });
+            body.append(tr);
+          }
+          [['income', 'Income', 'incomeCents', 'Total income'], ['cost', 'Cost of jobs', 'costCents', 'Total cost of jobs'], ['expense', 'Expenses', 'expenseCents', 'Total expenses']].forEach(function (g) {
+            row('group', g[1], null, null);
+            var cats = [];
+            a.lines.concat(b.lines).forEach(function (l) { if (l.group === g[0] && cats.indexOf(l.category) < 0) cats.push(l.category); });
+            if (!cats.length) row('line', 'Nothing yet', 0, 0);
+            cats.forEach(function (c) {
+              var find = function (p) { var hit = p.lines.filter(function (l) { return l.group === g[0] && l.category === c; })[0]; return hit ? hit.cents : 0; };
+              row('line', label(c), find(a), find(b));
+            });
+            row('total', g[3], a[g[2]], b[g[2]]);
+            if (g[0] === 'cost') row('total', 'Gross profit', a.grossCents, b.grossCents);
+          });
+          row('net', 'Net profit', a.netCents, b.netCents);
+          var drawNote = document.getElementById('draw-note');
+          drawNote.hidden = !(a.drawCents || b.drawCents);
+          drawNote.textContent = 'Owner draws are kept off the P&L: ' + cash(a.drawCents) + ' in ' + monthName(closing).split(' ')[0] + ', ' + cash(b.drawCents) + ' so far this month.';
+
+          var ledgerBody = document.getElementById('ledger-body');
+          ledgerBody.replaceChildren();
+          var rows = entries.slice().sort(function (x, y) { return entryDate(y).localeCompare(entryDate(x)) || String(y.id).localeCompare(String(x.id), undefined, { numeric: true }); });
+          if (!rows.length) { var tr0 = el('tr'), td0 = el('td', 'Nothing booked yet.', 'empty'); td0.colSpan = 5; tr0.append(td0); ledgerBody.append(tr0); }
+          rows.slice(0, 300).forEach(function (e) {
+            var tr = el('tr'), who = el('td'), cat = el('td');
+            who.append(el('span', payeeOf(e)));
+            if (e.note) who.append(el('span', e.note, 'meta'));
+            cat.append(el('span', label(e.category), 'chip' + (e.category === 'uncategorized' ? ' unsorted' : '')));
+            tr.append(el('td', niceDate(entryDate(e))), who, cat, el('td', (e.kind === 'in' ? '+' : '') + cash(e.amountCents), 'num' + (e.kind === 'in' ? ' in' : '')), el('td', e.data && e.data.file ? String(e.data.file).split('/').pop() : '–', 'meta'));
+            ledgerBody.append(tr);
+          });
+          return waiting;
+        }
+
+        var cards = [];
+        function renderFiles(files, waiting) {
+          cards.forEach(function (c) { c.destroy(); }); cards = [];
+          var holder = document.getElementById('inbox-files');
+          holder.replaceChildren();
+          var shown = files.filter(function (f) { return waiting.indexOf(f.path) >= 0; });
+          if (!shown.length) holder.append(el('p', files.length ? 'Every receipt is booked.' : 'Receipts you add appear here until they are booked.', 'empty'));
+          if (!components || !components.fileCard) return;
+          shown.forEach(function (file) {
+            var mount = el('div'); holder.append(mount);
+            cards.push(components.fileCard(mount, { file: Object.assign({ source: 'workspace' }, file), variant: 'row' }));
+          });
+        }
+        function listFiles() {
+          if (demoMode) return Promise.resolve(demoFiles.concat(components && components.demo ? components.demo.files() : []));
+          return gezel.data.list('inbox').then(function (entries) {
+            return (entries || []).filter(function (e) { return e.kind !== 'dir' && e.kind !== 'directory'; }).map(function (e) { return { path: 'inbox/' + e.name, name: e.name, size: e.size, mtime: e.mtime }; });
+          }, function () { return []; });
+        }
+
+        document.getElementById('close-button').addEventListener('click', function () {
+          var status = document.getElementById('close-status'), button = this;
+          if (!state.ready) return;
+          button.disabled = true;
+          status.textContent = 'Closing…';
+          gezel.tools.invoke('page_close_month', { month: state.month }).then(function () {
+            status.textContent = 'Closed.';
+            window.dispatchEvent(new Event('gezel-app-data-changed'));
+          }, function (error) {
+            status.textContent = 'Could not close the month. ' + (error && error.message ? error.message : 'Try again.');
+            button.disabled = false;
+          });
+        });
+
+        window.addEventListener('gezel-app-data-changed', function () { loadBooks(); });
+        window.loadBooks = loadBooks;
+        function loadBooks() {
+          var revision = ++appLoadRevision;
+          return Promise.all([gezel.data.read('ledger.json'), gezel.data.read('close.json'), listFiles()]).then(function (values) {
+            if (appDisposed || revision !== appLoadRevision) return;
+            reportAppError(null);
+            var waiting = render(values[0] || {}, values[1] || {}, values[2]);
+            renderFiles(values[2], waiting);
+          }).catch(function (error) { if (!appDisposed && revision === appLoadRevision) reportAppError(error); });
+        }
+
+        if (components && components.fileAdder) {
+          components.fileAdder('#add-receipt', { target: 'inbox', onAdded: function () { loadBooks(); } });
+        }
+        loadBooks();
+        appSubscriptions.push(gezel.data.watch('ledger.json', function () { loadBooks(); }));
+        appSubscriptions.push(gezel.data.watch('close.json', function () { loadBooks(); }));
+      })();
+    </script>
+    <script src="application.js" defer></script>
+  </body>
+</html>

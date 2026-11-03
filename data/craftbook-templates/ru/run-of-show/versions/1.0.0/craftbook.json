@@ -1,0 +1,205 @@
+{
+  "id": "run-of-show",
+  "name": "Run of Show",
+  "description": "Write the day-of run of show for a business event from the event desk: a timeline from vendor load-in to close with who is on point for each item, every vendor's arrival and contact, the catering count by dietary need, the contingencies, and the open items still to confirm. Use for a client summit, an offsite or a launch party, the week before.",
+  "entryStepId": "gather",
+  "triggers": [
+    "run of show",
+    "day-of schedule",
+    "day of schedule",
+    "event timeline",
+    "minute by minute",
+    "event day plan"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "focus": {
+        "type": "string",
+        "title": "What should it cover?",
+        "description": "The part of the day it is for, e.g. 'the whole day' or 'setup and doors'.",
+        "default": "the whole day",
+        "fromMessage": true
+      },
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "gather",
+      "name": "Gather the day",
+      "description": "every timed item, vendor arrival and count from the event desk",
+      "prompt": "Build the facts table for {{focus}} before writing anything for a reader. Step 1: call event_status, then read event.json, vendors.json and guests.json from the workspace. Step 2: list every timed item in one table sorted by time: each run-of-show item from event.json's program (time, item, who is on point) and each booked or paid vendor's arrival from vendors.json (time, vendor, category, contact), copying times exactly; a vendor with no arrival time gets the row 'time to confirm'. Step 3: below the table, record the event's date, hours, venue and host as event.json has them, the people attending (guests with RSVP yes, counting each guest's partySize) and the count per dietary need among them, and the names of attending guests with no dietary answer. Write it to {{workPath}}/facts.md and call write_task_note with the number of timed items and the attending count.\n\nThe deliverable `{{workPath}}/facts.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the event desk's own files stay untouched.",
+      "suggestedRole": "Event Planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/facts.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/facts.md",
+            "bytes": 200,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/facts.md",
+            "pattern": "\\|",
+            "label": "the timed items are a table",
+            "artifact": true
+          }
+        ],
+        "onReject": "gather",
+        "maxAttempts": 3
+      },
+      "next": "write",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "write",
+      "name": "Write the run of show",
+      "description": "one document the team and vendors can work from on the day",
+      "prompt": "Turn {{workPath}}/facts.md into the run of show for {{focus}}. Step 1: a header line with the event, date, hours, venue and the number of people attending. Step 2: a 'Timeline' section as a table (Time | What happens | On point | Notes) from the first vendor arrival to the close, with every time exactly as gathered; never invent a time — a missing one reads 'time to confirm'. Step 3: a 'Vendors' section: each vendor's arrival, contact and what they need on arrival. Step 4: a 'Catering count' section with the attending total and the count per dietary need exactly as gathered, and the names still owing an answer. Step 5: a 'Contingencies' section: what happens if a speaker is late, the sound fails, a vendor is late, or the count changes, each with who decides. Step 6: an 'Open items' section listing everything still to confirm. Write {{workPath}}/run-of-show.md and call write_task_note with its path and the open-item count.\n\nThe deliverable `{{workPath}}/run-of-show.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the event desk's own files stay untouched.\n\nIf the task notes hold a review of an earlier pass, fix exactly the gaps it names and keep everything that already passed.",
+      "suggestedRole": "Event Planner",
+      "advanceWhen": {
+        "file": "{{workPath}}/run-of-show.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/run-of-show.md",
+            "bytes": 600,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/run-of-show.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/run-of-show.md",
+            "pattern": "\\|",
+            "label": "the timeline is a table",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/run-of-show.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+Contingenc",
+            "flags": "i",
+            "label": "a Contingencies section",
+            "artifact": true
+          }
+        ],
+        "onReject": "write",
+        "maxAttempts": 4
+      },
+      "next": "finish",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "Stamp a short summary and report DONE.",
+      "prompt": "The run of show is written. Write a one-paragraph DONE summary to task notes via `write_task_note`: the document path, the first and last times on the timeline, the attending count, and the first open item to confirm. Then report DONE.",
+      "suggestedRole": "Event Planner",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write",
+          "artifacts"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-11-02T18:00:00Z",
+  "minGezelVersion": "1.26233"
+}

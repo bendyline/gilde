@@ -1,0 +1,3 @@
+- Every quote adds up to the cent: the lines, subtotal, tax and total always agree.
+- Every quote sent gets its follow-up on time, and an answer either way.
+- The win and loss record shows which jobs to chase and how to price the next one.

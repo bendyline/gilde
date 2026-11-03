@@ -1,0 +1,197 @@
+{
+  "id": "audit-evidence-pack",
+  "name": "Audit Evidence Pack",
+  "description": "Assemble an audit-ready evidence pack from a compliance register: every obligation in scope with its owner, due date, status and the proof on file, the gaps ranked by how soon they bite, and the next step for each. Use before an inspection, an insurer's review, a license renewal, or a quarterly 'are we in good standing' check.",
+  "entryStepId": "gather",
+  "triggers": [
+    "audit pack",
+    "evidence pack",
+    "get ready for the inspection",
+    "are we in good standing",
+    "compliance pack"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "focus": {
+        "type": "string",
+        "title": "What is the pack for?",
+        "description": "The inspection, review or renewal it should prepare for, e.g. 'county health inspection' or 'insurance renewal'. Leave empty for the whole register.",
+        "default": "the whole register",
+        "fromMessage": true
+      },
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "gather",
+      "name": "Gather the evidence",
+      "description": "every obligation in scope with its status and the proof on file",
+      "prompt": "Build the evidence table for {{focus}} before writing anything for a reader. Step 1: call register_status, then read obligations.json and evidence.json from the workspace. Step 2: choose the obligations in scope for {{focus}} (all of them when it is the whole register) and say in one line why each category is in or out. Step 3: for every obligation in scope, record one row: title, category, owner, due date, days left (negative when overdue), status, and the evidence on file — each logged note or file with its date — or 'none on file'. Step 4: mark each row ready (done or not yet due, with proof for the last completion), at risk (due within 30 days, or no proof for the last completion), or overdue. Write the table to {{workPath}}/evidence.md and call write_task_note with the counts per mark.\n\nThe deliverable `{{workPath}}/evidence.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the register's own files stay untouched.",
+      "suggestedRole": "Compliance Officer",
+      "advanceWhen": {
+        "file": "{{workPath}}/evidence.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/evidence.md",
+            "bytes": 200,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/evidence.md",
+            "pattern": "\\|",
+            "label": "the evidence is a table",
+            "artifact": true
+          }
+        ],
+        "onReject": "gather",
+        "maxAttempts": 3
+      },
+      "next": "pack",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "pack",
+      "name": "Write the pack",
+      "description": "one page an inspector or insurer can read, with the gaps ranked",
+      "prompt": "Turn {{workPath}}/evidence.md into the pack. Step 1: a headline — how many obligations in scope are ready, at risk and overdue. Step 2: a section per category with each obligation, its owner, due date and the evidence on file, quoting dates and reference numbers exactly as logged. Step 3: a 'Gaps' section ranked by days left: for each overdue or at-risk item, the one next step and who takes it. Step 4: a closing line naming who to ask where a rule is unclear (the issuing agency, the insurer, an accountant or a lawyer); the pack records what the business has done and never says what the law requires. Write {{workPath}}/pack.md and call write_task_note with its path and the gap count.\n\nThe deliverable `{{workPath}}/pack.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the register's own files stay untouched.\n\nIf the task notes hold a review of an earlier pass, fix exactly the gaps it names and keep everything that already passed.",
+      "suggestedRole": "Compliance Officer",
+      "advanceWhen": {
+        "file": "{{workPath}}/pack.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/pack.md",
+            "bytes": 600,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/pack.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/pack.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+Gaps",
+            "flags": "i",
+            "label": "a Gaps section",
+            "artifact": true
+          }
+        ],
+        "onReject": "pack",
+        "maxAttempts": 4
+      },
+      "next": "finish",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "Stamp a short summary and report DONE.",
+      "prompt": "The pack is written. Write a one-paragraph DONE summary to task notes via `write_task_note`: the pack path, the counts ready / at risk / overdue, and the first gap to close. Then report DONE.",
+      "suggestedRole": "Compliance Officer",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write",
+          "artifacts"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-11-02T18:00:00Z",
+  "minGezelVersion": "1.26233"
+}

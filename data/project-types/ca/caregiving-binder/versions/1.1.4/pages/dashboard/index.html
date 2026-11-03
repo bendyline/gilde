@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Caregiving binder</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2; --card: #fff; --ink: #2b2620; --muted: #7a7166;
+        --accent: #b5651d; --track: #ece5da; --good: #4a7c59; --warn: #a4552e;
+      }
+      :root[data-theme='dark'] {
+        --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+        --accent: #e0894a; --track: #3a352f; --good: #7fae8d; --warn: #d98a63;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+          --accent: #e0894a; --track: #3a352f; --good: #7fae8d; --warn: #d98a63;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 15px/1.5 var(--font-body, system-ui, sans-serif); background: var(--bg); color: var(--ink); padding: 1.5rem 1.25rem; }
+      main { max-width: 680px; margin: 0 auto; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.35rem; font-weight: 600; margin: 0 0 0.15rem; }
+      .sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.9rem; }
+      .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+      .panel { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.85rem 1rem; font-size: 0.9rem; }
+      .panel h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 0.5rem; }
+      .panel ul { margin: 0; padding-left: 1.05rem; }
+      .panel li { margin: 0.25rem 0; }
+      .panel .meta { color: var(--muted); font-size: 0.78rem; }
+      .journal { margin-top: 0.6rem; }
+      .journal li { color: var(--muted); }
+      .journal li strong { color: var(--ink); font-weight: 600; }
+      .kind { display: inline-block; border: 1px solid var(--track); border-radius: 4px; padding: 0 0.3rem; font-size: 0.7rem; line-height: 1.4; margin-right: 0.3rem; color: var(--muted); }
+      .kind.symptom { color: var(--warn); border-color: var(--warn); }
+      .empty { color: var(--muted); font-style: italic; }
+      .privacy { color: var(--muted); font-size: 0.78rem; text-align: center; margin-top: 0.75rem; }
+      @media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+      .demo-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0 0 0.85rem;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--card) 88%, var(--accent));
+        color: var(--ink);
+        font-size: 0.8rem;
+      }
+      .demo-banner[hidden] { display: none; }
+      .demo-banner strong { font-weight: 700; }
+      .demo-reset {
+        flex: none;
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: var(--card);
+        color: var(--ink);
+        cursor: pointer;
+        font: inherit;
+      }
+      .demo-reset:hover { border-color: var(--ink); }
+    </style>
+  <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:20px 0;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--border,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}html[data-gezel-fullscreen=true] .board{min-width:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}.tiles,.stats,.summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}.board,.columns{max-width:100%;overflow-x:auto}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+  <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script></head>
+  <body>
+    <main>
+<p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong> — sample data stays in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Caregiving binder</h1>
+      <p class="sub" id="sub">Loading the record…</p>
+      <div class="cols">
+        <div class="panel">
+          <h2>Active medications</h2>
+          <ul id="meds"><li class="empty">None recorded yet.</li></ul>
+          <h2 style="margin-top: 0.9rem">Upcoming</h2>
+          <ul id="upcoming"><li class="empty">Nothing scheduled.</li></ul>
+        </div>
+        <div class="panel">
+          <h2>Care journal</h2>
+          <ul class="journal" id="journal"><li class="empty">The journal is empty — a quiet start.</li></ul>
+        </div>
+      </div>
+      <p class="privacy">This record is stored in the project's files.</p>
+    </main>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+
+        // ── demo record (used only when the page opens as a raw file) ──
+        var demoNow = Date.now();
+        function demoAgo(days) { return new Date(demoNow - days * 86400000).toISOString(); }
+        // Appointments carry a local wall-clock time, the way the person said it.
+        function demoLocal(days, hour, minute) {
+          var d = new Date(demoNow + days * 86400000);
+          function pad(n) { return String(n).padStart(2, '0'); }
+          return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(hour) + ':' + pad(minute || 0);
+        }
+        var demoMeds = { records: [
+          { id: 'med-1', status: 'active', createdAt: demoAgo(300), updatedAt: demoAgo(300), fields: { name: 'Lisinopril', dose: '10 mg each morning', prescriber: 'Dr. Chen' }, history: [{ at: demoAgo(300), from: null, to: 'active' }] },
+          { id: 'med-2', status: 'active', createdAt: demoAgo(200), updatedAt: demoAgo(200), fields: { name: 'Vitamin D', dose: '1 tablet with lunch' }, history: [{ at: demoAgo(200), from: null, to: 'active' }] },
+          { id: 'med-3', status: 'active', createdAt: demoAgo(120), updatedAt: demoAgo(120), fields: { name: 'Atorvastatin', dose: '20 mg at bedtime', prescriber: 'Dr. Chen' }, history: [{ at: demoAgo(120), from: null, to: 'active' }] },
+          { id: 'med-4', status: 'stopped', createdAt: demoAgo(24), updatedAt: demoAgo(14), fields: { name: 'Amoxicillin', dose: '500 mg three times a day', prescriber: 'Dr. Chen' }, history: [{ at: demoAgo(24), from: null, to: 'active' }, { at: demoAgo(14), from: 'active', to: 'stopped', note: 'Finished the course.' }] },
+        ] };
+        // Append order, oldest first — the shape logStore writes to care.json.
+        var demoCare = { events: [
+          { kind: 'appointment', at: demoAgo(30), note: 'Primary care visit with Dr. Chen', data: { whenAt: demoLocal(-20, 9, 30) } },
+          { kind: 'appointment', at: demoAgo(20), note: 'Primary care follow-up with Dr. Chen', data: { whenAt: demoLocal(12, 10, 30) } },
+          { kind: 'update', at: demoAgo(14), note: 'Stopped Amoxicillin — finished the course.' },
+          { kind: 'update', at: demoAgo(6), note: 'Blood pressure readings added to the visit notes.' },
+          { kind: 'appointment', at: demoAgo(5), note: 'Cardiology check-in', data: { whenAt: demoLocal(26, 14, 0) } },
+          { kind: 'note', at: demoAgo(3), note: 'Refill collected; pill organizer set for the week.' },
+          { kind: 'symptom', at: demoAgo(2), note: 'Tired after lunch most days this week.' },
+          { kind: 'symptom', at: demoAgo(1), note: 'Energy was better after an afternoon walk.' },
+        ] };
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'dashboard/index.html', typeName: 'Caregiving Binder', params: { person: 'Mom' } },
+          tools: (function () {
+            // Mirrors the care-store script: meds are a roster, everything else appends to the journal.
+            function upcoming() {
+              var now = Date.now();
+              return demoCare.events.filter(function (e) { return e.kind === 'appointment' && e.data && Date.parse(e.data.whenAt) >= now; })
+                .sort(function (a, b) { return Date.parse(a.data.whenAt) - Date.parse(b.data.whenAt); });
+            }
+            function append(kind, note, data) {
+              var event = { kind: kind, at: new Date().toISOString(), note: note };
+              if (data) event.data = data;
+              demoCare.events.push(event);
+            }
+            function active() { return demoMeds.records.filter(function (r) { return r.status === 'active'; }); }
+            function status() {
+              var next = upcoming()[0];
+              return { meds: active().length, upcoming: upcoming().length,
+                summary: active().length + ' active medication(s). ' + upcoming().length + ' upcoming appointment(s)' + (next ? ' — next: ' + String(next.data.whenAt).slice(0, 16) + ' ' + next.note : '') + '. ' +
+                  demoCare.events.filter(function (e) { return e.kind !== 'appointment'; }).length + ' journal entr(ies).' };
+            }
+            return {
+              page_log_entry: function (input) {
+                if (!input.note || !String(input.note).trim()) throw new Error('Write what happened.');
+                append(input.kind === 'symptom' || input.kind === 'update' ? input.kind : 'note', String(input.note).trim());
+                return status();
+              },
+              page_log_appointment: function (input) {
+                if (!input.note || !input.when) throw new Error('Give the appointment and its date.');
+                append('appointment', String(input.note).trim(), { whenAt: String(input.when) });
+                return status();
+              },
+              add_med: function (input) {
+                if (!input.name || !input.dose) throw new Error('Give the medication and its dose.');
+                var at = new Date().toISOString(), max = demoMeds.records.reduce(function (n, r) { return Math.max(n, Number(r.id.slice(4)) || 0); }, 0);
+                var fields = { name: String(input.name), dose: String(input.dose) };
+                if (input.prescriber) fields.prescriber = String(input.prescriber);
+                demoMeds.records.push({ id: 'med-' + (max + 1), status: 'active', createdAt: at, updatedAt: at, fields: fields, history: [{ at: at, from: null, to: 'active' }] });
+                append('update', 'Started ' + input.name + ' (' + input.dose + ').');
+                return status();
+              },
+              stop_med: function (input) {
+                var r = active().find(function (m) { return input.id ? m.id === input.id : String(m.fields.name).toLowerCase() === String(input.name || '').toLowerCase(); });
+                if (!r) throw new Error('Name an active medication.');
+                var at = new Date().toISOString();
+                r.history = (r.history || []).concat([{ at: at, from: 'active', to: 'stopped', note: input.note }]);
+                r.status = 'stopped';
+                r.updatedAt = at;
+                append('update', 'Stopped ' + r.fields.name + (input.note ? ' — ' + input.note : '') + '.');
+                return status();
+              },
+              care_status: function () { return status(); },
+              visit_prep: function () {
+                var now = Date.now(), past = demoCare.events.filter(function (e) { return e.kind === 'appointment' && e.data && Date.parse(e.data.whenAt) < now; });
+                var last = past.length ? Math.max.apply(null, past.map(function (e) { return Date.parse(e.data.whenAt); })) : null;
+                var since = demoCare.events.filter(function (e) { return e.kind !== 'appointment' && (last === null || Date.parse(e.at) > last); });
+                var out = status();
+                var line = String.fromCharCode(10);
+                out.summary = ['VISIT PREP', 'Active medications:']
+                  .concat(active().map(function (m) { return '- ' + m.fields.name + ' ' + m.fields.dose; }), ['Since the last visit:'])
+                  .concat(since.map(function (e) { return '- [' + e.kind + '] ' + e.at.slice(0, 10) + ': ' + e.note; }), ['Upcoming:'])
+                  .concat(upcoming().map(function (e) { return '- ' + String(e.data.whenAt).slice(0, 16) + ' ' + e.note; }))
+                  .join(line);
+                return out;
+              },
+            };
+          })(),
+          data: {
+            'meds.json': function () { return demoMeds; },
+            'care.json': function () { return demoCare; },
+          },
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+
+        function applyTheme(mode) {
+          document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light');
+        }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+        function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+        // A date-only appointment ('2026-11-14') stays upcoming through that local day.
+        function whenMs(value) {
+          var day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value));
+          return day ? new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3]) + 1).getTime() - 1 : Date.parse(value);
+        }
+        function friendlyDate(value, withTime) {
+          var text = String(value), day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+          var d = day ? new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3])) : new Date(text);
+          if (isNaN(d.getTime())) return text;
+          var label = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+          return withTime && !day ? label + ', ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : label;
+        }
+
+        function render(meds, care) {
+          var active = ((meds && meds.records) || []).filter(function (r) { return r.status === 'active'; });
+          var events = (care && care.events) || [];
+          var now = Date.now();
+          var upcoming = events.filter(function (e) {
+            var when = e.data && e.data.whenAt ? whenMs(e.data.whenAt) : NaN;
+            return e.kind === 'appointment' && isFinite(when) && when >= now;
+          }).sort(function (a, b) { return whenMs(a.data.whenAt) - whenMs(b.data.whenAt); });
+
+          document.getElementById('sub').textContent =
+            plural(active.length, 'active medication', 'active medications') + ' · ' + plural(upcoming.length, 'upcoming appointment', 'upcoming appointments');
+
+          document.getElementById('meds').innerHTML = active.length
+            ? active.map(function (m) {
+                var f = m.fields || {};
+                return '<li>' + esc(f.name || m.id) + ' <span class="meta">' + esc(f.dose || '') +
+                  (f.prescriber ? ' · ' + esc(f.prescriber) : '') + '</span></li>';
+              }).join('')
+            : '<li class="empty">None recorded yet.</li>';
+          document.getElementById('upcoming').innerHTML = upcoming.length
+            ? upcoming.slice(0, 4).map(function (e) {
+                return '<li>' + esc(friendlyDate(e.data.whenAt, true)) + ' <span class="meta">' + esc(e.note || '') + '</span></li>';
+              }).join('')
+            : '<li class="empty">Nothing scheduled.</li>';
+          var recent = events.filter(function (e) { return e.kind !== 'appointment'; }).slice().reverse();
+          document.getElementById('journal').innerHTML = recent.length
+            ? recent.map(function (e) {
+                return '<li><span class="kind ' + esc(e.kind) + '">' + esc(e.kind) + '</span>' +
+                  '<strong>' + esc(friendlyDate(e.at, false)) + '</strong> — ' + esc(e.note || '') + '</li>';
+              }).join('')
+            : '<li class="empty">The journal is empty — a quiet start.</li>';
+        }
+
+        window.addEventListener('gezel-app-data-changed', function(){ loadRecord(); });
+        function loadRecord(){
+var revision=++appLoadRevision;
+return Promise.all([gezel.data.read('meds.json'),gezel.data.read('care.json')]).then(function(values){if(appDisposed||revision!==appLoadRevision)return;reportAppError(null);render(values[0]||{},values[1]||{});}).catch(function(error){if(!appDisposed&&revision===appLoadRevision)reportAppError(error);});
+}
+
+        loadRecord();
+        appSubscriptions.push(gezel.data.watch('meds.json', function () { loadRecord(); }));
+        appSubscriptions.push(gezel.data.watch('care.json', function () { loadRecord(); }));
+      })();
+    </script>
+  <script src="application.js" defer></script>
+  </body>
+</html>

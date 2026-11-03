@@ -1,0 +1,512 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "releasedAt": "2026-11-02T18:00:00.000Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "business": {
+        "type": "string",
+        "title": "What kind of business is this?",
+        "description": "e.g. 'a café in Portland', 'a small publisher'.",
+        "default": "the business"
+      },
+      "sources": {
+        "type": "string",
+        "title": "Where do customers leave feedback?",
+        "description": "e.g. 'Google and Yelp reviews and a receipt survey'.",
+        "default": "online reviews and a customer survey"
+      }
+    },
+    "required": [
+      "business"
+    ]
+  },
+  "nameTemplate": "Customer Voice",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "researcher",
+      "voorman": true
+    },
+    {
+      "templateId": "copywriter"
+    }
+  ],
+  "scripts": {
+    "voice-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { logStore, rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'voice-store',\n  description:\n    \"Read and update Customer Voice: the feedback log (feedback.json), its themes (themes.json) and the action list (actions.json). action:'status' for each theme's count and trend, what is not sorted yet, the replies owed and the open actions; 'log' to save a review or survey answer (the same words from the same author are never duplicated); 'tag' to sort feedback into themes; 'reply' to save a reply; 'mark_replied' once a reply is posted; 'add_action' (an existing title is updated); 'set_action' to move an action; 'import' to read a CSV of reviews under imports/; 'list' for every entry.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'status', 'log', 'tag', 'reply', 'mark_replied', 'add_action', 'set_action', 'import', or 'list'.\",\n      required: true,\n    },\n    id: {\n      type: 'string',\n      description: \"Feedback id, e.g. 'fb-12' (for tag, several comma-separated: 'fb-12, fb-13'); for set_action an action id like 'ac-2'.\",\n    },\n    text: { type: 'string', description: \"The customer's words, exactly as written.\" },\n    source: { type: 'string', description: 'google, yelp, tripadvisor, survey, email, social, in-person, or other.' },\n    rating: { type: 'number', description: 'Stars, 1 to 5.' },\n    stars: { type: 'string', description: \"Stars as text from the page, '1' to '5'.\" },\n    author: { type: 'string', description: 'Who wrote it, as it appears.' },\n    receivedAt: { type: 'string', description: 'The day it was written, YYYY-MM-DD (default today).' },\n    themes: { type: 'string', description: \"Theme names, comma-separated, e.g. 'Slow weekend service, Friendly staff'.\" },\n    kind: { type: 'string', description: 'For a new theme: praise, problem, or request.' },\n    replyNeeded: { type: 'boolean', description: 'Whether it needs a reply (default: public reviews of 3 stars or fewer).' },\n    reply: { type: 'string', description: 'The reply text, ready to post.' },\n    posted: { type: 'boolean', description: 'True once the reply is live.' },\n    title: { type: 'string', description: \"For actions: the action's title. Also finds it when no id is given.\" },\n    theme: { type: 'string', description: 'For actions: the theme it answers, by name or id. For list: only that theme.' },\n    owner: { type: 'string', description: 'Who takes the action.' },\n    dueAt: { type: 'string', description: 'When the action is due, YYYY-MM-DD.' },\n    status: { type: 'string', description: 'For set_action: todo, doing, or done.' },\n    note: { type: 'string', description: 'What happened.' },\n    file: { type: 'string', description: \"For import: the CSV's workspace path, e.g. 'imports/google-reviews.csv'.\" },\n  },\n  outputs: {\n    themes: { type: 'number', description: 'Themes being tracked.' },\n    repliesNeeded: { type: 'number', description: 'Feedback that still needs a reply posted.' },\n    unsorted: { type: 'number', description: 'Feedback not sorted into a theme.' },\n    openActions: { type: 'number', description: 'Actions not done.' },\n    summary: { type: 'string', description: 'The picture, or the listing.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── voice-rules-start ──\n// Pure derivations: the feedback log folded into entries (with their themes,\n// replies and edits), theme counts over the last 30 days against the 30\n// before, the replies still owed, the CSV reader for imports, and the picture\n// the crew reads. Kept self-contained between these sentinels so unit tests\n// execute the shipped bytes.\nvar DAY_MS = 86400000;\nvar SOURCES = ['google', 'yelp', 'tripadvisor', 'survey', 'email', 'social', 'in-person', 'other'];\nvar PUBLIC_SOURCES = ['google', 'yelp', 'tripadvisor', 'social'];\nvar THEME_KINDS = ['praise', 'problem', 'request'];\nvar FEEDBACK_KINDS = ['review', 'survey', 'comment'];\nvar ACTION_STAGES = ['todo', 'doing', 'done'];\n\nfunction pad(n) {\n  return n < 10 ? '0' + n : String(n);\n}\nfunction localDay(ms) {\n  var d = new Date(ms);\n  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());\n}\nfunction normalizeDate(text) {\n  var raw = String(text || '').trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(raw)) return raw;\n  if (/^\\d{4}-\\d{2}-\\d{2}[T ]/.test(raw)) return raw.slice(0, 10);\n  var parsed = Date.parse(raw);\n  return raw && isFinite(parsed) ? localDay(parsed) : null;\n}\nfunction daysAgo(day, nowMs) {\n  var then = Date.parse(String(day || '').slice(0, 10) + 'T00:00:00');\n  var today = Date.parse(localDay(nowMs) + 'T00:00:00');\n  return isFinite(then) ? Math.round((today - then) / DAY_MS) : 0;\n}\nfunction nameKey(text) {\n  return String(text || '').trim().toLowerCase().replace(/\\s+/g, ' ');\n}\nfunction textKey(text, author) {\n  return nameKey(author) + '|' + nameKey(text).slice(0, 160);\n}\nfunction sourceOf(text) {\n  var s = nameKey(text);\n  if (SOURCES.indexOf(s) >= 0) return s;\n  if (/google/.test(s)) return 'google';\n  if (/yelp/.test(s)) return 'yelp';\n  if (/trip ?advisor/.test(s)) return 'tripadvisor';\n  if (/survey|questionnaire|form|typeform|nps|poll/.test(s)) return 'survey';\n  if (/e-?mail|inbox/.test(s)) return 'email';\n  if (/facebook|instagram|twitter|bluesky|tiktok|social|linkedin|\\bx\\b/.test(s)) return 'social';\n  if (/in person|in-person|counter|store|shop floor|phone|call/.test(s)) return 'in-person';\n  return 'other';\n}\nfunction feedbackKind(source) {\n  return source === 'survey' ? 'survey' : PUBLIC_SOURCES.indexOf(source) >= 0 ? 'review' : 'comment';\n}\n// Stars from a number, '4/5', '4 stars' or a row of star characters; null when absent.\nfunction ratingOf(value, scale) {\n  if (value === undefined || value === null || value === '') return null;\n  var n = typeof value === 'number' ? value : NaN;\n  if (typeof value === 'string') {\n    var starCount = (value.match(/★/g) || []).length;\n    n = starCount ? starCount : parseFloat(value.replace(',', '.'));\n  }\n  if (!isFinite(n)) return null;\n  if (scale === 10) n = n / 2;\n  return Math.min(5, Math.max(1, Math.round(n)));\n}\nfunction needsReply(source, rating, explicit) {\n  if (explicit === true || explicit === false) return explicit;\n  return PUBLIC_SOURCES.indexOf(source) >= 0 && typeof rating === 'number' && rating <= 3;\n}\nfunction guessKind(items) {\n  var rated = items.filter(function (e) { return typeof e.rating === 'number'; });\n  var avg = rated.length ? rated.reduce(function (s, e) { return s + e.rating; }, 0) / rated.length : null;\n  var asks = items.some(function (e) { return /\\b(wish|please|would love|could you|should|add|bring back|more)\\b/i.test(e.text || ''); });\n  if (avg !== null && avg >= 4 && !asks) return 'praise';\n  if (asks && (avg === null || avg >= 3)) return 'request';\n  return avg !== null && avg >= 4 ? 'praise' : 'problem';\n}\n// The log, folded: each feedback event becomes an entry; later events tag it, edit it, reply to it.\nfunction entries(events) {\n  var list = [], byId = {};\n  (events || []).forEach(function (e) {\n    var d = e.data || {};\n    if (FEEDBACK_KINDS.indexOf(e.kind) >= 0 && d.id && !byId[d.id]) {\n      var entry = {\n        id: d.id, kind: e.kind, text: e.note || '', source: d.source || 'other',\n        rating: typeof d.rating === 'number' ? d.rating : null, author: d.author || '',\n        day: d.day || String(e.at || '').slice(0, 10), themes: Array.isArray(d.themes) ? d.themes.slice() : [],\n        replyNeeded: !!d.replyNeeded, reply: '', posted: false,\n      };\n      list.push(entry);\n      byId[d.id] = entry;\n      return;\n    }\n    var target = byId[d.feedbackId];\n    if (!target) return;\n    if (e.kind === 'tagged') target.themes = Array.isArray(d.themes) ? d.themes.slice() : [];\n    else if (e.kind === 'edited') {\n      if (typeof d.rating === 'number') target.rating = d.rating;\n      if (d.source) target.source = d.source;\n      if (typeof d.replyNeeded === 'boolean') target.replyNeeded = d.replyNeeded;\n      if (Array.isArray(d.themes)) target.themes = d.themes.slice();\n    } else if (e.kind === 'reply') {\n      if (e.note) target.reply = e.note;\n      if (d.posted) target.posted = true;\n    } else if (e.kind === 'replied') target.posted = true;\n  });\n  return list;\n}\nfunction nextFeedbackNumber(events) {\n  var max = 0;\n  (events || []).forEach(function (e) {\n    var m = /^fb-(\\d+)$/.exec(String((e.data && e.data.id) || ''));\n    if (m) max = Math.max(max, Number(m[1]));\n  });\n  return max + 1;\n}\nfunction themeStats(themes, list, nowMs) {\n  return themes\n    .filter(function (t) { return t.status !== 'retired'; })\n    .map(function (t) {\n      var hits = list.filter(function (e) { return e.themes.indexOf(t.id) >= 0; });\n      var recent = hits.filter(function (e) { var d = daysAgo(e.day, nowMs); return d >= 0 && d < 30; }).length;\n      var before = hits.filter(function (e) { var d = daysAgo(e.day, nowMs); return d >= 30 && d < 60; }).length;\n      var trend = !recent && !before ? 'quiet' : !before ? 'new this month' : recent > before ? 'rising' : recent < before ? 'falling' : 'steady';\n      var latest = hits.slice().sort(function (a, b) { return String(b.day).localeCompare(String(a.day)); })[0] || null;\n      return { id: t.id, name: String(t.fields.name), kind: t.fields.kind || 'problem', total: hits.length, recent: recent, before: before, trend: trend, latest: latest };\n    })\n    .sort(function (a, b) { return b.recent - a.recent || b.total - a.total || a.name.localeCompare(b.name); });\n}\nfunction repliesOwed(list) {\n  return list\n    .filter(function (e) { return e.replyNeeded && !e.posted; })\n    .sort(function (a, b) { return String(a.day).localeCompare(String(b.day)) || a.id.localeCompare(b.id, undefined, { numeric: true }); });\n}\nfunction quote(text, length) {\n  var t = String(text || '').replace(/\\s+/g, ' ').trim();\n  return t.length > length ? t.slice(0, length - 1).trim() + '…' : t;\n}\nfunction feedbackLine(e, names) {\n  var themeNames = e.themes.map(function (id) { return names[id] || id; });\n  return (\n    e.id + ' ' + e.source + (e.rating ? ' ' + e.rating + '/5' : '') + (e.author ? ' by ' + e.author : '') + ', ' + e.day + ': \"' + quote(e.text, 110) + '\"' +\n    (themeNames.length ? ' [' + themeNames.join(', ') + ']' : ' [not sorted]') +\n    (e.replyNeeded && !e.posted ? (e.reply ? ', reply drafted, not posted yet' : ', needs a reply') : e.posted ? ', replied' : '')\n  );\n}\nfunction capped(items, max, render) {\n  var shown = items.slice(0, max).map(render).join(' | ');\n  return items.length > max ? shown + ' | and ' + (items.length - max) + ' more' : shown;\n}\nfunction picture(themes, list, actions, nowMs) {\n  var names = {};\n  themes.forEach(function (t) { names[t.id] = String(t.fields.name); });\n  var stats = themeStats(themes, list, nowMs);\n  var month = list.filter(function (e) { var d = daysAgo(e.day, nowMs); return d >= 0 && d < 30; });\n  var rated = month.filter(function (e) { return typeof e.rating === 'number'; });\n  var avg = rated.length ? Math.round((rated.reduce(function (s, e) { return s + e.rating; }, 0) / rated.length) * 10) / 10 : null;\n  var unsorted = list.filter(function (e) { return !e.themes.length; });\n  var owed = repliesOwed(list);\n  var open = actions.filter(function (a) { return a.status !== 'done'; });\n  var parts = [\n    list.length + (list.length === 1 ? ' piece of feedback' : ' pieces of feedback') + ' logged, ' + month.length + ' in the last 30 days' +\n      (avg !== null ? ', averaging ' + avg + ' of 5 stars' : '') + '.',\n  ];\n  parts.push(\n    stats.length\n      ? 'Themes, most mentioned in the last 30 days first: ' +\n          stats.map(function (s) {\n            return s.name + ' (' + s.id + ', ' + s.kind + '): ' + s.recent + ' in the last 30 days, ' + s.before + ' in the 30 before, ' + s.trend +\n              (s.latest ? '; latest: \"' + quote(s.latest.text, 80) + '\"' : '');\n          }).join(' | ') + '.'\n      : 'No themes yet.',\n  );\n  parts.push(unsorted.length ? 'Not sorted into a theme yet: ' + capped(unsorted, 12, function (e) { return feedbackLine(e, names); }) + '.' : 'Everything is sorted into themes.');\n  parts.push(owed.length ? 'Needs a reply, oldest first: ' + capped(owed, 10, function (e) { return feedbackLine(e, names); }) + '.' : 'No replies owed.');\n  parts.push(\n    open.length\n      ? 'Open actions: ' +\n          open.map(function (a) {\n            var f = a.fields || {};\n            return f.title + ' (' + a.id + ', ' + a.status + (f.theme && names[f.theme] ? ', for ' + names[f.theme] : '') + (f.owner ? ', owner ' + f.owner : '') + (f.dueAt ? ', due ' + f.dueAt : '') + ')';\n          }).join(' | ') + '.'\n      : 'No open actions.',\n  );\n  return { themes: stats.length, repliesNeeded: owed.length, unsorted: unsorted.length, openActions: open.length, summary: parts.join(' ') };\n}\n// ── CSV import: a header row names the columns; anything unrecognized is ignored. ──\nfunction parseCsv(text) {\n  var src = String(text || '').replace(/^﻿/, '');\n  var first = src.split(/\\r?\\n/, 1)[0] || '';\n  var delim = [',', ';', '\\t'].map(function (d) { return [d, first.split(d).length]; }).sort(function (a, b) { return b[1] - a[1]; })[0][0];\n  var rows = [], row = [], cell = '', quoted = false;\n  for (var i = 0; i < src.length; i++) {\n    var c = src[i];\n    if (quoted) {\n      if (c === '\"') {\n        if (src[i + 1] === '\"') { cell += '\"'; i++; } else quoted = false;\n      } else cell += c;\n    } else if (c === '\"' && cell === '') quoted = true;\n    else if (c === delim) { row.push(cell); cell = ''; }\n    else if (c === '\\n' || c === '\\r') {\n      if (c === '\\r' && src[i + 1] === '\\n') i++;\n      row.push(cell); rows.push(row); row = []; cell = '';\n    } else cell += c;\n  }\n  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }\n  return rows.filter(function (r) { return r.some(function (v) { return String(v).trim() !== ''; }); });\n}\nfunction columnOf(header) {\n  var h = nameKey(header);\n  if (/(date|created|submitted|posted|timestamp|time|when)/.test(h)) return 'day';\n  if (/(rating|stars?|score|nps)/.test(h)) return 'rating';\n  if (/(author|reviewer|name|respondent)/.test(h)) return 'author';\n  if (/(source|platform|site|channel)/.test(h)) return 'source';\n  if (/(review|text|comment|feedback|body|message|answer|response|content|said|why)/.test(h)) return 'text';\n  if (/(customer|user|who)/.test(h)) return 'author';\n  return null;\n}\nfunction csvFeedback(text, defaultSource) {\n  var rows = parseCsv(text);\n  if (!rows.length) return { items: [], blank: 0, columns: {} };\n  var at = {};\n  rows[0].forEach(function (h, i) { var col = columnOf(h); if (col && at[col] === undefined) at[col] = i; });\n  var hasHeader = Object.keys(at).length > 0;\n  var body = hasHeader ? rows.slice(1) : rows;\n  if (at.text === undefined) {\n    // No column says it holds the words: take the one with the longest cells.\n    var widths = (rows[0] || []).map(function (_, i) {\n      if (Object.keys(at).some(function (k) { return at[k] === i; })) return -1;\n      return body.reduce(function (s, r) { return s + String(r[i] || '').length; }, 0);\n    });\n    var widest = widths.indexOf(Math.max.apply(null, widths.concat([-1])));\n    if (widest >= 0) at.text = widest;\n  }\n  var scale = at.rating !== undefined && body.some(function (r) { var v = parseFloat(r[at.rating]); return isFinite(v) && v > 5; }) ? 10 : 5;\n  var items = [], blank = 0;\n  body.forEach(function (r) {\n    var words = at.text === undefined ? '' : String(r[at.text] || '').trim();\n    if (!words) { blank += 1; return; }\n    items.push({\n      text: words,\n      rating: at.rating === undefined ? null : ratingOf(String(r[at.rating] || '').trim(), scale),\n      day: at.day === undefined ? null : normalizeDate(r[at.day]),\n      author: at.author === undefined ? '' : String(r[at.author] || '').trim(),\n      source: at.source !== undefined && String(r[at.source] || '').trim() ? sourceOf(r[at.source]) : defaultSource,\n    });\n  });\n  return { items: items, blank: blank, columns: at };\n}\n// ── voice-rules-end ──\n\nconst FEEDBACK = 'feedback.json';\nconst feedback = logStore(gezel.fs, FEEDBACK);\nconst themes = rosterStore(gezel.fs, 'themes.json', { stages: ['active', 'retired'], idPrefix: 'th' });\nconst actions = rosterStore(gezel.fs, 'actions.json', { stages: ['todo', 'doing', 'done'], idPrefix: 'ac' });\n\nfunction upperFirst(text: string): string {\n  return text.charAt(0).toUpperCase() + text.slice(1);\n}\n\n// Theme names to ids, reusing a theme whose name matches (or one the name clearly means);\n// a new name starts a new theme.\nasync function ensureThemes(text: string, kind: string): Promise<{ ids: string[]; created: string[] }> {\n  const all = await themes.list();\n  const ids: string[] = [];\n  const created: string[] = [];\n  for (const raw of String(text).split(/[,;\\n]+/)) {\n    const name = raw.trim().replace(/^[\"']|[\"']$/g, '');\n    if (!name) continue;\n    let theme = all.find((t) => t.id === name.toLowerCase() || nameKey(t.fields.name) === nameKey(name));\n    if (!theme) {\n      const near = all.filter((t) => t.status !== 'retired' && (nameKey(t.fields.name).includes(nameKey(name)) || nameKey(name).includes(nameKey(t.fields.name))));\n      if (near.length === 1) theme = near[0];\n    }\n    if (!theme) {\n      theme = await themes.add({ status: 'active', fields: { name: upperFirst(name), kind } });\n      all.push(theme);\n      created.push(String(theme.fields.name));\n    }\n    if (!ids.includes(theme.id)) ids.push(theme.id);\n  }\n  return { ids, created };\n}\n\nasync function themeNames(ids: string[]): Promise<string> {\n  const all = await themes.list();\n  return ids.map((id) => String(all.find((t) => t.id === id)?.fields.name ?? id)).join(', ');\n}\n\nfunction feedbackIds(list: ReturnType<typeof entries>): string[] {\n  const ids = String(input.id ?? '').split(/[\\s,;]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);\n  if (!ids.length) throw new Error(\"Pass 'id', e.g. 'fb-12'. Call action:'status' to see the ids.\");\n  const unknown = ids.filter((id) => !list.some((e) => e.id === id));\n  if (unknown.length) {\n    throw new Error('No feedback ' + unknown.join(', ') + '. Known ids run from ' + (list[0]?.id ?? 'none') + ' to ' + (list[list.length - 1]?.id ?? 'none') + '.');\n  }\n  return ids;\n}\n\nasync function resolveAction(): Promise<string> {\n  const all = await actions.list();\n  const byId = input.id ? all.find((a) => a.id === input.id!.trim().toLowerCase()) : undefined;\n  if (byId) return byId.id;\n  const text = input.title ?? input.id;\n  if (text) {\n    const wanted = nameKey(text);\n    const exact = all.filter((a) => nameKey(a.fields.title) === wanted);\n    if (exact.length === 1) return exact[0]!.id;\n    const partial = all.filter((a) => nameKey(a.fields.title).includes(wanted));\n    if (partial.length === 1) return partial[0]!.id;\n    if (partial.length > 1) throw new Error(\"More than one action matches '\" + text + \"': \" + partial.map((a) => a.id + ' ' + String(a.fields.title)).join(', ') + '. Pass id.');\n  }\n  throw new Error(\"Pass 'id' (e.g. 'ac-2') or the action's 'title'. Actions: \" + (all.map((a) => a.id + ' ' + String(a.fields.title)).join(', ') || 'none yet') + '.');\n}\n\n// Many rows at once: one read and one write of the log, in the store's own format.\nasync function appendMany(events: Array<{ at: string; kind: string; note: string; data: Record<string, unknown> }>): Promise<void> {\n  let doc: { version: number; events: unknown[] };\n  let raw: string | null = null;\n  try {\n    raw = await gezel.fs.read(FEEDBACK);\n  } catch {\n    raw = null;\n  }\n  if (raw === null) doc = { version: 1, events: [] };\n  else {\n    doc = JSON.parse(raw);\n    if (doc.version !== 1 || !Array.isArray(doc.events)) throw new Error(FEEDBACK + ' is not a version 1 log; it was left untouched.');\n  }\n  doc.events.push(...events);\n  await gezel.fs.write(FEEDBACK, JSON.stringify(doc, null, 2) + '\\n');\n}\n\nlet note = '';\nconst today = localDay(Date.now());\n\nif (input.action === 'log') {\n  const text = (input.text ?? '').trim();\n  if (!text) throw new Error(\"log needs 'text' (the customer's words).\");\n  const day = input.receivedAt ? normalizeDate(input.receivedAt) : today;\n  if (!day) throw new Error(\"receivedAt must be a date, e.g. '2026-11-02'.\");\n  const source = sourceOf(input.source ?? 'other');\n  const rating = ratingOf(input.rating ?? input.stars, 5);\n  const events = await feedback.list();\n  const list = entries(events);\n  const existing = list.find((e) => textKey(e.text, e.author) === textKey(text, input.author));\n  const tagged = input.themes?.trim()\n    ? await ensureThemes(input.themes, THEME_KINDS.includes(String(input.kind)) ? String(input.kind) : guessKind([{ rating, text }]))\n    : { ids: [], created: [] };\n  if (existing) {\n    await feedback.append({\n      kind: 'edited',\n      note: 'Logged again.',\n      data: {\n        feedbackId: existing.id,\n        ...(rating !== null ? { rating } : {}),\n        ...(input.source ? { source } : {}),\n        ...(typeof input.replyNeeded === 'boolean' ? { replyNeeded: input.replyNeeded } : {}),\n        ...(tagged.ids.length ? { themes: tagged.ids } : {}),\n      },\n    });\n    note = 'Already in the log as ' + existing.id + '; updated it.';\n  } else {\n    const id = 'fb-' + nextFeedbackNumber(events);\n    const owed = needsReply(source, rating, input.replyNeeded);\n    await feedback.append({\n      kind: feedbackKind(source),\n      note: text,\n      data: {\n        id,\n        source,\n        ...(rating !== null ? { rating } : {}),\n        ...(input.author?.trim() ? { author: input.author.trim() } : {}),\n        day,\n        themes: tagged.ids,\n        replyNeeded: owed,\n      },\n    });\n    note =\n      'Logged ' + id + (tagged.ids.length ? ' under ' + (await themeNames(tagged.ids)) : ', not sorted into a theme yet') +\n      (tagged.created.length ? ' (new theme: ' + tagged.created.join(', ') + ')' : '') + (owed ? '; it needs a reply' : '') + '.';\n  }\n} else if (input.action === 'tag') {\n  if (!input.themes?.trim()) throw new Error(\"tag needs 'themes' (names, comma-separated).\");\n  const list = entries(await feedback.list());\n  const ids = feedbackIds(list);\n  const chosen = list.filter((e) => ids.includes(e.id));\n  const tagged = await ensureThemes(input.themes, THEME_KINDS.includes(String(input.kind)) ? String(input.kind) : guessKind(chosen));\n  for (const id of ids) {\n    await feedback.append({ kind: 'tagged', note: 'Sorted into themes.', data: { feedbackId: id, themes: tagged.ids } });\n  }\n  note =\n    'Sorted ' + ids.join(', ') + ' under ' + (await themeNames(tagged.ids)) +\n    (tagged.created.length ? ' (new theme: ' + tagged.created.join(', ') + ')' : '') + '.';\n} else if (input.action === 'reply') {\n  const list = entries(await feedback.list());\n  const [id] = feedbackIds(list);\n  const text = (input.reply ?? '').trim();\n  if (!text && input.posted !== true) throw new Error(\"reply needs 'reply' (the text to post).\");\n  if (text) {\n    await feedback.append({ kind: 'reply', note: text, data: { feedbackId: id, posted: input.posted === true } });\n  } else {\n    await feedback.append({ kind: 'replied', note: 'Reply posted.', data: { feedbackId: id } });\n  }\n  note = input.posted === true ? 'Marked ' + id + ' replied.' : 'Saved a reply to ' + id + '; it is not posted yet.';\n} else if (input.action === 'mark_replied') {\n  const list = entries(await feedback.list());\n  const [id] = feedbackIds(list);\n  await feedback.append({ kind: 'replied', note: input.note ?? 'Reply posted.', data: { feedbackId: id } });\n  note = 'Marked ' + id + ' replied.';\n} else if (input.action === 'add_action') {\n  const title = (input.title ?? '').trim();\n  if (!title) throw new Error(\"add_action needs 'title'.\");\n  const dueAt = input.dueAt ? normalizeDate(input.dueAt) : null;\n  if (input.dueAt && !dueAt) throw new Error(\"dueAt must be a date, e.g. '2026-12-01'.\");\n  const theme = input.theme?.trim() ? (await ensureThemes(input.theme, 'problem')).ids[0] : undefined;\n  const fields: Record<string, unknown> = {\n    ...(theme ? { theme } : {}),\n    ...(input.owner?.trim() ? { owner: input.owner.trim() } : {}),\n    ...(dueAt ? { dueAt } : {}),\n    ...(input.note?.trim() ? { notes: input.note.trim() } : {}),\n  };\n  const existing = (await actions.list()).find((a) => nameKey(a.fields.title) === nameKey(title));\n  if (existing) {\n    await actions.update(existing.id, { fields });\n    note = 'Updated the action ' + String(existing.fields.title) + '.';\n  } else {\n    const record = await actions.add({ status: 'todo', fields: { title, ...fields } });\n    note = 'Added ' + record.id + ': ' + title + '.';\n  }\n} else if (input.action === 'set_action') {\n  const status = String(input.status ?? '').trim().toLowerCase();\n  if (!ACTION_STAGES.includes(status)) throw new Error(\"set_action needs status 'todo', 'doing' or 'done'.\");\n  const id = await resolveAction();\n  const record = (await actions.get(id))!;\n  await actions.transition(id, status, input.note ? { note: input.note } : {});\n  if (status === 'done') await actions.update(id, { fields: { doneAt: today } });\n  note = String(record.fields.title) + ' (' + id + ') is ' + (status === 'todo' ? 'to do' : status === 'doing' ? 'under way' : 'done') + '.';\n} else if (input.action === 'import') {\n  const file = String(input.file ?? '').trim().replace(/\\\\/g, '/').replace(/^\\.?\\/+/, '');\n  if (!file) throw new Error(\"import needs 'file', e.g. 'imports/reviews.csv'.\");\n  if (!/\\.(csv|tsv|txt)$/i.test(file) || file.split('/').includes('..')) {\n    throw new Error('import reads a .csv, .tsv or .txt file in the workspace, e.g. imports/reviews.csv.');\n  }\n  let text: string;\n  try {\n    text = await gezel.fs.read(file);\n  } catch {\n    throw new Error(\"Could not read '\" + file + \"'. Add the file on the Customer Voice page first; it lands under imports/.\");\n  }\n  const parsed = csvFeedback(text, sourceOf(input.source ?? file));\n  if (parsed.columns.text === undefined) throw new Error('No column of customer comments found in ' + file + '. Name one review, comment, feedback or text.');\n  const events = await feedback.list();\n  const seen = new Set(entries(events).map((e) => textKey(e.text, e.author)));\n  let next = nextFeedbackNumber(events);\n  let repeats = 0;\n  const rows = parsed.items.slice(0, 2000);\n  const fresh: Array<{ at: string; kind: string; note: string; data: Record<string, unknown> }> = [];\n  for (const item of rows) {\n    const key = textKey(item.text, item.author);\n    if (seen.has(key)) {\n      repeats += 1;\n      continue;\n    }\n    seen.add(key);\n    fresh.push({\n      at: new Date().toISOString(),\n      kind: feedbackKind(item.source),\n      note: item.text,\n      data: {\n        id: 'fb-' + next++,\n        source: item.source,\n        ...(item.rating !== null ? { rating: item.rating } : {}),\n        ...(item.author ? { author: item.author } : {}),\n        day: item.day ?? today,\n        themes: [],\n        replyNeeded: needsReply(item.source, item.rating, undefined),\n        imported: file,\n      },\n    });\n  }\n  if (fresh.length) await appendMany(fresh);\n  note =\n    'Imported ' + fresh.length + (fresh.length === 1 ? ' entry' : ' entries') + ' from ' + file +\n    (repeats ? ' (' + repeats + ' already in the log)' : '') + (parsed.blank ? ', skipped ' + parsed.blank + (parsed.blank === 1 ? ' blank row' : ' blank rows') : '') +\n    (parsed.items.length > rows.length ? ', stopped at 2000 rows' : '') +\n    (fresh.length ? '; ' + fresh.length + ' new ' + (fresh.length === 1 ? 'entry is' : 'entries are') + ' not sorted into themes yet' : '') + '.';\n} else if (input.action !== 'status' && input.action !== 'list') {\n  throw new Error(\"Unknown action '\" + input.action + \"'. Use status, log, tag, reply, mark_replied, add_action, set_action, import, or list.\");\n}\n\nconst list = entries(await feedback.list());\nconst themeRecords = await themes.list();\nconst actionRecords = await actions.list();\nconst view = picture(themeRecords, list, actionRecords, Date.now());\n\nlet listing = '';\nif (input.action === 'list') {\n  const names: Record<string, string> = {};\n  themeRecords.forEach((t) => { names[t.id] = String(t.fields.name); });\n  const themeId = input.theme ? themeRecords.find((t) => t.id === input.theme!.trim().toLowerCase() || nameKey(t.fields.name) === nameKey(input.theme))?.id : undefined;\n  if (input.theme && !themeId) throw new Error(\"No theme '\" + input.theme + \"'. Themes: \" + themeRecords.map((t) => t.id + ' ' + String(t.fields.name)).join(', ') + '.');\n  const shown = themeId ? list.filter((e) => e.themes.includes(themeId)) : list;\n  listing =\n    shown.map((e) => feedbackLine(e, names) + (e.reply ? '; reply: \"' + quote(e.reply, 160) + '\"' : '')).join('\\n') || 'No feedback logged yet.';\n  if (!themeId && actionRecords.length) {\n    listing += '\\nActions: ' + actionRecords.map((a) => '[' + a.status + '] ' + String(a.fields.title) + ' (' + a.id + ')').join(' | ');\n  }\n}\n\ngezel.output({\n  themes: view.themes,\n  repliesNeeded: view.repliesNeeded,\n  unsorted: view.unsorted,\n  openActions: view.openActions,\n  summary: input.action === 'list' ? listing : (note ? note + ' ' : '') + view.summary,\n});\n"
+  },
+  "tools": [
+    {
+      "name": "voice_status",
+      "description": "What customers are saying now: each theme with its count over the last 30 days, the 30 before and the trend, the feedback not yet sorted into a theme, the reviews that still need a reply (oldest first), and the open actions. Every entry has its id. Call it first when asked what customers say.",
+      "script": "voice-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "status"
+      },
+      "state": true
+    },
+    {
+      "name": "log_feedback",
+      "description": "Save a review, survey answer or comment exactly as the customer wrote it: text, source, rating (1 to 5 stars), author, the day it was written (YYYY-MM-DD), and its themes by name (comma-separated; reuse names from the status, a new name starts a theme). Public reviews of 3 stars or fewer are marked as needing a reply. The same words from the same author update the entry, never duplicate it. Call it as soon as feedback is shared, before you discuss it.",
+      "script": "voice-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "google",
+              "yelp",
+              "tripadvisor",
+              "survey",
+              "email",
+              "social",
+              "in-person",
+              "other"
+            ]
+          },
+          "rating": {
+            "type": "number"
+          },
+          "author": {
+            "type": "string"
+          },
+          "receivedAt": {
+            "type": "string"
+          },
+          "themes": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "praise",
+              "problem",
+              "request"
+            ]
+          },
+          "replyNeeded": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "bind": {
+        "action": "log"
+      }
+    },
+    {
+      "name": "tag_feedback",
+      "description": "Sort feedback into themes: one id or several comma-separated ('fb-12, fb-13') and the theme names, reusing names from the status; a new name starts a new theme (kind: praise, problem or request). Call it as soon as you have decided, before you report it.",
+      "script": "voice-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "themes": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "praise",
+              "problem",
+              "request"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "themes"
+        ]
+      },
+      "bind": {
+        "action": "tag"
+      }
+    },
+    {
+      "name": "save_reply",
+      "description": "Save a reply to a review, ready for the person to post where the review lives. Mention a fix only when an open action covers it, and never offer a refund, discount or free item the business has not agreed. Pass posted: true once the person says it is live. Call it as soon as the reply is drafted, before you show it.",
+      "script": "voice-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "reply": {
+            "type": "string"
+          },
+          "posted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "bind": {
+        "action": "reply"
+      }
+    },
+    {
+      "name": "add_action",
+      "description": "Add an action the business agreed to take: title, the theme it answers (by name), owner and due date (YYYY-MM-DD). An existing title is updated, never duplicated. Call it as soon as an action is agreed, before you describe it.",
+      "script": "voice-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "theme": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "dueAt": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add_action"
+      }
+    },
+    {
+      "name": "set_action_status",
+      "description": "Move an action to todo, doing or done, by id or title. Call it the moment the person says it moved.",
+      "script": "voice-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "todo",
+              "doing",
+              "done"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "bind": {
+        "action": "set_action"
+      }
+    },
+    {
+      "name": "import_reviews",
+      "description": "Read a CSV of reviews or survey answers the person added under imports/ (e.g. 'imports/google-reviews.csv') into the log. Rows already in the log are skipped; new rows arrive unsorted.",
+      "script": "voice-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "google",
+              "yelp",
+              "tripadvisor",
+              "survey",
+              "email",
+              "social",
+              "in-person",
+              "other"
+            ]
+          }
+        },
+        "required": [
+          "file"
+        ]
+      },
+      "bind": {
+        "action": "import"
+      }
+    },
+    {
+      "name": "list_feedback",
+      "description": "Every piece of feedback with its themes and replies, or only one theme (by name), plus the actions.",
+      "script": "voice-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "theme": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "list"
+      }
+    },
+    {
+      "name": "page_log_feedback",
+      "description": "Log a review or survey answer.",
+      "script": "voice-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "google",
+              "yelp",
+              "tripadvisor",
+              "survey",
+              "email",
+              "social",
+              "in-person",
+              "other"
+            ]
+          },
+          "stars": {
+            "type": "string",
+            "enum": [
+              "1",
+              "2",
+              "3",
+              "4",
+              "5"
+            ]
+          },
+          "author": {
+            "type": "string"
+          },
+          "receivedAt": {
+            "type": "string"
+          },
+          "themes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "bind": {
+        "action": "log"
+      }
+    },
+    {
+      "name": "page_add_action",
+      "description": "Add an action.",
+      "script": "voice-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "theme": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "dueAt": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add_action"
+      }
+    },
+    {
+      "name": "page_set_action_status",
+      "description": "Move an action.",
+      "script": "voice-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "todo",
+              "doing",
+              "done"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "bind": {
+        "action": "set_action"
+      },
+      "reaction": {
+        "gezel": "researcher",
+        "hideSeed": true,
+        "prompt": "The person just updated an action on the Customer Voice page. The board now reads (its first sentence is what changed):\n{{output.summary}}\nIn two short sentences, confirm what changed and say how the theme it answers is trending this month. Do not call tools."
+      }
+    },
+    {
+      "name": "page_import_reviews",
+      "description": "Read an added CSV of reviews into the log.",
+      "script": "voice-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "google",
+              "yelp",
+              "tripadvisor",
+              "survey",
+              "email",
+              "social",
+              "in-person",
+              "other"
+            ]
+          }
+        },
+        "required": [
+          "file"
+        ]
+      },
+      "bind": {
+        "action": "import"
+      },
+      "reaction": {
+        "gezel": "researcher",
+        "hideSeed": true,
+        "prompt": "The person just added a file of reviews or survey answers on the Customer Voice page. The board now reads (its first sentence is what changed):\n{{output.summary}}\nIn two short sentences, say how many entries arrived and offer to sort the new ones into themes. Do not call tools."
+      }
+    },
+    {
+      "name": "page_mark_replied",
+      "description": "Mark a review replied.",
+      "script": "voice-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "bind": {
+        "action": "mark_replied"
+      }
+    }
+  ],
+  "craftbooks": [
+    "survey-analysis",
+    "review-reply-batch"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "voice/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "feedback.json"
+      },
+      {
+        "source": "workspace",
+        "path": "themes.json"
+      },
+      {
+        "source": "workspace",
+        "path": "actions.json"
+      },
+      {
+        "source": "workspace",
+        "path": "imports",
+        "subtree": true
+      }
+    ],
+    "imports": [
+      {
+        "id": "reviews",
+        "source": "workspace",
+        "path": "imports",
+        "accept": [
+          ".csv",
+          ".tsv",
+          ".txt"
+        ],
+        "maxFileBytes": 10485760
+      }
+    ],
+    "tools": [
+      "page_log_feedback",
+      "page_add_action",
+      "page_set_action_status",
+      "page_import_reviews",
+      "page_mark_replied"
+    ]
+  },
+  "workspaceSeed": [
+    "feedback.json",
+    "themes.json",
+    "actions.json"
+  ],
+  "minGezelVersion": "1.26280"
+}

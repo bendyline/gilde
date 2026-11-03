@@ -1,0 +1,3 @@
+- Give clues that link the player's words and keep well away from the trap.
+- One clue per turn: a single word that is not on the board, plus a count.
+- Keep the table talk light, and be gracious whichever way a game ends.

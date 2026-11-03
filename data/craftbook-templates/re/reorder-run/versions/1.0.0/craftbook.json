@@ -1,0 +1,205 @@
+{
+  "id": "reorder-run",
+  "name": "Reorder Run",
+  "description": "Turn a stock check into purchase orders: every item out or at its reorder point with the quantity that fills it back to par, grouped by supplier with lead times and costs, ready for a person to check and send. Use weekly before ordering, after a stocktake, or when something runs out.",
+  "entryStepId": "check",
+  "triggers": [
+    "reorder run",
+    "what should we order",
+    "draft the purchase orders",
+    "stock check",
+    "weekly order"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "focus": {
+        "type": "string",
+        "title": "What should the run cover?",
+        "description": "A supplier or part of the stockroom, e.g. 'Valley Dairy' or 'paper goods'. Leave empty for everything.",
+        "default": "everything we stock",
+        "fromMessage": true
+      },
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "check",
+      "name": "Check the stock",
+      "description": "every item out or at its reorder point, with the quantity to order",
+      "prompt": "Build the reorder list for {{focus}} before drafting anything. Step 1: if stock_status is available, call it; either way read items.json and orders.json from the workspace. Step 2: for every item in scope that is out or at or below its reorder point, record one row: item, on hand with its unit, reorder point, par, the quantity to order, supplier, lead time in days, unit cost and line cost. The quantity fills the item back to par (par minus on hand, rounded up; twice the reorder point when there is no par); copy it from stock_status when that gave one, and never recount the shelf. Step 3: mark a row 'on order' with the order id and expected date when the item is already on a sent order, and list items with no supplier on their own. Write the table to {{workPath}}/reorder.md and call write_task_note with the counts: out, low, already on order.\n\nThe deliverable `{{workPath}}/reorder.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the stock files stay untouched in this step.",
+      "suggestedRole": "Stock Keeper",
+      "advanceWhen": {
+        "file": "{{workPath}}/reorder.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/reorder.md",
+            "bytes": 200,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/reorder.md",
+            "pattern": "\\|",
+            "label": "the reorder list is a table",
+            "artifact": true
+          }
+        ],
+        "onReject": "check",
+        "maxAttempts": 3
+      },
+      "next": "orders",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "orders",
+      "name": "Draft the orders",
+      "description": "one purchase order per supplier, for the person to check and send",
+      "prompt": "Turn {{workPath}}/reorder.md into purchase orders. Step 1: if draft_orders is available, call it once so the drafts land on the inventory board; running it again updates them and never duplicates. Step 2: write one section per supplier with a '## <supplier>' heading: each line with its quantity, unit, item, unit cost and line cost; the order total; the supplier's lead time; and the date it would arrive if sent today. Leave out anything already on a sent order. Step 3: a '## Before you send' section listing items that need a supplier or a price, anything already on order with its expected date, and a closing line that these are drafts: nothing is ordered until the person places them and marks them sent. Write {{workPath}}/purchase-orders.md and call write_task_note with its path and the grand total.\n\nThe deliverable `{{workPath}}/purchase-orders.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; drafts on the board come only from draft_orders.\n\nIf the task notes hold a review of an earlier pass, fix exactly the gaps it names and keep everything that already passed.",
+      "suggestedRole": "Stock Keeper",
+      "advanceWhen": {
+        "file": "{{workPath}}/purchase-orders.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/purchase-orders.md",
+            "bytes": 400,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/purchase-orders.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+\\S",
+            "flags": "i",
+            "label": "at least one markdown heading",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/purchase-orders.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+Before you send",
+            "flags": "i",
+            "label": "a Before you send section",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/purchase-orders.md",
+            "pattern": "total",
+            "flags": "i",
+            "label": "order totals",
+            "artifact": true
+          }
+        ],
+        "onReject": "orders",
+        "maxAttempts": 4
+      },
+      "next": "finish",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "Stamp a short summary and report DONE.",
+      "prompt": "The orders are drafted. Write a one-paragraph DONE summary to task notes via `write_task_note`: the purchase-orders path, how many suppliers and items, the grand total, and the first order to send given its lead time. Then report DONE.",
+      "suggestedRole": "Stock Keeper",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write",
+          "artifacts"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-11-02T18:00:00Z",
+  "minGezelVersion": "1.26233"
+}

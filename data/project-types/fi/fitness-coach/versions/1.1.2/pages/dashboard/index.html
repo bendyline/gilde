@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Fitness Coach</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2; --card: #fff; --ink: #2b2620; --muted: #7a7166;
+        --accent: #b5651d; --track: #ece5da; --good: #4a7c59;
+      }
+      :root[data-theme='dark'] {
+        --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+        --accent: #e0894a; --track: #3a352f; --good: #7fae8d;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+          --accent: #e0894a; --track: #3a352f; --good: #7fae8d;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 15px/1.5 var(--font-body, system-ui, sans-serif); background: var(--bg); color: var(--ink); padding: 1.5rem 1.25rem; }
+      main { max-width: 620px; margin: 0 auto; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.35rem; font-weight: 600; margin: 0 0 0.15rem; }
+      .sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.9rem; }
+      .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-bottom: 0.75rem; }
+      .stat { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.85rem 1rem; }
+      .stat .num { font-size: 1.9rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .stat .num.good { color: var(--good); }
+      .stat .lbl { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; }
+      .week { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.85rem 1rem; margin-bottom: 0.75rem; }
+      .week h2, .recent h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 0.5rem; }
+      .dots { display: flex; gap: 0.4rem; }
+      .dot { width: 22px; height: 22px; border-radius: 6px; background: var(--track); }
+      .dot.hit { background: var(--good); }
+      .week .note { color: var(--muted); font-size: 0.85rem; margin-top: 0.5rem; }
+      .recent { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.85rem 1rem; font-size: 0.9rem; }
+      .recent ul { margin: 0; padding-left: 1.05rem; }
+      .recent li { margin: 0.25rem 0; }
+      .recent .when { color: var(--muted); font-variant-numeric: tabular-nums; }
+      .empty { color: var(--muted); font-style: italic; }
+      .panel { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.85rem 1rem; margin-bottom: 0.75rem; }
+      .panel h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 0.5rem; }
+      .log-row { display: grid; grid-template-columns: minmax(0, 1fr) 6.5rem; gap: 0.5rem; }
+      .log-row input {
+        font: inherit; color: var(--ink); background: var(--bg);
+        border: 1px solid var(--track); border-radius: 6px; padding: 0.5rem; min-height: 44px; width: 100%;
+      }
+      .quick { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.5rem 0; }
+      button {
+        font: inherit; color: var(--ink); background: var(--card);
+        border: 1px solid var(--track); border-radius: 6px; min-height: 44px; padding: 0.35rem 0.8rem; cursor: pointer;
+      }
+      button:hover:not(:disabled) { border-color: var(--accent); }
+      button:disabled { opacity: 0.5; cursor: default; }
+      button.primary { border-color: var(--good); color: var(--good); }
+      .status { color: var(--muted); font-size: 0.85rem; margin: 0.4rem 0 0; }
+      .status.best { color: var(--good); font-weight: 600; }
+      .recap p { margin: 0.2rem 0; }
+      .demo-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0 0 0.85rem;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--card) 88%, var(--accent));
+        color: var(--ink);
+        font-size: 0.8rem;
+      }
+      .demo-banner[hidden] { display: none; }
+      .demo-banner strong { font-weight: 700; }
+      .demo-reset {
+        flex: none;
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: var(--card);
+        color: var(--ink);
+        cursor: pointer;
+        font: inherit;
+      }
+      .demo-reset:hover { border-color: var(--ink); }
+    </style>
+  <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:20px 0;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--border,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}html[data-gezel-fullscreen=true] .board{min-width:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}.tiles,.stats,.summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}.board,.columns{max-width:100%;overflow-x:auto}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+  <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script></head>
+  <body>
+    <main>
+<p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong> — sample data stays in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1 id="title">Fitness Coach</h1>
+      <p class="sub" id="sub">Loading the training log…</p>
+      <div class="panel">
+        <h2>Log a session</h2>
+        <div class="log-row">
+          <input id="activity" type="text" maxlength="60" placeholder="What did you do?" aria-label="Activity" />
+          <input id="minutes" type="number" min="1" max="600" inputmode="numeric" placeholder="Minutes" aria-label="Minutes" />
+        </div>
+        <div class="quick" id="quick"></div>
+        <button type="button" class="primary" id="log">Log it</button>
+        <p class="status" id="log-status" role="status"></p>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="num good" id="streak">—</div><div class="lbl">Day streak</div></div>
+        <div class="stat"><div class="num" id="total">—</div><div class="lbl">Sessions all time</div></div>
+      </div>
+      <div class="week">
+        <h2>This week</h2>
+        <div class="dots" id="dots"></div>
+        <div class="note" id="weekNote"></div>
+      </div>
+      <div class="panel recap">
+        <h2>Weekly recap</h2>
+        <div id="recap"><p class="empty">No recap yet.</p></div>
+        <button type="button" id="ask-recap">Write this week's recap</button>
+        <p class="status" id="recap-status" role="status"></p>
+      </div>
+      <div class="recent">
+        <h2>Recent sessions</h2>
+        <ul id="recent"><li class="empty">Nothing logged yet — tell your Coach about your first session.</li></ul>
+      </div>
+    </main>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        var DAY = 86400000;
+
+        // ── demo log (used only when the page opens as a raw file) ──
+        // Two weeks of sessions, dated back from today, so the streak, the
+        // week, and the recap always have something true to show.
+        var demoTraining = {
+          goal: 'a comfortable 10K',
+          weeklyTarget: 4,
+          events: [
+            [12, 'Easy run', 30], [10, 'Mobility and strength', 25], [8, 'Long walk', 50],
+            [6, 'Easy run', 32], [4, 'Mobility and strength', 25], [2, 'Tempo intervals', 38],
+            [1, 'Easy run', 30], [0, 'Recovery walk', 28],
+          ].map(function (s) {
+            return { at: new Date(Date.now() - s[0] * DAY).toISOString(), kind: 'workout', data: { activity: s[1], minutes: s[2] } };
+          }),
+        };
+        // The same rules as the training-store script, so sample numbers match the live recap.
+        function demoMinutes(e) { var m = e.data && Number(e.data.minutes); return isFinite(m) && m > 0 ? m : 0; }
+        function demoWeekStart(nowIso) { var d = new Date(nowIso.slice(0, 10) + 'T00:00:00Z'); return d.getTime() - ((d.getUTCDay() + 6) % 7) * DAY; }
+        function demoRecapNumbers(nowIso) {
+          var start = demoWeekStart(nowIso), prevStart = start - 7 * DAY, events = demoTraining.events;
+          var week = events.filter(function (e) { var t = Date.parse(e.at); return t >= start && t < start + 7 * DAY; });
+          var prev = events.filter(function (e) { var t = Date.parse(e.at); return t >= prevStart && t < start; });
+          var minutes = week.reduce(function (n, e) { return n + demoMinutes(e); }, 0);
+          var prevMinutes = prev.reduce(function (n, e) { return n + demoMinutes(e); }, 0);
+          var longest = week.reduce(function (best, e) { return !best || demoMinutes(e) > demoMinutes(best) ? e : best; }, null);
+          return {
+            weekOf: new Date(start).toISOString().slice(0, 10), sessions: week.length, target: demoTraining.weeklyTarget, minutes: minutes,
+            sessionsChange: week.length - prev.length, minutesChange: minutes - prevMinutes,
+            longest: longest ? { activity: String(longest.data.activity || 'session'), minutes: demoMinutes(longest) } : null,
+          };
+        }
+        function demoRecapLine(r, suggestion) {
+          var change = r.minutesChange === 0 ? 'same as last week' : (r.minutesChange > 0 ? '+' : '') + r.minutesChange + ' min vs last week';
+          return 'Week of ' + r.weekOf + ': ' + r.sessions + (r.target > 0 ? ' of ' + r.target : '') + ((r.target || r.sessions) === 1 ? ' session, ' : ' sessions, ') + r.minutes + ' min (' + change + ').' + (suggestion ? ' Next week: ' + suggestion : '');
+        }
+        function demoStreak() {
+          var days = {}, last = '';
+          demoTraining.events.forEach(function (e) { days[e.at.slice(0, 10)] = true; if (e.at > last) last = e.at; });
+          var streak = 0, cursor = last ? Date.parse(last.slice(0, 10) + 'T00:00:00Z') : 0;
+          while (last && days[new Date(cursor).toISOString().slice(0, 10)]) { streak += 1; cursor -= DAY; }
+          return streak;
+        }
+        function demoStatus(extra) {
+          var week = demoRecapNumbers(new Date().toISOString());
+          return Object.assign({ streakDays: demoStreak(), thisWeek: week.sessions, weeklyTarget: demoTraining.weeklyTarget, total: demoTraining.events.length, recap: week, status: 'ok' }, extra || {});
+        }
+        function demoLog(input) {
+          if (!input.activity) throw new Error('Say what you did first.');
+          var minutes = Number(input.minutes) > 0 ? Math.round(Number(input.minutes)) : 0;
+          var longest = demoTraining.events.reduce(function (n, e) { return Math.max(n, demoMinutes(e)); }, 0);
+          var best = minutes > 0 && demoTraining.events.length > 0 && minutes > longest;
+          var event = { at: new Date().toISOString(), kind: 'workout', data: { activity: String(input.activity) } };
+          if (minutes) event.data.minutes = minutes;
+          if (input.note) event.note = String(input.note);
+          demoTraining.events.push(event);
+          return demoStatus({ personalBest: best });
+        }
+        function demoSetTarget(input) {
+          var target = Math.round(Number(input.weeklyTarget));
+          if (!isFinite(target) || target <= 0) throw new Error('Choose at least one session a week.');
+          demoTraining.weeklyTarget = target;
+          return demoStatus();
+        }
+        var demoLastWeek = demoRecapNumbers(new Date(Date.now() - 7 * DAY).toISOString());
+        var demoRecap = Object.assign({}, demoLastWeek, {
+          suggestion: demoLastWeek.sessions >= demoLastWeek.target
+            ? 'Keep the same ' + (['one', 'two', 'three', 'four', 'five', 'six', 'seven'][demoLastWeek.target - 1] || demoLastWeek.target) + ' days and let the long session grow by 10 minutes.'
+            : 'Put one easy 20-minute run midweek to reach ' + demoLastWeek.target + ' sessions.',
+          writtenAt: new Date(demoWeekStart(new Date().toISOString()) - DAY / 4).toISOString(),
+        });
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'dashboard/index.html', typeName: 'Fitness Coach', params: { goal: 'a comfortable 10K', weeklyTarget: 4 } },
+          tools: {
+            page_log_workout: demoLog,
+            log_workout: demoLog,
+            page_set_target: demoSetTarget,
+            set_target: demoSetTarget,
+            training_status: function () { return demoStatus(); },
+            workout_history: function () {
+              return demoStatus({ events: demoTraining.events.slice(-12) });
+            },
+            training_recap: function () { return demoStatus(); },
+            request_recap: function () { return demoStatus({ status: 'recap_wanted' }); },
+            save_recap: function (input) {
+              var suggestion = String(input.suggestion || '').replace(/\s+/g, ' ').trim().slice(0, 240);
+              if (suggestion.length < 10) throw new Error('A recap needs one sentence for next week.');
+              var numbers = demoRecapNumbers(new Date().toISOString());
+              demoRecap = Object.assign({}, numbers, { suggestion: suggestion, writtenAt: new Date().toISOString() });
+              return demoStatus({ display: demoRecapLine(numbers, suggestion) });
+            },
+          },
+          data: {
+            'training.json': function () { return demoTraining; },
+            'recaps/latest.json': function () { return demoRecap; },
+          },
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+
+        function applyTheme(mode) {
+          document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light');
+        }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+        function sessions(n) { return n === 1 ? 'session' : 'sessions'; }
+        function utcDay(iso) { return iso.slice(0, 10); }
+        function weekStartMs(nowIso) {
+          var d = new Date(nowIso.slice(0, 10) + 'T00:00:00Z');
+          return d.getTime() - ((d.getUTCDay() + 6) % 7) * DAY;
+        }
+        function streakDays(events) {
+          if (!events.length) return 0;
+          var days = {};
+          var last = null;
+          events.forEach(function (e) { days[utcDay(e.at)] = true; if (last === null || e.at > last) last = e.at; });
+          var streak = 0;
+          var cursor = Date.parse(utcDay(last) + 'T00:00:00Z');
+          while (days[new Date(cursor).toISOString().slice(0, 10)]) { streak += 1; cursor -= DAY; }
+          return streak;
+        }
+
+        function render(doc) {
+          var events = Array.isArray(doc.events) ? doc.events : [];
+          var target = Number(doc.weeklyTarget);
+          if (!isFinite(target) || target <= 0) target = 0;
+          if (doc.goal) document.getElementById('title').textContent = 'Training toward: ' + doc.goal;
+          document.getElementById('sub').textContent = events.length ? events.length + ' ' + sessions(events.length) + ' on record' : 'The record starts with the first session.';
+          document.getElementById('streak').textContent = String(streakDays(events));
+          document.getElementById('total').textContent = String(events.length);
+
+          var start = weekStartMs(new Date().toISOString());
+          var week = events.filter(function (e) { return Date.parse(e.at) >= start; }).length;
+          var slots = Math.max(target, week, 1);
+          var dots = '';
+          for (var i = 0; i < slots; i++) dots += '<span class="dot' + (i < week ? ' hit' : '') + '"></span>';
+          document.getElementById('dots').innerHTML = dots;
+          document.getElementById('weekNote').textContent = target > 0
+            ? week + ' of ' + target + ' ' + sessions(target) + (week >= target ? ' — target met.' : '.')
+            : week + ' ' + sessions(week) + ' this week.';
+
+          if (events.length) {
+            document.getElementById('recent').innerHTML = events.slice(-8).reverse().map(function (e) {
+              var mins = e.data && isFinite(Number(e.data.minutes)) && Number(e.data.minutes) > 0 ? ' (' + Number(e.data.minutes) + ' min)' : '';
+              return '<li><span class="when">' + esc(utcDay(e.at)) + '</span> ' + esc((e.data && e.data.activity) || 'session') + mins + '</li>';
+            }).join('');
+          }
+        }
+
+        window.addEventListener('gezel-app-data-changed', function(){ loadTraining(); });
+        function loadTraining(){
+var revision=++appLoadRevision;
+return Promise.all([gezel.data.read('training.json')]).then(function(values){if(appDisposed||revision!==appLoadRevision)return;reportAppError(null);render(values[0]||{});}).catch(function(error){if(!appDisposed&&revision===appLoadRevision)reportAppError(error);});
+}
+
+        ['Run', 'Walk', 'Gym', 'Cycle', 'Swim', 'Yoga'].forEach(function (name) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.textContent = name;
+          b.onclick = function () { document.getElementById('activity').value = name; };
+          document.getElementById('quick').appendChild(b);
+        });
+
+        function unavailable(err, where) {
+          return err && err.code === 'unavailable'
+            ? where + ' happens in the app’s Output pane.'
+            : (err && err.message) || 'That did not work. Try again.';
+        }
+
+        document.getElementById('log').onclick = function () {
+          var activity = document.getElementById('activity').value.trim();
+          var minutes = Number(document.getElementById('minutes').value);
+          var status = document.getElementById('log-status');
+          status.className = 'status';
+          if (!activity) { status.textContent = 'Say what you did first.'; return; }
+          var input = { activity: activity };
+          if (minutes > 0) input.minutes = minutes;
+          gezel.tools
+            .invoke('page_log_workout', input)
+            .then(function (res) {
+              var best = res && res.output && res.output.personalBest;
+              status.className = best ? 'status best' : 'status';
+              status.textContent = best ? 'Logged. That is your longest session yet.' : 'Logged.';
+              document.getElementById('activity').value = '';
+              document.getElementById('minutes').value = '';
+              return loadTraining();
+            })
+            .catch(function (err) { status.textContent = unavailable(err, 'Logging'); });
+        };
+
+        var shownRecap = null;
+        function renderRecap(r) {
+          if (!r) return;
+          var change = r.minutesChange === 0 ? 'same as last week' : (r.minutesChange > 0 ? '+' : '') + r.minutesChange + ' min vs last week';
+          document.getElementById('recap').innerHTML =
+            '<p><strong>Week of ' + esc(r.weekOf) + '</strong></p>' +
+            '<p>' + r.sessions + (r.target ? ' of ' + r.target : '') + ' ' + sessions(r.target || r.sessions) + ', ' + r.minutes + ' min (' + esc(change) + ').</p>' +
+            (r.suggestion ? '<p>Next week: ' + esc(r.suggestion) + '</p>' : '');
+          // A newer recap answers the request, so its "being written" note is done.
+          if (shownRecap !== null && r.writtenAt !== shownRecap) document.getElementById('recap-status').textContent = '';
+          shownRecap = r.writtenAt || '';
+        }
+        function loadRecap() {
+          // Until the first recap is written the file does not exist; that is "No recap yet", not a failure.
+          return gezel.data.read('recaps/latest.json').then(renderRecap).catch(function (err) {
+            if (!/not found|404/i.test((err && err.message) || '')) reportAppError(err);
+          });
+        }
+
+        document.getElementById('ask-recap').onclick = function () {
+          var status = document.getElementById('recap-status');
+          status.textContent = '';
+          gezel.tools
+            .invoke('request_recap', {})
+            .then(function () {
+              status.textContent = 'Your coach is writing it. It appears here when ready.';
+            })
+            .catch(function (err) { status.textContent = unavailable(err, 'Asking for a recap'); });
+        };
+
+        loadTraining();
+        loadRecap();
+        appSubscriptions.push(gezel.data.watch('training.json', function () { loadTraining(); }));
+        appSubscriptions.push(gezel.data.watch('recaps/latest.json', function () { loadRecap(); }));
+      })();
+    </script>
+  <script src="application.js" defer></script>
+  </body>
+</html>

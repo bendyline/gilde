@@ -1,0 +1,208 @@
+{
+  "id": "review-reply-batch",
+  "name": "Review Reply Batch",
+  "description": "Draft replies to every customer review that still needs one, in the business's own voice: each reply thanks the reviewer, answers the specific point they raised, and mentions a fix only when the action list shows it under way. Use after a busy weekend, before a monthly review sweep, or once a CSV of new reviews has been imported.",
+  "entryStepId": "gather",
+  "triggers": [
+    "reply to reviews",
+    "review replies",
+    "answer the reviews",
+    "respond to reviews",
+    "reply batch"
+  ],
+  "paramSchema": {
+    "type": "object",
+    "properties": {
+      "focus": {
+        "type": "string",
+        "title": "Which reviews?",
+        "description": "Leave it for every review that still needs a reply, or narrow it, e.g. 'the Yelp reviews' or 'the slow service complaints'.",
+        "default": "every review that still needs a reply",
+        "fromMessage": true
+      },
+      "voice": {
+        "type": "string",
+        "title": "How should replies sound?",
+        "description": "e.g. 'warm, plain and brief' or 'friendly and formal'.",
+        "default": "warm, plain and brief"
+      },
+      "workPath": {
+        "type": "string",
+        "title": "Working folder",
+        "description": "Per-task working folder in the artifacts drawer.",
+        "default": "{{task.dir}}"
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "gather",
+      "name": "Pick the reviews",
+      "description": "every review in scope that still needs a reply, with the action that answers it",
+      "prompt": "List the reviews to answer before drafting anything. Step 1: call voice_status, then read feedback.json, themes.json and actions.json from the workspace. Step 2: fold the log: each event of kind review, survey or comment is one entry, and its id is data.id; later events with data.feedbackId sort it into themes (tagged), edit it (edited), reply to it (reply, with data.posted) or mark it replied (replied). Step 3: keep the entries for {{focus}}: by default every entry with data.replyNeeded true and no posted reply. Step 4: write one table row per review: id, source, stars, author, date, the review word for word, its theme names, and the open action (status todo or doing) for one of those themes from actions.json with its title, or 'none'. Write the table to {{workPath}}/queue.md and call write_task_note with the number of reviews.\n\nThe deliverable `{{workPath}}/queue.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the feedback files stay untouched.",
+      "suggestedRole": "Researcher",
+      "advanceWhen": {
+        "file": "{{workPath}}/queue.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/queue.md",
+            "bytes": 120,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/queue.md",
+            "pattern": "\\|",
+            "label": "the queue is a table",
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/queue.md",
+            "pattern": "fb-\\d+",
+            "label": "each row names its feedback id",
+            "artifact": true
+          }
+        ],
+        "onReject": "gather",
+        "maxAttempts": 3
+      },
+      "next": "draft",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "draft",
+      "name": "Draft the replies",
+      "description": "one reply per review, specific and honest",
+      "prompt": "Open {{workPath}}/queue.md with `read_artifact` and write one reply per row. Each reply: 40 to 90 words, {{voice}}; thank the reviewer, by first name when there is one; name the specific thing they raised, in their own terms; apologize once for a problem and never argue; mention a fix only when the row names an open action, and then describe exactly that action; otherwise say the team is looking into it. Never offer a refund, discount, free item or date the business has not agreed: leave a [bracketed] blank for the person instead. Sign off as the business. Write {{workPath}}/replies.md with one '## fb-N' section per review: the review quoted on one line, then the reply. When the save_reply tool is available, call it for each review with its id and reply (posted false) so the drafts show on the board. Call write_task_note with the path and the number of replies.\n\nThe deliverable `{{workPath}}/replies.md` lands in the project's artifacts drawer — write it with `write_artifact` and read it back with `read_artifact`; the feedback files stay untouched.\n\nIf the task notes hold a review of an earlier pass, fix exactly the replies it names and keep everything that already passed.",
+      "suggestedRole": "Copywriter",
+      "consumes": [
+        {
+          "file": "{{workPath}}/queue.md",
+          "artifact": true
+        }
+      ],
+      "advanceWhen": {
+        "file": "{{workPath}}/replies.md",
+        "minBytes": 1,
+        "sniff": "nonempty",
+        "artifact": true
+      },
+      "gate": {
+        "at": "completion",
+        "checks": [
+          {
+            "kind": "minBytes",
+            "file": "{{workPath}}/replies.md",
+            "bytes": 300,
+            "artifact": true
+          },
+          {
+            "kind": "contains",
+            "file": "{{workPath}}/replies.md",
+            "pattern": "(?:^|\\n)#{1,3}\\s+fb-\\d+",
+            "flags": "i",
+            "label": "one '## fb-N' section per review",
+            "artifact": true
+          }
+        ],
+        "onReject": "draft",
+        "maxAttempts": 4
+      },
+      "next": "finish",
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write"
+        ],
+        "outputMedium": "artifact",
+        "additionalOutputMedia": [
+          "task-note"
+        ]
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Finish",
+      "description": "Stamp a short summary and report DONE.",
+      "prompt": "The replies are drafted. Write a one-paragraph DONE summary to task notes via `write_task_note`: the replies path, how many replies, and which ones mention an action under way. Remind the person that each reply is posted by them, where the review lives, and then marked replied on the board. Then report DONE.",
+      "suggestedRole": "Researcher",
+      "terminal": true,
+      "toolPolicy": {
+        "disallowBuiltinToolsets": [
+          "ai-apps",
+          "archives",
+          "audio",
+          "browser-automation",
+          "code-execution",
+          "craftbooks",
+          "data-tables",
+          "entity-intel",
+          "git",
+          "image-intel",
+          "images",
+          "role-delegation",
+          "role-delegation-escalation",
+          "security-intel",
+          "team-management",
+          "videos",
+          "web",
+          "workspace-fs-write",
+          "artifacts"
+        ],
+        "outputMedium": "task-note"
+      }
+    }
+  ],
+  "version": "1.0.0",
+  "releasedAt": "2026-11-02T18:00:00Z",
+  "minGezelVersion": "1.26233"
+}

@@ -1,0 +1,894 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Quotes and bids</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f4f3ef; --card: #fffdf9; --ink: #25262a; --muted: #66625a; --line: #dcd6ca;
+        --accent: #3a5a8c; --accent-bg: #e3e9f3; --late: #a3341f; --late-bg: #f7e1da; --soon: #8a5a12; --soon-bg: #f6ead2;
+        --ok: #3f6b4a; --ok-bg: #e2eedf; --chip: #ece7dd; --stripe: #f8f6f1;
+      }
+      :root[data-theme='dark'] {
+        --bg: #16171a; --card: #202125; --ink: #ebe8e1; --muted: #a29d93; --line: #383a3f;
+        --accent: #9db8e6; --accent-bg: #222b3a; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+        --ok: #8fc29b; --ok-bg: #22301f; --chip: #2c2d31; --stripe: #1c1d21;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #16171a; --card: #202125; --ink: #ebe8e1; --muted: #a29d93; --line: #383a3f;
+          --accent: #9db8e6; --accent-bg: #222b3a; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+          --ok: #8fc29b; --ok-bg: #22301f; --chip: #2c2d31; --stripe: #1c1d21;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body, system-ui, sans-serif); font-size: 15px; line-height: 1.5; padding: 1.5rem 1.25rem; }
+      main { max-width: 900px; margin: 0 auto; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.5rem; font-weight: 400; margin: 0 0 0.2rem; }
+      h2 { font-family: var(--font-heading, Georgia, serif); font-size: 1.1rem; font-weight: 400; margin: 0 0 0.6rem; }
+      h3 { font-size: 1rem; font-weight: 600; margin: 0; overflow-wrap: anywhere; }
+      .sub { color: var(--muted); margin: 0 0 1rem; }
+      .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; margin: 0 0 1.2rem; }
+      .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem 0.9rem; min-width: 0; }
+      .tile b { display: block; font-size: 1.35rem; font-weight: 600; line-height: 1.15; overflow-wrap: anywhere; }
+      .tile span { color: var(--muted); font-size: 0.85rem; }
+      .tile.accent b { color: var(--accent); }
+      .tile.late b { color: var(--late); }
+      .tile.ok b { color: var(--ok); }
+      section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin: 0 0 1rem; }
+      .due { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+      .due li { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); gap: 0.75rem; align-items: start; }
+      .due li.empty { display: block; }
+      .when { font-size: 0.8rem; font-weight: 600; padding: 0.15rem 0.45rem; border-radius: 4px; text-align: center; background: var(--chip); color: var(--muted); }
+      .when.late { background: var(--late-bg); color: var(--late); }
+      .when.soon { background: var(--soon-bg); color: var(--soon); }
+      .what b { font-weight: 600; }
+      .what small, .meta { display: block; color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
+      .empty { color: var(--muted); font-style: italic; margin: 0; }
+      .builder-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; flex-wrap: wrap; margin: 0 0 0.75rem; }
+      .builder-head .meta { margin-top: 0.15rem; }
+      .pick { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; color: var(--muted); min-width: 0; max-width: 100%; }
+      .pick select { min-height: 40px; max-width: 100%; padding: 0.35rem 0.5rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); font: inherit; font-size: 0.9rem; }
+      .table-wrap { overflow-x: auto; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+      th { text-align: left; font-weight: 600; color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 0.5rem 0.4rem; border-bottom: 1px solid var(--line); }
+      td { padding: 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+      td.num, th.num { text-align: right; white-space: nowrap; }
+      .lines tbody tr:nth-child(even) td { background: var(--stripe); }
+      .lines tfoot td { border-bottom: 0; padding: 0.25rem 0.5rem; text-align: right; }
+      .lines tfoot tr:first-child td { padding-top: 0.6rem; }
+      .lines tfoot tr.total td { font-weight: 600; font-size: 1rem; padding-top: 0.45rem; border-top: 1px solid var(--line); }
+      .status { display: inline-block; font-size: 0.78rem; padding: 0.05rem 0.4rem; border-radius: 4px; background: var(--chip); }
+      .status.sent { background: var(--accent-bg); color: var(--accent); }
+      .status.won { background: var(--ok-bg); color: var(--ok); }
+      .status.lost { background: var(--late-bg); color: var(--late); }
+      .chip { display: inline-block; font-size: 0.75rem; padding: 0.05rem 0.4rem; border-radius: 4px; background: var(--chip); color: var(--muted); }
+      .chip.late { background: var(--late-bg); color: var(--late); }
+      .chip.soon { background: var(--soon-bg); color: var(--soon); }
+      .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
+      .log { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; align-content: start; font-size: 0.9rem; }
+      .log time { color: var(--muted); font-size: 0.8rem; margin-right: 0.35rem; }
+      .bar { height: 10px; border-radius: 4px; background: var(--late-bg); overflow: hidden; margin: 0.4rem 0 0.75rem; }
+      .bar span { display: block; height: 100%; background: var(--ok); }
+      .demo-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 0 0 1rem; padding: 0.5rem 0.65rem; border: 1px solid var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--card) 88%, var(--accent)); font-size: 0.85rem; }
+      .demo-banner[hidden] { display: none; }
+      .demo-reset { flex: none; min-height: 36px; padding: 0.3rem 0.7rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; }
+      .note { color: var(--muted); font-size: 0.85rem; margin: 0.75rem 0 0; }
+      @media (max-width: 640px) {
+        .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .tile b { font-size: 1.15rem; }
+        .split { grid-template-columns: minmax(0, 1fr); }
+        .due li { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
+        .when { justify-self: start; }
+        table { font-size: 0.82rem; }
+        th { font-size: 0.7rem; letter-spacing: 0; padding: 0 0.3rem 0.4rem; }
+        td { padding: 0.45rem 0.3rem; }
+        .lines tfoot td { padding: 0.25rem 0.3rem; }
+        .lines td.qty { white-space: normal; }
+      }
+    </style>
+    <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:0 0 12px;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--line,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+    <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script>
+  </head>
+  <body>
+    <main>
+      <p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong>: Brightline Electric’s sample quotes. Changes stay in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Quotes and bids</h1>
+      <p class="sub" id="sub">Loading the quotes…</p>
+      <div class="tiles">
+        <div class="tile"><b id="t-drafts">$0</b><span id="t-drafts-label">Drafts</span></div>
+        <div class="tile accent"><b id="t-waiting">$0</b><span id="t-waiting-label">Sent and waiting</span></div>
+        <div class="tile late"><b id="t-due">0</b><span>Follow-ups due now</span></div>
+        <div class="tile ok"><b id="t-rate">–</b><span id="t-rate-label">Win rate</span></div>
+      </div>
+      <section id="follow-section">
+        <h2>Follow-ups</h2>
+        <ul class="due" id="follow"></ul>
+        <p class="meta" id="expiring" hidden></p>
+      </section>
+      <section id="builder-section">
+        <h2>Quote builder</h2>
+        <div class="builder-head">
+          <div>
+            <h3 id="b-title">No quote yet</h3>
+            <span class="meta" id="b-meta"></span>
+          </div>
+          <label class="pick" id="b-pick-wrap" hidden>Showing
+            <select id="b-pick" aria-label="Quote shown in the builder"></select>
+          </label>
+        </div>
+        <div class="table-wrap">
+          <table class="lines">
+            <thead><tr><th class="num">#</th><th>Item</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Amount</th></tr></thead>
+            <tbody id="b-lines"></tbody>
+            <tfoot id="b-totals"></tfoot>
+          </table>
+        </div>
+        <p class="note">Every amount and total is worked out from the lines and the tax rate you set, exact to the cent. Which work is taxable is a question for your accountant or the state revenue department; this is not tax advice.</p>
+      </section>
+      <section id="quotes-section">
+        <h2>All quotes</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Quote</th><th>Status</th><th class="num">Total</th><th>Next</th></tr></thead>
+            <tbody id="quotes-body"></tbody>
+          </table>
+        </div>
+      </section>
+      <section id="results-section">
+        <h2>Won and lost</h2>
+        <p id="win-line" class="meta"></p>
+        <div class="bar" id="win-bar" hidden><span id="win-fill"></span></div>
+        <ul class="log" id="results"></ul>
+      </section>
+      <section id="rates-section">
+        <h2>Rates and terms</h2>
+        <div class="split">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Rate</th><th>Kind</th><th class="num">Price</th></tr></thead>
+              <tbody id="rates-body"></tbody>
+            </table>
+          </div>
+          <ul class="log" id="terms"></ul>
+        </div>
+      </section>
+    </main>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        // ── quote-rules-start ──
+        // Pure derivations: money in integer cents, line amounts and quote totals that
+        // are exact to the cent (quantities to a thousandth, tax rates in basis
+        // points, both rounded half up), local calendar days for follow-ups, finding a
+        // quote or a line by name, and the quotes picture the crew reads. Kept
+        // self-contained between these sentinels so unit tests execute the shipped
+        // bytes.
+        var DAY_MS = 86400000;
+        var STAGES = ['draft', 'sent', 'won', 'lost'];
+        var KINDS = ['labor', 'materials', 'other'];
+        var NAME_STOP = ['the', 'and', 'for', 'with', 'our', 'quote', 'bid', 'job', 'estimate'];
+
+        function pad(n) {
+          return n < 10 ? '0' + n : String(n);
+        }
+        function localDay(ms) {
+          var d = new Date(ms);
+          return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+        }
+        function normalizeDate(text) {
+          var raw = String(text || '').trim();
+          if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+          var parsed = Date.parse(raw);
+          return isFinite(parsed) ? localDay(parsed) : null;
+        }
+        function daysLeft(day, nowMs) {
+          var due = Date.parse(String(day).slice(0, 10) + 'T00:00:00');
+          var today = Date.parse(localDay(nowMs) + 'T00:00:00');
+          return Math.round((due - today) / DAY_MS);
+        }
+        function addDays(day, n) {
+          var d = new Date(String(day).slice(0, 10) + 'T12:00:00');
+          d.setDate(d.getDate() + n);
+          return localDay(d.getTime());
+        }
+        function when(days) {
+          if (days < 0) return -days + (days === -1 ? ' day late' : ' days late');
+          if (days === 0) return 'today';
+          if (days === 1) return 'tomorrow';
+          return 'in ' + days + ' days';
+        }
+        function cap(text) {
+          return String(text).charAt(0).toUpperCase() + String(text).slice(1);
+        }
+        function ago(days) {
+          return days <= 0 ? 'today' : days === 1 ? 'yesterday' : days + ' days ago';
+        }
+        // Dollars as a number or text ('$1,850', '95.50') to integer cents; null when it is not money.
+        function toCents(value) {
+          if (typeof value === 'string') value = Number(value.replace(/[$,\s]/g, ''));
+          if (typeof value !== 'number' || !isFinite(value)) return null;
+          return (value < 0 ? -1 : 1) * Math.round(Math.abs(value) * 100);
+        }
+        // A quantity in thousandths, so 6.5 hours or 12.25 feet multiply exactly.
+        function toMilli(qty) {
+          if (typeof qty === 'string') qty = Number(qty.replace(/[,\s]/g, ''));
+          return typeof qty === 'number' && isFinite(qty) && qty > 0 ? Math.round(qty * 1000) : null;
+        }
+        function money(cents) {
+          var n = Math.round(Number(cents) || 0);
+          var abs = Math.abs(n);
+          var whole = String(Math.floor(abs / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+          return (n < 0 ? '-$' : '$') + whole + '.' + pad(abs % 100);
+        }
+        function percent(bp) {
+          return (bp / 100).toFixed(2).replace(/\.?0+$/, '') + '%';
+        }
+        function fold(text) {
+          return String(text || '')
+            .normalize('NFD')
+            .replace(/[̀-ͯ]/g, '')
+            .replace(/[‘’]/g, "'")
+            .toLowerCase()
+            .trim();
+        }
+        // Quantity times rate, rounded half away from zero to the cent.
+        function lineAmount(qtyMilli, rateCents) {
+          var x = qtyMilli * rateCents;
+          return (x < 0 ? -1 : 1) * Math.floor((Math.abs(x) + 500) / 1000);
+        }
+        function qtyText(qty, unit) {
+          var n = Math.round(Number(qty) * 1000) / 1000;
+          var u = String(unit || 'each');
+          if (n === 1 || u === 'each' || u === 'lot' || /s$/.test(u)) return n + ' ' + u;
+          return n + ' ' + (u === 'foot' ? 'feet' : /(x|ch|sh)$/.test(u) ? u + 'es' : u + 's');
+        }
+        function totals(lines, taxBp, taxOn) {
+          var t = { labor: 0, materials: 0, other: 0, subtotal: 0, taxable: 0, tax: 0, total: 0 };
+          (lines || []).forEach(function (l) {
+            var a = Number(l.amountCents) || 0;
+            t[KINDS.indexOf(l.kind) >= 0 ? l.kind : 'other'] += a;
+            t.subtotal += a;
+          });
+          t.taxable = Math.max(0, taxOn === 'all' ? t.subtotal : t.materials);
+          t.tax = Math.floor((t.taxable * (taxBp || 0) + 5000) / 10000);
+          t.total = t.subtotal + t.tax;
+          return t;
+        }
+        function quoteTotals(record) {
+          var f = record.fields || {};
+          return totals(f.lines, f.taxBp, f.taxOn);
+        }
+        // The fields a quote stores beside its lines, so a reader never re-adds them.
+        function totalFields(lines, taxBp, taxOn) {
+          var t = totals(lines, taxBp, taxOn);
+          return { laborCents: t.labor, materialsCents: t.materials, otherCents: t.other, subtotalCents: t.subtotal, taxCents: t.tax, totalCents: t.total };
+        }
+        function normalizeTerms(doc) {
+          var d = doc && typeof doc === 'object' ? doc : {};
+          var whole = function (v, fallback) {
+            return typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : fallback;
+          };
+          return {
+            version: 1,
+            taxBp: typeof d.taxBp === 'number' && Number.isInteger(d.taxBp) && d.taxBp >= 0 ? d.taxBp : 0,
+            taxOn: d.taxOn === 'all' ? 'all' : 'materials',
+            validDays: whole(d.validDays, 30),
+            followUpDays: whole(d.followUpDays, 5),
+            rates: (Array.isArray(d.rates) ? d.rates : []).filter(function (r) {
+              return r && typeof r.name === 'string' && typeof r.rateCents === 'number' && Number.isInteger(r.rateCents);
+            }),
+          };
+        }
+        function rateText(r) {
+          return r.name + ' ' + money(r.rateCents) + '/' + r.unit + ' (' + r.kind + ')';
+        }
+        function findRate(rates, name) {
+          var wanted = fold(name);
+          if (!wanted) return null;
+          var exact = rates.filter(function (r) { return fold(r.name) === wanted; });
+          if (exact.length) return exact[0];
+          var partial = rates.filter(function (r) { return fold(r.name).indexOf(wanted) >= 0 || wanted.indexOf(fold(r.name)) >= 0; });
+          return partial.length === 1 ? partial[0] : null;
+        }
+        function lineText(l) {
+          return '#' + l.n + ' ' + l.description + ', ' + qtyText(l.qty, l.unit) + ' x ' + money(l.rateCents) + ' = ' + money(l.amountCents) + ' (' + l.kind + ')';
+        }
+        // Add a line, or change the one with the same description. Returns the new
+        // list and what changed; the caller re-totals.
+        function upsertLine(lines, input, terms) {
+          var list = (lines || []).map(function (l) { return Object.assign({}, l); });
+          var saved = input.rateName ? findRate(terms.rates, input.rateName) : null;
+          if (input.rateName && !saved) {
+            throw new Error(
+              "No saved rate named '" + input.rateName + "'. Saved rates: " +
+                (terms.rates.map(rateText).join(', ') || 'none yet; pass rate in dollars') + '.',
+            );
+          }
+          var description = String(input.description || (saved && saved.name) || '').trim();
+          if (!description) throw new Error("add_line needs 'description', e.g. 'Electrician labor' or '200A panel'.");
+          var existing = list.filter(function (l) { return fold(l.description) === fold(description); })[0] || null;
+          if (!existing && !saved && (input.rate === undefined || input.rate === null || input.rate === '')) saved = findRate(terms.rates, description);
+          var rateCents =
+            input.rate !== undefined && input.rate !== null && input.rate !== ''
+              ? toCents(input.rate)
+              : saved ? saved.rateCents : existing ? existing.rateCents : null;
+          if (rateCents === null) {
+            throw new Error(
+              "'" + description + "' needs 'rate' (dollars per unit) or 'rateName'" +
+                (terms.rates.length ? ' from the saved rates: ' + terms.rates.map(rateText).join(', ') : '') + '.',
+            );
+          }
+          var kind = KINDS.indexOf(input.kind) >= 0 ? input.kind : saved ? saved.kind : existing ? existing.kind : 'other';
+          if (rateCents < 0 && kind !== 'other') throw new Error('Only an "other" line can be a credit with a negative rate.');
+          var unit = input.unit ? String(input.unit).trim() : saved ? saved.unit : existing ? existing.unit : 'each';
+          var add = input.addQty !== undefined && input.addQty !== null && input.addQty !== '' ? toMilli(input.addQty) : null;
+          var set = input.qty !== undefined && input.qty !== null && input.qty !== '' ? toMilli(input.qty) : null;
+          if (add === null && input.addQty !== undefined && input.addQty !== null && input.addQty !== '') throw new Error('addQty must be a positive number.');
+          if (set === null && input.qty !== undefined && input.qty !== null && input.qty !== '') throw new Error('qty must be a positive number.');
+          var before = existing ? Math.round(existing.qty * 1000) : 0;
+          var qtyMilli = add !== null ? before + add : set !== null ? set : existing ? before : 1000;
+          var line = { description: existing ? existing.description : description, kind: kind, qty: qtyMilli / 1000, unit: unit, rateCents: rateCents, amountCents: lineAmount(qtyMilli, rateCents) };
+          if (existing) Object.assign(existing, line);
+          else list.push(line);
+          list.forEach(function (l, i) { l.n = i + 1; });
+          var placed = existing || list[list.length - 1];
+          return {
+            lines: list,
+            note:
+              (existing ? 'Updated line ' : 'Added line ') + lineText(placed) +
+              (existing && add !== null ? ' (' + before / 1000 + ' + ' + add / 1000 + ')' : '') + '.',
+          };
+        }
+        function removeLine(lines, input) {
+          var list = (lines || []).map(function (l) { return Object.assign({}, l); });
+          var hit = null;
+          if (input.line !== undefined && input.line !== null && input.line !== '') {
+            hit = list.filter(function (l) { return l.n === Number(input.line); })[0] || null;
+          } else if (input.description) {
+            var wanted = fold(input.description);
+            var exact = list.filter(function (l) { return fold(l.description) === wanted; });
+            var partial = list.filter(function (l) { return fold(l.description).indexOf(wanted) >= 0; });
+            hit = exact[0] || (partial.length === 1 ? partial[0] : null);
+          }
+          if (!hit) {
+            throw new Error(
+              "Name the line by 'line' number or 'description'. Lines: " + (list.map(lineText).join('; ') || 'none') + '.',
+            );
+          }
+          var rest = list.filter(function (l) { return l !== hit; });
+          rest.forEach(function (l, i) { l.n = i + 1; });
+          return { lines: rest, note: 'Removed ' + hit.description + ' (' + money(hit.amountCents) + ').' };
+        }
+        function isOpen(record) {
+          return record.status === 'draft' || record.status === 'sent';
+        }
+        // The quote a person means: its id, its exact title, a title or client that
+        // contains what they wrote, or one whose name holds every word they used.
+        // Several matches prefer the open quotes; a tie is an error that names them.
+        function findQuote(records, input) {
+          if (input.id) {
+            var byId = records.filter(function (r) { return r.id === String(input.id).trim(); });
+            if (byId.length) return byId[0];
+            if (!input.title && !input.client) throw new Error("No quote '" + input.id + "'. " + roll(records));
+          }
+          var wanted = fold(input.title || input.client);
+          if (!wanted) throw new Error("Pass 'id' (e.g. 'q-3') or the quote's 'title'. " + roll(records));
+          var name = function (r) { return fold(r.fields.title); };
+          var both = function (r) { return name(r) + ' ' + fold(r.fields.client); };
+          var words = wanted.split(/[^a-z0-9']+/).filter(function (w) { return w.length > 2 && NAME_STOP.indexOf(w) < 0; });
+          var tiers = [
+            function (r) { return name(r) === wanted; },
+            function (r) { return name(r).indexOf(wanted) >= 0 || fold(r.fields.client) === wanted; },
+            function (r) {
+              return words.length > 0 && words.every(function (w) { return both(r).indexOf(w) >= 0 || both(r).indexOf(w.replace(/s$/, '')) >= 0; });
+            },
+          ];
+          for (var i = 0; i < tiers.length; i++) {
+            var hits = records.filter(tiers[i]);
+            if (hits.length > 1) {
+              var open = hits.filter(isOpen);
+              if (open.length) hits = open;
+            }
+            if (hits.length === 1) return hits[0];
+            if (hits.length > 1) {
+              throw new Error(
+                "More than one quote matches '" + (input.title || input.client) + "': " +
+                  hits.map(function (r) { return r.id + ' ' + r.fields.title; }).join(', ') + '. Pass id.',
+              );
+            }
+          }
+          throw new Error("No quote matches '" + (input.title || input.client) + "'. " + roll(records));
+        }
+        function roll(records) {
+          return records.length
+            ? 'Quotes: ' + records.map(function (r) { return r.id + ' ' + r.fields.title + ' (' + r.status + ')'; }).join(', ') + '.'
+            : 'There are no quotes yet.';
+        }
+        function lastNote(record) {
+          var notes = (record.history || []).filter(function (h) { return h.note; });
+          return notes.length ? notes[notes.length - 1].note : '';
+        }
+        function quoteLine(record, nowMs) {
+          var f = record.fields || {};
+          var t = quoteTotals(record);
+          var lines = (f.lines || []).length;
+          var head =
+            record.id + (f.client && fold(f.title).indexOf(fold(f.client)) < 0 ? ', ' + f.client : '') + ', ' + record.status + ', ' +
+            lines + (lines === 1 ? ' line' : ' lines') + ', total ' + money(t.total) + (t.tax ? ' with ' + money(t.tax) + ' tax' : '');
+          var parts = [head];
+          if (record.status === 'sent') {
+            if (f.sentAt) parts.push('sent ' + ago(-daysLeft(f.sentAt, nowMs)));
+            if (f.followUpAt) parts.push('follow up ' + when(daysLeft(f.followUpAt, nowMs)) + ' (' + f.followUpAt + ')');
+            if (f.validUntil) parts.push((daysLeft(f.validUntil, nowMs) < 0 ? 'expired ' : 'valid until ') + f.validUntil);
+          }
+          if (!isOpen(record) && f.closedAt) parts.push(record.status + ' ' + f.closedAt + (f.reason ? ': ' + f.reason : ''));
+          return f.title + ' (' + parts.join('; ') + ')';
+        }
+        function followLine(record, nowMs) {
+          var f = record.fields;
+          var note = lastNote(record).replace(/[.\s]+$/, '');
+          return (
+            f.title + ' (' + record.id + (f.contact ? ', ' + f.contact : '') + ', ' + money(quoteTotals(record).total) +
+            (f.sentAt ? ', sent ' + ago(-daysLeft(f.sentAt, nowMs)) : '') + ') ' + when(daysLeft(f.followUpAt, nowMs)) +
+            (note && note !== 'Sent to the client' ? '; last note: ' + note : '')
+          );
+        }
+        function picture(records, terms, nowMs, withinDays) {
+          var byStatus = function (s) { return records.filter(function (r) { return r.status === s; }); };
+          var drafts = byStatus('draft');
+          var sent = byStatus('sent');
+          var won = byStatus('won');
+          var lost = byStatus('lost');
+          var total = function (list) { return list.reduce(function (t, r) { return t + quoteTotals(r).total; }, 0); };
+          var due = sent
+            .filter(function (r) { return r.fields.followUpAt && daysLeft(r.fields.followUpAt, nowMs) <= withinDays; })
+            .sort(function (a, b) { return String(a.fields.followUpAt).localeCompare(String(b.fields.followUpAt)); });
+          var dueNow = due.filter(function (r) { return daysLeft(r.fields.followUpAt, nowMs) <= 0; });
+          var recentFirst = function (list) {
+            return list.slice().sort(function (a, b) { return String(b.fields.closedAt || '').localeCompare(String(a.fields.closedAt || '')); });
+          };
+          var parts = [
+            records.length + (records.length === 1 ? ' quote: ' : ' quotes: ') + drafts.length + ' draft, ' + sent.length +
+              ' sent and waiting (' + money(total(sent)) + '), ' + won.length + ' won, ' + lost.length + ' lost.',
+          ];
+          // One list, overdue first: a model asked what needs chasing reads a separate late list as out of scope.
+          parts.push(
+            due.length
+              ? 'Follow-ups within ' + withinDays + ' days, overdue first: ' + due.map(function (r) { return followLine(r, nowMs); }).join(' | ') + '.'
+              : 'No follow-ups due in the next ' + withinDays + ' days.',
+          );
+          if (drafts.length) parts.push('Drafts: ' + drafts.map(function (r) { return quoteLine(r, nowMs); }).join(' | ') + '.');
+          if (sent.length) parts.push('Sent and waiting: ' + sent.map(function (r) { return quoteLine(r, nowMs); }).join(' | ') + '.');
+          if (won.length) parts.push('Won (latest first): ' + recentFirst(won).slice(0, 5).map(function (r) { return quoteLine(r, nowMs); }).join(' | ') + '.');
+          if (lost.length) parts.push('Lost (latest first): ' + recentFirst(lost).slice(0, 5).map(function (r) { return quoteLine(r, nowMs); }).join(' | ') + '.');
+          if (won.length + lost.length) {
+            var decided = total(won) + total(lost);
+            parts.push(
+              'Win rate: ' + won.length + ' of ' + (won.length + lost.length) + ' decided quotes (' + Math.round((won.length / (won.length + lost.length)) * 100) + '%), ' +
+                money(total(won)) + ' of ' + money(decided) + ' by value.',
+            );
+          }
+          parts.push(
+            'Tax: ' + (terms.taxBp ? percent(terms.taxBp) + ' on ' + (terms.taxOn === 'all' ? 'the whole quote' : 'materials') : 'none set') +
+              '. Quotes stay valid ' + terms.validDays + ' days; follow up ' + terms.followUpDays + ' days after sending. Saved rates: ' +
+              (terms.rates.map(rateText).join(', ') || 'none yet') + '.',
+          );
+          return {
+            drafts: drafts.length,
+            waiting: sent.length,
+            followUpsDue: dueNow.length,
+            summary: parts.join(' '),
+          };
+        }
+        // One quote line by line, for the person to read or the crew to quote exactly.
+        function detail(record, nowMs) {
+          var f = record.fields || {};
+          var t = quoteTotals(record);
+          var rows = (f.lines || []).map(lineText);
+          return [
+            f.title + ' (' + record.id + ', ' + record.status + (f.client ? ', for ' + f.client : '') + (f.site ? ' at ' + f.site : '') + ').',
+            rows.length ? 'Lines: ' + rows.join('; ') + '.' : 'No lines yet.',
+            'Labor ' + money(t.labor) + ', materials ' + money(t.materials) + (t.other ? ', other ' + money(t.other) : '') +
+              '. Subtotal ' + money(t.subtotal) + '. Tax ' + money(t.tax) +
+              (f.taxBp ? ' (' + percent(f.taxBp) + ' on ' + (f.taxOn === 'all' ? 'the whole quote' : 'materials ' + money(t.materials)) + ')' : ' (no tax set)') +
+              '. Total ' + money(t.total) + '.',
+            record.status === 'sent'
+              ? 'Sent ' + f.sentAt + (f.followUpAt ? '; follow up ' + when(daysLeft(f.followUpAt, nowMs)) + ' (' + f.followUpAt + ')' : '') +
+                (f.validUntil ? '; valid until ' + f.validUntil : '') + '.'
+              : !isOpen(record) && f.closedAt
+                ? cap(record.status) + ' ' + f.closedAt + (f.reason ? ': ' + f.reason : '') + '.'
+                : '',
+          ]
+            .filter(Boolean)
+            .join(' ');
+        }
+        // ── quote-rules-end ──
+
+        function daysFromNow(n) { return localDay(Date.now() + n * DAY_MS); }
+        function stampFromNow(n, hour) { var d = new Date(Date.now() + n * DAY_MS); d.setHours(hour || 10, 0, 0, 0); return d.toISOString(); }
+        function line(description, kind, qty, unit, rateCents) { return { description: description, kind: kind, qty: qty, unit: unit, rateCents: rateCents, amountCents: lineAmount(Math.round(qty * 1000), rateCents) }; }
+        function quote(id, status, fields, lines, notes, updatedDaysAgo) {
+          lines.forEach(function (l, i) { l.n = i + 1; });
+          var f = Object.assign({ lines: lines, taxBp: 825, taxOn: 'materials' }, fields, totalFields(lines, 825, 'materials'));
+          return { id: id, status: status, fields: f, createdAt: stampFromNow(-updatedDaysAgo - 3), updatedAt: stampFromNow(-updatedDaysAgo), history: notes.map(function (n) { return { at: stampFromNow(-n[0]), from: status, to: status, note: n[1] }; }) };
+        }
+
+        // ── demo quotes (used only when the page opens outside Gezel); dates are relative so it never goes stale ──
+        var demoTerms = { version: 1, taxBp: 825, taxOn: 'materials', validDays: 30, followUpDays: 5, rates: [
+          { name: 'Electrician', kind: 'labor', unit: 'hour', rateCents: 9500 },
+          { name: 'Apprentice', kind: 'labor', unit: 'hour', rateCents: 5500 },
+          { name: 'Service call', kind: 'other', unit: 'each', rateCents: 12500 },
+          { name: 'Permit and inspection', kind: 'other', unit: 'each', rateCents: 18500 },
+        ] };
+        var demoQuotes = { version: 1, stages: STAGES.slice(), records: [
+          quote('q-1', 'sent', { title: 'Harbor Street Café kitchen rewire', client: 'Harbor Street Café', contact: 'Dana', site: '418 Harbor Street', sentAt: daysFromNow(-5), validUntil: daysFromNow(25), followUpAt: daysFromNow(0) }, [
+            line('Electrician labor', 'labor', 24, 'hour', 9500),
+            line('Apprentice labor', 'labor', 24, 'hour', 5500),
+            line('Kitchen circuits: wire, breakers and boxes', 'materials', 1, 'lot', 164000),
+            line('GFCI receptacles', 'materials', 12, 'each', 3850),
+            line('Permit and inspection', 'other', 1, 'each', 18500),
+          ], [[5, 'Sent to the client.']], 5),
+          quote('q-2', 'sent', { title: 'Fernwood Studio office lighting retrofit', client: 'Fernwood Studio', contact: 'Mei', site: '22 Fernwood Lane, second floor', sentAt: daysFromNow(-9), validUntil: daysFromNow(21), followUpAt: daysFromNow(-2), lastFollowUpAt: daysFromNow(-4) }, [
+            line('Electrician labor', 'labor', 40, 'hour', 9500),
+            line('Apprentice labor', 'labor', 40, 'hour', 5500),
+            line('LED troffers', 'materials', 48, 'each', 14200),
+            line('Occupancy sensors', 'materials', 12, 'each', 6400),
+            line('Haul away old fixtures', 'other', 1, 'lot', 24000),
+          ], [[9, 'Sent to the client.'], [4, 'Left a voicemail with Mei.']], 4),
+          quote('q-3', 'draft', { title: 'Juniper Press warehouse EV chargers', client: 'Juniper Press', contact: 'Owen', site: 'Juniper Press warehouse, loading dock' }, [
+            line('Electrician labor', 'labor', 18, 'hour', 9500),
+            line('Level 2 EV chargers', 'materials', 4, 'each', 68900),
+            line('60A breakers and wire', 'materials', 1, 'lot', 94000),
+          ], [], 1),
+          quote('q-4', 'won', { title: 'Bayside Bakery oven circuit', client: 'Bayside Bakery', contact: 'Rosa', sentAt: daysFromNow(-18), validUntil: daysFromNow(12), closedAt: daysFromNow(-12), reason: 'Signed; start Monday' }, [
+            line('Electrician labor', 'labor', 6, 'hour', 9500),
+            line('Apprentice labor', 'labor', 6, 'hour', 5500),
+            line('50A circuit: wire and breaker', 'materials', 1, 'lot', 41000),
+            line('Permit and inspection', 'other', 1, 'each', 18500),
+          ], [[18, 'Sent to the client.'], [12, 'Signed; start Monday']], 12),
+          quote('q-5', 'lost', { title: 'Cedar Hill Church sound booth wiring', client: 'Cedar Hill Church', contact: 'Pastor Hale', sentAt: daysFromNow(-30), validUntil: daysFromNow(0), closedAt: daysFromNow(-20), reason: 'Went with a lower bid' }, [
+            line('Electrician labor', 'labor', 20, 'hour', 9500),
+            line('Apprentice labor', 'labor', 20, 'hour', 5500),
+            line('Wire, conduit and boxes', 'materials', 1, 'lot', 128000),
+          ], [[30, 'Sent to the client.'], [20, 'Went with a lower bid']], 20),
+        ] };
+
+        // The quote-store actions, mirrored for the demo so the sample prices exactly like the live app.
+        function given(v) { return v !== undefined && v !== null && v !== ''; }
+        function todayDay() { return localDay(Date.now()); }
+        var acted = null;
+        function demoView(note) {
+          var v = picture(demoQuotes.records, normalizeTerms(demoTerms), Date.now(), 7);
+          var hit = acted && demoQuotes.records.filter(function (r) { return r.id === acted; })[0];
+          acted = null;
+          return { drafts: v.drafts, waiting: v.waiting, followUpsDue: v.followUpsDue, total: hit ? quoteTotals(hit).total / 100 : 0, summary: (note ? note + ' ' : '') + v.summary };
+        }
+        function touch(r, note, status) {
+          var at = new Date().toISOString();
+          if (note || status) r.history.push({ at: at, from: r.status, to: status || r.status, note: note });
+          if (status) r.status = status;
+          r.updatedAt = at;
+        }
+        function followUpInput(input) {
+          if (typeof input.inDays === 'number' && isFinite(input.inDays)) return addDays(todayDay(), Math.max(0, Math.round(input.inDays)));
+          if (given(input.followUpAt)) { var d = normalizeDate(input.followUpAt); if (!d) throw new Error("followUpAt must be a date, e.g. '2026-11-20', or pass inDays."); return d; }
+          return undefined;
+        }
+        function wholeDays(value, label) {
+          if (!given(value)) return undefined;
+          var n = Number(value);
+          if (!isFinite(n) || n < 1 || n > 365) throw new Error(label + ' is a number of days from 1 to 365.');
+          return Math.round(n);
+        }
+        function reprice(r, lines, what) {
+          if (!isOpen(r)) throw new Error(r.fields.title + ' is ' + r.status + '; its price is settled. Start a new quote for more work.');
+          Object.assign(r.fields, { lines: lines }, totalFields(lines, r.fields.taxBp, r.fields.taxOn));
+          var tail = '';
+          if (r.status === 'sent') { r.fields.followUpAt = null; touch(r, 'Revised after sending: ' + what, 'draft'); tail = ' It had been sent, so it is back in draft: send it again when the client should see the new price.'; }
+          else touch(r);
+          acted = r.id;
+          return what + ' ' + r.fields.title + ' total now ' + money(totals(lines, r.fields.taxBp, r.fields.taxOn).total) + '.' + tail;
+        }
+        function demoStart(input) {
+          var all = demoQuotes.records, title = String(input.title || input.client || '').trim(), existing = null;
+          if (given(input.id)) existing = findQuote(all, { id: input.id, title: input.title });
+          else if (title) existing = all.filter(function (r) { return fold(r.fields.title) === fold(title); })[0] || null;
+          if (!existing && !title) throw new Error("add needs 'title': the job, e.g. 'Maple Row panel upgrade'.");
+          var fields = {};
+          ['client', 'contact', 'site', 'note'].forEach(function (k) { if (input[k]) fields[k] = String(input[k]).trim(); });
+          if (existing) {
+            if (given(input.id) && input.title && fold(input.title) !== fold(existing.fields.title)) fields.title = String(input.title).trim();
+            Object.assign(existing.fields, fields); touch(existing); acted = existing.id;
+            return demoView('Updated ' + existing.fields.title + '.');
+          }
+          var id = 'q-' + (all.reduce(function (m, r) { return Math.max(m, Number(String(r.id).split('-')[1]) || 0); }, 0) + 1);
+          var stamp = new Date().toISOString();
+          all.push({ id: id, status: 'draft', createdAt: stamp, updatedAt: stamp, history: [], fields: Object.assign({ title: title }, fields, { lines: [], taxBp: demoTerms.taxBp, taxOn: demoTerms.taxOn }, totalFields([], demoTerms.taxBp, demoTerms.taxOn)) });
+          acted = id;
+          return demoView('Started ' + id + ': ' + title + ' (draft). Add its lines next.');
+        }
+        function demoAddLine(input) {
+          var r = findQuote(demoQuotes.records, input), change = upsertLine(r.fields.lines || [], input, normalizeTerms(demoTerms));
+          return demoView(reprice(r, change.lines, change.note));
+        }
+        function demoRemoveLine(input) {
+          var r = findQuote(demoQuotes.records, input), change = removeLine(r.fields.lines || [], input);
+          return demoView(reprice(r, change.lines, change.note));
+        }
+        function demoSend(input) {
+          var r = findQuote(demoQuotes.records, input), title = r.fields.title;
+          acted = r.id;
+          if (r.status === 'sent') return demoView(title + ' was already sent on ' + r.fields.sentAt + '.');
+          if (!isOpen(r)) throw new Error(title + ' is ' + r.status + '; it cannot be sent again.');
+          if (!(r.fields.lines || []).length) throw new Error(title + ' has no lines yet; add them before sending.');
+          var validUntil = addDays(todayDay(), wholeDays(input.validDays, 'validDays') || demoTerms.validDays);
+          var follow = followUpInput(input) || addDays(todayDay(), demoTerms.followUpDays);
+          Object.assign(r.fields, { sentAt: todayDay(), validUntil: validUntil, followUpAt: follow });
+          touch(r, input.note || 'Sent to the client.', 'sent');
+          return demoView('Sent ' + title + ', total ' + money(quoteTotals(r).total) + '. Valid until ' + validUntil + '; first follow-up ' + follow + '.');
+        }
+        function demoFollowUp(input) {
+          var r = findQuote(demoQuotes.records, input), title = r.fields.title;
+          if (r.status !== 'sent') throw new Error(title + ' is ' + r.status + (r.status === 'draft' ? '; send it before following up.' : '; it is closed.'));
+          var next = followUpInput(input) || addDays(todayDay(), demoTerms.followUpDays);
+          Object.assign(r.fields, { followUpAt: next, lastFollowUpAt: todayDay() });
+          touch(r, input.note || 'Followed up.');
+          acted = r.id;
+          return demoView('Logged the follow-up on ' + title + (input.note ? ': ' + String(input.note).trim() : '') + '. Next follow-up ' + next + '.');
+        }
+        function demoOutcome(input) {
+          var outcome = String(input.outcome || '').trim().toLowerCase();
+          if (outcome !== 'won' && outcome !== 'lost') throw new Error("outcome needs 'outcome': won or lost.");
+          var r = findQuote(demoQuotes.records, input), title = r.fields.title;
+          acted = r.id;
+          if (r.status === outcome) return demoView(title + ' is already ' + outcome + '.');
+          if (!isOpen(r)) throw new Error(title + ' is already ' + r.status + '.');
+          Object.assign(r.fields, { closedAt: todayDay(), followUpAt: null }, input.note ? { reason: String(input.note).trim() } : {});
+          touch(r, input.note || (outcome === 'won' ? 'Won.' : 'Lost.'), outcome);
+          return demoView((outcome === 'won' ? 'Won ' : 'Lost ') + title + ', ' + money(quoteTotals(r).total) + (input.note ? ' (' + String(input.note).trim() + ')' : '') + '.');
+        }
+        function demoSetRate(input) {
+          var name = String(input.name || input.description || '').trim();
+          if (!name) throw new Error("set_rate needs 'name', e.g. 'Electrician'.");
+          var rateCents = toCents(input.rate);
+          if (rateCents === null || rateCents < 0) throw new Error("set_rate needs 'rate' in dollars per unit, e.g. 95.");
+          var kind = KINDS.indexOf(String(input.kind)) >= 0 ? String(input.kind) : 'labor';
+          var rate = { name: name, kind: kind, unit: input.unit ? String(input.unit).trim() : kind === 'labor' ? 'hour' : 'each', rateCents: rateCents };
+          var at = demoTerms.rates.findIndex(function (r) { return fold(r.name) === fold(name); });
+          if (at >= 0) demoTerms.rates[at] = rate; else demoTerms.rates.push(rate);
+          return demoView((at >= 0 ? 'Updated the rate ' : 'Saved the rate ') + rateText(rate) + '. Lines already on quotes keep their price; new lines use this one.');
+        }
+        function demoSetTerms(input) {
+          var changed = false;
+          if (given(input.taxRate)) { var p = Number(String(input.taxRate).replace('%', '')); if (!isFinite(p) || p < 0 || p > 50) throw new Error('taxRate is a percent, e.g. 8.25 (0 for none).'); demoTerms.taxBp = Math.round(p * 100); changed = true; }
+          if (given(input.taxOn)) { var on = String(input.taxOn).trim().toLowerCase(); if (on !== 'materials' && on !== 'all') throw new Error('taxOn is materials or all.'); demoTerms.taxOn = on; changed = true; }
+          var valid = wholeDays(input.validDays, 'validDays'), follow = wholeDays(input.followUpDays, 'followUpDays');
+          if (valid !== undefined) demoTerms.validDays = valid;
+          if (follow !== undefined) demoTerms.followUpDays = follow;
+          if (!changed && valid === undefined && follow === undefined) throw new Error('set_terms needs taxRate, taxOn, validDays or followUpDays.');
+          var drafts = demoQuotes.records.filter(function (r) { return r.status === 'draft'; });
+          drafts.forEach(function (d) { Object.assign(d.fields, { taxBp: demoTerms.taxBp, taxOn: demoTerms.taxOn }, totalFields(d.fields.lines || [], demoTerms.taxBp, demoTerms.taxOn)); });
+          return demoView('Tax is ' + (demoTerms.taxBp ? percent(demoTerms.taxBp) + ' on ' + (demoTerms.taxOn === 'all' ? 'the whole quote' : 'materials') : 'not charged') + '; quotes stay valid ' + demoTerms.validDays + ' days; follow up ' + demoTerms.followUpDays + ' days after sending.' + (drafts.length ? ' Re-totaled ' + drafts.length + (drafts.length === 1 ? ' draft' : ' drafts') + '; sent quotes keep the tax they went out with.' : ''));
+        }
+        function demoShow(input) {
+          var r = findQuote(demoQuotes.records, input), v = demoView('');
+          v.summary = detail(r, Date.now()); v.total = quoteTotals(r).total / 100;
+          return v;
+        }
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'quotes/index.html', typeName: 'Quotes & Bids', params: { business: 'Brightline Electric, a three-person electrical contractor' } },
+          tools: {
+            page_start_quote: demoStart,
+            start_quote: demoStart,
+            page_add_quote_line: demoAddLine,
+            add_quote_line: demoAddLine,
+            remove_quote_line: demoRemoveLine,
+            page_send_quote: demoSend,
+            send_quote: demoSend,
+            page_log_quote_follow_up: demoFollowUp,
+            log_quote_follow_up: demoFollowUp,
+            page_record_quote_outcome: demoOutcome,
+            record_quote_outcome: demoOutcome,
+            page_set_quote_terms: demoSetTerms,
+            set_quote_terms: demoSetTerms,
+            save_rate: demoSetRate,
+            show_quote: demoShow,
+            quotes_status: function () { return demoView(''); },
+          },
+          data: {
+            'quotes.json': function () { return demoQuotes; },
+            'rates.json': function () { return demoTerms; },
+          },
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+        function applyTheme(mode) { document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light'); }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function el(tag, text, cls) { var e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
+        function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+        function niceDate(day) { var d = new Date(String(day).slice(0, 10) + 'T12:00:00'); return isFinite(d) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : String(day); }
+        function whole(cents) { var w = money(Math.round((Number(cents) || 0) / 100) * 100); return w.slice(0, -3); }
+        function chipClass(days) { return days < 0 ? 'late' : days <= 1 ? 'soon' : ''; }
+        function totalOf(list) { return list.reduce(function (t, r) { return t + quoteTotals(r).total; }, 0); }
+        function newest(list) { return list.slice().sort(function (a, b) { return String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')); })[0]; }
+
+        var picked = null, lastNewest = '', lastDocs = null;
+        document.getElementById('b-pick').addEventListener('change', function (event) { picked = event.target.value; if (lastDocs) renderBuilder(lastDocs.records, lastDocs.terms); });
+
+        function renderBuilder(records, terms) {
+          var r = records.filter(function (x) { return x.id === picked; })[0];
+          var pick = document.getElementById('b-pick'), wrap = document.getElementById('b-pick-wrap');
+          var order = records.filter(isOpen).concat(records.filter(function (x) { return !isOpen(x); }).reverse());
+          pick.replaceChildren();
+          order.forEach(function (x) { var o = el('option', x.fields.title + ' · ' + x.status); o.value = x.id; pick.append(o); });
+          wrap.hidden = records.length < 2;
+          if (r) pick.value = r.id;
+          var body = document.getElementById('b-lines'), foot = document.getElementById('b-totals');
+          body.replaceChildren(); foot.replaceChildren();
+          if (!r) {
+            document.getElementById('b-title').textContent = 'No quote yet';
+            document.getElementById('b-meta').textContent = 'Start a quote, then add its labor and materials.';
+            return;
+          }
+          var f = r.fields, t = quoteTotals(r), lines = f.lines || [];
+          document.getElementById('b-title').textContent = f.title;
+          document.getElementById('b-meta').textContent = [f.client && fold(f.title).indexOf(fold(f.client)) < 0 ? f.client : '', f.contact, f.site, r.status === 'sent' && f.sentAt ? 'sent ' + niceDate(f.sentAt) + ', valid until ' + niceDate(f.validUntil) : r.status, !isOpen(r) && f.closedAt ? niceDate(f.closedAt) : ''].filter(Boolean).join(' · ');
+          if (!lines.length) { var tr0 = el('tr'), td0 = el('td', 'No lines yet. Add the labor and materials.', 'empty'); td0.colSpan = 5; tr0.append(td0); body.append(tr0); }
+          lines.forEach(function (l) {
+            var tr = el('tr'), name = el('td');
+            name.append(el('span', l.description), el('span', l.kind, 'meta'));
+            tr.append(el('td', String(l.n), 'num'), name, el('td', qtyText(l.qty, l.unit), 'num qty'), el('td', money(l.rateCents), 'num'), el('td', money(l.amountCents), 'num'));
+            body.append(tr);
+          });
+          function row(label, cents, cls) {
+            var tr = el('tr', undefined, cls || ''), td = el('td', label);
+            td.colSpan = 4;
+            tr.append(td, el('td', money(cents), 'num'));
+            foot.append(tr);
+          }
+          row('Labor', t.labor);
+          row('Materials', t.materials);
+          if (t.other) row('Other', t.other);
+          row('Subtotal', t.subtotal);
+          row(f.taxBp ? 'Tax, ' + percent(f.taxBp) + ' on ' + (f.taxOn === 'all' ? 'the whole quote' : 'materials') : 'Tax (none set)', t.tax);
+          row('Total', t.total, 'total');
+        }
+
+        function render(quoteDoc, termsDoc) {
+          var records = Array.isArray(quoteDoc.records) ? quoteDoc.records : [];
+          var terms = normalizeTerms(termsDoc);
+          var now = Date.now(), view = picture(records, terms, now, 7);
+          lastDocs = { records: records, terms: terms };
+          var drafts = records.filter(function (r) { return r.status === 'draft'; });
+          var sent = records.filter(function (r) { return r.status === 'sent'; });
+          var won = records.filter(function (r) { return r.status === 'won'; });
+          var lost = records.filter(function (r) { return r.status === 'lost'; });
+
+          document.getElementById('t-drafts').textContent = whole(totalOf(drafts));
+          document.getElementById('t-drafts-label').textContent = plural(drafts.length, 'draft', 'drafts') + ' being priced';
+          document.getElementById('t-waiting').textContent = whole(totalOf(sent));
+          document.getElementById('t-waiting-label').textContent = plural(sent.length, 'quote', 'quotes') + ' sent and waiting';
+          document.getElementById('t-due').textContent = view.followUpsDue;
+          var decided = won.length + lost.length;
+          document.getElementById('t-rate').textContent = decided ? Math.round((won.length / decided) * 100) + '%' : '–';
+          document.getElementById('t-rate-label').textContent = decided ? 'Win rate, ' + won.length + ' of ' + decided : 'Win rate';
+          document.getElementById('sub').textContent = !records.length
+            ? 'No quotes yet. Tell your estimator about a job, or start one below.'
+            : plural(sent.length, 'quote is', 'quotes are') + ' out for ' + money(totalOf(sent)) + '. ' +
+              (view.followUpsDue ? plural(view.followUpsDue, 'follow-up is', 'follow-ups are') + ' due now.' : 'No follow-ups due today.');
+
+          var follow = document.getElementById('follow');
+          follow.replaceChildren();
+          var due = sent.filter(function (r) { return r.fields.followUpAt && daysLeft(r.fields.followUpAt, now) <= 7; })
+            .sort(function (a, b) { return String(a.fields.followUpAt).localeCompare(String(b.fields.followUpAt)); });
+          if (!due.length) follow.append(el('li', sent.length ? 'No follow-ups in the next 7 days.' : 'Nothing out yet. Quotes you send get a follow-up date here.', 'empty'));
+          due.forEach(function (r) {
+            var d = daysLeft(r.fields.followUpAt, now), li = el('li'), what = el('div', undefined, 'what'), last = lastNote(r).replace(/[.\s]+$/, '');
+            if (last === 'Sent to the client') last = '';
+            li.append(el('span', d < 0 ? when(d) : d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : 'In ' + d + ' days', 'when ' + chipClass(d)));
+            what.append(el('b', r.fields.title));
+            what.append(el('small', [money(quoteTotals(r).total), r.fields.contact ? 'with ' + r.fields.contact : '', r.fields.sentAt ? 'sent ' + niceDate(r.fields.sentAt) : '', last ? 'last: ' + last : ''].filter(Boolean).join(' · ')));
+            li.append(what);
+            follow.append(li);
+          });
+          var expiring = sent.filter(function (r) { return r.fields.validUntil && daysLeft(r.fields.validUntil, now) <= 7; });
+          var exp = document.getElementById('expiring');
+          exp.hidden = !expiring.length;
+          exp.textContent = expiring.length ? 'Expiring soon: ' + expiring.map(function (r) { return r.fields.title + (daysLeft(r.fields.validUntil, now) < 0 ? ' (expired ' : ' (valid until ') + niceDate(r.fields.validUntil) + ')'; }).join(', ') + '.' : '';
+
+          var latest = newest(records), stamp = latest ? latest.id + '@' + latest.updatedAt : '';
+          // The first paint shows the newest open quote; after that, whichever quote just changed.
+          if (stamp !== lastNewest) {
+            picked = lastNewest ? latest.id : ((newest(records.filter(isOpen)) || latest || {}).id || null);
+            lastNewest = stamp;
+          }
+          if (!records.some(function (r) { return r.id === picked; })) picked = records.length ? (newest(records.filter(isOpen)) || latest).id : null;
+          renderBuilder(records, terms);
+
+          var body = document.getElementById('quotes-body');
+          body.replaceChildren();
+          if (!records.length) { var tr0 = el('tr'), td0 = el('td', 'No quotes yet.', 'empty'); td0.colSpan = 4; tr0.append(td0); body.append(tr0); }
+          records.filter(isOpen).concat(records.filter(function (r) { return !isOpen(r); }).reverse()).forEach(function (r) {
+            var tr = el('tr'), title = el('td'), st = el('td'), next = el('td'), f = r.fields;
+            title.append(el('span', f.title));
+            if (f.client && fold(f.title).indexOf(fold(f.client)) < 0) title.append(el('span', f.client, 'meta'));
+            st.append(el('span', r.status, 'status ' + r.status));
+            if (r.status === 'sent' && f.followUpAt) { var d = daysLeft(f.followUpAt, now); next.append(el('span', 'Follow up ' + when(d), 'chip ' + chipClass(d))); }
+            else if (r.status === 'draft') next.append(el('span', plural((f.lines || []).length, 'line', 'lines') + ', not sent', 'meta'));
+            else if (f.closedAt) next.append(el('span', niceDate(f.closedAt) + (f.reason ? ': ' + f.reason : ''), 'meta'));
+            tr.append(title, st, el('td', money(quoteTotals(r).total), 'num'), next);
+            body.append(tr);
+          });
+
+          document.getElementById('win-line').textContent = decided
+            ? 'Won ' + won.length + ' of ' + decided + ' decided quotes (' + Math.round((won.length / decided) * 100) + '%): ' + money(totalOf(won)) + ' of ' + money(totalOf(won) + totalOf(lost)) + ' by value.'
+            : 'Nothing decided yet. Won and lost quotes, with their reasons, show here.';
+          document.getElementById('win-bar').hidden = !decided;
+          document.getElementById('win-fill').style.width = decided ? Math.round((totalOf(won) / Math.max(1, totalOf(won) + totalOf(lost))) * 100) + '%' : '0';
+          var results = document.getElementById('results');
+          results.replaceChildren();
+          won.concat(lost).sort(function (a, b) { return String(b.fields.closedAt || '').localeCompare(String(a.fields.closedAt || '')); }).slice(0, 6).forEach(function (r) {
+            var li = el('li');
+            li.append(el('span', r.status, 'status ' + r.status));
+            li.append(document.createTextNode(' '));
+            li.append(el('time', niceDate(r.fields.closedAt)));
+            li.append(document.createTextNode(r.fields.title + ', ' + money(quoteTotals(r).total) + (r.fields.reason ? ': ' + r.fields.reason : '')));
+            results.append(li);
+          });
+
+          var rates = document.getElementById('rates-body');
+          rates.replaceChildren();
+          if (!terms.rates.length) { var tr1 = el('tr'), td1 = el('td', 'No saved rates yet. Tell your estimator, like “our electrician rate is $95 an hour”.', 'empty'); td1.colSpan = 3; tr1.append(td1); rates.append(tr1); }
+          terms.rates.forEach(function (rate) {
+            var tr = el('tr');
+            tr.append(el('td', rate.name), el('td', rate.kind), el('td', money(rate.rateCents) + ' / ' + rate.unit, 'num'));
+            rates.append(tr);
+          });
+          var termList = document.getElementById('terms');
+          termList.replaceChildren();
+          [
+            'Sales tax: ' + (terms.taxBp ? percent(terms.taxBp) + ' on ' + (terms.taxOn === 'all' ? 'the whole quote' : 'materials only') : 'none set'),
+            'Quotes stay valid ' + terms.validDays + ' days after sending',
+            'First follow-up ' + terms.followUpDays + ' days after sending',
+          ].forEach(function (text) { termList.append(el('li', text)); });
+        }
+
+        window.addEventListener('gezel-app-data-changed', function () { loadQuotes(); });
+        window.loadQuotes = loadQuotes;
+        function loadQuotes() {
+          var revision = ++appLoadRevision;
+          return Promise.all([gezel.data.read('quotes.json'), gezel.data.read('rates.json')]).then(function (values) {
+            if (appDisposed || revision !== appLoadRevision) return;
+            reportAppError(null);
+            render(values[0] || {}, values[1] || {});
+          }).catch(function (error) { if (!appDisposed && revision === appLoadRevision) reportAppError(error); });
+        }
+
+        loadQuotes();
+        appSubscriptions.push(gezel.data.watch('quotes.json', function () { loadQuotes(); }));
+        appSubscriptions.push(gezel.data.watch('rates.json', function () { loadQuotes(); }));
+      })();
+    </script>
+    <script src="application.js" defer></script>
+  </body>
+</html>

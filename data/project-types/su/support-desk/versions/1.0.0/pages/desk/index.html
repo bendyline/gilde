@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Support desk</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f5f2ec; --card: #fffcf7; --ink: #27241f; --muted: #686055; --line: #dbd2c4;
+        --accent: #2f6670; --late: #a3341f; --late-bg: #f7e1da; --soon: #8a5a12; --soon-bg: #f6ead2;
+        --ok: #3f6b4a; --ok-bg: #e2eedf; --chip: #efe8dc; --quote: #f1ece3;
+      }
+      :root[data-theme='dark'] {
+        --bg: #171615; --card: #211f1c; --ink: #eee8de; --muted: #a89e90; --line: #3a352e;
+        --accent: #8cc4cc; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+        --ok: #8fc29b; --ok-bg: #22301f; --chip: #2d2924; --quote: #29261f;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #171615; --card: #211f1c; --ink: #eee8de; --muted: #a89e90; --line: #3a352e;
+          --accent: #8cc4cc; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+          --ok: #8fc29b; --ok-bg: #22301f; --chip: #2d2924; --quote: #29261f;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body, system-ui, sans-serif); font-size: 15px; line-height: 1.5; padding: 1.5rem 1.25rem; }
+      main { max-width: 860px; margin: 0 auto; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.5rem; font-weight: 400; margin: 0 0 0.2rem; }
+      h2 { font-family: var(--font-heading, Georgia, serif); font-size: 1.1rem; font-weight: 400; margin: 0 0 0.6rem; }
+      h3 { font-family: var(--font-heading, Georgia, serif); font-size: 0.98rem; font-weight: 400; margin: 0 0 0.5rem; }
+      .sub { color: var(--muted); margin: 0 0 1rem; }
+      .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; margin: 0 0 1.2rem; }
+      .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem 0.9rem; }
+      .tile b { display: block; font-size: 1.5rem; font-weight: 600; line-height: 1.1; }
+      .tile span { color: var(--muted); font-size: 0.85rem; }
+      .tile.late b { color: var(--late); }
+      .tile.soon b { color: var(--soon); }
+      section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin: 0 0 1rem; }
+      .queue { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.8rem; }
+      .queue > li { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); gap: 0.75rem; align-items: start; }
+      .queue > li.empty { display: block; }
+      .when { font-size: 0.8rem; font-weight: 600; padding: 0.15rem 0.45rem; border-radius: 4px; text-align: center; background: var(--chip); color: var(--muted); }
+      .when.late { background: var(--late-bg); color: var(--late); }
+      .when.soon { background: var(--soon-bg); color: var(--soon); }
+      .what b { font-weight: 600; }
+      .what small, .meta { display: block; color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
+      .msg { margin: 0.25rem 0 0; color: var(--muted); font-style: italic; overflow-wrap: anywhere; }
+      .draft { margin: 0.45rem 0 0; padding: 0.55rem 0.7rem; border-left: 3px solid var(--accent); border-radius: 4px; background: var(--quote); }
+      .draft .label { display: block; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent); }
+      .draft p { margin: 0.15rem 0; white-space: pre-line; overflow-wrap: anywhere; }
+      .chip { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 0.02rem 0.4rem; border-radius: 4px; background: var(--chip); color: var(--muted); margin-left: 0.3rem; vertical-align: 1px; }
+      .chip.urgent { background: var(--late-bg); color: var(--late); }
+      .empty { color: var(--muted); font-style: italic; margin: 0; }
+      .grid-wrap, .table-wrap { overflow-x: auto; }
+      .grid-wrap { margin: 0 0 1rem; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+      th { text-align: left; font-weight: 600; color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 0.5rem 0.4rem; border-bottom: 1px solid var(--line); }
+      td { padding: 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+      tr:last-child td { border-bottom: 0; }
+      .grid th:not(:first-child), .grid td:not(:first-child) { text-align: center; }
+      .grid td.zero { color: var(--muted); }
+      .grid td b { font-weight: 600; }
+      .status { display: inline-block; font-size: 0.78rem; padding: 0.05rem 0.4rem; border-radius: 4px; background: var(--chip); }
+      .status.new { background: var(--late-bg); color: var(--late); }
+      .status.open { background: var(--soon-bg); color: var(--soon); }
+      .status.resolved { background: var(--ok-bg); color: var(--ok); }
+      .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
+      .gaps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; font-size: 0.92rem; }
+      .gaps b { font-weight: 600; }
+      .files { display: grid; gap: 0.5rem; margin: 0 0 0.75rem; }
+      .demo-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 0 0 1rem; padding: 0.5rem 0.65rem; border: 1px solid var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--card) 88%, var(--accent)); font-size: 0.85rem; }
+      .demo-banner[hidden] { display: none; }
+      .demo-reset { flex: none; min-height: 36px; padding: 0.3rem 0.7rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; }
+      .note { color: var(--muted); font-size: 0.85rem; margin: 0.75rem 0 0; }
+      @media (max-width: 640px) {
+        .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .split { grid-template-columns: minmax(0, 1fr); }
+        .queue > li { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
+        .when { justify-self: start; }
+      }
+    </style>
+    <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:0 0 12px;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--line,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+    <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script>
+  </head>
+  <body>
+    <main>
+      <p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong>: Juniper Press’s sample support desk. Changes stay in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Support desk</h1>
+      <p class="sub" id="sub">Loading the desk…</p>
+      <div class="tiles">
+        <div class="tile late"><b id="t-new">0</b><span>New, not picked up</span></div>
+        <div class="tile soon"><b id="t-reply">0</b><span>Need a reply</span></div>
+        <div class="tile"><b id="t-waiting">0</b><span>Waiting on the customer</span></div>
+        <div class="tile"><b id="t-gaps">0</b><span>Questions without an article</span></div>
+      </div>
+      <section id="reply-section">
+        <h2>Needs a reply</h2>
+        <ul class="queue" id="queue"></ul>
+      </section>
+      <section id="tickets-section">
+        <h2>Tickets</h2>
+        <div class="grid-wrap">
+          <table class="grid">
+            <thead><tr><th>Category</th><th>New</th><th>Open</th><th>Waiting</th><th>Resolved</th></tr></thead>
+            <tbody id="grid-body"></tbody>
+          </table>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Ticket</th><th>Category</th><th>Status</th><th>Came in</th><th>Reply</th></tr></thead>
+            <tbody id="ticket-body"></tbody>
+          </table>
+        </div>
+      </section>
+      <section id="kb-section">
+        <h2>Knowledge base</h2>
+        <div class="split">
+          <div>
+            <h3>Questions without an article</h3>
+            <ul class="gaps" id="gaps"></ul>
+          </div>
+          <div>
+            <h3>Help articles</h3>
+            <div class="files" id="kb-files"></div>
+            <div id="add-kb"></div>
+          </div>
+        </div>
+        <p class="note">Tickets come from you and the crew. A mail connector (Gmail, IMAP or Microsoft 365 mail) is optional: with one, the support lead can read the inbox and log what arrives. Replies are drafts until you send them.</p>
+      </section>
+    </main>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        function iso(ms) { var d = new Date(ms); return d.getFullYear() + '-' + (d.getMonth() < 9 ? '0' : '') + (d.getMonth() + 1) + '-' + (d.getDate() < 10 ? '0' : '') + d.getDate(); }
+        function daysFromNow(n) { return iso(Date.now() + n * 86400000); }
+
+// ── support-rules-start ──
+// Pure derivations: a ticket's age in local calendar days, the reply queue
+// (urgent first, then oldest), the knowledge-base gaps grouped by topic, and
+// the desk picture the crew reads. Kept self-contained between these
+// sentinels so unit tests execute the shipped bytes.
+var DAY_MS = 86400000;
+var STAGES = ['new', 'open', 'waiting', 'resolved'];
+var CATEGORIES = ['order', 'delivery', 'billing', 'product', 'account', 'business', 'complaint', 'other'];
+var CHANNELS = ['email', 'phone', 'chat', 'social', 'in-person', 'other'];
+var PRIORITIES = ['normal', 'urgent', 'low'];
+var CATEGORY_ALIASES = {
+  orders: 'order', shipping: 'delivery', shipment: 'delivery', damaged: 'delivery', refund: 'billing', refunds: 'billing',
+  payment: 'billing', invoice: 'billing', charge: 'billing', question: 'product', products: 'product', login: 'account',
+  download: 'account', subscription: 'account', wholesale: 'business', partnership: 'business', press: 'business',
+  booking: 'business', feedback: 'complaint', complaints: 'complaint',
+};
+
+function pad(n) {
+  return n < 10 ? '0' + n : String(n);
+}
+function localDay(ms) {
+  var d = new Date(ms);
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+}
+function normalizeDate(text) {
+  var raw = String(text || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  var parsed = Date.parse(raw);
+  return isFinite(parsed) ? localDay(parsed) : null;
+}
+function ageDays(day, nowMs) {
+  var start = Date.parse(String(day || '').slice(0, 10) + 'T00:00:00');
+  if (!isFinite(start)) return 0;
+  var today = Date.parse(localDay(nowMs) + 'T00:00:00');
+  return Math.max(0, Math.round((today - start) / DAY_MS));
+}
+function age(days) {
+  return days === 0 ? 'came in today' : days === 1 ? '1 day old' : days + ' days old';
+}
+function categoryOf(text) {
+  var key = String(text || '').trim().toLowerCase();
+  if (CATEGORIES.indexOf(key) >= 0) return key;
+  return CATEGORY_ALIASES[key] || null;
+}
+function topicKey(text) {
+  return String(text || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+function sameTopic(a, b) {
+  var x = topicKey(a), y = topicKey(b);
+  return !!x && !!y && (x === y || x.indexOf(y) >= 0 || y.indexOf(x) >= 0);
+}
+function slug(text) {
+  var s = String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');
+  return s || 'article';
+}
+function articlePath(text) {
+  var p = String(text || '').trim().replace(/\\/g, '/').replace(/^\.?\/+/, '');
+  if (!p || p.split('/').indexOf('..') >= 0) return null;
+  return p.indexOf('kb/') === 0 ? p : 'kb/' + p;
+}
+function urgency(record) {
+  var p = record.fields && record.fields.priority;
+  return p === 'urgent' ? 0 : p === 'low' ? 2 : 1;
+}
+function oldestFirst(a, b) {
+  return String(a.fields.receivedAt || '').localeCompare(String(b.fields.receivedAt || '')) || String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
+}
+function replyQueue(records) {
+  return records
+    .filter(function (r) { return r.status === 'new' || r.status === 'open'; })
+    .slice()
+    .sort(function (a, b) { return urgency(a) - urgency(b) || oldestFirst(a, b); });
+}
+function waitingList(records) {
+  return records.filter(function (r) { return r.status === 'waiting'; }).slice().sort(oldestFirst);
+}
+// A gap is a question no help article answers yet: a ticket with a kbGap
+// topic and no kbArticle. Tickets are grouped by topic, the most asked first.
+function openGaps(records) {
+  var groups = [];
+  records.forEach(function (r) {
+    var f = r.fields || {};
+    if (!f.kbGap || f.kbArticle) return;
+    var group = groups.find(function (g) { return topicKey(g.topic) === topicKey(f.kbGap); });
+    if (!group) {
+      group = { topic: String(f.kbGap).trim(), tickets: [] };
+      groups.push(group);
+    }
+    group.tickets.push(r);
+  });
+  return groups.sort(function (a, b) { return b.tickets.length - a.tickets.length || a.topic.localeCompare(b.topic); });
+}
+function excerpt(text, length) {
+  var t = String(text || '').replace(/\s+/g, ' ').trim();
+  return t.length > length ? t.slice(0, length - 1).trim() + '…' : t;
+}
+// The gap topic already on the desk that a new mention means, so one question keeps one name.
+function knownTopic(records, text) {
+  var hit = openGaps(records).find(function (g) { return sameTopic(g.topic, text); });
+  return hit ? hit.topic : String(text || '').trim();
+}
+function line(record, nowMs, withMessage) {
+  var f = record.fields || {};
+  var active = record.status === 'new' || record.status === 'open';
+  return (
+    f.subject +
+    ' (' + record.id + ', ' + (f.category || 'other') + (f.customer ? ', from ' + f.customer : '') + ', ' + age(ageDays(f.receivedAt, nowMs)) + ')' +
+    (f.priority === 'urgent' ? ', urgent' : '') +
+    (active ? ', ' + record.status : '') +
+    (f.suggestedReply ? ', reply drafted' : active ? ', no reply drafted yet' : '') +
+    (f.kbArticle ? ', help article ' + f.kbArticle : f.kbGap ? ', no help article for "' + f.kbGap + '"' : '') +
+    (withMessage && f.message ? ': "' + excerpt(f.message, 140) + '"' : '')
+  );
+}
+function picture(records, articles, nowMs) {
+  var counts = {};
+  STAGES.forEach(function (s) { counts[s] = 0; });
+  records.forEach(function (r) { counts[r.status] = (counts[r.status] || 0) + 1; });
+  var queue = replyQueue(records);
+  var waiting = waitingList(records);
+  var gaps = openGaps(records);
+  var parts = [
+    records.length + (records.length === 1 ? ' ticket' : ' tickets') + ' on the desk: ' + counts.new + ' new, ' + counts.open + ' open, ' +
+      counts.waiting + ' waiting on the customer, ' + counts.resolved + ' resolved.',
+  ];
+  parts.push(
+    queue.length
+      ? 'Needs a reply, urgent first, then oldest: ' + queue.map(function (r) { return line(r, nowMs, true); }).join(' | ') + '.'
+      : 'Nothing needs a reply.',
+  );
+  if (waiting.length) parts.push('Waiting on the customer: ' + waiting.map(function (r) { return line(r, nowMs, false); }).join(' | ') + '.');
+  parts.push(
+    gaps.length
+      ? 'Questions no help article answers yet, most asked first: ' +
+          gaps.map(function (g) {
+            return '"' + g.topic + '" (' + g.tickets.length + (g.tickets.length === 1 ? ' ticket: ' : ' tickets: ') + g.tickets.map(function (r) { return r.id; }).join(', ') + ')';
+          }).join(' | ') + '.'
+      : 'No knowledge-base gaps recorded.',
+  );
+  parts.push(articles.length ? 'Help articles in kb/: ' + articles.join(', ') + '.' : 'No help articles in kb/ yet.');
+  return { needsReply: queue.length, waiting: waiting.length, gaps: gaps.length, summary: parts.join(' ') };
+}
+// ── support-rules-end ──
+
+        // ── demo desk (used only when the page opens outside Gezel); dates are relative so it never goes stale ──
+        var demoTickets = { version: 1, stages: ['new', 'open', 'waiting', 'resolved'], records: [
+          { id: 'tk-1', status: 'resolved', fields: { subject: 'When will Night Ferries be back in stock?', customer: 'Ana Ruiz', channel: 'social', category: 'product', priority: 'normal', receivedAt: daysFromNow(-11), resolvedAt: daysFromNow(-10), message: 'Is Night Ferries coming back? I want it for my book club in December.', suggestedReply: 'Hi Ana, the reprint lands on the 20th and we will ship pre-orders that week.' } },
+          { id: 'tk-2', status: 'resolved', fields: { subject: 'Change the shipping address on my order', customer: 'Jo Park', channel: 'email', category: 'order', priority: 'normal', receivedAt: daysFromNow(-6), resolvedAt: daysFromNow(-5), message: 'I moved last week. Can order JP-4410 go to my new address?' } },
+          { id: 'tk-3', status: 'waiting', fields: { subject: 'Permission to quote a poem', customer: 'Lena Fischer', channel: 'email', category: 'business', priority: 'normal', receivedAt: daysFromNow(-7), message: 'May I quote four lines from Salt Hours in our library newsletter?', suggestedReply: 'Hi Lena, thank you for asking. Which poem and how many lines? Then I can confirm.', kbGap: 'quote permissions' } },
+          { id: 'tk-4', status: 'waiting', fields: { subject: 'Trade discount for a bookshop', customer: 'Corner Shelf Books', channel: 'email', category: 'business', priority: 'normal', receivedAt: daysFromNow(-8), message: 'We stock a lot of poetry. What discount do you offer bookshops?', kbGap: 'wholesale terms' } },
+          { id: 'tk-5', status: 'open', fields: { subject: 'Wholesale order for 20 copies', customer: 'Fernhill Books', channel: 'email', category: 'business', priority: 'normal', receivedAt: daysFromNow(-4), message: 'We would like 20 copies of The Salt Road for an author event. What are your terms?', suggestedReply: 'Hi Priya, thank you for thinking of us. I will confirm our trade terms for 20 copies by Friday.', kbGap: 'wholesale terms' } },
+          { id: 'tk-6', status: 'new', fields: { subject: 'Do you accept unagented submissions?', customer: 'Tom Reyes', channel: 'chat', category: 'other', priority: 'normal', receivedAt: daysFromNow(-3), message: 'I have a finished poetry collection. Can I send it to you without an agent?', kbGap: 'submissions' } },
+          { id: 'tk-7', status: 'new', fields: { subject: 'Book arrived with a torn cover', customer: 'Daniel Okafor', channel: 'email', category: 'delivery', priority: 'normal', receivedAt: daysFromNow(-2), message: 'My copy of Night Ferries came with the cover torn at one corner. Order JP-4471.' } },
+          { id: 'tk-8', status: 'open', fields: { subject: 'Charged twice for the autumn bundle', customer: 'Sam Ortiz', channel: 'email', category: 'billing', priority: 'urgent', receivedAt: daysFromNow(-1), message: 'My card shows two charges for the autumn bundle. I only placed one order.', suggestedReply: 'Hi Sam, I am sorry about that. I can see the duplicate charge and have refunded it; it should show within five business days.', kbArticle: 'kb/refunds-and-returns.md' } },
+          { id: 'tk-9', status: 'new', fields: { subject: 'Ebook download link expired', customer: 'Maya Lin', channel: 'email', category: 'account', priority: 'normal', receivedAt: daysFromNow(-1), message: 'I bought The Salt Road as an ebook last month and the download link says it has expired. Can I get a new one?' } },
+        ] };
+        var demoArticles = [
+          { path: 'kb/damaged-or-missing-items.md', name: 'damaged-or-missing-items.md', size: 2210, mtime: Date.now() - 40 * 86400000 },
+          { path: 'kb/ebook-downloads.md', name: 'ebook-downloads.md', size: 1830, mtime: Date.now() - 62 * 86400000 },
+          { path: 'kb/refunds-and-returns.md', name: 'refunds-and-returns.md', size: 2675, mtime: Date.now() - 25 * 86400000 },
+          { path: 'kb/shipping-times.md', name: 'shipping-times.md', size: 1405, mtime: Date.now() - 90 * 86400000 },
+        ];
+
+        // The support-store actions, mirrored for the demo so the sample behaves like the live desk.
+        function demoKbFiles() {
+          var added = components && components.demo ? components.demo.files().filter(function (f) { return f.path.indexOf('kb/') === 0; }) : [];
+          return demoArticles.concat(added);
+        }
+        function demoView(note) {
+          var view = picture(demoTickets.records, demoKbFiles().map(function (f) { return f.path; }).sort(), Date.now());
+          view.summary = (note ? note + ' ' : '') + view.summary;
+          return view;
+        }
+        function demoFind(input) {
+          var all = demoTickets.records;
+          var byId = input.id && all.find(function (r) { return r.id === String(input.id).trim().toLowerCase(); });
+          if (byId) return byId;
+          var wanted = String(input.subject || input.id || '').trim().toLowerCase();
+          var hits = all.filter(function (r) { return r.fields.subject.toLowerCase() === wanted; });
+          if (!hits.length) hits = all.filter(function (r) { return wanted && r.fields.subject.toLowerCase().indexOf(wanted) >= 0; });
+          if (hits.length > 1) { var active = hits.filter(function (r) { return r.status !== 'resolved'; }); if (active.length) hits = active; }
+          if (hits.length === 1) return hits[0];
+          throw new Error("Pass 'id' (e.g. 'tk-3') or the ticket's 'subject'.");
+        }
+        function demoAdd(input) {
+          var subject = String(input.subject || '').trim();
+          if (!subject) throw new Error("add needs 'subject'.");
+          var who = String(input.customer || '').trim().toLowerCase();
+          var existing = demoTickets.records.find(function (r) { return r.status !== 'resolved' && r.fields.subject.toLowerCase() === subject.toLowerCase() && (!who || !r.fields.customer || r.fields.customer.toLowerCase() === who); });
+          var fields = {};
+          if (input.customer && !(existing && existing.fields.customer)) fields.customer = String(input.customer).trim();
+          if (CHANNELS.indexOf(input.channel) >= 0) fields.channel = input.channel;
+          if (categoryOf(input.category)) fields.category = categoryOf(input.category);
+          if (PRIORITIES.indexOf(input.priority) >= 0) fields.priority = input.priority;
+          if (input.message) fields.message = String(input.message).trim();
+          if (input.receivedAt && normalizeDate(input.receivedAt)) fields.receivedAt = normalizeDate(input.receivedAt);
+          if (input.gap && String(input.gap).trim()) fields.kbGap = knownTopic(demoTickets.records, input.gap);
+          if (existing) { Object.assign(existing.fields, fields); return demoView('Updated ' + existing.id + ' (' + existing.fields.subject + ').'); }
+          var id = 'tk-' + (demoTickets.records.reduce(function (m, r) { return Math.max(m, Number(r.id.split('-')[1]) || 0); }, 0) + 1);
+          demoTickets.records.push({ id: id, status: 'new', fields: Object.assign({ subject: subject, category: 'other', channel: 'other', priority: 'normal', receivedAt: iso(Date.now()) }, fields) });
+          return demoView('Logged ' + id + ': ' + subject + '.');
+        }
+        function demoReply(input) {
+          var reply = String(input.reply || '').trim(), gap = String(input.gap || '').trim();
+          if (!reply && !gap && !input.article) throw new Error("reply needs 'reply' (the suggested reply), 'article' or 'gap'.");
+          if (gap) gap = knownTopic(demoTickets.records, gap);
+          var article = input.article ? articlePath(input.article) : null;
+          var r = demoFind(input);
+          if (reply) r.fields.suggestedReply = reply;
+          if (article) r.fields.kbArticle = article;
+          if (gap) r.fields.kbGap = gap;
+          if (r.status === 'new' && reply) r.status = 'open';
+          return demoView((reply ? 'Saved a suggested reply on ' : 'Updated ') + r.fields.subject + ' (' + r.id + ')' + (article ? ', drawn from ' + article : '') + (gap && !article ? '; noted the gap "' + gap + '"' : '') + '.');
+        }
+        function demoMove(input) {
+          var status = String(input.status || '').trim().toLowerCase();
+          if (STAGES.indexOf(status) < 0) throw new Error("set_status needs status 'new', 'open', 'waiting' or 'resolved'.");
+          var r = demoFind(input);
+          r.status = status;
+          if (status === 'resolved') r.fields.resolvedAt = iso(Date.now());
+          return demoView(r.fields.subject + ' (' + r.id + ') is ' + ({ new: 'back to new', open: 'open', waiting: 'waiting on the customer', resolved: 'resolved' })[status] + '.');
+        }
+        function demoArticle(input) {
+          var title = String(input.title || '').trim(), body = String(input.body || '').trim();
+          if (!title || !body) throw new Error("save_article needs 'title' and 'body' (markdown).");
+          var path = 'kb/' + slug(title) + '.md';
+          var size = new Blob([body]).size;
+          var existing = demoArticles.find(function (f) { return f.path === path; });
+          if (existing) { existing.size = size; existing.mtime = Date.now(); }
+          else demoArticles.push({ path: path, name: path.slice(3), size: size, mtime: Date.now() });
+          var closed = 0;
+          if (input.topic) demoTickets.records.forEach(function (r) { if (r.fields.kbGap && !r.fields.kbArticle && sameTopic(r.fields.kbGap, input.topic)) { r.fields.kbArticle = path; closed++; } });
+          return demoView('Saved ' + path + (closed ? '; it answers the "' + String(input.topic).trim() + '" gap on ' + closed + (closed === 1 ? ' ticket' : ' tickets') : '') + '.');
+        }
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'desk/index.html', typeName: 'Support Desk', params: { business: 'Juniper Press', voice: 'warm and plain' } },
+          tools: {
+            page_add_ticket: demoAdd,
+            add_ticket: demoAdd,
+            page_suggest_reply: demoReply,
+            suggest_reply: demoReply,
+            page_set_ticket_status: demoMove,
+            set_ticket_status: demoMove,
+            save_kb_article: demoArticle,
+            desk_status: function () { return demoView(''); },
+            list_tickets: function () { return demoView(''); },
+          },
+          data: {
+            'tickets.json': function () { return demoTickets; },
+            kb: function () { return demoArticles.map(function (f) { return { name: f.name, kind: 'file', size: f.size, mtime: f.mtime }; }); },
+          },
+          existingPaths: demoArticles.map(function (f) { return f.path; }),
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+        var components = gezel.ui.components;
+        function applyTheme(mode) { document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light'); }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function el(tag, text, cls) { var e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
+        function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+        function niceDate(day) { var d = new Date(String(day).slice(0, 10) + 'T12:00:00'); return isFinite(d) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : String(day); }
+        function ageLabel(days) { return days === 0 ? 'Today' : days === 1 ? '1 day' : days + ' days'; }
+        var STATUS_LABEL = { new: 'new', open: 'open', waiting: 'waiting', resolved: 'resolved' };
+
+        function render(desk) {
+          var records = (Array.isArray(desk.records) ? desk.records : []).filter(function (r) { return r && r.fields; });
+          var now = Date.now();
+          var queue = replyQueue(records), waiting = waitingList(records), gaps = openGaps(records);
+          var fresh = records.filter(function (r) { return r.status === 'new'; });
+
+          document.getElementById('t-new').textContent = fresh.length;
+          document.getElementById('t-reply').textContent = queue.length;
+          document.getElementById('t-waiting').textContent = waiting.length;
+          document.getElementById('t-gaps').textContent = gaps.length;
+          document.getElementById('sub').textContent = !records.length
+            ? 'No tickets yet. Tell your support lead about a customer question, or add one below.'
+            : (queue.length ? plural(queue.length, 'ticket needs', 'tickets need') + ' a reply' + (queue[0].fields.priority === 'urgent' ? ', one of them urgent. ' : '. ') : 'Every customer has an answer. ') +
+              (gaps.length ? plural(gaps.length, 'question has', 'questions have') + ' no help article yet.' : 'The help articles cover what customers ask.');
+
+          var list = document.getElementById('queue');
+          list.replaceChildren();
+          if (!queue.length) list.append(el('li', 'Nothing needs a reply.', 'empty'));
+          queue.forEach(function (r) {
+            var f = r.fields, days = ageDays(f.receivedAt, now), li = el('li'), what = el('div', undefined, 'what');
+            li.append(el('span', ageLabel(days), 'when ' + (days >= 2 ? 'late' : days === 1 ? 'soon' : '')));
+            var title = el('b', f.subject);
+            what.append(title);
+            if (f.priority === 'urgent') what.append(el('span', 'urgent', 'chip urgent'));
+            what.append(el('small', [f.customer, f.category, f.channel, STATUS_LABEL[r.status]].filter(Boolean).join(' · ')));
+            if (f.message) what.append(el('p', '“' + excerpt(f.message, 220) + '”', 'msg'));
+            if (f.suggestedReply) {
+              var draft = el('div', undefined, 'draft');
+              draft.append(el('span', 'Suggested reply', 'label'), el('p', f.suggestedReply));
+              if (f.kbArticle) draft.append(el('small', 'Help article: ' + f.kbArticle));
+              what.append(draft);
+            } else {
+              what.append(el('small', 'No reply drafted yet. ' + (f.kbArticle ? 'Help article: ' + f.kbArticle + '.' : f.kbGap ? 'No help article covers “' + f.kbGap + '”.' : '')));
+            }
+            li.append(what);
+            list.append(li);
+          });
+
+          var grid = document.getElementById('grid-body');
+          grid.replaceChildren();
+          var used = CATEGORIES.filter(function (c) { return records.some(function (r) { return (r.fields.category || 'other') === c; }); });
+          if (!used.length) { var g0 = el('tr'), gc = el('td', 'No tickets yet.', 'empty'); gc.colSpan = 5; g0.append(gc); grid.append(g0); }
+          used.forEach(function (c) {
+            var tr = el('tr');
+            tr.append(el('td', c));
+            STAGES.forEach(function (s) {
+              var n = records.filter(function (r) { return (r.fields.category || 'other') === c && r.status === s; }).length;
+              var td = el('td', undefined, n ? '' : 'zero');
+              if (n && (s === 'new' || s === 'open')) td.append(el('b', String(n))); else td.textContent = n ? String(n) : '–';
+              tr.append(td);
+            });
+            grid.append(tr);
+          });
+
+          var body = document.getElementById('ticket-body');
+          body.replaceChildren();
+          if (!records.length) { var tr0 = el('tr'), td0 = el('td', 'No tickets yet.', 'empty'); td0.colSpan = 5; tr0.append(td0); body.append(tr0); }
+          records.slice().sort(function (a, b) { return STAGES.indexOf(a.status) - STAGES.indexOf(b.status) || urgency(a) - urgency(b) || oldestFirst(a, b); }).forEach(function (r) {
+            var f = r.fields, tr = el('tr'), title = el('td');
+            title.append(el('span', f.subject));
+            if (f.customer) title.append(el('span', f.customer + (f.channel ? ' · ' + f.channel : ''), 'meta'));
+            tr.append(title, el('td', f.category || 'other'));
+            var st = el('td'); st.append(el('span', STATUS_LABEL[r.status] || r.status, 'status ' + r.status)); tr.append(st);
+            var came = el('td'); came.append(el('span', f.receivedAt ? niceDate(f.receivedAt) : '–'));
+            if (r.status !== 'resolved' && f.receivedAt) came.append(el('span', ageLabel(ageDays(f.receivedAt, now)).toLowerCase() + (ageDays(f.receivedAt, now) ? ' old' : ''), 'meta'));
+            tr.append(came);
+            tr.append(el('td', r.status === 'resolved' ? 'Resolved ' + (f.resolvedAt ? niceDate(f.resolvedAt) : '') : f.suggestedReply ? 'Drafted' : '–'));
+            body.append(tr);
+          });
+
+          var gapList = document.getElementById('gaps');
+          gapList.replaceChildren();
+          if (!gaps.length) gapList.append(el('li', 'No gaps recorded. When a question has no help article, your support lead notes it here.', 'empty'));
+          gaps.forEach(function (g) {
+            var li = el('li');
+            li.append(el('b', g.topic));
+            li.append(el('span', plural(g.tickets.length, 'ticket', 'tickets'), 'chip'));
+            li.append(el('small', g.tickets.map(function (r) { return r.fields.subject; }).join('; '), 'meta'));
+            gapList.append(li);
+          });
+        }
+
+        var cards = [];
+        function renderFiles(files) {
+          cards.forEach(function (c) { c.destroy(); }); cards = [];
+          var holder = document.getElementById('kb-files');
+          holder.replaceChildren();
+          if (!files.length) holder.append(el('p', 'Help articles you add, and the ones your support lead writes, appear here.', 'empty'));
+          if (!components || !components.fileCard) return;
+          files.forEach(function (file) {
+            var mount = el('div'); holder.append(mount);
+            cards.push(components.fileCard(mount, { file: Object.assign({ source: 'workspace' }, file), variant: 'row' }));
+          });
+        }
+        function listFiles() {
+          if (demoMode) return Promise.resolve(demoKbFiles().slice().sort(function (a, b) { return a.path.localeCompare(b.path); }));
+          return gezel.data.list('kb').then(function (entries) {
+            return (entries || []).filter(function (e) { return e.kind !== 'dir' && e.kind !== 'directory'; }).map(function (e) { return { path: 'kb/' + e.name, name: e.name, size: e.size, mtime: e.mtime }; });
+          }, function () { return []; });
+        }
+
+        window.addEventListener('gezel-app-data-changed', function () { loadDesk(); });
+        window.loadDesk = loadDesk;
+        function loadDesk() {
+          var revision = ++appLoadRevision;
+          return Promise.all([gezel.data.read('tickets.json'), listFiles()]).then(function (values) {
+            if (appDisposed || revision !== appLoadRevision) return;
+            reportAppError(null);
+            render(values[0] || {});
+            renderFiles(values[1]);
+          }).catch(function (error) { if (!appDisposed && revision === appLoadRevision) reportAppError(error); });
+        }
+
+        if (components && components.fileAdder) {
+          components.fileAdder('#add-kb', { target: 'kb', onAdded: function () { loadDesk(); } });
+        }
+        loadDesk();
+        appSubscriptions.push(gezel.data.watch('tickets.json', function () { loadDesk(); }));
+        appSubscriptions.push(gezel.data.watch('kb', function () { loadDesk(); }));
+      })();
+    </script>
+    <script src="application.js" defer></script>
+  </body>
+</html>

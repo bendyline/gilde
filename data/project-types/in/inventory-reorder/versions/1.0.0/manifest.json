@@ -1,0 +1,381 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "releasedAt": "2026-11-02T18:00:00.000Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "business": {
+        "type": "string",
+        "title": "What kind of business is this?",
+        "description": "e.g. 'a café in Portland', 'a small pottery studio'.",
+        "default": "the business"
+      }
+    },
+    "required": [
+      "business"
+    ]
+  },
+  "nameTemplate": "Inventory & Reorder",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "stock-keeper",
+      "voorman": true
+    },
+    {
+      "templateId": "kantoormeester"
+    }
+  ],
+  "scripts": {
+    "inventory-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'inventory-store',\n  description:\n    \"Read and update the stock list (items.json) and purchase orders (orders.json). action:'status' for what is out, low and on order; 'add' to save an item (an existing name is updated, never duplicated); 'stock' to record what was received and used, or a shelf count; 'draft_orders' to draft one purchase order per supplier for everything at or below its reorder point; 'update_order' to mark an order sent, received (its quantities go into stock) or cancelled, or to set a line on a draft; 'list' for everything.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'status', 'add', 'stock', 'draft_orders', 'update_order', or 'list'.\",\n      required: true,\n    },\n    name: { type: 'string', description: \"The item's name, e.g. 'Oat milk'.\" },\n    item: { type: 'string', description: \"An item's name or id ('it-3'), for stock changes and draft lines.\" },\n    unit: { type: 'string', description: \"How it is counted, e.g. 'carton', 'bag (5 lb)', 'sleeve of 50'.\" },\n    onHand: { type: 'number', description: 'How many are on the shelf now.' },\n    reorderPoint: { type: 'number', description: 'Reorder when stock falls to this many or fewer.' },\n    par: { type: 'number', description: 'Order back up to this many.' },\n    supplier: { type: 'string', description: 'Who supplies it.' },\n    leadDays: { type: 'number', description: \"The supplier's lead time in days; it applies to every item from them.\" },\n    unitCost: { type: 'number', description: 'Price per unit in dollars, e.g. 3.8.' },\n    received: { type: 'number', description: 'How many came in. Added to the count.' },\n    used: { type: 'number', description: 'How many were sold, used or thrown out. Taken off the count.' },\n    count: { type: 'number', description: 'A shelf count. Replaces the number on hand.' },\n    order: { type: 'string', description: \"Order id ('po-2') or the supplier's name.\" },\n    status: { type: 'string', description: 'For update_order: sent, received, or cancelled.' },\n    qty: { type: 'number', description: 'For update_order: the quantity of item on a draft (0 takes it off).' },\n    note: { type: 'string', description: 'Anything worth keeping with the change.' },\n  },\n  outputs: {\n    out: { type: 'number', description: 'Items with none on hand.' },\n    low: { type: 'number', description: 'Items at or below their reorder point.' },\n    onOrder: { type: 'number', description: 'Orders sent and not yet received.' },\n    drafts: { type: 'number', description: 'Draft orders waiting for the person.' },\n    tracked: { type: 'number', description: 'Items on the stock list.' },\n    summary: { type: 'string', description: 'What changed, then the stock picture; or the listing.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── inventory-rules-start ──\n// Pure stock rules: an item's status from its count, the quantity that fills it\n// back to par, and the purchase-order drafts each supplier needs. run() applies\n// one action to a snapshot of the stores and lists the store operations, so the\n// live store and the page's demo share every rule. Kept self-contained between\n// these sentinels; the page loads the same bytes as rules.js.\nvar DAY_MS = 86400000;\nvar OPEN = ['draft', 'sent'];\n\nfunction pad(n) {\n  return n < 10 ? '0' + n : String(n);\n}\nfunction localDay(ms) {\n  var d = new Date(ms);\n  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());\n}\nfunction addDays(day, n) {\n  var d = new Date(String(day).slice(0, 10) + 'T12:00:00');\n  d.setDate(d.getDate() + n);\n  return localDay(d.getTime());\n}\nfunction daysUntil(day, nowMs) {\n  return Math.round((Date.parse(String(day).slice(0, 10) + 'T00:00:00') - Date.parse(localDay(nowMs) + 'T00:00:00')) / DAY_MS);\n}\nfunction when(days) {\n  if (days < 0) return -days + (days === -1 ? ' day late' : ' days late');\n  if (days === 0) return 'today';\n  return 'in ' + days + (days === 1 ? ' day' : ' days');\n}\nfunction num(value) {\n  if (value === undefined || value === null || value === '') return null;\n  var n = typeof value === 'number' ? value : Number(String(value).replace(/[$,\\s]/g, ''));\n  return isFinite(n) ? n : null;\n}\nfunction round2(n) {\n  return Math.round(n * 100) / 100;\n}\nfunction key(text) {\n  return String(text === undefined || text === null ? '' : text).trim().toLowerCase();\n}\nfunction unitText(unit, n) {\n  var u = String(unit || '').trim();\n  if (!u) return n === 1 ? 'unit' : 'units';\n  if (n === 1) return u;\n  var parts = u.split(' ');\n  var first = parts[0];\n  if (first.length <= 2 || /^(lbs|each|dozen)$/i.test(first) || /s$/i.test(first)) return u;\n  parts[0] = /(x|ch|sh)$/i.test(first) ? first + 'es' : /[^aeiou]y$/i.test(first) ? first.slice(0, -1) + 'ies' : first + 's';\n  return parts.join(' ');\n}\nfunction amount(n, unit) {\n  return round2(n) + ' ' + unitText(unit, n);\n}\nfunction money(cents) {\n  var parts = (Math.round(cents) / 100).toFixed(2).split('.');\n  return '$' + parts[0].replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',') + '.' + parts[1];\n}\nfunction stockStatus(f) {\n  var onHand = num(f.onHand) || 0;\n  var point = num(f.reorderPoint) || 0;\n  return onHand <= 0 ? 'out' : onHand <= point ? 'low' : 'ok';\n}\n// Reordering fills an item back up to its par level; without a par, to twice its reorder point.\nfunction orderQty(f) {\n  var onHand = Math.max(0, num(f.onHand) || 0);\n  var point = num(f.reorderPoint) || 0;\n  var par = num(f.par) || 0;\n  var target = par > point ? par : Math.max(point * 2, point + 1);\n  return Math.max(1, Math.ceil(target - onHand));\n}\nfunction lineTotal(line) {\n  return Math.round((num(line.qty) || 0) * (num(line.unitCostCents) || 0));\n}\nfunction orderTotal(lines) {\n  return lines.reduce(function (sum, line) {\n    return sum + lineTotal(line);\n  }, 0);\n}\nfunction linesText(lines) {\n  return lines\n    .map(function (l) {\n      return l.name + ' (' + amount(l.qty, l.unit) + ')';\n    })\n    .join(', ');\n}\nfunction supplierLead(items, supplier) {\n  var hit = items.filter(function (r) {\n    return key(r.fields.supplier) === key(supplier) && num(r.fields.leadDays) !== null;\n  })[0];\n  return hit ? num(hit.fields.leadDays) : null;\n}\nfunction suppliers(items) {\n  var seen = {};\n  var list = [];\n  items.forEach(function (r) {\n    var k = key(r.fields.supplier);\n    if (!k) return;\n    if (!seen[k]) {\n      seen[k] = { name: r.fields.supplier, leadDays: null, items: 0, low: 0 };\n      list.push(seen[k]);\n    }\n    seen[k].items += 1;\n    if (stockStatus(r.fields) !== 'ok') seen[k].low += 1;\n    if (seen[k].leadDays === null && num(r.fields.leadDays) !== null) seen[k].leadDays = num(r.fields.leadDays);\n  });\n  return list.sort(function (a, b) {\n    return a.name.localeCompare(b.name);\n  });\n}\nfunction words(text) {\n  return key(text)\n    .split(/[^a-z0-9]+/)\n    .filter(function (w) {\n      return w.length > 2;\n    });\n}\nfunction findItem(items, wanted) {\n  var text = String(wanted === undefined || wanted === null ? '' : wanted).trim();\n  if (!text) throw new Error(\"Name the item ('Oat milk') or pass its id ('it-3'). Call stock_status to see them.\");\n  var byId = items.filter(function (r) {\n    return r.id === text;\n  });\n  if (byId.length) return byId[0];\n  var k = key(text);\n  var exact = items.filter(function (r) {\n    return key(r.fields.name) === k;\n  });\n  if (exact.length === 1) return exact[0];\n  var stem = k.replace(/s$/, '');\n  var asked = words(k);\n  var tiers = [\n    items.filter(function (r) {\n      return key(r.fields.name).indexOf(stem) >= 0;\n    }),\n    items.filter(function (r) {\n      var name = key(r.fields.name);\n      return (\n        asked.length > 0 &&\n        asked.every(function (w) {\n          return name.indexOf(w.replace(/s$/, '')) >= 0;\n        })\n      );\n    }),\n  ];\n  for (var i = 0; i < tiers.length; i++) {\n    if (tiers[i].length === 1) return tiers[i][0];\n    if (tiers[i].length > 1) {\n      throw new Error(\"More than one item matches '\" + text + \"': \" + tiers[i].map(itemName).join(', ') + '. Pass the id.');\n    }\n  }\n  throw new Error(\"No item matches '\" + text + \"'. Items: \" + (items.map(itemName).join(', ') || 'none yet') + '.');\n}\nfunction itemName(r) {\n  return r.id + ' ' + r.fields.name;\n}\nfunction orderName(o) {\n  return o.id + ' ' + o.fields.supplier + ' (' + o.status + ')';\n}\nfunction findOrder(orders, wanted, status) {\n  var text = String(wanted === undefined || wanted === null ? '' : wanted).trim();\n  var open = orders.filter(function (o) {\n    return OPEN.indexOf(o.status) >= 0;\n  });\n  if (!text) {\n    if (open.length === 1) return open[0];\n    throw new Error(\"Pass the order id ('po-2') or the supplier's name. Open orders: \" + (open.map(orderName).join(', ') || 'none') + '.');\n  }\n  var byId = orders.filter(function (o) {\n    return o.id === text || o.id === 'po-' + text.replace(/^#/, '');\n  });\n  if (byId.length) return byId[0];\n  var k = key(text);\n  var hits = open.filter(function (o) {\n    var s = key(o.fields.supplier);\n    return s && (s.indexOf(k) >= 0 || k.indexOf(s) >= 0);\n  });\n  if (!hits.length) {\n    hits = open.filter(function (o) {\n      return (o.fields.lines || []).some(function (l) {\n        var n = key(l.name);\n        return n.indexOf(k.replace(/s$/, '')) >= 0 || k.indexOf(n) >= 0;\n      });\n    });\n  }\n  var preferred = hits.filter(function (o) {\n    return status === 'sent' ? o.status === 'draft' : status === 'received' ? o.status === 'sent' : true;\n  });\n  if (preferred.length === 1) return preferred[0];\n  if (!preferred.length && hits.length === 1) return hits[0];\n  if (hits.length) throw new Error(\"More than one open order matches '\" + text + \"': \" + hits.map(orderName).join(', ') + '. Pass the id.');\n  throw new Error(\"No open order matches '\" + text + \"'. Open orders: \" + (open.map(orderName).join(', ') || 'none') + '.');\n}\n\n// A working copy of the stores. Each change is applied here and recorded as an operation\n// the live store replays through rosterStore; the demo keeps the copy itself.\nfunction transaction(state, nowMs) {\n  var data = JSON.parse(JSON.stringify(state));\n  var ops = [];\n  var at = new Date(nowMs).toISOString();\n  function copy(value) {\n    return JSON.parse(JSON.stringify(value));\n  }\n  function get(store, id) {\n    return (\n      data[store].filter(function (r) {\n        return r.id === id;\n      })[0] || null\n    );\n  }\n  return {\n    data: data,\n    ops: ops,\n    get: get,\n    add: function (store, prefix, status, fields, note) {\n      var max = 0;\n      data[store].forEach(function (r) {\n        var m = /-(\\d+)$/.exec(r.id);\n        if (m && r.id.indexOf(prefix + '-') === 0) max = Math.max(max, Number(m[1]));\n      });\n      var id = prefix + '-' + (max + 1);\n      data[store].push({ id: id, status: status, fields: copy(fields), createdAt: at, updatedAt: at, history: [{ at: at, from: null, to: status, note: note }] });\n      ops.push({ store: store, op: 'add', id: id, status: status, fields: copy(fields), note: note });\n      return id;\n    },\n    update: function (store, id, fields, note) {\n      var r = get(store, id);\n      r.fields = Object.assign({}, r.fields, copy(fields));\n      r.updatedAt = at;\n      if (note) (r.history = r.history || []).push({ at: at, from: r.status, to: r.status, note: note });\n      ops.push({ store: store, op: 'update', id: id, fields: copy(fields), note: note });\n    },\n    transition: function (store, id, to, note) {\n      var r = get(store, id);\n      (r.history = r.history || []).push({ at: at, from: r.status, to: to, note: note });\n      r.status = to;\n      r.updatedAt = at;\n      ops.push({ store: store, op: 'transition', id: id, to: to, note: note });\n    },\n  };\n}\nfunction syncStatus(t, id) {\n  var r = t.get('items', id);\n  var next = stockStatus(r.fields);\n  if (next !== r.status) {\n    t.transition('items', id, next, next === 'ok' ? 'Back above the reorder point' : next === 'low' ? 'At or below the reorder point' : 'Out of stock');\n  }\n}\n\n// What each supplier needs: items at or below their reorder point that are not already on a sent order.\nfunction needsBySupplier(items, orders) {\n  var onSent = {};\n  orders.forEach(function (o) {\n    if (o.status === 'sent') {\n      (o.fields.lines || []).forEach(function (l) {\n        onSent[l.itemId] = o.id;\n      });\n    }\n  });\n  var groups = [];\n  var byKey = {};\n  items.forEach(function (r) {\n    if (stockStatus(r.fields) === 'ok' || onSent[r.id] || !key(r.fields.supplier)) return;\n    var k = key(r.fields.supplier);\n    if (!byKey[k]) {\n      byKey[k] = { key: k, supplier: r.fields.supplier, items: [] };\n      groups.push(byKey[k]);\n    }\n    byKey[k].items.push(r);\n  });\n  return groups;\n}\n// Lines the person set by hand stay; every other line follows the stock.\nfunction draftLines(items, existing) {\n  var fixed = (existing || []).filter(function (l) {\n    return l.fixed;\n  });\n  return fixed.concat(\n    items\n      .filter(function (r) {\n        return !fixed.some(function (l) {\n          return l.itemId === r.id;\n        });\n      })\n      .map(function (r) {\n        return { itemId: r.id, name: r.fields.name, unit: r.fields.unit || '', qty: orderQty(r.fields), unitCostCents: num(r.fields.unitCostCents) || 0 };\n      }),\n  );\n}\nfunction refreshDrafts(t, create, only) {\n  var notes = [];\n  var groups = needsBySupplier(t.data.items, t.data.orders);\n  var done = {};\n  function wanted(supplier) {\n    return !only || key(supplier).indexOf(key(only)) >= 0 || key(only).indexOf(key(supplier)) >= 0;\n  }\n  t.data.orders\n    .filter(function (o) {\n      return o.status === 'draft';\n    })\n    .forEach(function (o) {\n      if (!wanted(o.fields.supplier)) return;\n      var k = key(o.fields.supplier);\n      var group = done[k]\n        ? null\n        : groups.filter(function (g) {\n            return g.key === k;\n          })[0];\n      done[k] = true;\n      var lines = draftLines(group ? group.items : [], o.fields.lines);\n      if (!lines.length) {\n        t.transition('orders', o.id, 'cancelled', 'Nothing left to order');\n        notes.push('Dropped draft ' + o.id + ' for ' + o.fields.supplier + ': nothing on it needs ordering now.');\n        return;\n      }\n      if (JSON.stringify(lines) === JSON.stringify(o.fields.lines)) return;\n      t.update('orders', o.id, { lines: lines, totalCents: orderTotal(lines) }, 'Refreshed from stock');\n      notes.push('Updated draft ' + o.id + ' for ' + o.fields.supplier + ': ' + linesText(lines) + ', ' + money(orderTotal(lines)) + '.');\n    });\n  if (create) {\n    groups.forEach(function (g) {\n      if (done[g.key] || !wanted(g.supplier)) return;\n      var lines = draftLines(g.items, []);\n      var id = t.add('orders', 'po', 'draft', { supplier: g.supplier, lines: lines, totalCents: orderTotal(lines) }, 'Drafted from stock');\n      notes.push('Drafted ' + id + ' for ' + g.supplier + ': ' + linesText(lines) + ', ' + money(orderTotal(lines)) + '.');\n    });\n  }\n  return notes;\n}\n\nfunction addItem(t, input) {\n  var name = String(input.name || '').trim();\n  if (!name) throw new Error(\"add needs the item's 'name'.\");\n  var fields = {};\n  ['onHand', 'reorderPoint', 'par', 'leadDays', 'unitCost'].forEach(function (k) {\n    if (input[k] === undefined || input[k] === null || input[k] === '') return;\n    var n = num(input[k]);\n    if (n === null || n < 0) throw new Error(k + ' must be a number, zero or more (got ' + input[k] + ').');\n    if (k === 'unitCost') fields.unitCostCents = Math.round(n * 100);\n    else fields[k] = k === 'leadDays' ? Math.round(n) : round2(n);\n  });\n  if (input.unit) fields.unit = String(input.unit).trim();\n  if (input.supplier) fields.supplier = String(input.supplier).trim();\n  if (input.note) fields.notes = String(input.note).trim();\n  var items = t.data.items;\n  var existing = items.filter(function (r) {\n    return key(r.fields.name) === key(name);\n  })[0];\n  var supplier = fields.supplier || (existing && existing.fields.supplier) || '';\n  var others = supplier\n    ? items.filter(function (r) {\n        return key(r.fields.supplier) === key(supplier) && (!existing || r.id !== existing.id);\n      })\n    : [];\n  // One supplier, one spelling and one lead time.\n  if (fields.supplier && others.length) fields.supplier = others[0].fields.supplier;\n  if (fields.supplier && fields.leadDays === undefined) {\n    var lead = supplierLead(others, supplier);\n    if (lead !== null) fields.leadDays = lead;\n  }\n  var id;\n  var msg;\n  if (existing) {\n    t.update('items', existing.id, fields, 'Updated');\n    id = existing.id;\n    msg = 'Updated ' + existing.fields.name + ' (' + id + ').';\n  } else {\n    if (fields.onHand === undefined) throw new Error(\"A new item needs 'onHand': how many are on the shelf now.\");\n    fields = Object.assign({ name: name }, fields);\n    id = t.add('items', 'it', stockStatus(fields), fields, 'Added');\n    msg = 'Added ' + name + ' (' + id + ').';\n    if (fields.reorderPoint === undefined) msg += ' It has no reorder point yet, so it only flags when it runs out.';\n  }\n  var lead2 = num(input.leadDays);\n  var changed =\n    lead2 !== null && supplier\n      ? others.filter(function (r) {\n          return num(r.fields.leadDays) !== Math.round(lead2);\n        })\n      : [];\n  changed.forEach(function (r) {\n    t.update('items', r.id, { leadDays: Math.round(lead2) }, 'Supplier lead time ' + Math.round(lead2) + ' days');\n  });\n  if (changed.length) msg += ' ' + supplier + \"'s lead time is now \" + Math.round(lead2) + ' days on every item from them.';\n  syncStatus(t, id);\n  var r = t.get('items', id);\n  var status = r.status;\n  msg +=\n    ' ' + r.fields.name + ' has ' + amount(num(r.fields.onHand) || 0, r.fields.unit) +\n    (status === 'ok' ? ' on hand, above its reorder point.' : status === 'low' ? ' on hand, at or below its reorder point of ' + (num(r.fields.reorderPoint) || 0) + '.' : ' on hand, so it is out.');\n  return [msg].concat(refreshDrafts(t, false, null)).join(' ');\n}\n\nfunction recordStock(t, input, nowMs) {\n  var r = t.get('items', findItem(t.data.items, input.item !== undefined && input.item !== '' ? input.item : input.name !== undefined && input.name !== '' ? input.name : input.id).id);\n  var values = {};\n  ['received', 'used', 'count'].forEach(function (k) {\n    if (input[k] === undefined || input[k] === null || input[k] === '') return;\n    var n = num(input[k]);\n    if (n === null || n < 0) throw new Error(k + ' must be a number, zero or more (got ' + input[k] + ').');\n    values[k] = round2(n);\n  });\n  if (values.count !== undefined && (values.received !== undefined || values.used !== undefined)) {\n    throw new Error(\"Pass 'count' on its own for a shelf count, or 'received' and 'used' for what came in and went out; not both.\");\n  }\n  if (values.count === undefined && values.received === undefined && values.used === undefined) {\n    throw new Error(\"record_stock needs 'received' (came in), 'used' (sold, used or thrown out), or 'count' (counted on the shelf).\");\n  }\n  var unit = r.fields.unit;\n  var point = num(r.fields.reorderPoint) || 0;\n  var before = num(r.fields.onHand) || 0;\n  var wasStatus = stockStatus(r.fields);\n  var done = [];\n  var after;\n  if (values.count !== undefined) {\n    after = values.count;\n    done.push('counted ' + amount(values.count, unit));\n  } else {\n    after = before + (values.received || 0) - (values.used || 0);\n    if (values.received) done.push('received ' + amount(values.received, unit));\n    if (values.used) done.push('used ' + amount(values.used, unit));\n    if (!done.length) done.push('no change');\n  }\n  var short = after < 0;\n  if (short) after = 0;\n  after = round2(after);\n  var change = done.join(' and ');\n  t.update('items', r.id, values.count !== undefined ? { onHand: after, countedAt: localDay(nowMs) } : { onHand: after }, change.charAt(0).toUpperCase() + change.slice(1) + ': ' + round2(before) + ' to ' + after);\n  syncStatus(t, r.id);\n  var status = t.get('items', r.id).status;\n  var msg = r.fields.name + ': ' + change + '; ' + round2(before) + ' before, ' + amount(after, unit) + ' now.';\n  if (short) msg += ' More was used than the ' + round2(before) + ' on hand, so it is set to 0; count the shelf to correct it.';\n  if (status !== wasStatus) {\n    msg += status === 'out' ? ' It is out.' : status === 'low' ? ' It is now at or below its reorder point of ' + point + '.' : ' It is back above its reorder point.';\n  } else if (status !== 'ok') {\n    msg += ' Still ' + status + ' (reorder point ' + point + ').';\n  }\n  return [msg].concat(refreshDrafts(t, false, null)).join(' ');\n}\n\nfunction draftOrders(t, input) {\n  var only = String(input.supplier || '').trim();\n  var notes = refreshDrafts(t, true, only || null);\n  var orphans = t.data.items.filter(function (r) {\n    return stockStatus(r.fields) !== 'ok' && !key(r.fields.supplier);\n  });\n  if (!notes.length) {\n    notes.push(\n      only\n        ? 'Nothing from ' + only + ' is at or below its reorder point without an order already.'\n        : 'Nothing is at or below its reorder point without an order already, so there is nothing to draft.',\n    );\n  } else {\n    notes.push('These are drafts: check them, place them with the supplier, then mark each one sent.');\n  }\n  if (orphans.length && !only) {\n    notes.push(\n      orphans\n        .map(function (r) {\n          return r.fields.name;\n        })\n        .join(', ') + (orphans.length === 1 ? ' needs' : ' need') + ' a supplier before it can go on an order.',\n    );\n  }\n  return notes.join(' ');\n}\n\nfunction updateOrder(t, input, nowMs) {\n  var status = key(input.status);\n  if (status && ['sent', 'received', 'cancelled'].indexOf(status) < 0) throw new Error(\"status must be 'sent', 'received', or 'cancelled'.\");\n  var hasLine = input.item !== undefined && input.item !== null && input.item !== '' && num(input.qty) !== null;\n  if (!status && !hasLine) throw new Error(\"update_order needs 'status' (sent, received or cancelled), or 'item' and 'qty' to change a line on a draft.\");\n  var o = t.get('orders', findOrder(t.data.orders, input.order !== undefined && input.order !== '' ? input.order : input.id !== undefined && input.id !== '' ? input.id : input.supplier, status).id);\n  var supplier = o.fields.supplier;\n  var msgs = [];\n  if (hasLine) {\n    if (o.status !== 'draft') throw new Error(o.id + ' is ' + o.status + '; only a draft can change.');\n    var qty = num(input.qty);\n    if (qty < 0) throw new Error('qty must be zero or more.');\n    var item = findItem(t.data.items, input.item);\n    var line = { itemId: item.id, name: item.fields.name, unit: item.fields.unit || '', qty: round2(qty), unitCostCents: num(item.fields.unitCostCents) || 0, fixed: true };\n    var lines = (o.fields.lines || []).slice();\n    var at = -1;\n    lines.forEach(function (l, i) {\n      if (l.itemId === item.id) at = i;\n    });\n    if (qty === 0) {\n      if (at >= 0) lines.splice(at, 1);\n    } else if (at >= 0) lines[at] = line;\n    else lines.push(line);\n    if (!lines.length) {\n      t.transition('orders', o.id, 'cancelled', 'Last line removed');\n      msgs.push('Took ' + item.fields.name + ' off ' + o.id + ', which leaves nothing on it, so the draft is dropped.');\n    } else {\n      t.update('orders', o.id, { lines: lines, totalCents: orderTotal(lines) }, 'Line changed by hand');\n      msgs.push(qty === 0 ? 'Took ' + item.fields.name + ' off ' + o.id + '; it now comes to ' + money(orderTotal(lines)) + '.' : o.id + ' now orders ' + amount(qty, item.fields.unit) + ' ' + item.fields.name + ', ' + money(orderTotal(lines)) + ' in all.');\n    }\n  }\n  if (status === 'sent') {\n    if (o.status !== 'draft') throw new Error(o.id + ' is already ' + o.status + '.');\n    var lead = supplierLead(t.data.items, supplier);\n    var today = localDay(nowMs);\n    t.update('orders', o.id, lead !== null ? { sentAt: today, leadDays: lead, expectedAt: addDays(today, lead) } : { sentAt: today }, input.note ? String(input.note) : undefined);\n    t.transition('orders', o.id, 'sent', 'Sent');\n    msgs.push('Marked ' + o.id + ' to ' + supplier + ' sent' + (lead !== null ? '; with a ' + lead + '-day lead it should arrive by ' + addDays(today, lead) + '.' : '.'));\n  } else if (status === 'received') {\n    if (o.status === 'received' || o.status === 'cancelled') throw new Error(o.id + ' is already ' + o.status + '.');\n    var got = [];\n    (o.fields.lines || []).forEach(function (l) {\n      var r = t.get('items', l.itemId);\n      if (!r) return;\n      var before = num(r.fields.onHand) || 0;\n      var after = round2(before + (num(l.qty) || 0));\n      t.update('items', r.id, { onHand: after }, 'Received ' + amount(l.qty, l.unit) + ' on ' + o.id + ': ' + round2(before) + ' to ' + after);\n      syncStatus(t, r.id);\n      got.push(r.fields.name + ' ' + round2(before) + ' to ' + amount(after, r.fields.unit));\n    });\n    t.update('orders', o.id, { receivedAt: localDay(nowMs) }, input.note ? String(input.note) : undefined);\n    t.transition('orders', o.id, 'received', 'Received');\n    msgs.push('Received ' + o.id + ' from ' + supplier + (got.length ? ' and added it to stock: ' + got.join(', ') + '.' : '.'));\n    msgs = msgs.concat(refreshDrafts(t, false, null));\n  } else if (status === 'cancelled') {\n    if (o.status === 'received' || o.status === 'cancelled') throw new Error(o.id + ' is already ' + o.status + '.');\n    t.transition('orders', o.id, 'cancelled', input.note ? String(input.note) : 'Cancelled');\n    msgs.push('Cancelled ' + o.id + ' to ' + supplier + '.');\n  }\n  return msgs.join(' ');\n}\n\nfunction onOrderText(r, orders) {\n  var o = orders.filter(function (x) {\n    return (\n      OPEN.indexOf(x.status) >= 0 &&\n      (x.fields.lines || []).some(function (l) {\n        return l.itemId === r.id;\n      })\n    );\n  })[0];\n  if (!o) return '';\n  return o.status === 'draft' ? 'on draft ' + o.id : 'on order ' + o.id + (o.fields.expectedAt ? ', expected ' + o.fields.expectedAt : '');\n}\nfunction itemLine(r, orders) {\n  var f = r.fields;\n  var status = stockStatus(f);\n  var onOrder = onOrderText(r, orders);\n  var text =\n    f.name + ' (' + r.id + '): ' + amount(num(f.onHand) || 0, f.unit) + ' on hand' + (status === 'ok' ? '' : ', ' + status) +\n    ', reorder at ' + (num(f.reorderPoint) || 0) + (num(f.par) ? ', par ' + num(f.par) : '');\n  if (status !== 'ok') {\n    text += onOrder.indexOf('on order') === 0 ? '; ' + onOrder : '; order ' + amount(orderQty(f), f.unit) + (onOrder ? ' (' + onOrder + ')' : '');\n  }\n  text += f.supplier ? '; supplier ' + f.supplier + (num(f.leadDays) !== null ? ', ' + num(f.leadDays) + '-day lead' : '') : '; no supplier yet';\n  return text;\n}\nfunction orderLine(o, nowMs) {\n  var f = o.fields;\n  var text = o.id + ' ' + f.supplier + ': ' + linesText(f.lines || []) + ', ' + money(num(f.totalCents) || 0);\n  if (o.status === 'sent') text += ', sent ' + f.sentAt + (f.expectedAt ? ', expected ' + f.expectedAt + ' (' + when(daysUntil(f.expectedAt, nowMs)) + ')' : '');\n  if (o.status === 'received') text += ', received ' + f.receivedAt;\n  return text;\n}\nfunction urgency(a, b) {\n  var sa = stockStatus(a.fields);\n  var sb = stockStatus(b.fields);\n  if (sa !== sb) return sa === 'out' ? -1 : sb === 'out' ? 1 : 0;\n  var ra = (num(a.fields.onHand) || 0) / Math.max(1, num(a.fields.reorderPoint) || 1);\n  var rb = (num(b.fields.onHand) || 0) / Math.max(1, num(b.fields.reorderPoint) || 1);\n  return ra - rb || String(a.fields.name).localeCompare(String(b.fields.name));\n}\nfunction picture(items, orders, nowMs) {\n  var needs = items\n    .filter(function (r) {\n      return stockStatus(r.fields) !== 'ok';\n    })\n    .sort(urgency);\n  var out = needs.filter(function (r) {\n    return stockStatus(r.fields) === 'out';\n  }).length;\n  var sent = orders\n    .filter(function (o) {\n      return o.status === 'sent';\n    })\n    .sort(function (a, b) {\n      return String(a.fields.expectedAt || '').localeCompare(String(b.fields.expectedAt || ''));\n    });\n  var drafts = orders.filter(function (o) {\n    return o.status === 'draft';\n  });\n  var parts = [items.length + (items.length === 1 ? ' item' : ' items') + ' tracked: ' + out + ' out, ' + (needs.length - out) + ' low.'];\n  // One list, out first: asked \"what's running low\", a model reads a separate out-of-stock list as out of scope.\n  parts.push(\n    needs.length\n      ? 'Running low or out, out first: ' + needs.map(function (r) { return itemLine(r, orders); }).join(' | ') + '.'\n      : items.length\n        ? 'Nothing is at or below its reorder point.'\n        : 'Nothing tracked yet.',\n  );\n  if (sent.length) parts.push('On order: ' + sent.map(function (o) { return orderLine(o, nowMs); }).join(' | ') + '.');\n  if (drafts.length) parts.push('Drafts for the person to check and send: ' + drafts.map(function (o) { return orderLine(o, nowMs); }).join(' | ') + '.');\n  var list = suppliers(items);\n  if (list.length) {\n    parts.push(\n      'Suppliers: ' +\n        list\n          .map(function (s) {\n            return s.name + (s.leadDays !== null ? ' (' + s.leadDays + '-day lead)' : ' (no lead time yet)');\n          })\n          .join(', ') +\n        '.',\n    );\n  }\n  return { out: out, low: needs.length - out, onOrder: sent.length, drafts: drafts.length, summary: parts.join(' ') };\n}\nfunction listing(items, orders, nowMs) {\n  var lines = items\n    .slice()\n    .sort(function (a, b) {\n      return String(a.fields.name).localeCompare(String(b.fields.name));\n    })\n    .map(function (r) {\n      return '[' + stockStatus(r.fields) + '] ' + itemLine(r, orders) + (num(r.fields.unitCostCents) ? ', ' + money(r.fields.unitCostCents) + ' each' : '');\n    });\n  var open = orders.filter(function (o) {\n    return OPEN.indexOf(o.status) >= 0;\n  });\n  var closed = orders\n    .filter(function (o) {\n      return OPEN.indexOf(o.status) < 0;\n    })\n    .slice(-5);\n  open.concat(closed).forEach(function (o) {\n    lines.push('[' + o.status + '] ' + orderLine(o, nowMs));\n  });\n  return lines.join('\\n') || 'Nothing tracked yet.';\n}\nfunction run(action, input, state, nowMs) {\n  var t = transaction(state, nowMs);\n  var note = '';\n  input = input || {};\n  if (action === 'add') note = addItem(t, input);\n  else if (action === 'stock') note = recordStock(t, input, nowMs);\n  else if (action === 'draft_orders') note = draftOrders(t, input);\n  else if (action === 'update_order') note = updateOrder(t, input, nowMs);\n  else if (action !== 'status' && action !== 'list') {\n    throw new Error(\"Unknown action '\" + action + \"'. Use status, add, stock, draft_orders, update_order, or list.\");\n  }\n  var view = picture(t.data.items, t.data.orders, nowMs);\n  return {\n    ops: t.ops,\n    state: t.data,\n    output: {\n      out: view.out,\n      low: view.low,\n      onOrder: view.onOrder,\n      drafts: view.drafts,\n      tracked: t.data.items.length,\n      summary: action === 'list' ? listing(t.data.items, t.data.orders, nowMs) : (note ? note + ' ' : '') + view.summary,\n    },\n  };\n}\n// ── inventory-rules-end ──\n\nconst stores = {\n  items: rosterStore(gezel.fs, 'items.json', { stages: ['ok', 'low', 'out'], idPrefix: 'it' }),\n  orders: rosterStore(gezel.fs, 'orders.json', { stages: ['draft', 'sent', 'received', 'cancelled'], idPrefix: 'po' }),\n};\nconst before = { items: await stores.items.list(), orders: await stores.orders.list() };\nconst result = run(String(input.action), input, before, Date.now());\n// Replay the changes through the stores, in order, so the files keep their history.\nfor (const op of result.ops) {\n  const store = stores[op.store as 'items' | 'orders'];\n  if (op.op === 'add') await store.add({ id: op.id, status: op.status, fields: op.fields, note: op.note });\n  else if (op.op === 'update') await store.update(op.id, { fields: op.fields, ...(op.note ? { note: op.note } : {}) });\n  else await store.transition(op.id, op.to, op.note ? { note: op.note } : {});\n}\ngezel.output(result.output);\n"
+  },
+  "tools": [
+    {
+      "name": "stock_status",
+      "description": "What is out and running low (out first), each with its count, reorder point, the quantity to order, the supplier and lead time, plus orders on the way and drafts waiting, with ids. Call it first when asked what's low or what to order.",
+      "script": "inventory-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "status"
+      },
+      "state": true
+    },
+    {
+      "name": "add_item",
+      "description": "Save a stock item: name, unit, how many are on hand now, the reorder point, the par level to order up to, supplier, their lead time in days, and the unit cost in dollars. An existing name is updated, never duplicated. Call it as soon as an item is mentioned, before you describe it.",
+      "script": "inventory-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string",
+            "description": "How it is counted, e.g. 'carton', 'bag (5 lb)', 'sleeve of 50'."
+          },
+          "onHand": {
+            "type": "number",
+            "description": "How many are on the shelf now (needed for a new item)."
+          },
+          "reorderPoint": {
+            "type": "number",
+            "description": "Reorder when stock falls to this many or fewer."
+          },
+          "par": {
+            "type": "number",
+            "description": "Order back up to this many."
+          },
+          "supplier": {
+            "type": "string"
+          },
+          "leadDays": {
+            "type": "number",
+            "description": "The supplier's lead time in days; it applies to every item from them."
+          },
+          "unitCost": {
+            "type": "number",
+            "description": "Price per unit in dollars, e.g. 3.8."
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "bind": {
+        "action": "add"
+      }
+    },
+    {
+      "name": "record_stock",
+      "description": "Record stock coming in or going out. Pass received (delivered) and used (sold, used or thrown out) exactly as the person said them; the store does the arithmetic, so never work out the new total yourself. Pass count only when they counted the shelf. Call it the moment they tell you.",
+      "script": "inventory-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "type": "string",
+            "description": "The item's name or id ('it-3')."
+          },
+          "received": {
+            "type": "number",
+            "description": "How many came in, as the person said it. The store adds it."
+          },
+          "used": {
+            "type": "number",
+            "description": "How many were sold, used or thrown out, as the person said it. The store takes it off."
+          },
+          "count": {
+            "type": "number",
+            "description": "Only when they counted the shelf: the number counted."
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item"
+        ]
+      },
+      "bind": {
+        "action": "stock"
+      }
+    },
+    {
+      "name": "draft_orders",
+      "description": "Draft purchase orders, one per supplier, for every item at or below its reorder point that is not already on order; quantities fill each item back up to its par. Running it again updates the drafts, never duplicates them. The person checks and places them.",
+      "script": "inventory-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "supplier": {
+            "type": "string",
+            "description": "Only this supplier; leave out for all of them."
+          }
+        }
+      },
+      "bind": {
+        "action": "draft_orders"
+      }
+    },
+    {
+      "name": "update_order",
+      "description": "Change a purchase order: mark it sent when the person says they placed it, received when it arrived (its quantities go into stock), or cancelled; or set one item's quantity on a draft. Call it as soon as they tell you.",
+      "script": "inventory-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "string",
+            "description": "Order id ('po-2') or the supplier's name."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "sent",
+              "received",
+              "cancelled"
+            ]
+          },
+          "item": {
+            "type": "string",
+            "description": "To change a draft: the item whose quantity to set."
+          },
+          "qty": {
+            "type": "number",
+            "description": "To change a draft: the new quantity (0 takes the item off)."
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "order"
+        ]
+      },
+      "bind": {
+        "action": "update_order"
+      }
+    },
+    {
+      "name": "list_stock",
+      "description": "Every item with its count, reorder point, par, supplier, lead time and price, and every open order.",
+      "script": "inventory-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "list"
+      }
+    },
+    {
+      "name": "page_add_item",
+      "description": "Add or update a stock item.",
+      "script": "inventory-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string",
+            "description": "How it is counted, e.g. 'carton', 'bag (5 lb)', 'sleeve of 50'."
+          },
+          "onHand": {
+            "type": "number",
+            "description": "How many are on the shelf now (needed for a new item)."
+          },
+          "reorderPoint": {
+            "type": "number",
+            "description": "Reorder when stock falls to this many or fewer."
+          },
+          "par": {
+            "type": "number",
+            "description": "Order back up to this many."
+          },
+          "supplier": {
+            "type": "string"
+          },
+          "leadDays": {
+            "type": "number",
+            "description": "The supplier's lead time in days; it applies to every item from them."
+          },
+          "unitCost": {
+            "type": "number",
+            "description": "Price per unit in dollars, e.g. 3.8."
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "bind": {
+        "action": "add"
+      }
+    },
+    {
+      "name": "page_record_stock",
+      "description": "Record stock received, used or counted.",
+      "script": "inventory-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "type": "string",
+            "description": "The item's name or id ('it-3')."
+          },
+          "received": {
+            "type": "number",
+            "description": "How many came in, as the person said it. The store adds it."
+          },
+          "used": {
+            "type": "number",
+            "description": "How many were sold, used or thrown out, as the person said it. The store takes it off."
+          },
+          "count": {
+            "type": "number",
+            "description": "Only when they counted the shelf: the number counted."
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item"
+        ]
+      },
+      "bind": {
+        "action": "stock"
+      },
+      "reaction": {
+        "gezel": "stock-keeper",
+        "hideSeed": true,
+        "prompt": "The person just logged stock on the inventory page. The stock list now reads (its first sentence is what changed):\n{{output.summary}}\nIn one or two short sentences, confirm the new count and, if that item is now low or out, say how many to order and from whom. Do not call tools."
+      }
+    },
+    {
+      "name": "page_draft_orders",
+      "description": "Draft purchase orders for everything at or below its reorder point.",
+      "script": "inventory-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "supplier": {
+            "type": "string",
+            "description": "Only this supplier; leave out for all of them."
+          }
+        }
+      },
+      "bind": {
+        "action": "draft_orders"
+      }
+    },
+    {
+      "name": "page_update_order",
+      "description": "Mark an order sent, received or cancelled.",
+      "script": "inventory-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "string",
+            "description": "Order id ('po-2') or the supplier's name."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "sent",
+              "received",
+              "cancelled"
+            ]
+          },
+          "item": {
+            "type": "string",
+            "description": "To change a draft: the item whose quantity to set."
+          },
+          "qty": {
+            "type": "number",
+            "description": "To change a draft: the new quantity (0 takes the item off)."
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "order"
+        ]
+      },
+      "bind": {
+        "action": "update_order"
+      },
+      "reaction": {
+        "gezel": "stock-keeper",
+        "hideSeed": true,
+        "prompt": "The person just updated a purchase order on the inventory page. The stock list now reads (its first sentence is what changed):\n{{output.summary}}\nIn two short sentences, confirm what changed: what went into stock, or when the order should arrive. Do not call tools."
+      }
+    }
+  ],
+  "craftbooks": [
+    "reorder-run"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "stock/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "items.json"
+      },
+      {
+        "source": "workspace",
+        "path": "orders.json"
+      }
+    ],
+    "tools": [
+      "page_add_item",
+      "page_record_stock",
+      "page_draft_orders",
+      "page_update_order"
+    ]
+  },
+  "workspaceSeed": [
+    "items.json",
+    "orders.json"
+  ],
+  "minGezelVersion": "1.26280"
+}

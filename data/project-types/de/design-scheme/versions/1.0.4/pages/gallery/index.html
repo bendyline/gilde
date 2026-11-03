@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Scheme gallery</title>
+    <style>
+      :root { color-scheme: light dark; --bg: #faf7f2; --card: #fff; --ink: #2b2620; --muted: #7a7166; --line: #ece5da; --accent: #8a5a2b; }
+      :root[data-theme='dark'] { --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c; --line: #3a352f; --accent: #e0894a; }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) { --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c; --line: #3a352f; --accent: #e0894a; }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 16px/1.5 var(--font-body, system-ui, sans-serif); background: var(--bg); color: var(--ink); padding: 2rem 1.25rem; }
+      main { max-width: 720px; margin: 0 auto; }
+      h1 { font-size: 1.5rem; margin: 0 0 0.25rem; }
+      .sub { color: var(--muted); margin: 0 0 1.5rem; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
+      .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+      .swatches { display: flex; height: 84px; }
+      .swatches > span { flex: 1; }
+      .card .name { padding: 0.6rem 0.85rem; font-weight: 600; }
+      .card .hexes { display: flex; flex-wrap: wrap; gap: 0.1rem 0.6rem; padding: 0 0.85rem 0.75rem; color: var(--muted); font-size: 0.78rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .card .hexes > span { white-space: nowrap; }
+      .empty { color: var(--muted); font-style: italic; }
+      .demo-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0 0 0.85rem;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--card) 88%, var(--accent));
+        color: var(--ink);
+        font-size: 0.8rem;
+      }
+      .demo-banner[hidden] { display: none; }
+      .demo-banner strong { font-weight: 700; }
+      .demo-reset {
+        flex: none;
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: var(--card);
+        color: var(--ink);
+        cursor: pointer;
+        font: inherit;
+      }
+      .demo-reset:hover { border-color: var(--ink); }
+    </style>
+  <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:20px 0;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--border,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}html[data-gezel-fullscreen=true] .board{min-width:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}.tiles,.stats,.summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}.board,.columns{max-width:100%;overflow-x:auto}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+  <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script><style>#grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr))}.palette-preview{margin:12px;padding:24px;border-radius:6px}.palette-preview strong{font:400 24px var(--font-heading,Georgia,serif)}.palette-preview p{font-size:15px}.palette-preview span{display:inline-block;padding:6px 10px;border:1px solid;border-radius:6px;font-size:13px}.card{overflow:hidden}</style></head>
+  <body>
+    <main>
+<p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong> — sample data stays in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Scheme gallery</h1>
+      <p class="sub" id="sub">Loading schemes…</p>
+      <div class="grid" id="grid"></div>
+    </main>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+
+        // ── demo schemes (used only when the page opens as a raw file) ──
+        var demoSchemes = [
+          { name: 'Warm Dusk', colors: ['#2B2620', '#8D694D', '#D5B58C', '#EFE4D1', '#FFF8E8'] },
+          { name: 'Canal Morning', colors: ['#19323C', '#4F6D7A', '#9BB8B3', '#E7E3D4', '#F7F4EC'] },
+          { name: 'Workshop Sage', colors: ['#26352D', '#557A5B', '#A7B89A', '#DDD5BF', '#FAF7F2'] },
+        ];
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'gallery/index.html', typeName: 'Design Scheme', params: { brief: 'a new brand' } },
+          tools: {
+            // Like the scheme-store script: a palette with the same name replaces the saved one.
+            page_save_scheme: function (input) {
+              var name = String(input.name || '').trim();
+              var colors = Array.isArray(input.colors) ? input.colors.map(String) : [];
+              if (!name || !colors.length) throw new Error('A palette needs a name and at least one color.');
+              var slug = function (text) { return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); };
+              var at = demoSchemes.findIndex(function (s) { return slug(s.name) === slug(name); });
+              if (at >= 0) demoSchemes[at] = { name: name, colors: colors };
+              else demoSchemes.push({ name: name, colors: colors });
+              return { count: demoSchemes.length, message: 'Saved "' + name + '" (' + colors.length + ' colors). ' + demoSchemes.length + ' scheme(s) total.' };
+            },
+          },
+          data: {
+            'schemes/index.json': function () { return { schemes: demoSchemes }; },
+          },
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+
+        function applyTheme(mode) {
+          document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light');
+        }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+        function isHex(c) { return typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c); }
+        function render(schemes) {
+          var sub = document.getElementById('sub');
+          var grid = document.getElementById('grid');
+          if (!schemes.length) {
+            sub.textContent = 'No schemes yet — ask the designer to save one.';
+            grid.innerHTML = '';
+            return;
+          }
+          sub.textContent = schemes.length + ' scheme' + (schemes.length === 1 ? '' : 's');
+          grid.innerHTML = schemes.map(function (s) {
+            var colors = Array.isArray(s.colors) ? s.colors.filter(isHex) : [];
+            var bars = colors.map(function (c) { return '<span style="background:' + c + '"></span>'; }).join('');
+            var preview = colors.length < 2 ? '' : '<div class="palette-preview" style="background:' + colors[colors.length - 1] + ';color:' + colors[0] + '"><strong>A considered direction</strong><p>See how your colors feel in a small piece of everyday design.</p><span style="border-color:' + colors[0] + '">A sample action</span></div>';
+            return '<div class="card"><div class="swatches">' + bars + '</div>' +
+              '<div class="name">' + esc(s.name || 'Untitled') + '</div>' +
+              '<div class="hexes">' + colors.map(function (c) { return '<span>' + esc(c) + '</span>'; }).join('') + '</div>' + preview + '</div>';
+          }).join('');
+        }
+
+        window.addEventListener('gezel-app-data-changed', function(){ loadSchemes(); });
+        function loadSchemes() {
+          var revision=++appLoadRevision;
+          return gezel.data.read('schemes/index.json',{source:'artifacts'})
+            .then(function(data){if(appDisposed||revision!==appLoadRevision)return;reportAppError(null);render(data&&Array.isArray(data.schemes)?data.schemes:[]);})
+            .catch(function(error){if(!appDisposed&&revision===appLoadRevision)reportAppError(error);});
+        }
+
+        loadSchemes();
+        appSubscriptions.push(gezel.data.watch('schemes/index.json', function () { loadSchemes(); }, { source: 'artifacts' }));
+      })();
+    </script>
+  <script src="application.js" defer></script>
+  </body>
+</html>
