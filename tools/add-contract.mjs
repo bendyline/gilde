@@ -3,13 +3,18 @@
  * Give a craftbook its contract: the result the person asked for, stated so
  * any task strategy can be held to it (gezel docs/task-strategies.md).
  *
- * Contracts are authored one book per file in `tools/contracts/<id>.json`
- * as `{ "id": "<book id>", "contract": { ... } }`. For each, this writes a
- * NEW patch version of the book (released dirs are immutable) that is the
- * latest version plus `contract`, raises `minGezelVersion` to the first gezel
- * build that reads contracts, and copies test.json and every other file as it
- * is. A book whose latest version already carries the same contract is left
- * alone, so the tool is safe to re-run.
+ * It reads a folder of `{ "id": "<book id>", "contract": { ... } }` files,
+ * one per book: usually reviewed drafts from draft-contract.mjs, which writes
+ * that shape. For each, this writes a NEW patch version of the book (released
+ * dirs are immutable) that is the latest version plus `contract`, raises
+ * `minGezelVersion` to the first gezel build that reads contracts, and copies
+ * test.json and every other file as it is. A book whose latest version
+ * already carries the same contract is left alone, so the tool is safe to
+ * re-run.
+ *
+ * The folder is working material and is not committed. Once released, a
+ * contract lives only in its book's versions; a later change to it is an
+ * ordinary new version of the book.
  *
  * Every contract is linted first. A contract judges the RESULT: each check may
  * read only a file the contract declares (a deliverable, its text source, an
@@ -18,21 +23,27 @@
  * strategy that skips it.
  *
  * Usage:
- *   node tools/add-contract.mjs                  # dry-run report
- *   node tools/add-contract.mjs --write
- *   node tools/add-contract.mjs --only research-report,powerpoint-deck
+ *   node tools/add-contract.mjs --from tools/contract-drafts           # dry-run report
+ *   node tools/add-contract.mjs --from tools/contract-drafts --write
+ *   node tools/add-contract.mjs --from tools/contract-drafts --only research-report,powerpoint-deck
  */
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { lintContract } from './lib/contract-lint.mjs';
 
 const ROOT = join(import.meta.dirname, '..', 'data', 'craftbook-templates');
-const CONTRACTS = join(import.meta.dirname, 'contracts');
 const FLOOR = '1.26295';
 
 const args = process.argv.slice(2);
 const WRITE = args.includes('--write');
 const onlyIdx = args.indexOf('--only');
 const ONLY = onlyIdx >= 0 ? new Set(args[onlyIdx + 1].split(',')) : null;
+const fromIdx = args.indexOf('--from');
+if (fromIdx < 0 || !args[fromIdx + 1]) {
+  console.error('Name the contracts to release: --from <folder of { id, contract } files>');
+  process.exit(2);
+}
+const CONTRACTS = resolve(args[fromIdx + 1]);
 
 const semverCmp = (a, b) => {
   const pa = a.split('.').map(Number);
@@ -48,51 +59,6 @@ const gezelVersionCmp = (a, b) => {
   }
   return 0;
 };
-
-const normalize = (p) => p.trim().replace(/^\.\//, '').replace(/\/+$/, '').toLowerCase();
-
-/** Mirrors gezel's `contractLintProblems` (core/src/craftbook-contract-lint.ts). */
-function lintContract(contract) {
-  const problems = [];
-  const declared = new Set();
-  const add = (p) => p && declared.add(normalize(p));
-  for (const d of contract.deliverables ?? []) {
-    add(d.path);
-    add(d.textSource?.path);
-  }
-  for (const i of contract.inputs ?? []) add(i.path);
-  for (const s of contract.grounding?.sources ?? []) add(s);
-  const isDeclared = (file) =>
-    declared.has(normalize(file)) || [...declared].some((d) => normalize(file).startsWith(`${d}/`));
-  if (!(contract.deliverables ?? []).some((d) => (d.role ?? 'primary') === 'primary')) {
-    problems.push('no primary deliverable');
-  }
-  const ids = new Set();
-  for (const c of contract.criteria ?? []) {
-    if (ids.has(c.id)) problems.push(`duplicate criterion id "${c.id}"`);
-    ids.add(c.id);
-    if ((c.enforce ?? 'gate') === 'gate' && !(c.checks ?? []).length) {
-      problems.push(`criterion "${c.id}" is enforced as a gate but has no checks`);
-    }
-    for (const check of c.checks ?? []) {
-      const files = [
-        ...(typeof check.file === 'string' ? [check.file] : []),
-        ...(Array.isArray(check.files) ? check.files : []),
-      ];
-      for (const file of files) {
-        if (!isDeclared(file)) {
-          problems.push(
-            `criterion "${c.id}" checks ${file}, which the contract does not declare as a deliverable, text source, input or grounding source`,
-          );
-        }
-      }
-    }
-  }
-  if (typeof contract.goal !== 'string' || !contract.goal.trim() || contract.goal.length > 400) {
-    problems.push('goal must be 1-400 characters');
-  }
-  return problems;
-}
 
 function findBook(id) {
   for (const shard of readdirSync(ROOT).filter((d) => !d.includes('.'))) {
