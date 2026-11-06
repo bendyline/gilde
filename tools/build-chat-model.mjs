@@ -353,9 +353,10 @@ async function buildLlamaCppBlock(cfg, pinCurrent = false, engine = 'llamaCpp') 
  * to llama.cpp's (HF repo + filename/shards + sha256 + size), so it reuses that
  * builder and then layers on the streaming/launch hints that only ds4 reads:
  * `residentBytes`, `residentWeightBytes`, `cacheExpertsBytes`,
- * `ssdStreaming`, `ssdStreamingSupported`, `prefillChunk`, `maxLaunchCtx`,
- * model-embedded `mtp`, and
- * the optional context-footprint slope.
+ * `ssdStreaming`, `ssdStreamingSupported`, `ssdStreamingBackends`,
+ * `prefillChunk`, `maxLaunchCtx`, model-embedded `mtp`, the optional
+ * context-footprint slope, and the per-mode measurements
+ * `fullResidencyMemory` / `streamingMemory`.
  *
  * These are hand-measured per model, not derivable from the HF tree — a
  * model's resident footprint is the sum of its non-routed tensors, which you
@@ -371,6 +372,9 @@ async function buildDs4Block(cfg, pinCurrent = false) {
     cacheExpertsBytes,
     ssdStreaming,
     ssdStreamingSupported,
+    ssdStreamingBackends,
+    fullResidencyMemory,
+    streamingMemory,
     prefillChunk,
     maxLaunchCtx,
     mtp,
@@ -391,6 +395,9 @@ async function buildDs4Block(cfg, pinCurrent = false) {
     ...(cacheExpertsBytes ? { cacheExpertsBytes } : {}),
     ...(ssdStreaming !== undefined ? { ssdStreaming } : {}),
     ...(ssdStreamingSupported !== undefined ? { ssdStreamingSupported } : {}),
+    ...(ssdStreamingBackends ? { ssdStreamingBackends } : {}),
+    ...(fullResidencyMemory ? { fullResidencyMemory } : {}),
+    ...(streamingMemory ? { streamingMemory } : {}),
     ...(prefillChunk ? { prefillChunk } : {}),
     ...(maxLaunchCtx ? { maxLaunchCtx } : {}),
     ...(mtp ? { mtp } : {}),
