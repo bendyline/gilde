@@ -110,6 +110,11 @@ export function assembleManifest(input) {
     }
   }
 
+  // Yanks only accumulate. Gezel never serves a yanked version, so a rebuild
+  // that dropped one would quietly put it back in front of every older build.
+  const yanked = [...new Set([...(existing?.yankedVersions ?? []), ...(cfg.yankedVersions ?? [])])];
+  if (yanked.length > 0) manifest.yankedVersions = yanked;
+
   for (const key of PROVIDER_FIELDS) {
     const fresh = providerBlocks[key];
     if (!fresh) continue;

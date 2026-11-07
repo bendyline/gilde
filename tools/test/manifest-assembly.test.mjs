@@ -69,6 +69,19 @@ test('assembleManifest preserves eval-tuned fields and revision pins', () => {
   assert.deepEqual(carriedRevisions, ['llamaCpp']);
 });
 
+test('assembleManifest keeps every yank from the manifest and the recipe', () => {
+  const seeded = assembleManifest({ cfg, providerBlocks: {} }).manifest;
+  assert.equal(seeded.yankedVersions, undefined);
+  const { manifest } = assembleManifest({
+    cfg: { ...cfg, yankedVersions: ['1.0.3', '1.0.5'] },
+    providerBlocks: {},
+    existing: { ...cfg, yankedVersions: ['1.0.1', '1.0.3'] },
+  });
+  assert.deepEqual(manifest.yankedVersions, ['1.0.1', '1.0.3', '1.0.5']);
+  const rebuilt = assembleManifest({ cfg, providerBlocks: {}, existing: manifest, reseed: true });
+  assert.deepEqual(rebuilt.manifest.yankedVersions, ['1.0.1', '1.0.3', '1.0.5']);
+});
+
 test('assembleManifest does not carry a revision across a repo change', () => {
   const { manifest, carriedRevisions } = assembleManifest({
     cfg,
