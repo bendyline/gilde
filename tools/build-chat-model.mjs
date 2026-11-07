@@ -286,6 +286,12 @@ async function buildLlamaCppBlock(cfg, pinCurrent = false, engine = 'llamaCpp') 
       filename: draftFilename,
       sha256: f.sha256,
       sizeBytes: f.sizeBytes,
+      // A drafter measured on some llama-server backends only. Elsewhere Gezel
+      // neither fetches it nor counts it as part of the install.
+      ...(draftModelConfig?.backends ? { backends: draftModelConfig.backends } : {}),
+      // Measured, never derived: GPU memory against the same launch without
+      // speculation. Gezel estimates from the file size when it is absent.
+      ...(draftModelConfig?.residentBytes ? { residentBytes: draftModelConfig.residentBytes } : {}),
     };
   }
 
