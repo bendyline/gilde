@@ -1,0 +1,710 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Sales pipeline</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f5f3ee; --card: #fffdf8; --ink: #26241f; --muted: #6a6358; --line: #ddd5c6;
+        --accent: #2f6b5e; --accent-bg: #e1eeea; --late: #a3341f; --late-bg: #f7e1da; --soon: #8a5a12; --soon-bg: #f6ead2;
+        --ok: #3f6b4a; --ok-bg: #e2eedf; --chip: #eee8dc; --lane: #f8f5ee;
+      }
+      :root[data-theme='dark'] {
+        --bg: #161714; --card: #20221e; --ink: #ece8df; --muted: #a39d90; --line: #383a33;
+        --accent: #7cc0ad; --accent-bg: #1d332d; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+        --ok: #8fc29b; --ok-bg: #22301f; --chip: #2b2d27; --lane: #1b1d19;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #161714; --card: #20221e; --ink: #ece8df; --muted: #a39d90; --line: #383a33;
+          --accent: #7cc0ad; --accent-bg: #1d332d; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+          --ok: #8fc29b; --ok-bg: #22301f; --chip: #2b2d27; --lane: #1b1d19;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body, system-ui, sans-serif); font-size: 15px; line-height: 1.5; padding: 1.5rem 1.25rem; }
+      main { max-width: 920px; margin: 0 auto; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.5rem; font-weight: 400; margin: 0 0 0.2rem; }
+      h2 { font-family: var(--font-heading, Georgia, serif); font-size: 1.1rem; font-weight: 400; margin: 0 0 0.6rem; }
+      .sub { color: var(--muted); margin: 0 0 1rem; }
+      .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; margin: 0 0 1.2rem; }
+      .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem 0.9rem; min-width: 0; }
+      .tile b { display: block; font-size: 1.35rem; font-weight: 600; line-height: 1.15; overflow-wrap: anywhere; }
+      .tile span { color: var(--muted); font-size: 0.85rem; }
+      .tile.late b { color: var(--late); }
+      .tile.ok b { color: var(--ok); }
+      section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin: 0 0 1rem; }
+      .due { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+      .due li { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) auto; gap: 0.75rem; align-items: start; }
+      .due li.empty { display: block; }
+      .when { justify-self: start; font-family: var(--font-ui, system-ui, sans-serif); font-size: 0.8rem; font-weight: 600; padding: 0.15rem 0.45rem; border-radius: 4px; text-align: center; background: var(--chip); color: var(--muted); }
+      .when.late { background: var(--late-bg); color: var(--late); }
+      .when.soon { background: var(--soon-bg); color: var(--soon); }
+      .what b { font-weight: 600; }
+      .what small, .meta { display: block; color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
+      .empty { color: var(--muted); font-style: italic; margin: 0; }
+      .board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; align-items: start; }
+      .lane { background: var(--lane); border: 1px solid var(--line); border-radius: 6px; padding: 0.55rem; min-width: 0; }
+      .lane h3 { font-family: var(--font-ui, system-ui, sans-serif); font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 0.45rem; display: flex; justify-content: space-between; gap: 0.4rem; flex-wrap: wrap; }
+      .lane h3 span { text-transform: none; letter-spacing: 0; font-weight: 400; }
+      .cards { display: grid; gap: 0.45rem; }
+      .deal { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 0.5rem 0.6rem; font-size: 0.88rem; min-width: 0; }
+      .deal b { display: block; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+      .deal .money { display: block; margin-top: 0.2rem; }
+      .deal .money em { font-style: normal; color: var(--accent); }
+      .deal-keys { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.45rem; }
+      .key { min-height: 30px; padding: 0.2rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; font-size: 0.82rem; white-space: nowrap; }
+      .key:hover { background: var(--lane); border-color: var(--muted); }
+      #closed { margin-top: 0; }
+      .chip { display: inline-block; margin-top: 0.3rem; font-size: 0.75rem; padding: 0.05rem 0.4rem; border-radius: 4px; background: var(--chip); color: var(--muted); }
+      .chip.late { background: var(--late-bg); color: var(--late); }
+      .chip.soon { background: var(--soon-bg); color: var(--soon); }
+      .table-wrap { overflow-x: auto; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+      th { text-align: left; font-weight: 600; color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 0.5rem 0.4rem; border-bottom: 1px solid var(--line); }
+      td { padding: 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+      td.num, th.num { text-align: right; white-space: nowrap; }
+      tr.total td { font-weight: 600; border-bottom: 0; }
+      .log { list-style: none; margin: 0.9rem 0 0; padding: 0; display: grid; gap: 0.5rem; font-size: 0.9rem; }
+      .log time { color: var(--muted); font-size: 0.8rem; margin-right: 0.35rem; }
+      .tag { display: inline-block; font-size: 0.75rem; padding: 0 0.35rem; border-radius: 4px; margin-right: 0.35rem; background: var(--chip); color: var(--muted); }
+      .tag.won { background: var(--ok-bg); color: var(--ok); }
+      .tag.lost { background: var(--late-bg); color: var(--late); }
+      .demo-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 0 0 1rem; padding: 0.5rem 0.65rem; border: 1px solid var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--card) 88%, var(--accent)); font-size: 0.85rem; }
+      .demo-banner[hidden] { display: none; }
+      .demo-reset { flex: none; min-height: 36px; padding: 0.3rem 0.7rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; }
+      .note { color: var(--muted); font-size: 0.85rem; margin: 0.75rem 0 0; }
+      @media (max-width: 760px) {
+        .board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      }
+      @media (max-width: 640px) {
+        .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .tile b { font-size: 1.15rem; }
+        .board { grid-template-columns: minmax(0, 1fr); }
+        .due li { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
+        .due li > .key { justify-self: start; }
+        table { font-size: 0.82rem; }
+        th { font-size: 0.7rem; letter-spacing: 0; padding: 0 0.3rem 0.4rem; }
+        td { padding: 0.45rem 0.3rem; }
+      }
+    </style>
+    <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:0 0 12px;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--line,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+    <style data-app-shell="2">
+    /* Shared app furniture from the Gezel app UX guide. The page owns everything else. */
+    :root{--app-action:var(--gezel-component-accent,#805128);--app-on-action:#fffaf3;--app-banner-bg:#f3eddf;--app-banner-line:#d6cbb8}
+    :root[data-theme=dark]{--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}
+    @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}}
+    main h1{font-weight:400}
+    html[data-gezel-fullscreen=true] main h1{font-size:clamp(28px,3vw,40px);margin-top:0}
+    .app-tabs{margin:20px 0 24px}
+    .app-actionbar{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin:16px 0 24px}
+    .app-panel>.app-actionbar:first-child{margin-top:0}
+    .app-settings{display:grid;gap:16px;max-width:760px;margin:0 0 24px}
+    .app-search{margin:0}
+    .app-search gezel-collection-filter{margin:0 0 12px;max-width:540px}
+    .app-primary{min-height:44px;padding:8px 16px;border:1px solid var(--app-action);border-radius:6px;background:var(--app-action);color:var(--app-on-action);font-weight:600}
+    .app-primary:disabled{display:none}
+    main li.empty{display:block;grid-column:1/-1}
+    html[data-app-legacy] [data-app-action]{display:none!important}
+    [data-gezel-demo-banner]:not([hidden]){display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin:0 0 16px;padding:8px 8px 8px 14px;border:1px solid var(--app-banner-line);border-radius:10px;background:var(--app-banner-bg);color:inherit;font-size:14px;line-height:1.4}
+    [data-gezel-demo-banner] button{min-height:32px;padding:4px 12px;border:1px solid var(--app-banner-line);border-radius:6px;background:transparent;color:inherit;font-size:13px}
+    @media(max-width:620px){.tiles,.stats,.summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:nth-child(3):last-child){grid-template-columns:repeat(3,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:only-child){grid-template-columns:minmax(0,1fr)!important}}
+    </style>
+    <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script>
+  </head>
+  <body>
+    <main>
+      <p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong>: Brightline Electric’s sample pipeline. Changes stay in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Sales pipeline</h1>
+      <p class="sub" id="sub">Loading the pipeline…</p>
+      <div class="tiles">
+        <div class="tile"><b id="t-open">$0</b><span id="t-open-label">Open pipeline</span></div>
+        <div class="tile"><b id="t-weighted">$0</b><span>Weighted forecast</span></div>
+        <div class="tile"><b id="t-due">0</b><span>Follow-ups due now</span></div>
+        <div class="tile"><b id="t-won">$0</b><span>Won, last 30 days</span></div>
+      </div>
+      <section id="follow-section">
+        <h2>Follow-ups</h2>
+        <ul class="due" id="follow"></ul>
+        <p class="meta" id="unset" hidden></p>
+      </section>
+      <section id="stages-section">
+        <h2>Deals by stage</h2>
+        <div class="board" id="board"></div>
+      </section>
+      <section id="forecast-section">
+        <h2>Forecast</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Expected close</th><th class="num">Deals</th><th class="num">Value</th><th class="num">Weighted</th></tr></thead>
+            <tbody id="forecast-body"></tbody>
+          </table>
+        </div>
+        <p class="note">The weighted forecast counts each open deal at its stage’s usual chance (lead 10%, qualified 25%, proposal 50%, negotiation 75%) unless you set one. It is an estimate from your own numbers, not a promise or financial advice.</p>
+      </section>
+      <section id="closed-section">
+        <h2>Won and lost</h2>
+        <ul class="log" id="closed"></ul>
+      </section>
+      <section id="activity-section">
+        <h2>Recent activity</h2>
+        <ul class="log" id="activity"></ul>
+      </section>
+    </main>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        // ── pipeline-rules-start ──
+        // Pure derivations: money in integer cents, a deal's chance and weighted
+        // value, local calendar days for follow-ups, finding a deal by name, and the
+        // pipeline picture the crew reads. Kept self-contained between these
+        // sentinels so unit tests execute the shipped bytes.
+        var DAY_MS = 86400000;
+        var STAGES = ['lead', 'qualified', 'proposal', 'negotiation', 'won', 'lost'];
+        var OPEN_STAGES = ['lead', 'qualified', 'proposal', 'negotiation'];
+        var CHANCE = { lead: 10, qualified: 25, proposal: 50, negotiation: 75, won: 100, lost: 0 };
+        var KINDS = ['call', 'email', 'meeting', 'note'];
+        var TOUCHES = ['call', 'email', 'meeting', 'note', 'stage', 'won', 'lost'];
+        var NAME_STOP = ['the', 'and', 'for', 'with', 'our', 'deal', 'job', 'quote', 'bid'];
+
+        function pad(n) {
+          return n < 10 ? '0' + n : String(n);
+        }
+        function localDay(ms) {
+          var d = new Date(ms);
+          return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+        }
+        function normalizeDate(text) {
+          var raw = String(text || '').trim();
+          if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+          var parsed = Date.parse(raw);
+          return isFinite(parsed) ? localDay(parsed) : null;
+        }
+        function daysLeft(day, nowMs) {
+          var due = Date.parse(String(day).slice(0, 10) + 'T00:00:00');
+          var today = Date.parse(localDay(nowMs) + 'T00:00:00');
+          return Math.round((due - today) / DAY_MS);
+        }
+        function addDays(day, n) {
+          var d = new Date(String(day).slice(0, 10) + 'T12:00:00');
+          d.setDate(d.getDate() + n);
+          return localDay(d.getTime());
+        }
+        function when(days) {
+          if (days < 0) return -days + (days === -1 ? ' day late' : ' days late');
+          if (days === 0) return 'today';
+          if (days === 1) return 'tomorrow';
+          return 'in ' + days + ' days';
+        }
+        function ago(days) {
+          return days <= 0 ? 'today' : days === 1 ? 'yesterday' : days + ' days ago';
+        }
+        // Dollars as a number or text ('$12,400', '95.50') to integer cents; null when it is not money.
+        function toCents(value) {
+          if (typeof value === 'string') value = Number(value.replace(/[$,\s]/g, ''));
+          if (typeof value !== 'number' || !isFinite(value)) return null;
+          return (value < 0 ? -1 : 1) * Math.round(Math.abs(value) * 100);
+        }
+        function money(cents) {
+          var n = Math.round(Number(cents) || 0);
+          var abs = Math.abs(n);
+          var whole = String(Math.floor(abs / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+          return (n < 0 ? '-$' : '$') + whole + (abs % 100 ? '.' + pad(abs % 100) : '');
+        }
+        function fold(text) {
+          return String(text || '')
+            .normalize('NFD')
+            .replace(/[̀-ͯ]/g, '')
+            .replace(/[‘’]/g, "'")
+            .toLowerCase()
+            .trim();
+        }
+        function isOpen(record) {
+          return OPEN_STAGES.indexOf(record.status) >= 0;
+        }
+        function chanceOf(record) {
+          var p = record.fields && record.fields.probability;
+          return typeof p === 'number' && p >= 0 && p <= 100 ? p : CHANCE[record.status] || 0;
+        }
+        function valueOf(record) {
+          return Number(record.fields && record.fields.valueCents) || 0;
+        }
+        // Value times chance, rounded half up to the cent.
+        function weighted(record) {
+          return Math.floor((valueOf(record) * chanceOf(record) + 50) / 100);
+        }
+        function sum(records, of) {
+          return records.reduce(function (total, r) {
+            return total + of(r);
+          }, 0);
+        }
+        // The deal a person means: its id, its exact title, a title or company that
+        // contains what they wrote, or one whose name holds every word they used.
+        // Several matches prefer the open deals; a tie is an error that names them.
+        function findDeal(records, input) {
+          if (input.id) {
+            var byId = records.filter(function (r) {
+              return r.id === String(input.id).trim();
+            });
+            if (byId.length) return byId[0];
+            if (!input.title && !input.company) throw new Error("No deal '" + input.id + "'. " + roll(records));
+          }
+          var wanted = fold(input.title || input.company);
+          if (!wanted) throw new Error("Pass 'id' (e.g. 'deal-3') or the deal's 'title'. " + roll(records));
+          var name = function (r) {
+            return fold(r.fields.title);
+          };
+          var both = function (r) {
+            return name(r) + ' ' + fold(r.fields.company);
+          };
+          var words = wanted.split(/[^a-z0-9']+/).filter(function (w) {
+            return w.length > 2 && NAME_STOP.indexOf(w) < 0;
+          });
+          var tiers = [
+            function (r) {
+              return name(r) === wanted;
+            },
+            function (r) {
+              return name(r).indexOf(wanted) >= 0 || fold(r.fields.company) === wanted;
+            },
+            function (r) {
+              return (
+                words.length > 0 &&
+                words.every(function (w) {
+                  return both(r).indexOf(w) >= 0 || both(r).indexOf(w.replace(/s$/, '')) >= 0;
+                })
+              );
+            },
+          ];
+          for (var i = 0; i < tiers.length; i++) {
+            var hits = records.filter(tiers[i]);
+            if (hits.length > 1) {
+              var open = hits.filter(isOpen);
+              if (open.length) hits = open;
+            }
+            if (hits.length === 1) return hits[0];
+            if (hits.length > 1) {
+              throw new Error(
+                "More than one deal matches '" + (input.title || input.company) + "': " +
+                  hits.map(function (r) { return r.id + ' ' + r.fields.title; }).join(', ') + '. Pass id.',
+              );
+            }
+          }
+          throw new Error("No deal matches '" + (input.title || input.company) + "'. " + roll(records));
+        }
+        function roll(records) {
+          var open = records.filter(isOpen);
+          return open.length
+            ? 'Open deals: ' + open.map(function (r) { return r.id + ' ' + r.fields.title; }).join(', ') + '.'
+            : 'There are no open deals.';
+        }
+        function lastTouch(record, events) {
+          var mine = events.filter(function (e) {
+            return e.data && e.data.dealId === record.id && TOUCHES.indexOf(e.kind) >= 0;
+          });
+          return mine.length ? mine[mine.length - 1].at : record.createdAt;
+        }
+        function dealLine(record, events, nowMs) {
+          var f = record.fields || {};
+          var head = record.id;
+          if (f.company && fold(f.title).indexOf(fold(f.company)) < 0) head += ', ' + f.company;
+          if (f.contact) head += ', contact ' + f.contact;
+          head += ', ' + record.status + ', ' + money(valueOf(record));
+          if (isOpen(record)) head += ' at ' + chanceOf(record) + '% = ' + money(weighted(record)) + ' weighted';
+          var parts = [head];
+          if (f.followUpAt) parts.push('follow up ' + when(daysLeft(f.followUpAt, nowMs)) + ' (' + f.followUpAt + ')' + (f.nextStep ? ': ' + f.nextStep : ''));
+          else if (isOpen(record)) parts.push('no follow-up set');
+          if (isOpen(record) && f.closeAt) parts.push('expected to close ' + f.closeAt);
+          if (!isOpen(record) && f.closedAt) parts.push(record.status + ' ' + f.closedAt + (f.lostReason ? ': ' + f.lostReason : ''));
+          var touched = lastTouch(record, events);
+          if (touched) parts.push('last touch ' + ago(-daysLeft(localDay(Date.parse(touched)), nowMs)));
+          return f.title + ' (' + parts.join('; ') + ')';
+        }
+        function followLine(record, nowMs) {
+          var f = record.fields;
+          return (
+            f.title + ' (' + record.id + (f.contact ? ', ' + f.contact : '') + ') ' + when(daysLeft(f.followUpAt, nowMs)) +
+            (f.nextStep ? ': ' + f.nextStep : '')
+          );
+        }
+        function picture(records, events, nowMs, withinDays) {
+          var open = records.filter(isOpen);
+          var byFollow = function (a, b) {
+            return String(a.fields.followUpAt).localeCompare(String(b.fields.followUpAt));
+          };
+          var due = open
+            .filter(function (r) {
+              return r.fields.followUpAt && daysLeft(r.fields.followUpAt, nowMs) <= withinDays;
+            })
+            .sort(byFollow);
+          var dueNow = due.filter(function (r) {
+            return daysLeft(r.fields.followUpAt, nowMs) <= 0;
+          });
+          var unset = open.filter(function (r) {
+            return !r.fields.followUpAt;
+          });
+          var month = localDay(nowMs).slice(0, 7);
+          var closing = open.filter(function (r) {
+            return String(r.fields.closeAt || '').slice(0, 7) === month;
+          });
+          var recent = function (status) {
+            return records.filter(function (r) {
+              return r.status === status && r.fields.closedAt && -daysLeft(r.fields.closedAt, nowMs) <= 30;
+            });
+          };
+          var won = recent('won');
+          var lost = recent('lost');
+          var decided = records.filter(function (r) {
+            return r.status === 'won' || r.status === 'lost';
+          });
+          var wonAll = decided.filter(function (r) {
+            return r.status === 'won';
+          });
+          var parts = [
+            open.length + (open.length === 1 ? ' open deal' : ' open deals') + ' worth ' + money(sum(open, valueOf)) +
+              '; weighted forecast ' + money(sum(open, weighted)) + '.',
+          ];
+          // One list, overdue first: a model asked about today reads a separate overdue list as out of scope.
+          parts.push(
+            due.length
+              ? 'Follow-ups within ' + withinDays + ' days, overdue first: ' + due.map(function (r) { return followLine(r, nowMs); }).join(' | ') + '.'
+              : 'No follow-ups due in the next ' + withinDays + ' days.',
+          );
+          if (unset.length) parts.push('No follow-up set: ' + unset.map(function (r) { return r.fields.title + ' (' + r.id + ')'; }).join(', ') + '.');
+          var stages = OPEN_STAGES.filter(function (s) {
+            return open.some(function (r) { return r.status === s; });
+          }).map(function (s) {
+            var here = open.filter(function (r) { return r.status === s; });
+            return s + ' (' + here.length + ', ' + money(sum(here, valueOf)) + '): ' + here.map(function (r) { return dealLine(r, events, nowMs); }).join(' | ');
+          });
+          if (stages.length) parts.push('Open deals by stage: ' + stages.join('. ') + '.');
+          if (closing.length) {
+            parts.push(
+              'Expected to close this month: ' + closing.length + (closing.length === 1 ? ' deal, ' : ' deals, ') + money(sum(closing, valueOf)) +
+                ', weighted ' + money(sum(closing, weighted)) + '.',
+            );
+          }
+          if (won.length || lost.length) {
+            parts.push(
+              'Last 30 days: won ' + won.length + ' (' + money(sum(won, valueOf)) + ')' +
+                (won.length ? ': ' + won.map(function (r) { return r.fields.title; }).join(', ') : '') +
+                '; lost ' + lost.length + ' (' + money(sum(lost, valueOf)) + ')' +
+                (lost.length ? ': ' + lost.map(function (r) { return r.fields.title + (r.fields.lostReason ? ' (' + r.fields.lostReason + ')' : ''); }).join('; ') : '') + '.',
+            );
+          }
+          if (decided.length) {
+            parts.push('Win rate: ' + wonAll.length + ' of ' + decided.length + ' decided deals (' + Math.round((wonAll.length / decided.length) * 100) + '%).');
+          }
+          return {
+            open: open.length,
+            openValueCents: sum(open, valueOf),
+            weightedCents: sum(open, weighted),
+            followUpsDue: dueNow.length,
+            summary: records.length ? parts.join(' ') : 'No deals on the pipeline yet.',
+          };
+        }
+        // ── pipeline-rules-end ──
+
+        function daysFromNow(n) { return localDay(Date.now() + n * DAY_MS); }
+        function stampFromNow(n, hour) { var d = new Date(Date.now() + n * DAY_MS); d.setHours(hour || 10, 0, 0, 0); return d.toISOString(); }
+        function deal(id, status, fields, createdDaysAgo) { return { id: id, status: status, fields: fields, createdAt: stampFromNow(-createdDaysAgo), updatedAt: stampFromNow(-1), history: [] }; }
+
+        // ── demo pipeline (used only when the page opens outside Gezel); dates are relative so it never goes stale ──
+        var demoDeals = { version: 1, stages: STAGES.slice(), records: [
+          deal('deal-1', 'negotiation', { title: 'Harbor Street Café kitchen rewire', company: 'Harbor Street Café', contact: 'Dana', valueCents: 606042, followUpAt: daysFromNow(0), nextStep: 'Confirm the start date and permit timing', closeAt: daysFromNow(6), source: 'Repeat client' }, 24),
+          deal('deal-2', 'proposal', { title: 'Fernwood Studio office lighting retrofit', company: 'Fernwood Studio', contact: 'Mei', valueCents: 1444968, followUpAt: daysFromNow(-2), nextStep: 'Ask whether Mei read the LED proposal', closeAt: daysFromNow(18), source: 'Referral' }, 21),
+          deal('deal-3', 'qualified', { title: 'Juniper Press warehouse EV chargers', company: 'Juniper Press', contact: 'Owen', valueCents: 571092, followUpAt: daysFromNow(3), nextStep: 'Site visit to measure the main panel', closeAt: daysFromNow(35) }, 9),
+          deal('deal-4', 'lead', { title: 'Maple Row duplex panel upgrades', company: 'Maple Row Properties', contact: 'Grace', valueCents: 960000, followUpAt: daysFromNow(5), nextStep: 'Call back with a rough range', closeAt: daysFromNow(50), source: 'Website form' }, 2),
+          deal('deal-5', 'lead', { title: 'Northside Brewing taproom lighting', company: 'Northside Brewing', contact: 'Theo', valueCents: 420000, closeAt: daysFromNow(70), source: 'Trade show' }, 6),
+          deal('deal-6', 'won', { title: 'Bayside Bakery oven circuit', company: 'Bayside Bakery', contact: 'Rosa', valueCents: 152883, closedAt: daysFromNow(-12) }, 30),
+          deal('deal-7', 'lost', { title: 'Cedar Hill Church sound booth wiring', company: 'Cedar Hill Church', contact: 'Pastor Hale', valueCents: 438560, closedAt: daysFromNow(-20), lostReason: 'Went with a lower bid' }, 34),
+        ] };
+        var demoActivity = { version: 1, events: [
+          { at: stampFromNow(-20, 15), kind: 'lost', note: 'Went with a lower bid', data: { dealId: 'deal-7', from: 'proposal', to: 'lost' } },
+          { at: stampFromNow(-14, 11), kind: 'meeting', note: 'Walked the studio with Mei; 48 fixtures to replace.', data: { dealId: 'deal-2' } },
+          { at: stampFromNow(-12, 16), kind: 'won', note: 'Signed; start Monday.', data: { dealId: 'deal-6', from: 'negotiation', to: 'won' } },
+          { at: stampFromNow(-9, 9), kind: 'email', note: 'Sent the LED retrofit proposal.', data: { dealId: 'deal-2' } },
+          { at: stampFromNow(-5, 14), kind: 'email', note: 'Sent the kitchen rewire quote to Dana.', data: { dealId: 'deal-1' } },
+          { at: stampFromNow(-4, 10), kind: 'call', note: 'Left a voicemail with Mei.', data: { dealId: 'deal-2' } },
+          { at: stampFromNow(-3, 13), kind: 'call', note: 'Owen wants chargers for four delivery vans.', data: { dealId: 'deal-3' } },
+          { at: stampFromNow(-2, 8), kind: 'note', note: 'Web form: two duplex units need panel upgrades.', data: { dealId: 'deal-4' } },
+          { at: stampFromNow(-1, 17), kind: 'call', note: 'Dana is comparing one other bid and wants to start before the holidays.', data: { dealId: 'deal-1' } },
+        ] };
+
+        // The pipeline-store actions, mirrored for the demo so the sample behaves like the live pipeline.
+        function given(v) { return v !== undefined && v !== null && v !== ''; }
+        function todayDay() { return localDay(Date.now()); }
+        function demoView(note) {
+          var v = picture(demoDeals.records, demoActivity.events, Date.now(), 7);
+          return { open: v.open, openValue: v.openValueCents / 100, weightedForecast: Math.round(v.weightedCents) / 100, followUpsDue: v.followUpsDue, summary: (note ? note + ' ' : '') + v.summary };
+        }
+        function followUpInput(input) {
+          if (typeof input.inDays === 'number' && isFinite(input.inDays)) return addDays(todayDay(), Math.max(0, Math.round(input.inDays)));
+          if (given(input.followUpAt)) { var d = normalizeDate(input.followUpAt); if (!d) throw new Error("followUpAt must be a date, e.g. '2026-11-20', or pass inDays."); return d; }
+          return undefined;
+        }
+        function record(kind, note, data) { demoActivity.events.push({ at: new Date().toISOString(), kind: kind, note: note, data: data }); }
+        function moveRecord(r, to, why) {
+          if (STAGES.indexOf(to) < 0) throw new Error('status must be one of: ' + STAGES.join(', ') + '.');
+          if (r.status === to) return r.fields.title + ' is already ' + to + '.';
+          var from = r.status, closing = to === 'won' || to === 'lost';
+          r.fields.probability = null; r.fields.closedAt = closing ? todayDay() : null;
+          if (closing) { r.fields.followUpAt = null; r.fields.nextStep = null; }
+          if (to === 'lost' && why) r.fields.lostReason = why;
+          r.status = to; r.updatedAt = new Date().toISOString();
+          record(closing ? to : 'stage', why || 'Moved from ' + from + ' to ' + to + '.', { dealId: r.id, from: from, to: to });
+          return r.fields.title + ' moved from ' + from + ' to ' + to + (to === 'won' ? ': ' + money(valueOf(r)) + ' won' : to === 'lost' && why ? ': ' + why : '') + '.';
+        }
+        function demoAdd(input) {
+          var all = demoDeals.records, title = String(input.title || input.company || '').trim(), existing = null;
+          if (given(input.id)) existing = findDeal(all, { id: input.id, title: input.title });
+          else if (given(input.valueChange)) existing = findDeal(all, input);
+          else if (title) existing = all.filter(function (r) { return fold(r.fields.title) === fold(title); })[0] || null;
+          if (!existing && !title) throw new Error("add needs 'title': the job or opportunity.");
+          var status = given(input.status) ? String(input.status).trim().toLowerCase() : '';
+          if (status && STAGES.indexOf(status) < 0) throw new Error('status must be one of: ' + STAGES.join(', ') + '.');
+          var fields = {};
+          ['company', 'contact', 'source', 'nextStep'].forEach(function (k) { if (input[k]) fields[k] = String(input[k]).trim(); });
+          if (given(input.closeAt)) { var close = normalizeDate(input.closeAt); if (!close) throw new Error("closeAt must be a date, e.g. '2026-12-15'."); fields.closeAt = close; }
+          var follow = followUpInput(input);
+          if (follow) fields.followUpAt = follow;
+          if (given(input.probability)) { var p = Number(input.probability); if (!isFinite(p) || p < 0 || p > 100) throw new Error('probability is a percent from 0 to 100.'); fields.probability = Math.round(p); }
+          if (given(input.value) && !given(input.valueChange)) { var cents = toCents(input.value); if (cents === null || cents < 0) throw new Error('value is the amount in dollars, e.g. 12400.'); fields.valueCents = cents; }
+          if (existing) {
+            var valueNote = '';
+            if (given(input.valueChange)) {
+              var change = toCents(input.valueChange), before = valueOf(existing);
+              if (change === null) throw new Error('valueChange is an amount in dollars, e.g. 3400 or -500.');
+              if (before + change < 0) throw new Error(existing.fields.title + ' is ' + money(before) + '; that change would take it below zero.');
+              fields.valueCents = before + change;
+              valueNote = ': value ' + money(before) + (change < 0 ? ' - ' + money(-change) : ' + ' + money(change)) + ' = ' + money(before + change);
+            } else if (fields.valueCents !== undefined) valueNote = ': value now ' + money(fields.valueCents);
+            var note = 'Updated ' + existing.fields.title + valueNote + '.';
+            if (given(input.id) && input.title && fold(input.title) !== fold(existing.fields.title)) fields.title = String(input.title).trim();
+            Object.assign(existing.fields, fields);
+            existing.updatedAt = new Date().toISOString();
+            if (status && status !== existing.status) note += ' ' + moveRecord(existing, status, input.note);
+            else if (input.note) record('note', input.note, { dealId: existing.id });
+            return demoView(note);
+          }
+          var start = status || 'lead', closing = start === 'won' || start === 'lost';
+          var id = 'deal-' + (all.reduce(function (m, r) { return Math.max(m, Number(String(r.id).split('-')[1]) || 0); }, 0) + 1);
+          var fresh = { id: id, status: start, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), history: [], fields: Object.assign({ title: title, valueCents: 0 }, fields, closing ? { closedAt: todayDay() } : {}) };
+          all.push(fresh);
+          record(closing ? start : 'note', input.note || 'Deal added at ' + start + '.', { dealId: id });
+          return demoView('Added ' + id + ': ' + title + ', ' + money(valueOf(fresh)) + ', ' + start + '.');
+        }
+        function demoMove(input) {
+          var r = findDeal(demoDeals.records, input);
+          if (!given(input.status)) throw new Error("move needs 'status': qualified, proposal, negotiation, won, or lost.");
+          return demoView(moveRecord(r, String(input.status).trim().toLowerCase(), input.note));
+        }
+        function demoLog(input) {
+          var r = findDeal(demoDeals.records, input);
+          if (!input.note) throw new Error("log needs 'note': what happened.");
+          var kind = KINDS.indexOf(String(input.kind)) >= 0 ? String(input.kind) : 'note';
+          record(kind, input.note, { dealId: r.id });
+          var next = followUpInput(input), due = typeof r.fields.followUpAt === 'string' && daysLeft(r.fields.followUpAt, Date.now()) <= 0;
+          if (next) { r.fields.followUpAt = next; if (input.nextStep) r.fields.nextStep = String(input.nextStep).trim(); }
+          else if (kind !== 'note' && due) { r.fields.followUpAt = null; r.fields.nextStep = null; }
+          r.updatedAt = new Date().toISOString();
+          return demoView('Logged ' + (kind === 'email' ? 'an ' : 'a ') + kind + ' on ' + r.fields.title + (next ? '; next follow-up ' + next + (input.nextStep ? ': ' + String(input.nextStep).trim() : '') + '.' : kind !== 'note' && due ? '; that was the follow-up that was due, so none is set now.' : '.'));
+        }
+        function demoFollowUp(input) {
+          var r = findDeal(demoDeals.records, input), next = followUpInput(input);
+          if (!next) throw new Error('follow_up needs followUpAt (YYYY-MM-DD) or inDays.');
+          if (!isOpen(r)) throw new Error(r.fields.title + ' is ' + r.status + '; move it back to an open stage first.');
+          r.fields.followUpAt = next;
+          if (input.nextStep) r.fields.nextStep = String(input.nextStep).trim();
+          record('follow-up', 'Follow up ' + next + (input.nextStep ? ': ' + String(input.nextStep).trim() : '') + '.', { dealId: r.id });
+          return demoView(r.fields.title + ': follow up ' + when(daysLeft(next, Date.now())) + ' (' + next + ')' + (input.nextStep ? ', ' + String(input.nextStep).trim() : '') + '.');
+        }
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'pipeline/index.html', typeName: 'Sales Pipeline', params: { business: 'Brightline Electric, a three-person electrical contractor' } },
+          tools: {
+            page_add_deal: demoAdd,
+            add_deal: demoAdd,
+            page_log_activity: demoLog,
+            log_activity: demoLog,
+            page_move_deal: demoMove,
+            move_deal: demoMove,
+            schedule_follow_up: demoFollowUp,
+            pipeline_status: function () { return demoView(''); },
+            list_deals: function () { return demoView(''); },
+          },
+          data: {
+            'deals.json': function () { return demoDeals; },
+            'activity.json': function () { return demoActivity; },
+          },
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+        function applyTheme(mode) { document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light'); }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function el(tag, text, cls) { var e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
+        function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+        function niceDate(day) { var d = new Date(String(day).slice(0, 10) + 'T12:00:00'); return isFinite(d) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : String(day); }
+        function whole(cents) { return money(Math.round((Number(cents) || 0) / 100) * 100); }
+        function chipClass(days) { return days < 0 ? 'late' : days <= 1 ? 'soon' : ''; }
+        // A key on a record opens that action's dialog with the deal already chosen (the app shell wires data-app-action).
+        function rowKey(label, tool, values, aria) {
+          var b = el('button', label, 'key');
+          b.type = 'button';
+          b.setAttribute('aria-label', aria);
+          b.setAttribute('data-app-action', tool);
+          b.setAttribute('data-app-values', JSON.stringify(values));
+          return b;
+        }
+        function cap(text) { return String(text).charAt(0).toUpperCase() + String(text).slice(1); }
+
+        function render(dealDoc, logDoc) {
+          var records = Array.isArray(dealDoc.records) ? dealDoc.records : [];
+          var events = Array.isArray(logDoc.events) ? logDoc.events : [];
+          var now = Date.now(), view = picture(records, events, now, 7);
+          var open = records.filter(isOpen);
+          var wonRecent = records.filter(function (r) { return r.status === 'won' && r.fields.closedAt && -daysLeft(r.fields.closedAt, now) <= 30; });
+
+          document.getElementById('t-open').textContent = money(view.openValueCents);
+          document.getElementById('t-open-label').textContent = 'Open pipeline, ' + plural(open.length, 'deal', 'deals');
+          document.getElementById('t-weighted').textContent = money(view.weightedCents);
+          document.getElementById('t-due').textContent = view.followUpsDue;
+          document.getElementById('t-due').parentNode.classList.toggle('late', view.followUpsDue > 0);
+          document.getElementById('t-won').textContent = money(sum(wonRecent, valueOf));
+          document.getElementById('t-won').parentNode.classList.toggle('ok', wonRecent.length > 0);
+          document.getElementById('sub').textContent = !records.length
+            ? 'No deals yet. Tell your account manager about a lead, or add a deal.'
+            : plural(open.length, 'open deal', 'open deals') + ', weighted forecast ' + money(view.weightedCents) + '. ' +
+              (view.followUpsDue ? plural(view.followUpsDue, 'follow-up is', 'follow-ups are') + ' due now.' : 'No follow-ups due today.');
+
+          var follow = document.getElementById('follow');
+          follow.replaceChildren();
+          var due = open.filter(function (r) { return r.fields.followUpAt && daysLeft(r.fields.followUpAt, now) <= 7; })
+            .sort(function (a, b) { return String(a.fields.followUpAt).localeCompare(String(b.fields.followUpAt)); });
+          if (!due.length) follow.append(el('li', open.length ? 'No follow-ups in the next 7 days.' : 'Nothing to follow up yet.', 'empty'));
+          due.forEach(function (r) {
+            var d = daysLeft(r.fields.followUpAt, now), li = el('li'), what = el('div', undefined, 'what');
+            li.append(el('span', cap(when(d)), 'when ' + chipClass(d)));
+            what.append(el('b', r.fields.title));
+            what.append(el('small', [r.fields.nextStep, r.fields.contact ? 'with ' + r.fields.contact : '', r.status, money(valueOf(r))].filter(Boolean).join(' · ')));
+            li.append(what, rowKey('Log a call', 'log_activity', { id: r.id }, 'Log a call or email for ' + r.fields.title));
+            follow.append(li);
+          });
+          var unset = open.filter(function (r) { return !r.fields.followUpAt; });
+          var unsetLine = document.getElementById('unset');
+          unsetLine.hidden = !unset.length;
+          unsetLine.textContent = unset.length ? 'No follow-up set: ' + unset.map(function (r) { return r.fields.title; }).join(', ') + '.' : '';
+
+          var board = document.getElementById('board');
+          board.replaceChildren();
+          OPEN_STAGES.forEach(function (stage) {
+            var here = open.filter(function (r) { return r.status === stage; });
+            var lane = el('div', undefined, 'lane'), head = el('h3', stage), cards = el('div', undefined, 'cards');
+            head.append(el('span', here.length + ' · ' + whole(sum(here, valueOf))));
+            lane.append(head, cards);
+            if (!here.length) cards.append(el('p', 'None', 'empty'));
+            here.forEach(function (r) {
+              var card = el('div', undefined, 'deal'), m = el('span', undefined, 'money');
+              card.append(el('b', r.fields.title));
+              if (r.fields.company && fold(r.fields.title).indexOf(fold(r.fields.company)) < 0 || r.fields.contact) {
+                card.append(el('span', [fold(r.fields.title).indexOf(fold(r.fields.company)) < 0 ? r.fields.company : '', r.fields.contact].filter(Boolean).join(' · '), 'meta'));
+              }
+              m.append(document.createTextNode(money(valueOf(r)) + ' · '));
+              m.append(el('em', chanceOf(r) + '%'));
+              card.append(m);
+              if (r.fields.followUpAt) { var d = daysLeft(r.fields.followUpAt, now); card.append(el('span', 'Follow up ' + when(d), 'chip ' + chipClass(d))); }
+              else card.append(el('span', 'No follow-up', 'chip'));
+              var keys = el('div', undefined, 'deal-keys');
+              keys.append(rowKey('Log', 'log_activity', { id: r.id }, 'Log a call or email for ' + r.fields.title), rowKey('Move', 'move_deal', { id: r.id, status: OPEN_STAGES[OPEN_STAGES.indexOf(r.status) + 1] || 'won' }, 'Move ' + r.fields.title + ' to another stage'));
+              card.append(keys);
+              cards.append(card);
+            });
+            board.append(lane);
+          });
+
+          var body = document.getElementById('forecast-body');
+          body.replaceChildren();
+          var months = {};
+          open.forEach(function (r) { var key = r.fields.closeAt ? String(r.fields.closeAt).slice(0, 7) : 'none'; (months[key] = months[key] || []).push(r); });
+          var keys = Object.keys(months).sort(function (a, b) { return a === 'none' ? 1 : b === 'none' ? -1 : a.localeCompare(b); });
+          if (!keys.length) { var tr0 = el('tr'), td0 = el('td', 'No open deals.', 'empty'); td0.colSpan = 4; tr0.append(td0); body.append(tr0); }
+          keys.forEach(function (key) {
+            var rows = months[key], tr = el('tr');
+            tr.append(el('td', key === 'none' ? 'No date yet' : new Date(key + '-15T12:00:00').toLocaleDateString(undefined, { month: 'long', year: 'numeric' })));
+            tr.append(el('td', String(rows.length), 'num'), el('td', money(sum(rows, valueOf)), 'num'), el('td', money(sum(rows, weighted)), 'num'));
+            body.append(tr);
+          });
+          if (keys.length) {
+            var total = el('tr', undefined, 'total');
+            total.append(el('td', 'All open deals'), el('td', String(open.length), 'num'), el('td', money(view.openValueCents), 'num'), el('td', money(view.weightedCents), 'num'));
+            body.append(total);
+          }
+
+          var closed = document.getElementById('closed');
+          closed.replaceChildren();
+          var decided = records.filter(function (r) { return !isOpen(r) && r.fields.closedAt; })
+            .sort(function (a, b) { return String(b.fields.closedAt).localeCompare(String(a.fields.closedAt)); });
+          if (!decided.length) closed.append(el('li', 'No deals won or lost yet. Move a deal to won or lost when it closes.', 'empty'));
+          decided.slice(0, 5).forEach(function (r) {
+            var li = el('li');
+            li.append(el('span', r.status, 'tag ' + r.status));
+            li.append(el('time', niceDate(r.fields.closedAt)));
+            li.append(document.createTextNode(r.fields.title + ', ' + money(valueOf(r)) + (r.fields.lostReason ? ': ' + r.fields.lostReason : '')));
+            closed.append(li);
+          });
+          if (decided.length) {
+            var won = decided.filter(function (r) { return r.status === 'won'; }).length;
+            closed.append(el('li', 'Win rate: ' + won + ' of ' + decided.length + ' decided deals (' + Math.round((won / decided.length) * 100) + '%).', 'meta'));
+          }
+
+          var list = document.getElementById('activity');
+          list.replaceChildren();
+          var recent = events.slice(-6).reverse();
+          if (!recent.length) list.append(el('li', 'No activity yet.', 'empty'));
+          recent.forEach(function (e) {
+            var r = records.find(function (x) { return e.data && x.id === e.data.dealId; });
+            var li = el('li');
+            li.append(el('span', e.kind, 'tag ' + (e.kind === 'won' || e.kind === 'lost' ? e.kind : '')));
+            li.append(el('time', niceDate(e.at)));
+            li.append(document.createTextNode((r ? r.fields.title + ': ' : '') + (e.note || '')));
+            list.append(li);
+          });
+        }
+
+        window.addEventListener('gezel-app-data-changed', function () { loadPipeline(); });
+        window.loadPipeline = loadPipeline;
+        function loadPipeline() {
+          var revision = ++appLoadRevision;
+          return Promise.all([gezel.data.read('deals.json'), gezel.data.read('activity.json')]).then(function (values) {
+            if (appDisposed || revision !== appLoadRevision) return;
+            reportAppError(null);
+            render(values[0] || {}, values[1] || {});
+          }).catch(function (error) { if (!appDisposed && revision === appLoadRevision) reportAppError(error); });
+        }
+
+        loadPipeline();
+        appSubscriptions.push(gezel.data.watch('deals.json', function () { loadPipeline(); }));
+        appSubscriptions.push(gezel.data.watch('activity.json', function () { loadPipeline(); }));
+      })();
+    </script>
+    <script src="application.js" defer></script>
+  </body>
+</html>

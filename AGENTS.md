@@ -11,6 +11,8 @@ gezel role templates, craftbooks, scripts, data, and project defaults. Start wit
 the public [app authoring guide](https://github.com/bendyline/gezel/blob/main/docs/handboek/technical/building-ai-apps-inside-gezel.md),
 [page API guide](https://github.com/bendyline/gezel/blob/main/docs/handboek/technical/gezel-page-apis.md), and
 [page style guide](https://github.com/bendyline/gezel/blob/main/docs/handboek/technical/gezel-app-page-style-guide.md).
+Organize every page by the [app UX guide](https://github.com/bendyline/gezel/blob/main/docs/handboek/technical/gezel-app-ux-guide.md):
+Home and noun tabs, actions as keys that open dialogs, row actions, and inline settings.
 Then read [this catalog's page contract](docs/page-authoring.md).
 
 Use the shared `window.gezel` APIs and injected fonts. Keep type-owned pages

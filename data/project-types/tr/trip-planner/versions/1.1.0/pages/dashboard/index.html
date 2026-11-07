@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Trip planner</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2; --card: #fff; --ink: #2b2620; --muted: #7a7166;
+        --accent: #b5651d; --track: #ece5da; --good: #4a7c59; --warn: #a4552e;
+      }
+      :root[data-theme='dark'] {
+        --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+        --accent: #e0894a; --track: #3a352f; --good: #7fae8d; --warn: #d98a63;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+          --accent: #e0894a; --track: #3a352f; --good: #7fae8d; --warn: #d98a63;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 16px/1.5 var(--font-body, system-ui, sans-serif); background: var(--bg); color: var(--ink); padding: 1.5rem 1.25rem; }
+      main { max-width: 680px; margin: 0 auto; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.35rem; font-weight: 600; margin: 0 0 0.15rem; }
+      .sub { color: var(--muted); font-size: 0.95rem; margin: 0 0 0.9rem; }
+      .banner { border: 1px solid var(--accent); border-radius: 6px; padding: 0.45rem 0.7rem; font-size: 0.85rem; margin-bottom: 0.75rem; display: none; }
+      .banner.show { display: block; }
+      .note { margin: 0 0 0.85rem; padding: 0.5rem 0.65rem; border: 1px solid var(--track); border-radius: 6px; background: var(--card); color: var(--muted); font-size: 0.8rem; }
+      .cols { display: grid; grid-template-columns: 1.2fr 1fr; gap: 0.6rem; }
+      .panel { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.85rem 1rem; font-size: 0.95rem; margin: 0 0 0.75rem; }
+      .panel h2 { font-family: var(--font-ui, system-ui, sans-serif); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 0.5rem; }
+      .day { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) auto; gap: 0.6rem; padding: 0.5rem 0; align-items: start; }
+      .day + .day { border-top: 1px solid var(--track); }
+      .key { min-height: 32px; padding: 0.2rem 0.7rem; border: 1px solid color-mix(in srgb, var(--muted) 40%, var(--track)); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font-family: var(--font-ui, system-ui, sans-serif); font-size: 0.85rem; white-space: nowrap; }
+      .key:hover { border-color: var(--ink); }
+      @media (max-width: 520px) { .day { grid-template-columns: 5.5rem minmax(0, 1fr); } .day .key { grid-column: 2; justify-self: start; } }
+      .day .date { color: var(--muted); }
+      .day .date small { display: block; font-size: 0.8rem; }
+      .day .plan p { margin: 0; }
+      .day .plan p + p { color: var(--muted); }
+      .pack { list-style: none; margin: 0; padding: 0; }
+      .pack li { display: flex; gap: 0.5rem; align-items: center; min-height: 44px; margin: 0; cursor: pointer; }
+      .pack li.packed { color: var(--muted); text-decoration: line-through; cursor: default; }
+      .pack li + li { border-top: 1px solid var(--track); }
+      .pack .box { position: relative; display: inline-block; width: 1.05rem; height: 1.05rem; border: 1.5px solid var(--muted); border-radius: 4px; flex: none; }
+      .pack li.packed .box { background: var(--good); border-color: var(--good); }
+      .pack li.packed .box::after { content: ''; position: absolute; left: 0.3rem; top: 0.08rem; width: 0.3rem; height: 0.6rem; border: solid var(--card); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+      .pack-left { font-weight: 600; }
+      .journal { list-style: none; margin: 0; padding: 0; }
+      .journal li { color: var(--muted); margin: 0; padding: 0.4rem 0; }
+      .journal li + li { border-top: 1px solid var(--track); }
+      .journal li strong { color: var(--ink); font-weight: 600; }
+      .empty { color: var(--muted); font-style: italic; }
+      @media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+      .demo-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0 0 0.85rem;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--card) 88%, var(--accent));
+        color: var(--ink);
+        font-size: 0.8rem;
+      }
+      .demo-banner[hidden] { display: none; }
+      .demo-banner strong { font-weight: 700; }
+      .demo-reset {
+        flex: none;
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: var(--card);
+        color: var(--ink);
+        cursor: pointer;
+        font: inherit;
+      }
+      .demo-reset:hover { border-color: var(--ink); }
+    </style>
+  <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:20px 0;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--border,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}html[data-gezel-fullscreen=true] .board{min-width:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}.tiles,.stats,.summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}.board,.columns{max-width:100%;overflow-x:auto}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+    <style data-app-shell="2">
+    /* Shared app furniture from the Gezel app UX guide. The page owns everything else. */
+    :root{--app-action:var(--gezel-component-accent,#805128);--app-on-action:#fffaf3;--app-banner-bg:#f3eddf;--app-banner-line:#d6cbb8}
+    :root[data-theme=dark]{--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}
+    @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}}
+    main h1{font-weight:400}
+    html[data-gezel-fullscreen=true] main h1{font-size:clamp(28px,3vw,40px);margin-top:0}
+    .app-tabs{margin:20px 0 24px}
+    .app-actionbar{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin:16px 0 24px}
+    .app-panel>.app-actionbar:first-child{margin-top:0}
+    .app-settings{display:grid;gap:16px;max-width:760px;margin:0 0 24px}
+    .app-search{margin:0}
+    .app-search gezel-collection-filter{margin:0 0 12px;max-width:540px}
+    .app-primary{min-height:44px;padding:8px 16px;border:1px solid var(--app-action);border-radius:6px;background:var(--app-action);color:var(--app-on-action);font-weight:600}
+    .app-primary:disabled{display:none}
+    main li.empty{display:block;grid-column:1/-1}
+    html[data-app-legacy] [data-app-action]{display:none!important}
+    [data-gezel-demo-banner]:not([hidden]){display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin:0 0 16px;padding:8px 8px 8px 14px;border:1px solid var(--app-banner-line);border-radius:10px;background:var(--app-banner-bg);color:inherit;font-size:14px;line-height:1.4}
+    [data-gezel-demo-banner] button{min-height:32px;padding:4px 12px;border:1px solid var(--app-banner-line);border-radius:6px;background:transparent;color:inherit;font-size:13px}
+    @media(max-width:620px){.tiles,.stats,.summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:nth-child(3):last-child){grid-template-columns:repeat(3,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:only-child){grid-template-columns:minmax(0,1fr)!important}}
+    </style>
+  <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script></head>
+  <body>
+    <main>
+<p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong> — sample data stays in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <p class="note" id="browser-note" hidden>
+        Viewing from a browser tab — the trip stays live, but packing happens in the app's Output pane.
+      </p>
+      <div class="banner" id="banner"></div>
+      <h1 id="title">Trip planner</h1>
+      <p class="sub" id="sub">Loading the trip…</p>
+      <section class="panel" id="days-section">
+        <h2>Itinerary</h2>
+        <div id="days"><p class="empty">No days planned yet — sketch the spine with your trip planner.</p></div>
+      </section>
+      <section class="panel" id="pack-section">
+        <h2>Packing</h2>
+        <p class="sub" id="packcount" hidden><span class="pack-left" id="pack-left">0</span> <span id="pack-hint">to go. Tap an item once it is in the bag.</span></p>
+        <ul class="pack" id="pack"><li class="empty">Nothing listed yet.</li></ul>
+      </section>
+      <section class="panel" id="journal-section">
+        <h2>Journal</h2>
+        <ul class="journal" id="journal"><li class="empty">A line a day, once you're on the road.</li></ul>
+      </section>
+    </main>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        var busy = false;
+
+        // ── demo trip (used only when the page opens as a raw file) ──
+        var demoStart = new Date(Date.now() + 18 * 86400000);
+        var demoDate = function (offset) { return new Date(demoStart.getTime() + offset * 86400000).toISOString().slice(0, 10); };
+        var demoTrip = { destination: 'Lisbon', startDate: demoDate(0), travellers: '4', days: {} };
+        demoTrip.days[demoDate(0)] = 'Arrive, settle in, and walk the Alfama lanes.\nFado in the evening if you still have energy.';
+        demoTrip.days[demoDate(1)] = 'Markets, the tile museum, and a sunset miradouro.\nA slow lunch wherever looks good.';
+        demoTrip.days[demoDate(2)] = 'Day train to Sintra.\nBack in time for dinner, or stay for the sunset at Cabo da Roca.';
+        var demoPacking = { records: [
+          { id: 'pack-1', status: 'packed', fields: { name: 'Passport and wallet' } },
+          { id: 'pack-2', status: 'unpacked', fields: { name: 'Walking shoes' } },
+          { id: 'pack-3', status: 'unpacked', fields: { name: 'Light rain jacket' } },
+          { id: 'pack-4', status: 'unpacked', fields: { name: 'Phone charger' } },
+        ] };
+        var demoJournal = { events: [
+          { at: new Date(Date.now() - 86400000).toISOString(), note: 'Saved three neighborhood dinner options.' },
+          { at: new Date().toISOString(), note: 'Reserved the Sintra train and palace entry.' },
+        ] };
+        // The demo answers the way trip-store does: same day keys, same stages, same summary.
+        function demoDayKey(raw) {
+          var text = String(raw || '').trim(), iso = text.match(/^\d{4}-\d{2}-\d{2}/), numbered = text.match(/^(?:day\s*)?(\d{1,3})$/i);
+          return iso ? iso[0] : numbered ? 'Day ' + Number(numbered[1]) : text;
+        }
+        function demoPackItem(input) {
+          var wanted = String((input && input.item) || '').toLowerCase();
+          var item = demoPacking.records.find(function (r) { return r.id === (input && input.id); }) ||
+            (wanted ? demoPacking.records.find(function (r) { return String(r.fields.name).toLowerCase() === wanted; }) : null);
+          if (!item) throw new Error("Pass 'id' (e.g. 'pack-3') or an exact packing 'item'.");
+          item.status = 'packed';
+          return demoSummary();
+        }
+        function demoSummary(text) {
+          var unpacked = demoPacking.records.filter(function (r) { return r.status === 'unpacked'; }).length;
+          var days = Math.ceil((Date.parse(demoTrip.startDate) - Date.now()) / 86400000);
+          var count = Object.keys(demoTrip.days).length;
+          return {
+            daysPlanned: count,
+            unpacked: unpacked,
+            summary: text || ((/^\d+$/.test(demoTrip.travellers) ? demoTrip.travellers + ' travelers. ' : demoTrip.travellers ? demoTrip.travellers + '. ' : '') +
+              (days > 0 ? days + ' day' + (days === 1 ? '' : 's') + ' until departure. ' : 'Departure day! ') +
+              count + ' day' + (count === 1 ? '' : 's') + ' planned. Packing: ' + (unpacked ? unpacked + ' item' + (unpacked === 1 ? '' : 's') + ' still unpacked.' : 'all packed.')),
+          };
+        }
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'dashboard/index.html', typeName: 'Trip Planner', params: { destination: 'Lisbon', start: demoTrip.startDate, travellers: '4' } },
+          tools: {
+"page_plan_day": function(input) { demoTrip.days[demoDayKey(input.date)]=input.plan; return demoSummary(); },
+"page_pack_add": function(input) { demoPacking.records.push({id:'pack-'+(demoPacking.records.length+1),status:'unpacked',fields:{name:input.item}}); return demoSummary(); },
+"page_journal_entry": function(input) { demoJournal.events.push({at:new Date().toISOString(),note:input.note}); return demoSummary(); },
+"pack_check": demoPackItem,
+"set_trip": function(input) { if(!input.start&&!input.travellers&&!input.joining&&!input.destination)throw new Error("set_trip needs at least one of 'start', 'travellers', 'joining', or 'destination'."); if(input.start)demoTrip.startDate=String(input.start).trim(); if(input.travellers){var n=String(input.travellers).trim().match(/^(\d{1,3})\s*(?:people|persons|travell?ers|adults|guests|of us)?$/i);demoTrip.travellers=n?String(Number(n[1])):String(input.travellers).trim();} if(input.joining){var who=String(input.joining).trim(),party=String(demoTrip.travellers||'').trim();demoTrip.travellers=!party?who:/^\d+$/.test(party)?String(Number(party)+(/^\d+$/.test(who)?Number(who):who.split(/\s*(?:,|&|\band\b)\s*/).filter(Boolean).length)):party+', plus '+who;} if(input.destination)demoTrip.destination=String(input.destination).trim(); return demoSummary(); },
+"trip_status": function() { return demoSummary(); },
+"itinerary": function() { var keys=Object.keys(demoTrip.days).sort(); return demoSummary(keys.length?keys.map(function(k){return k+': '+demoTrip.days[k];}).join('\n'):'No days planned yet.'); },
+
+            mark_packed: function (input) {
+              var item = demoPacking.records.find(function (r) { return r.id === (input && input.id); });
+              if (!item) throw new Error("No packing item '" + (input && input.id) + "' in the demo list.");
+              return demoPackItem({ id: item.id });
+            },
+          },
+          data: {
+            'trip.json': function () { return demoTrip; },
+            'packing.json': function () { return demoPacking; },
+            'journal.json': function () { return demoJournal; },
+          },
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+        var browserMode = gezel.page.mode === 'browser';
+
+        function applyTheme(mode) {
+          document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light');
+        }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+        if (browserMode) document.getElementById('browser-note').hidden = false;
+
+        function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+        function setBanner(text) { var el = document.getElementById('banner'); el.textContent = text || ''; el.className = text ? 'banner show' : 'banner'; }
+        function invokeErrorText(err) {
+          if (err && err.code === 'unavailable') {
+            return "Packing happens in the app's Output pane — this browser tab stays view-only.";
+          }
+          return String(err && err.message ? err.message : err);
+        }
+
+        function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+
+        // A plan written as "Anchor: … Options: … Slack: …" reads as plain
+        // lines without the labels; a plan with line breaks keeps them.
+        var PLAN_LABEL = /(?:^|\s)(?:anchor|options?|alternatives?|slack|free time)\s*:\s*/i;
+        var PLAN_LABELS = /(?:^|\s)(?:anchor|options?|alternatives?|slack|free time)\s*:\s*/gi;
+        function planLines(plan) {
+          var text = String(plan || '');
+          var lines = text.split(/\n+/);
+          if (lines.length === 1 && PLAN_LABEL.test(text)) lines = text.split(PLAN_LABELS);
+          return lines
+            .map(function (l) { return l.replace(PLAN_LABELS, ' ').replace(/^[\s*•-]+/, '').trim(); })
+            .filter(Boolean);
+        }
+
+        function isoDay(key) { return /^\d{4}-\d{2}-\d{2}$/.test(key); }
+        function dayNumber(key) { var m = /^day\s*(\d+)$/i.exec(key); return m ? Number(m[1]) : null; }
+        function longDate(iso) {
+          var when = new Date(iso + 'T12:00:00Z');
+          if (!isFinite(when.getTime())) return iso;
+          return when.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+        }
+        function sortDays(keys) {
+          return keys.slice().sort(function (a, b) {
+            var na = dayNumber(a), nb = dayNumber(b);
+            if (na !== null && nb !== null) return na - nb;
+            return a < b ? -1 : a > b ? 1 : 0;
+          });
+        }
+        // "2026-12-03" reads as a date; "Day 3" stays "Day 3", with its
+        // date beneath once the departure date is known.
+        function dayLabel(key, startDate) {
+          if (isoDay(key)) return esc(longDate(key));
+          var n = dayNumber(key);
+          if (n === null) return esc(key);
+          var label = 'Day ' + n;
+          if (isoDay(String(startDate || '').slice(0, 10))) {
+            var when = new Date(String(startDate).slice(0, 10) + 'T12:00:00Z');
+            when.setUTCDate(when.getUTCDate() + n - 1);
+            return label + '<small>' + esc(longDate(when.toISOString().slice(0, 10))) + '</small>';
+          }
+          return label;
+        }
+        function node(tag, text, className) { var n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (className) n.className = className; return n; }
+        function entryDate(value) {
+          var d = new Date(value);
+          return isFinite(d.getTime()) ? d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : String(value);
+        }
+        function travellersText(travellers) {
+          var text = String(travellers || '').trim();
+          if (!text) return '';
+          if (/^\d+$/.test(text)) return plural(Number(text), 'traveler', 'travelers');
+          return text.charAt(0).toUpperCase() + text.slice(1);
+        }
+
+        function render(trip, packing, journal) {
+          if (trip.destination) document.getElementById('title').textContent = 'Trip: ' + trip.destination;
+          var days = trip.days || {};
+          var dates = sortDays(Object.keys(days));
+          var parts = [];
+          var who = travellersText(trip.travellers);
+          if (who) parts.push(who);
+          var start = String(trip.startDate || '').trim();
+          if (isoDay(start.slice(0, 10))) {
+            var d = Math.ceil((Date.parse(start) - Date.now()) / 86400000);
+            if (isFinite(d)) parts.push(d > 0 ? plural(d, 'day', 'days') + ' until departure' : d === 0 ? 'Departure day!' : 'On the road');
+          } else if (start && start !== 'soon') {
+            parts.push('Leaving ' + start);
+          }
+          parts.push(dates.length ? plural(dates.length, 'day', 'days') + ' planned' : 'No days planned yet');
+          document.getElementById('sub').textContent = parts.join(' · ');
+
+          if (dates.length) {
+            document.getElementById('days').innerHTML = dates.map(function (d) {
+              var lines = planLines(days[d]).map(function (l) { return '<p>' + esc(l) + '</p>'; }).join('');
+              return '<div class="day"><span class="date">' + dayLabel(d, trip.startDate) + '</span><div class="plan">' + lines + '</div></div>';
+            }).join('');
+            // "Edit" on a day opens "Plan a day" with that day and its plan filled in.
+            Array.prototype.forEach.call(document.querySelectorAll('#days .day'), function (row, i) {
+              var key = node('button', 'Edit', 'key');
+              key.type = 'button';
+              key.setAttribute('aria-label', 'Edit the plan for ' + row.querySelector('.date').textContent);
+              key.setAttribute('data-app-action', 'plan_day');
+              key.setAttribute('data-app-values', JSON.stringify({ date: dates[i], plan: String(days[dates[i]] || '') }));
+              row.append(key);
+            });
+          }
+
+          var items = (packing && packing.records) || [];
+          var unpacked = items.filter(function (r) { return r.status === 'unpacked'; }).length;
+          document.getElementById('packcount').hidden = !items.length;
+          document.getElementById('pack-left').textContent = String(unpacked);
+          document.getElementById('pack-hint').textContent = unpacked ? 'to go. Tap an item once it is in the bag.' : 'to go. Everything is packed.';
+          if (items.length) {
+            document.getElementById('pack').innerHTML = items.map(function (r) {
+              var packed = r.status === 'packed';
+              return '<li class="' + esc(r.status) + '" data-id="' + esc(r.id) + '" role="checkbox" aria-checked="' + packed + '"' + (packed ? ' aria-disabled="true"' : ' tabindex="0"') + '><span class="box"></span><span>' + esc((r.fields && r.fields.name) || r.id) + '</span></li>';
+            }).join('');
+            Array.prototype.forEach.call(document.querySelectorAll('.pack li.unpacked'), function (li) {
+              function pack() {
+                if (busy) return;
+                busy = true;
+                gezel.tools
+                  .invoke('mark_packed', { id: li.getAttribute('data-id') })
+                  .then(function () { setBanner(''); return loadTrip(); })
+                  .catch(function (err) { setBanner(invokeErrorText(err)); })
+                  .then(function () { busy = false; });
+              }
+              li.addEventListener('click', pack);
+              li.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); pack(); }
+              });
+            });
+          }
+
+          var entries = ((journal && journal.events) || []).slice().reverse();
+          if (entries.length) {
+            document.getElementById('journal').innerHTML = entries.map(function (e) {
+              return '<li><strong>' + esc(entryDate(e.at)) + '</strong> — ' + esc(e.note || '') + '</li>';
+            }).join('');
+          }
+        }
+
+        window.addEventListener('gezel-app-data-changed', function(){ loadTrip(); });
+        function loadTrip(){
+var revision=++appLoadRevision;
+return Promise.all([gezel.data.read('trip.json'),gezel.data.read('packing.json'),gezel.data.read('journal.json')]).then(function(values){if(appDisposed||revision!==appLoadRevision)return;reportAppError(null);render(values[0]||{},values[1]||{},values[2]||{});}).catch(function(error){if(!appDisposed&&revision===appLoadRevision)reportAppError(error);});
+}
+
+        loadTrip();
+        appSubscriptions.push(gezel.data.watch('trip.json', function () { loadTrip(); }));
+        appSubscriptions.push(gezel.data.watch('packing.json', function () { loadTrip(); }));
+        appSubscriptions.push(gezel.data.watch('journal.json', function () { loadTrip(); }));
+      })();
+    </script>
+  <script src="application.js" defer></script>
+  </body>
+</html>

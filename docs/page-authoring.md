@@ -287,8 +287,10 @@ and allow crew selection only where it serves the app. Media Library deliberatel
 uses `chat: false`. The native Email, Just Chat, and Software Project experiences
 remain native rather than duplicating the shell in a page.
 
-Use `actionForm` for direct record edits and `collectionFilter` for searching
-rendered records. Give page actions separate aliases from model actions, bound
+Organize the page by the [app UX guide](https://github.com/bendyline/gezel/blob/main/docs/handboek/technical/gezel-app-ux-guide.md):
+choose the app's shape, put the dashboard on Home, give each managed noun a tab,
+and draw actions as keys that open dialogs. Use `actionForm` for record edits and
+`collectionFilter` for searching long rendered lists. Give page actions separate aliases from model actions, bound
 to the same scripts, and put only those aliases in `pages.tools`. Every new
 page action needs an in-memory demo handler. Respect the project's write policy
 and keep all state in the existing declared files. A successful schema check or
@@ -300,6 +302,36 @@ host-owned chat slot while a dialog is visible. Keep form drafts on failures,
 report read failures without pretending the collection is empty, and dispose
 watches on page exit. Feature-detect new components and provide an update message
 when an older host cannot supply them.
+
+### The shared composition script
+
+Catalog pages share one `application.js`: a `config` object followed by the
+shared boot. Edit the config; copy the boot unchanged from the newest app
+(Shift Roster is the reference). On hosts with page components version 2 it
+builds:
+
+- `tabs`: `[{ id, label, sections, actions, primary, settings, badge }]`.
+  `sections` are selectors of the page's own elements, moved into the tab's
+  panel in order; `actions` are model tool names drawn as dialog keys, the first
+  (or `primary`, or none with `false`) filled; `settings` tools are drawn as
+  inline forms; `badge` is the selector of a count the page already shows.
+  Everything except the demo banner, `h1`, and the summary line belongs in a tab.
+- `bar`: for a single-view app without tabs, the tools drawn as keys under the
+  title. Without `tabs` or `bar`, every action not marked `rowOnly` is a key.
+- Row actions: a `<button data-app-action="<tool>" data-app-values='{"id":"…"}'>`
+  rendered by the page opens that action's dialog filled in. Set the attributes
+  with `setAttribute` and `JSON.stringify`. These buttons are hidden on older hosts.
+- `actions[].current`: `{ path, fields: { formField: 'dot.path' } }` shows the saved
+  values in a settings form. The path must already be in `pages.reads`.
+- `filter`: `{ container, selector, label, placeholder, minItems }`; the search
+  appears from `minItems` (default 8) records.
+- `buttonLabel`, `description`, and `submitLabel` on an action set the key text,
+  the line under the dialog title, and the submit verb.
+
+Older hosts get the previous behavior: expandable forms and an "On this page"
+list (`navExclude` skips headings there). The page adds a `<style data-app-shell="2">`
+block after its shared style block for the tab, key bar, settings, primary
+(`app-primary`), empty-row, and demo-banner styles.
 
 The maintained [workspace API guide](https://github.com/bendyline/gezel/blob/main/docs/handboek/technical/gezel-page-apis.md#building-a-full-page-workspace)
 documents options and lifecycle. Gezel's `test:e2e:catalog-apps` suite exercises

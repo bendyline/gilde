@@ -1,0 +1,544 @@
+{
+  "schemaVersion": 1,
+  "version": "1.1.0",
+  "releasedAt": "2026-11-07T18:00:00.000Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "business": {
+        "type": "string",
+        "title": "What kind of business is this?",
+        "description": "e.g. 'a café with 12 staff', 'a small bike shop'.",
+        "default": "the business"
+      }
+    },
+    "required": [
+      "business"
+    ]
+  },
+  "nameTemplate": "Shift Roster",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "shift-scheduler",
+      "voorman": true
+    }
+  ],
+  "scripts": {
+    "roster-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'roster-store',\n  description:\n    \"Read and update the shift roster: staff.json, shifts.json, availability.json and rules.json. action:'status' for this week and next (open spots, conflicts, hours, the schedule); 'add_staff' (an existing name is updated); 'availability' to mark someone unavailable or available again; 'add_shift' (an existing date, start and role is updated); 'copy_week' to start a week from another, keeping only assignments that pass every rule; 'assign' to put someone on a shift or take them off; 'rules' for the scheduling rules the business states; 'approve' (the person only) to approve a week.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'status', 'add_staff', 'availability', 'add_shift', 'copy_week', 'assign', 'rules', or 'approve'.\",\n      required: true,\n    },\n    week: { type: 'string', description: 'Any date in the week, YYYY-MM-DD.' },\n    fromWeek: { type: 'string', description: 'For copy_week: any date in the week to copy from (default: the week before).' },\n    name: { type: 'string', description: \"A person's name, for add_staff.\" },\n    roles: { type: 'string', description: \"What they work, comma-separated, e.g. 'barista, kitchen'.\" },\n    maxHours: { type: 'number', description: 'Their own weekly hour limit, as the business states it (0 removes it).' },\n    status: { type: 'string', description: 'For add_staff: active or inactive.' },\n    staff: { type: 'string', description: 'The person to put on a shift or whose availability changes: name or id.' },\n    remove: { type: 'string', description: 'For assign: the person to take off the shift.' },\n    day: { type: 'string', description: \"For availability: a weekday ('tuesday'), 'weekdays', 'weekends', 'every day', or a date.\" },\n    part: { type: 'string', description: 'For availability: all day, morning, afternoon, or evening.' },\n    from: { type: 'string', description: 'For availability: unavailable from this time.' },\n    to: { type: 'string', description: 'For availability: unavailable until this time.' },\n    available: { type: 'boolean', description: 'For availability: true when they can work that day again.' },\n    id: { type: 'string', description: \"A shift id, e.g. 'sh-4'.\" },\n    date: { type: 'string', description: 'A shift date, YYYY-MM-DD.' },\n    start: { type: 'string', description: \"Shift start, e.g. '06:00'.\" },\n    end: { type: 'string', description: \"Shift end, e.g. '14:00'.\" },\n    role: { type: 'string', description: \"What the shift works, e.g. 'barista'.\" },\n    needed: { type: 'number', description: 'How many people the shift needs.' },\n    maxWeekHours: { type: 'number', description: 'Rule: most hours a week per person (0 removes it).' },\n    minRestHours: { type: 'number', description: 'Rule: fewest hours between one shift and the next (0 removes it).' },\n    maxShiftHours: { type: 'number', description: 'Rule: longest shift in hours (0 removes it).' },\n    rule: { type: 'string', description: \"Another rule in the business's own words, kept for the crew to read.\" },\n    forget: { type: 'string', description: 'Drop the written rule containing this text.' },\n    note: { type: 'string', description: 'Anything worth keeping with the change.' },\n    byPerson: { type: 'boolean', description: 'Set by the page: the person made this change themselves.' },\n  },\n  outputs: {\n    openSpots: { type: 'number', description: 'Upcoming spots nobody is on yet.' },\n    conflicts: { type: 'number', description: 'Assignments that break availability or a stated rule.' },\n    toApprove: { type: 'number', description: 'Shifts waiting for the person to approve.' },\n    shifts: { type: 'number', description: 'Shifts in the weeks shown.' },\n    week: { type: 'string', description: 'The Monday of the first week shown.' },\n    summary: { type: 'string', description: 'What changed, then the roster picture.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── roster-rules-start ──\n// Pure roster rules: shift times and hours, who can take a shift (role,\n// availability, overlaps, and the rest and hours limits the business stated),\n// each week's coverage and conflicts, and run(), which applies one action to a\n// snapshot of the stores and lists the store operations, so the live store and\n// the page's demo share every rule. Kept self-contained between these\n// sentinels; the page loads the same bytes as rules.js.\nvar DAY_MS = 86400000;\nvar WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];\nvar SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];\nvar PARTS = { 'all day': null, morning: ['00:00', '12:00'], afternoon: ['12:00', '17:00'], evening: ['17:00', '24:00'] };\n\nfunction pad(n) {\n  return n < 10 ? '0' + n : String(n);\n}\nfunction localDay(ms) {\n  var d = new Date(ms);\n  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());\n}\nfunction addDays(day, n) {\n  var d = new Date(String(day).slice(0, 10) + 'T12:00:00');\n  d.setDate(d.getDate() + n);\n  return localDay(d.getTime());\n}\nfunction weekdayIndex(day) {\n  return new Date(String(day).slice(0, 10) + 'T12:00:00').getDay();\n}\nfunction mondayOf(day) {\n  return addDays(day, -((weekdayIndex(day) + 6) % 7));\n}\nfunction key(text) {\n  return String(text === undefined || text === null ? '' : text).trim().toLowerCase();\n}\nfunction num(value) {\n  if (value === undefined || value === null || value === '') return null;\n  var n = typeof value === 'number' ? value : Number(String(value).trim());\n  return isFinite(n) ? n : null;\n}\nfunction round1(n) {\n  return Math.round(n * 10) / 10;\n}\nfunction given(value) {\n  return value !== undefined && value !== null && value !== '';\n}\nfunction normalizeDate(text, nowMs) {\n  var raw = key(text);\n  if (!raw) return null;\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(raw)) return raw;\n  var today = localDay(nowMs);\n  if (raw === 'today' || raw === 'this week') return today;\n  if (raw === 'tomorrow') return addDays(today, 1);\n  if (raw === 'next week') return addDays(mondayOf(today), 7);\n  var bare = raw.replace(/^(this|next|on)\\s+/, '').replace(/s$/, '');\n  var w = WEEKDAYS.indexOf(bare);\n  if (w >= 0) return addDays(today, (w - weekdayIndex(today) + 7) % 7);\n  if (/\\d{4}/.test(raw)) {\n    var parsed = Date.parse(String(text).trim());\n    if (isFinite(parsed)) return localDay(parsed);\n  }\n  return null;\n}\nfunction normalizeTime(text) {\n  var raw = key(text).replace(/\\s+/g, '').replace(/\\./g, '');\n  if (!raw) return null;\n  if (raw === 'noon') return '12:00';\n  if (raw === 'midnight') return '00:00';\n  var m = /^(\\d{1,2})(?::?(\\d{2}))?(am|pm|a|p)?$/.exec(raw);\n  if (!m) return null;\n  var h = Number(m[1]);\n  var min = m[2] ? Number(m[2]) : 0;\n  if (m[3]) {\n    if (h < 1 || h > 12) return null;\n    if (m[3].charAt(0) === 'p' && h !== 12) h += 12;\n    if (m[3].charAt(0) === 'a' && h === 12) h = 0;\n  }\n  if (h > 24 || min > 59 || (h === 24 && min > 0)) return null;\n  return pad(h % 24) + ':' + pad(min);\n}\nfunction minutes(hhmm) {\n  var p = String(hhmm).split(':');\n  return Number(p[0]) * 60 + Number(p[1] || 0);\n}\n// A shift that ends at or before its start runs past midnight.\nfunction span(f) {\n  var s = minutes(f.start);\n  var e = minutes(f.end);\n  var over = e <= s;\n  return {\n    startAt: Date.parse(f.date + 'T' + f.start + ':00'),\n    endAt: Date.parse((over ? addDays(f.date, 1) : f.date) + 'T' + f.end + ':00'),\n    startMin: s,\n    endMin: over ? e + 1440 : e,\n    hours: ((over ? e + 1440 : e) - s) / 60,\n  };\n}\nfunction normalizeDay(text, nowMs) {\n  var raw = key(text);\n  if (!raw) return null;\n  if (/^(every ?day|daily|all week|always)$/.test(raw)) return 'every day';\n  if (/^(weekdays?|mon(day)?\\s*(-|to|through)\\s*fri(day)?)$/.test(raw)) return 'weekdays';\n  if (/^weekends?$/.test(raw)) return 'weekends';\n  var bare = raw.replace(/^(every|on)\\s+/, '').replace(/s$/, '');\n  if (WEEKDAYS.indexOf(bare) >= 0) return bare;\n  return normalizeDate(text, nowMs);\n}\nfunction dayText(day) {\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(day)) return 'on ' + SHORT_DAYS[weekdayIndex(day)] + ' ' + day;\n  if (day === 'every day') return 'every day';\n  if (day === 'weekdays' || day === 'weekends') return 'on ' + day;\n  return 'on ' + day.charAt(0).toUpperCase() + day.slice(1) + 's';\n}\nfunction windowText(f) {\n  if (!f.from || !f.to) return 'all day';\n  if (f.from === '00:00') return 'until ' + f.to;\n  if (f.to === '24:00') return 'from ' + f.from;\n  return f.from + '–' + f.to;\n}\nfunction availText(f) {\n  return dayText(f.day) + ' ' + windowText(f);\n}\nfunction dayMatches(day, date) {\n  var d = key(day);\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(d)) return d === date;\n  var w = weekdayIndex(date);\n  if (d === 'every day') return true;\n  if (d === 'weekdays') return w >= 1 && w <= 5;\n  if (d === 'weekends') return w === 0 || w === 6;\n  return WEEKDAYS[w] === d;\n}\nfunction blocks(entry, shiftFields) {\n  if (entry.status !== 'active') return false;\n  var f = entry.fields;\n  if (!dayMatches(f.day, shiftFields.date)) return false;\n  if (!f.from || !f.to) return true;\n  var sp = span(shiftFields);\n  var from = minutes(f.from);\n  var to = minutes(f.to);\n  if (to <= from) to += 1440;\n  return sp.startMin < to && from < sp.endMin;\n}\nfunction staffOn(s) {\n  return Array.isArray(s.fields.staff) ? s.fields.staff : [];\n}\nfunction neededOf(s) {\n  return Math.max(1, Math.round(num(s.fields.needed) || 1));\n}\nfunction person(data, id) {\n  return (\n    data.staff.filter(function (p) {\n      return p.id === id;\n    })[0] || null\n  );\n}\nfunction nameOf(data, id) {\n  var p = person(data, id);\n  return p ? p.fields.name : id;\n}\nfunction namesOn(data, s) {\n  return staffOn(s)\n    .map(function (id) {\n      return nameOf(data, id);\n    })\n    .join(', ');\n}\nfunction limitFor(p, rules) {\n  var own = num(p.fields.maxHours);\n  if (own !== null && own > 0) return own;\n  var all = num(rules.maxWeekHours);\n  return all !== null && all > 0 ? all : null;\n}\nfunction byStart(a, b) {\n  return (a.fields.date + ' ' + a.fields.start).localeCompare(b.fields.date + ' ' + b.fields.start) || String(a.fields.role).localeCompare(String(b.fields.role));\n}\nfunction weekShifts(shifts, monday) {\n  var end = addDays(monday, 7);\n  return shifts\n    .filter(function (s) {\n      return s.fields.date >= monday && s.fields.date < end;\n    })\n    .sort(byStart);\n}\nfunction hoursFor(shifts, id, monday) {\n  return weekShifts(shifts, monday)\n    .filter(function (s) {\n      return staffOn(s).indexOf(id) >= 0;\n    })\n    .reduce(function (h, s) {\n      return h + span(s.fields).hours;\n    }, 0);\n}\nfunction shiftLabel(s) {\n  var f = s.fields;\n  return SHORT_DAYS[weekdayIndex(f.date)] + ' ' + f.date + ' ' + f.start + '–' + f.end + (f.role ? ' ' + f.role : '') + ' (' + s.id + ')';\n}\n// Why a person cannot take a shift, from the roster's facts and the business's stated rules only.\nfunction problems(p, shift, data, opts) {\n  var rules = data.rules || {};\n  var f = shift.fields;\n  var sp = span(f);\n  var name = p.fields.name;\n  var out = [];\n  if (p.status !== 'active') out.push(name + ' is not on the active staff');\n  var roles = p.fields.roles || [];\n  if (f.role && roles.length && roles.indexOf(key(f.role)) < 0) out.push(name + ' does not work ' + f.role + ' (works ' + roles.join(', ') + ')');\n  data.availability.forEach(function (a) {\n    if (a.fields.staffId === p.id && blocks(a, f)) out.push(name + ' is unavailable ' + availText(a.fields));\n  });\n  var rest = num(rules.minRestHours);\n  data.shifts.forEach(function (s) {\n    if (s.id === shift.id || staffOn(s).indexOf(p.id) < 0) return;\n    var o = span(s.fields);\n    if (opts.earlierOnly && (o.startAt > sp.startAt || (o.startAt === sp.startAt && s.id > shift.id))) return;\n    if (o.startAt < sp.endAt && sp.startAt < o.endAt) {\n      out.push(name + ' is also on ' + shiftLabel(s) + ', which overlaps');\n      return;\n    }\n    if (rest) {\n      var gap = (o.endAt <= sp.startAt ? sp.startAt - o.endAt : o.startAt - sp.endAt) / 3600000;\n      if (gap < rest) out.push(name + ' would get ' + round1(gap) + ' hours of rest next to ' + shiftLabel(s) + ' (rule: at least ' + rest + ')');\n    }\n  });\n  if (opts.hours) {\n    var limit = limitFor(p, rules);\n    if (limit !== null) {\n      var h =\n        hoursFor(\n          data.shifts.filter(function (s) {\n            return s.id !== shift.id;\n          }),\n          p.id,\n          mondayOf(f.date),\n        ) + sp.hours;\n      if (h > limit) out.push(name + ' would have ' + round1(h) + ' hours that week (limit ' + limit + ')');\n    }\n  }\n  return out;\n}\n// Who could take a shift, fewest hours that week first.\nfunction freeFor(shift, data) {\n  var monday = mondayOf(shift.fields.date);\n  return data.staff\n    .filter(function (p) {\n      return p.status === 'active' && staffOn(shift).indexOf(p.id) < 0 && !problems(p, shift, data, { hours: true }).length;\n    })\n    .map(function (p) {\n      return { id: p.id, name: p.fields.name, hours: round1(hoursFor(data.shifts, p.id, monday)) };\n    })\n    .sort(function (a, b) {\n      return a.hours - b.hours || a.name.localeCompare(b.name);\n    });\n}\nfunction weekView(data, monday, nowMs) {\n  var rules = data.rules || {};\n  var list = weekShifts(data.shifts, monday);\n  var gaps = [];\n  var conflicts = [];\n  var hours = {};\n  var toApprove = 0;\n  var maxLen = num(rules.maxShiftHours);\n  list.forEach(function (s) {\n    var on = staffOn(s);\n    var sp = span(s.fields);\n    if (s.status !== 'approved') toApprove += 1;\n    if (on.length < neededOf(s)) gaps.push({ shift: s, open: neededOf(s) - on.length, past: sp.endAt <= nowMs });\n    if (maxLen && sp.hours > maxLen) conflicts.push({ shiftId: s.id, text: shiftLabel(s) + ' is ' + round1(sp.hours) + ' hours long (rule: at most ' + maxLen + ')' });\n    on.forEach(function (id) {\n      hours[id] = (hours[id] || 0) + sp.hours;\n      var p = person(data, id);\n      if (!p) {\n        conflicts.push({ shiftId: s.id, text: shiftLabel(s) + ' lists ' + id + ', who is not on the staff list' });\n        return;\n      }\n      problems(p, s, data, { hours: false, earlierOnly: true }).forEach(function (text) {\n        conflicts.push({ shiftId: s.id, staffId: id, text: shiftLabel(s) + ': ' + text });\n      });\n    });\n  });\n  data.staff.forEach(function (p) {\n    var limit = limitFor(p, rules);\n    var h = hours[p.id] || 0;\n    if (limit !== null && h > limit) conflicts.push({ staffId: p.id, text: p.fields.name + ' has ' + round1(h) + ' hours in the week of Mon ' + monday + ' (limit ' + limit + ')' });\n  });\n  return { monday: monday, shifts: list, gaps: gaps, conflicts: conflicts, hours: hours, toApprove: toApprove };\n}\nfunction rulesText(rules) {\n  var list = [];\n  if (num(rules.maxWeekHours)) list.push('at most ' + rules.maxWeekHours + ' hours a week per person, unless their own limit says otherwise');\n  if (num(rules.minRestHours)) list.push('at least ' + rules.minRestHours + ' hours between shifts');\n  if (num(rules.maxShiftHours)) list.push('shifts no longer than ' + rules.maxShiftHours + ' hours');\n  (rules.notes || []).forEach(function (n) {\n    list.push('\"' + String(n).replace(/[.\\s]+$/, '') + '\"');\n  });\n  return list.length\n    ? 'Rules the business set: ' + list.join('; ') + '.'\n    : 'The business has not stated any scheduling rules; the roster checks only availability, overlaps, roles and personal hour limits.';\n}\nfunction picture(data, nowMs, week) {\n  var rules = data.rules || {};\n  var first = mondayOf(week || localDay(nowMs));\n  var mondays = week ? [first] : [first, addDays(first, 7)];\n  var views = mondays.map(function (m) {\n    return weekView(data, m, nowMs);\n  });\n  var label = function (i) {\n    return week ? 'The week of Mon ' + views[i].monday : (i === 0 ? 'This week' : 'Next week') + ' (from Mon ' + views[i].monday + ')';\n  };\n  var parts = [];\n  views.forEach(function (v, i) {\n    var open = v.gaps.reduce(function (sum, g) {\n      return sum + g.open;\n    }, 0);\n    parts.push(\n      label(i) + ': ' +\n        (v.shifts.length\n          ? v.shifts.length + (v.shifts.length === 1 ? ' shift, ' : ' shifts, ') + open + (open === 1 ? ' open spot, ' : ' open spots, ') +\n            v.conflicts.length + (v.conflicts.length === 1 ? ' conflict, ' : ' conflicts, ') +\n            (v.toApprove ? v.toApprove + ' waiting for the person to approve' : 'all approved')\n          : 'no shifts yet') + '.',\n    );\n  });\n  // One list, soonest first: the answer to \"where are we short?\".\n  var gaps = [];\n  views.forEach(function (v) {\n    v.gaps.forEach(function (g) {\n      if (!g.past) gaps.push(g);\n    });\n  });\n  var openSpots = gaps.reduce(function (sum, g) {\n    return sum + g.open;\n  }, 0);\n  parts.push(\n    gaps.length\n      ? 'Open spots, soonest first: ' +\n          gaps\n            .map(function (g) {\n              var free = freeFor(g.shift, data);\n              return (\n                shiftLabel(g.shift) + ' needs ' + g.open + ' more' + (staffOn(g.shift).length ? ' (on it: ' + namesOn(data, g.shift) + ')' : '') + '; free: ' +\n                (free.length\n                  ? free\n                      .slice(0, 4)\n                      .map(function (x) {\n                        return x.name + ' (' + x.id + ', ' + x.hours + 'h)';\n                      })\n                      .join(', ')\n                  : 'nobody passes every rule')\n              );\n            })\n            .join(' | ') + '.'\n      : 'No open spots.',\n  );\n  var conflicts = [];\n  views.forEach(function (v) {\n    v.conflicts.forEach(function (c) {\n      conflicts.push(c.text);\n    });\n  });\n  parts.push(conflicts.length ? 'Conflicts to fix: ' + conflicts.join(' | ') + '.' : 'No conflicts with availability or the rules.');\n  views.forEach(function (v, i) {\n    if (!v.shifts.length) return;\n    var people = data.staff.filter(function (p) {\n      return p.status === 'active' || v.hours[p.id];\n    });\n    parts.push(\n      (week ? 'Hours that week' : i === 0 ? 'Hours this week' : 'Hours next week') + ': ' +\n        people\n          .map(function (p) {\n            var limit = limitFor(p, rules);\n            var roles = p.fields.roles || [];\n            return p.fields.name + ' (' + p.id + (roles.length ? ', ' + roles.join('/') : '') + ') ' + round1(v.hours[p.id] || 0) + (limit !== null ? ' of ' + limit : '') + 'h';\n          })\n          .join(', ') + '.',\n    );\n    var days = [];\n    // Mark drafts per shift only when a week is part approved; the headline covers the rest.\n    var mixed = v.toApprove > 0 && v.toApprove < v.shifts.length;\n    for (var d = 0; d < 7; d++) {\n      var date = addDays(v.monday, d);\n      var todays = v.shifts.filter(function (s) {\n        return s.fields.date === date;\n      });\n      if (!todays.length) continue;\n      days.push(\n        SHORT_DAYS[weekdayIndex(date)] + ' ' + date.slice(5) + ': ' +\n          todays\n            .map(function (s) {\n              var on = staffOn(s);\n              return (\n                s.fields.start + '–' + s.fields.end + ' ' + (s.fields.role || 'shift') + ' ' + (on.length ? namesOn(data, s) : 'nobody') +\n                (on.length < neededOf(s) ? ' (' + (neededOf(s) - on.length) + ' open)' : '') + (mixed && s.status !== 'approved' ? ' [draft]' : '') + ' (' + s.id + ')'\n              );\n            })\n            .join('; '),\n      );\n    }\n    parts.push((week ? 'By day' : i === 0 ? 'This week by day' : 'Next week by day') + ': ' + days.join(' / ') + '.');\n  });\n  if (!data.staff.length) parts.push('No staff on the roster yet.');\n  var away = data.availability.filter(function (a) {\n    return a.status === 'active';\n  });\n  if (away.length) {\n    parts.push(\n      'Unavailable: ' +\n        away\n          .map(function (a) {\n            return nameOf(data, a.fields.staffId) + ' ' + availText(a.fields);\n          })\n          .join('; ') + '.',\n    );\n  }\n  parts.push(rulesText(rules));\n  return {\n    monday: first,\n    openSpots: openSpots,\n    conflicts: conflicts.length,\n    toApprove: views.reduce(function (sum, v) {\n      return sum + v.toApprove;\n    }, 0),\n    shifts: views.reduce(function (sum, v) {\n      return sum + v.shifts.length;\n    }, 0),\n    summary: parts.join(' '),\n  };\n}\n\nfunction findStaff(staff, wanted) {\n  var text = String(given(wanted) ? wanted : '').trim();\n  if (!text) throw new Error(\"Name the person ('Ana') or pass their id ('st-1').\");\n  var byId = staff.filter(function (p) {\n    return p.id === text;\n  });\n  if (byId.length) return byId[0];\n  var k = key(text);\n  var exact = staff.filter(function (p) {\n    return key(p.fields.name) === k;\n  });\n  if (exact.length === 1) return exact[0];\n  var partial = staff.filter(function (p) {\n    var name = key(p.fields.name);\n    return name.indexOf(k) === 0 || name.split(/\\s+/).indexOf(k) >= 0 || k.split(/\\s+/).indexOf(name.split(/\\s+/)[0]) >= 0;\n  });\n  if (partial.length === 1) return partial[0];\n  var list = staff\n    .map(function (p) {\n      return p.id + ' ' + p.fields.name;\n    })\n    .join(', ');\n  if (partial.length > 1) throw new Error(\"More than one person matches '\" + text + \"': \" + partial.map(function (p) { return p.id + ' ' + p.fields.name; }).join(', ') + '. Pass the id.');\n  throw new Error(\"Nobody on the staff list matches '\" + text + \"'. Staff: \" + (list || 'none yet; add them with add_staff') + '.');\n}\nfunction findShift(shifts, input, nowMs) {\n  var id = String(given(input.id) ? input.id : given(input.shift) ? input.shift : '').trim();\n  if (id) {\n    var hit = shifts.filter(function (s) {\n      return s.id === id;\n    })[0];\n    if (hit) return hit;\n    if (/^sh-\\d+$/.test(id)) throw new Error('No shift ' + id + '. Call roster_status to see the shifts and their ids.');\n  }\n  var date = given(input.date) ? normalizeDate(input.date, nowMs) : id ? normalizeDate(id, nowMs) : null;\n  if (!date) throw new Error(\"Pass the shift's id ('sh-4'), or its date (YYYY-MM-DD) with its start time or role.\");\n  var start = given(input.start) ? normalizeTime(input.start) : null;\n  var role = key(input.role);\n  var that = shifts\n    .filter(function (s) {\n      return s.fields.date === date;\n    })\n    .sort(byStart);\n  var hits = that.filter(function (s) {\n    return (!start || s.fields.start === start) && (!role || key(s.fields.role) === role);\n  });\n  if (hits.length === 1) return hits[0];\n  if (hits.length > 1) throw new Error('More than one shift matches on ' + date + ': ' + hits.map(shiftLabel).join(', ') + '. Pass the id.');\n  throw new Error('No shift matches on ' + date + '. Shifts that day: ' + (that.map(shiftLabel).join(', ') || 'none') + '.');\n}\n\n// A working copy of the stores. Each change is applied here and recorded as an operation\n// the live store replays through rosterStore (rules.json is written whole); the demo keeps the copy.\nfunction transaction(state, nowMs) {\n  var data = JSON.parse(JSON.stringify(state));\n  data.rules = data.rules || { version: 1, notes: [] };\n  var ops = [];\n  var at = new Date(nowMs).toISOString();\n  function copy(value) {\n    return JSON.parse(JSON.stringify(value));\n  }\n  function get(store, id) {\n    return (\n      data[store].filter(function (r) {\n        return r.id === id;\n      })[0] || null\n    );\n  }\n  return {\n    data: data,\n    ops: ops,\n    get: get,\n    focus: null,\n    add: function (store, prefix, status, fields, note) {\n      var max = 0;\n      data[store].forEach(function (r) {\n        var m = /-(\\d+)$/.exec(r.id);\n        if (m && r.id.indexOf(prefix + '-') === 0) max = Math.max(max, Number(m[1]));\n      });\n      var id = prefix + '-' + (max + 1);\n      data[store].push({ id: id, status: status, fields: copy(fields), createdAt: at, updatedAt: at, history: [{ at: at, from: null, to: status, note: note }] });\n      ops.push({ store: store, op: 'add', id: id, status: status, fields: copy(fields), note: note });\n      return id;\n    },\n    update: function (store, id, fields, note) {\n      var r = get(store, id);\n      r.fields = Object.assign({}, r.fields, copy(fields));\n      r.updatedAt = at;\n      if (note) (r.history = r.history || []).push({ at: at, from: r.status, to: r.status, note: note });\n      ops.push({ store: store, op: 'update', id: id, fields: copy(fields), note: note });\n    },\n    transition: function (store, id, to, note) {\n      var r = get(store, id);\n      (r.history = r.history || []).push({ at: at, from: r.status, to: to, note: note });\n      r.status = to;\n      r.updatedAt = at;\n      ops.push({ store: store, op: 'transition', id: id, to: to, note: note });\n    },\n    setRules: function (value) {\n      data.rules = copy(value);\n      ops.push({ store: 'rules', op: 'set', value: copy(value) });\n    },\n  };\n}\n// The crew proposes; the person approves. A crew change to an approved shift sends it back for approval.\nfunction reopen(t, id, byPerson) {\n  var s = t.get('shifts', id);\n  if (!byPerson && s.status === 'approved') {\n    t.transition('shifts', id, 'draft', 'Changed by the crew; needs approval again');\n    return true;\n  }\n  return false;\n}\nfunction parseRoles(text) {\n  var raw = Array.isArray(text) ? text.join(',') : String(text || '');\n  return raw\n    .split(/,|\\/|;|&|\\band\\b/)\n    .map(key)\n    .filter(function (r, i, all) {\n      return r && all.indexOf(r) === i;\n    });\n}\nfunction addStaff(t, input, nowMs) {\n  var name = String(input.name || '').trim();\n  if (!name) throw new Error(\"add_staff needs the person's 'name'.\");\n  var fields = {};\n  if (given(input.roles)) fields.roles = parseRoles(input.roles);\n  if (given(input.maxHours)) {\n    var h = num(input.maxHours);\n    if (h === null || h < 0) throw new Error('maxHours must be a number of hours, zero or more (0 removes their limit).');\n    fields.maxHours = h > 0 ? h : null;\n  }\n  if (input.note) fields.notes = String(input.note).trim();\n  var status = key(input.status);\n  if (status && status !== 'active' && status !== 'inactive') throw new Error(\"status must be 'active' or 'inactive'.\");\n  var existing = t.data.staff.filter(function (p) {\n    return key(p.fields.name) === key(name);\n  })[0];\n  var id;\n  var msg;\n  if (existing) {\n    id = existing.id;\n    if (Object.keys(fields).length) t.update('staff', id, fields, 'Updated');\n    if (status && status !== existing.status) t.transition('staff', id, status, status === 'inactive' ? 'No longer on the active staff' : 'Back on the active staff');\n    msg = 'Updated ' + existing.fields.name + ' (' + id + ').';\n  } else {\n    id = t.add('staff', 'st', status || 'active', Object.assign({ name: name, roles: [] }, fields), 'Added');\n    msg = 'Added ' + name + ' (' + id + ').';\n  }\n  var p = t.get('staff', id);\n  var roles = p.fields.roles || [];\n  msg += ' ' + p.fields.name + ' works ' + (roles.length ? roles.join(', ') : 'any role') + (num(p.fields.maxHours) ? ', up to ' + p.fields.maxHours + ' hours a week' : '') + (p.status === 'inactive' ? ', and is not on the active staff' : '') + '.';\n  if (p.status === 'inactive') {\n    var upcoming = t.data.shifts.filter(function (s) {\n      return staffOn(s).indexOf(id) >= 0 && span(s.fields).endAt > nowMs;\n    });\n    if (upcoming.length) msg += ' Still on ' + upcoming.sort(byStart).map(shiftLabel).join(', ') + '; those spots need someone else.';\n  }\n  return msg;\n}\nfunction setAvailability(t, input, nowMs) {\n  var p = findStaff(t.data.staff, given(input.staff) ? input.staff : input.name);\n  // The page's form picks \"one date\" and fills date; the crew passes the date as day.\n  var day = key(input.day) === 'one date' ? normalizeDate(input.date, nowMs) : normalizeDay(input.day, nowMs);\n  if (!day) throw new Error(\"day must be a weekday ('tuesday') for every week, 'weekdays', 'weekends', 'every day', or a date (YYYY-MM-DD) for one day.\");\n  var from = null;\n  var to = null;\n  if (given(input.part) && key(input.part) !== 'all day') {\n    var w = PARTS[key(input.part)];\n    if (!w) throw new Error(\"part must be 'all day', 'morning', 'afternoon', or 'evening'.\");\n    from = w[0];\n    to = w[1];\n  }\n  if (given(input.from) || given(input.to)) {\n    from = given(input.from) ? normalizeTime(input.from) : '00:00';\n    to = given(input.to) ? normalizeTime(input.to) : '24:00';\n    if (!from || !to) throw new Error(\"from and to must be times like '14:00' or '2pm'.\");\n    if (to === '00:00') to = '24:00';\n    if (minutes(to) <= minutes(from)) throw new Error(\"'to' must be later in the day than 'from'.\");\n  }\n  var available = input.available === true || key(input.available) === 'true' || key(input.available) === 'yes';\n  var mine = t.data.availability.filter(function (a) {\n    return a.status === 'active' && a.fields.staffId === p.id && key(a.fields.day) === day;\n  });\n  if (available) {\n    if (!mine.length) return p.fields.name + ' had nothing marked ' + dayText(day) + '.';\n    mine.forEach(function (a) {\n      t.transition('availability', a.id, 'cleared', input.note ? String(input.note) : 'Available again');\n    });\n    return p.fields.name + ' is available ' + dayText(day) + ' again.';\n  }\n  var fields = { staffId: p.id, name: p.fields.name, day: day, from: from, to: to };\n  if (input.note) fields.note = String(input.note).trim();\n  var id;\n  if (mine.length) {\n    id = mine[0].id;\n    t.update('availability', id, fields, 'Changed');\n  } else id = t.add('availability', 'av', 'active', fields, 'Added');\n  var entry = t.get('availability', id);\n  var clash = t.data.shifts\n    .filter(function (s) {\n      return staffOn(s).indexOf(p.id) >= 0 && span(s.fields).endAt > nowMs && blocks(entry, s.fields);\n    })\n    .sort(byStart);\n  var msg = 'Noted: ' + p.fields.name + ' is unavailable ' + availText(fields) + '.';\n  if (clash.length) {\n    msg +=\n      ' That clashes with ' +\n      clash\n        .map(function (s) {\n          var free = freeFor(s, t.data);\n          return shiftLabel(s) + (free.length ? ' (free: ' + free.slice(0, 3).map(function (x) { return x.name; }).join(', ') + ')' : ' (nobody else is free)');\n        })\n        .join('; ') +\n      '; the person decides who covers it.';\n    t.focus = mondayOf(clash[0].fields.date);\n  }\n  return msg;\n}\nfunction addShift(t, input, nowMs) {\n  var byPerson = input.byPerson === true;\n  var date = normalizeDate(input.date, nowMs);\n  if (!date) throw new Error(\"date must be YYYY-MM-DD (a weekday name means the next one).\");\n  var start = given(input.start) ? normalizeTime(input.start) : null;\n  var end = given(input.end) ? normalizeTime(input.end) : null;\n  if (given(input.start) && !start) throw new Error(\"start must be a time like '06:00' or '6am'.\");\n  if (given(input.end) && !end) throw new Error(\"end must be a time like '14:00' or '2pm'.\");\n  var role = key(input.role);\n  var needed = given(input.needed) ? Math.round(num(input.needed)) : null;\n  if (given(input.needed) && !(needed >= 1)) throw new Error('needed must be 1 or more people.');\n  t.focus = mondayOf(date);\n  var existing = start\n    ? t.data.shifts.filter(function (s) {\n        return s.fields.date === date && s.fields.start === start && key(s.fields.role) === role;\n      })[0]\n    : null;\n  if (existing) {\n    var fields = {};\n    if (end) fields.end = end;\n    if (needed !== null) fields.needed = needed;\n    if (input.note) fields.note = String(input.note).trim();\n    if (fields.end && fields.end === existing.fields.start) throw new Error('start and end are the same time.');\n    t.update('shifts', existing.id, fields, 'Changed');\n    var back = reopen(t, existing.id, byPerson);\n    var s0 = t.get('shifts', existing.id);\n    return 'Updated ' + shiftLabel(s0) + ': needs ' + neededOf(s0) + ', has ' + staffOn(s0).length + '.' + (back ? ' It needs the person’s approval again.' : '');\n  }\n  if (!start || !end) throw new Error(\"A new shift needs 'start' and 'end', e.g. '06:00' and '14:00'.\");\n  if (start === end) throw new Error('start and end are the same time.');\n  var fieldsNew = { date: date, start: start, end: end, role: role, needed: needed || 1, staff: [] };\n  if (input.note) fieldsNew.note = String(input.note).trim();\n  var id = t.add('shifts', 'sh', 'draft', fieldsNew, 'Added');\n  var s = t.get('shifts', id);\n  var free = freeFor(s, t.data);\n  return (\n    'Added ' + shiftLabel(s) + ', needs ' + neededOf(s) + '. Free for it: ' +\n    (free.length\n      ? free\n          .slice(0, 4)\n          .map(function (x) {\n            return x.name + ' (' + x.hours + 'h)';\n          })\n          .join(', ')\n      : 'nobody passes every rule yet') + '.'\n  );\n}\nfunction copyWeek(t, input, nowMs) {\n  var target = given(input.week) ? normalizeDate(input.week, nowMs) : addDays(mondayOf(localDay(nowMs)), 7);\n  if (!target) throw new Error('week must be a date in the week to fill, YYYY-MM-DD.');\n  var to = mondayOf(target);\n  var source = given(input.fromWeek) ? normalizeDate(input.fromWeek, nowMs) : addDays(to, -7);\n  if (!source) throw new Error('fromWeek must be a date in the week to copy, YYYY-MM-DD.');\n  var from = mondayOf(source);\n  if (from === to) throw new Error('Pick two different weeks to copy between.');\n  t.focus = to;\n  var list = weekShifts(t.data.shifts, from);\n  if (!list.length) return 'The week of Mon ' + from + ' has no shifts to copy.';\n  var shiftBy = Math.round((Date.parse(to + 'T12:00:00') - Date.parse(from + 'T12:00:00')) / DAY_MS);\n  var added = 0;\n  var skipped = 0;\n  var kept = 0;\n  var left = [];\n  list.forEach(function (s) {\n    var date = addDays(s.fields.date, shiftBy);\n    var exists = t.data.shifts.filter(function (x) {\n      return x.fields.date === date && x.fields.start === s.fields.start && key(x.fields.role) === key(s.fields.role);\n    })[0];\n    if (exists) {\n      skipped += 1;\n      return;\n    }\n    var draft = { id: '(copy)', status: 'draft', fields: { date: date, start: s.fields.start, end: s.fields.end, role: s.fields.role || '', needed: neededOf(s), staff: [] } };\n    staffOn(s).forEach(function (pid) {\n      var p = person(t.data, pid);\n      if (!p) return;\n      var why = problems(p, draft, t.data, { hours: true });\n      if (why.length) left.push(why[0]);\n      else draft.fields.staff.push(pid);\n    });\n    kept += draft.fields.staff.length;\n    t.add('shifts', 'sh', 'draft', draft.fields, 'Copied from ' + s.id);\n    added += 1;\n  });\n  return (\n    'Copied ' + added + (added === 1 ? ' shift' : ' shifts') + ' from the week of Mon ' + from + ' into the week of Mon ' + to +\n    (skipped ? ' (' + skipped + ' were already there)' : '') + ', keeping ' + kept + (kept === 1 ? ' assignment' : ' assignments') +\n    (left.length ? ' and leaving ' + left.length + (left.length === 1 ? ' spot' : ' spots') + ' open: ' + left.join('; ') : '') +\n    '. The copied shifts are drafts for the person to approve.'\n  );\n}\nfunction assign(t, input, nowMs) {\n  var byPerson = input.byPerson === true;\n  var s = findShift(t.data.shifts, input, nowMs);\n  t.focus = mondayOf(s.fields.date);\n  var adding = given(input.staff) ? findStaff(t.data.staff, input.staff) : null;\n  var removing = given(input.remove) ? findStaff(t.data.staff, input.remove) : null;\n  if (!adding && !removing) throw new Error(\"assign needs 'staff' (who to put on the shift) or 'remove' (who to take off).\");\n  var on = staffOn(s).slice();\n  var notes = [];\n  var changed = false;\n  if (removing) {\n    if (on.indexOf(removing.id) < 0) throw new Error(removing.fields.name + ' is not on ' + shiftLabel(s) + '. On it: ' + (namesOn(t.data, s) || 'nobody') + '.');\n    on.splice(on.indexOf(removing.id), 1);\n    t.update('shifts', s.id, { staff: on.slice() }, 'Took ' + removing.fields.name + ' off');\n    changed = true;\n    notes.push('Took ' + removing.fields.name + ' off ' + shiftLabel(s) + '.');\n  }\n  if (adding) {\n    if (on.indexOf(adding.id) >= 0) notes.push(adding.fields.name + ' is already on ' + shiftLabel(s) + '.');\n    else {\n      if (on.length >= neededOf(s)) {\n        throw new Error(shiftLabel(s) + ' already has its ' + neededOf(s) + ' (' + namesOn(t.data, t.get('shifts', s.id)) + '). Take someone off with remove, or raise needed with add_shift.');\n      }\n      var why = problems(adding, t.get('shifts', s.id), t.data, { hours: true });\n      if (why.length && !byPerson) {\n        var free = freeFor(t.get('shifts', s.id), t.data);\n        throw new Error(\n          adding.fields.name + \" can't take \" + shiftLabel(s) + ': ' + why.join('; ') + '. Free for it: ' +\n            (free.length\n              ? free\n                  .slice(0, 4)\n                  .map(function (x) {\n                    return x.name + ' (' + x.id + ', ' + x.hours + 'h)';\n                  })\n                  .join(', ')\n              : 'nobody passes every rule; tell the person') + '.',\n        );\n      }\n      on.push(adding.id);\n      t.update('shifts', s.id, { staff: on.slice() }, 'Put ' + adding.fields.name + ' on');\n      changed = true;\n      notes.push('Put ' + adding.fields.name + ' on ' + shiftLabel(s) + '.' + (why.length ? ' Saved as the person asked, though ' + why.join('; ') + '.' : ''));\n    }\n  }\n  var back = changed ? reopen(t, s.id, byPerson) : false;\n  var after = t.get('shifts', s.id);\n  var open = neededOf(after) - staffOn(after).length;\n  notes.push(open > 0 ? 'It still needs ' + open + ' more.' : 'It is covered.');\n  if (back) notes.push('It needs the person’s approval again.');\n  return notes.join(' ');\n}\nfunction setRules(t, input) {\n  var rules = JSON.parse(JSON.stringify(t.data.rules || {}));\n  rules.version = 1;\n  rules.notes = Array.isArray(rules.notes) ? rules.notes : [];\n  var changed = false;\n  ['maxWeekHours', 'minRestHours', 'maxShiftHours'].forEach(function (k) {\n    if (!given(input[k])) return;\n    var v = num(input[k]);\n    if (v === null || v < 0) throw new Error(k + ' must be a number of hours, zero or more (0 removes the rule).');\n    rules[k] = v > 0 ? v : null;\n    changed = true;\n  });\n  var rule = String(input.rule || '').trim();\n  if (rule) {\n    if (rules.notes.map(key).indexOf(key(rule)) < 0) rules.notes.push(rule);\n    changed = true;\n  }\n  var forget = key(input.forget);\n  if (forget) {\n    rules.notes = rules.notes.filter(function (n) {\n      return key(n).indexOf(forget) < 0;\n    });\n    changed = true;\n  }\n  if (!changed) throw new Error(\"set_rules needs maxWeekHours, minRestHours, maxShiftHours, a rule in the business's own words, or forget.\");\n  t.setRules(rules);\n  return 'Saved the rules; the conflicts below are checked against them.';\n}\nfunction approve(t, input, nowMs) {\n  var day = given(input.week) ? normalizeDate(input.week, nowMs) : localDay(nowMs);\n  if (!day) throw new Error('week must be a date in the week to approve, YYYY-MM-DD.');\n  var monday = mondayOf(day);\n  t.focus = monday;\n  var list = weekShifts(t.data.shifts, monday).filter(function (s) {\n    return s.status !== 'approved';\n  });\n  if (!list.length) return 'Nothing in the week of Mon ' + monday + ' is waiting for approval.';\n  list.forEach(function (s) {\n    t.transition('shifts', s.id, 'approved', 'Approved by the person');\n  });\n  var v = weekView(t.data, monday, nowMs);\n  var open = v.gaps.reduce(function (sum, g) {\n    return sum + g.open;\n  }, 0);\n  return (\n    'Approved ' + list.length + (list.length === 1 ? ' shift' : ' shifts') + ' for the week of Mon ' + monday + '.' +\n    (open ? ' ' + open + (open === 1 ? ' spot is' : ' spots are') + ' still open.' : ' Every shift is covered.') +\n    (v.conflicts.length ? ' ' + v.conflicts.length + (v.conflicts.length === 1 ? ' conflict remains.' : ' conflicts remain.') : '')\n  );\n}\nfunction run(action, input, state, nowMs) {\n  input = input || {};\n  var t = transaction(state, nowMs);\n  var note = '';\n  var week = null;\n  if (action === 'add_staff') note = addStaff(t, input, nowMs);\n  else if (action === 'availability') note = setAvailability(t, input, nowMs);\n  else if (action === 'add_shift') note = addShift(t, input, nowMs);\n  else if (action === 'copy_week') note = copyWeek(t, input, nowMs);\n  else if (action === 'assign') note = assign(t, input, nowMs);\n  else if (action === 'rules') note = setRules(t, input);\n  else if (action === 'approve') note = approve(t, input, nowMs);\n  else if (action === 'status') {\n    if (given(input.week)) {\n      week = normalizeDate(input.week, nowMs);\n      if (!week) throw new Error('week must be a date in the week, YYYY-MM-DD.');\n    }\n  } else throw new Error(\"Unknown action '\" + action + \"'. Use status, add_staff, availability, add_shift, copy_week, assign, rules, or approve.\");\n  // A change outside this week and next is reported on its own week.\n  var thisWeek = mondayOf(localDay(nowMs));\n  if (!week && t.focus && t.focus !== thisWeek && t.focus !== addDays(thisWeek, 7)) week = t.focus;\n  var view = picture(t.data, nowMs, week);\n  return {\n    ops: t.ops,\n    state: t.data,\n    output: {\n      openSpots: view.openSpots,\n      conflicts: view.conflicts,\n      toApprove: view.toApprove,\n      shifts: view.shifts,\n      week: view.monday,\n      summary: (note ? note + ' ' : '') + view.summary,\n    },\n  };\n}\n// ── roster-rules-end ──\n\nconst stores = {\n  staff: rosterStore(gezel.fs, 'staff.json', { stages: ['active', 'inactive'], idPrefix: 'st' }),\n  shifts: rosterStore(gezel.fs, 'shifts.json', { stages: ['draft', 'approved'], idPrefix: 'sh' }),\n  availability: rosterStore(gezel.fs, 'availability.json', { stages: ['active', 'cleared'], idPrefix: 'av' }),\n};\nasync function readRules(): Promise<Record<string, unknown>> {\n  let raw: string;\n  try {\n    raw = await gezel.fs.read('rules.json');\n  } catch {\n    return { version: 1, notes: [] };\n  }\n  try {\n    return JSON.parse(raw);\n  } catch {\n    throw new Error('rules.json is not valid JSON. Fix or remove it; it is not overwritten automatically.');\n  }\n}\nconst before = {\n  staff: await stores.staff.list(),\n  shifts: await stores.shifts.list(),\n  availability: await stores.availability.list(),\n  rules: await readRules(),\n};\nconst result = run(String(input.action), input, before, Date.now());\n// Replay the changes through the stores, in order, so the files keep their history.\nfor (const op of result.ops) {\n  if (op.store === 'rules') {\n    await gezel.fs.write('rules.json', JSON.stringify(op.value, null, 2) + '\\n');\n    continue;\n  }\n  const store = stores[op.store as 'staff' | 'shifts' | 'availability'];\n  if (op.op === 'add') await store.add({ id: op.id, status: op.status, fields: op.fields, note: op.note });\n  else if (op.op === 'update') await store.update(op.id, { fields: op.fields, ...(op.note ? { note: op.note } : {}) });\n  else await store.transition(op.id, op.to, op.note ? { note: op.note } : {});\n}\ngezel.output(result.output);\n"
+  },
+  "tools": [
+    {
+      "name": "roster_status",
+      "description": "This week and next: the open spots (soonest first, with who is free for each), conflicts, everyone's hours against their limits, the schedule by day, availability and the business's rules, all with ids. Call it first when asked where you're short, who is working, or how many hours someone has. Pass week for another week.",
+      "script": "roster-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "week": {
+            "type": "string",
+            "description": "Any date in the week, YYYY-MM-DD."
+          }
+        }
+      },
+      "bind": {
+        "action": "status"
+      },
+      "state": true
+    },
+    {
+      "name": "add_staff",
+      "description": "Save a person on the roster: name, the roles they work, and their own weekly hour limit if the business states one. An existing name is updated, never duplicated; status inactive takes someone off the active staff. Call it as soon as a person is mentioned, before you describe it.",
+      "script": "roster-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "roles": {
+            "type": "string",
+            "description": "What they work, comma-separated, e.g. 'barista, kitchen'."
+          },
+          "maxHours": {
+            "type": "number",
+            "description": "Their own weekly hour limit, only as the business states it."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "bind": {
+        "action": "add_staff"
+      }
+    },
+    {
+      "name": "set_availability",
+      "description": "Record when someone can't work: a weekday for every week, weekdays, weekends, every day, or one date, all day or for part of it. available true clears it. Call it the moment the person tells you; it names any shift that now clashes.",
+      "script": "roster-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "staff": {
+            "type": "string",
+            "description": "Name or id."
+          },
+          "day": {
+            "type": "string",
+            "description": "A weekday ('tuesday') for every week, 'weekdays', 'weekends', 'every day', or a date (YYYY-MM-DD) for one day."
+          },
+          "part": {
+            "type": "string",
+            "enum": [
+              "all day",
+              "morning",
+              "afternoon",
+              "evening"
+            ]
+          },
+          "from": {
+            "type": "string",
+            "description": "Unavailable from this time, e.g. '17:00'."
+          },
+          "to": {
+            "type": "string",
+            "description": "Unavailable until this time, e.g. '12:00'."
+          },
+          "available": {
+            "type": "boolean",
+            "description": "True when they can work that day again."
+          },
+          "date": {
+            "type": "string",
+            "description": "Only with day 'one date': the date, YYYY-MM-DD."
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "staff",
+          "day"
+        ]
+      },
+      "bind": {
+        "action": "availability"
+      }
+    },
+    {
+      "name": "add_shift",
+      "description": "Add a shift: date, start, end, role and how many people it needs. A shift with the same date, start and role is updated, never duplicated. Call it as soon as a shift is mentioned.",
+      "script": "roster-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "YYYY-MM-DD."
+          },
+          "start": {
+            "type": "string",
+            "description": "e.g. '06:00'."
+          },
+          "end": {
+            "type": "string",
+            "description": "e.g. '14:00'."
+          },
+          "role": {
+            "type": "string",
+            "description": "What the shift works, e.g. 'barista' or 'kitchen'."
+          },
+          "needed": {
+            "type": "number",
+            "description": "How many people it needs."
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "date"
+        ]
+      },
+      "bind": {
+        "action": "add_shift",
+        "byPerson": false
+      }
+    },
+    {
+      "name": "copy_week",
+      "description": "Start a week from another one (default: the week before), keeping each person only where they still pass every rule and availability. Existing shifts are never duplicated. Use it to draft next week in one call.",
+      "script": "roster-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "week": {
+            "type": "string",
+            "description": "Any date in the week to fill."
+          },
+          "fromWeek": {
+            "type": "string",
+            "description": "Any date in the week to copy (default: the week before)."
+          }
+        }
+      },
+      "bind": {
+        "action": "copy_week"
+      }
+    },
+    {
+      "name": "assign_shift",
+      "description": "Put someone on a shift (staff) or take someone off (remove), by the shift's id. It refuses a person who is unavailable, already working, short of rest or over their hours, and names who is free instead. Your assignments are proposals: the person approves each week on the roster page.",
+      "script": "roster-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The shift id from roster_status, e.g. 'sh-4'."
+          },
+          "date": {
+            "type": "string",
+            "description": "Without an id: the shift date, YYYY-MM-DD."
+          },
+          "start": {
+            "type": "string",
+            "description": "Without an id: the start time."
+          },
+          "role": {
+            "type": "string",
+            "description": "Without an id: the role."
+          },
+          "staff": {
+            "type": "string",
+            "description": "Who to put on it: name or id."
+          },
+          "remove": {
+            "type": "string",
+            "description": "Who to take off it: name or id."
+          }
+        }
+      },
+      "bind": {
+        "action": "assign",
+        "byPerson": false
+      }
+    },
+    {
+      "name": "set_rules",
+      "description": "Record a scheduling rule the business states: most hours a week, fewest hours between shifts, longest shift, or another rule in their words. Only ever record rules they state; never add your own.",
+      "script": "roster-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "maxWeekHours": {
+            "type": "number",
+            "description": "Most hours a week per person (0 removes the rule)."
+          },
+          "minRestHours": {
+            "type": "number",
+            "description": "Fewest hours between shifts (0 removes the rule)."
+          },
+          "maxShiftHours": {
+            "type": "number",
+            "description": "Longest shift in hours (0 removes the rule)."
+          },
+          "rule": {
+            "type": "string",
+            "description": "Any other rule, in the business's own words."
+          },
+          "forget": {
+            "type": "string",
+            "description": "Drop the written rule containing this text."
+          }
+        }
+      },
+      "bind": {
+        "action": "rules"
+      }
+    },
+    {
+      "name": "page_add_staff",
+      "description": "Add or update a person.",
+      "script": "roster-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "roles": {
+            "type": "string",
+            "description": "What they work, comma-separated, e.g. 'barista, kitchen'."
+          },
+          "maxHours": {
+            "type": "number",
+            "description": "Their own weekly hour limit, only as the business states it."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "bind": {
+        "action": "add_staff"
+      }
+    },
+    {
+      "name": "page_add_shift",
+      "description": "Add or update a shift.",
+      "script": "roster-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "YYYY-MM-DD."
+          },
+          "start": {
+            "type": "string",
+            "description": "e.g. '06:00'."
+          },
+          "end": {
+            "type": "string",
+            "description": "e.g. '14:00'."
+          },
+          "role": {
+            "type": "string",
+            "description": "What the shift works, e.g. 'barista' or 'kitchen'."
+          },
+          "needed": {
+            "type": "number",
+            "description": "How many people it needs."
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "date"
+        ]
+      },
+      "bind": {
+        "action": "add_shift",
+        "byPerson": true
+      }
+    },
+    {
+      "name": "page_assign_shift",
+      "description": "Put someone on a shift or take them off.",
+      "script": "roster-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The shift id from roster_status, e.g. 'sh-4'."
+          },
+          "date": {
+            "type": "string",
+            "description": "Without an id: the shift date, YYYY-MM-DD."
+          },
+          "start": {
+            "type": "string",
+            "description": "Without an id: the start time."
+          },
+          "role": {
+            "type": "string",
+            "description": "Without an id: the role."
+          },
+          "staff": {
+            "type": "string",
+            "description": "Who to put on it: name or id."
+          },
+          "remove": {
+            "type": "string",
+            "description": "Who to take off it: name or id."
+          }
+        }
+      },
+      "bind": {
+        "action": "assign",
+        "byPerson": true
+      }
+    },
+    {
+      "name": "page_set_availability",
+      "description": "Record when someone cannot work.",
+      "script": "roster-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "staff": {
+            "type": "string",
+            "description": "Name or id."
+          },
+          "day": {
+            "type": "string",
+            "description": "A weekday ('tuesday') for every week, 'weekdays', 'weekends', 'every day', or a date (YYYY-MM-DD) for one day."
+          },
+          "part": {
+            "type": "string",
+            "enum": [
+              "all day",
+              "morning",
+              "afternoon",
+              "evening"
+            ]
+          },
+          "from": {
+            "type": "string",
+            "description": "Unavailable from this time, e.g. '17:00'."
+          },
+          "to": {
+            "type": "string",
+            "description": "Unavailable until this time, e.g. '12:00'."
+          },
+          "available": {
+            "type": "boolean",
+            "description": "True when they can work that day again."
+          },
+          "date": {
+            "type": "string",
+            "description": "Only with day 'one date': the date, YYYY-MM-DD."
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "staff",
+          "day"
+        ]
+      },
+      "bind": {
+        "action": "availability"
+      },
+      "reaction": {
+        "gezel": "shift-scheduler",
+        "hideSeed": true,
+        "prompt": "The person just changed someone's availability on the roster page. The roster now reads (its first sentence is what changed):\n{{output.summary}}\nIn one or two short sentences: if that change clashes with a shift, propose one person from the free list to cover it and ask whether to make the swap; otherwise just confirm it. Do not call tools."
+      }
+    },
+    {
+      "name": "page_set_rules",
+      "description": "Record the business’s scheduling rules.",
+      "script": "roster-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "maxWeekHours": {
+            "type": "number",
+            "description": "Most hours a week per person (0 removes the rule)."
+          },
+          "minRestHours": {
+            "type": "number",
+            "description": "Fewest hours between shifts (0 removes the rule)."
+          },
+          "maxShiftHours": {
+            "type": "number",
+            "description": "Longest shift in hours (0 removes the rule)."
+          },
+          "rule": {
+            "type": "string",
+            "description": "Any other rule, in the business's own words."
+          },
+          "forget": {
+            "type": "string",
+            "description": "Drop the written rule containing this text."
+          }
+        }
+      },
+      "bind": {
+        "action": "rules"
+      }
+    },
+    {
+      "name": "page_approve_week",
+      "description": "Approve every draft shift in a week.",
+      "script": "roster-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "week": {
+            "type": "string",
+            "description": "Any date in the week, YYYY-MM-DD."
+          }
+        }
+      },
+      "bind": {
+        "action": "approve",
+        "byPerson": true
+      },
+      "reaction": {
+        "gezel": "shift-scheduler",
+        "hideSeed": true,
+        "prompt": "The person just approved a week on the roster page. The roster now reads (its first sentence is what changed):\n{{output.summary}}\nIn two short sentences, confirm the approval and name any open spot still to fill. Do not call tools."
+      }
+    }
+  ],
+  "craftbooks": [
+    "weekly-schedule-draft"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "roster/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "staff.json"
+      },
+      {
+        "source": "workspace",
+        "path": "shifts.json"
+      },
+      {
+        "source": "workspace",
+        "path": "availability.json"
+      },
+      {
+        "source": "workspace",
+        "path": "rules.json"
+      }
+    ],
+    "tools": [
+      "page_add_staff",
+      "page_add_shift",
+      "page_assign_shift",
+      "page_set_availability",
+      "page_set_rules",
+      "page_approve_week"
+    ]
+  },
+  "workspaceSeed": [
+    "staff.json",
+    "shifts.json",
+    "availability.json",
+    "rules.json"
+  ],
+  "minGezelVersion": "1.26280"
+}

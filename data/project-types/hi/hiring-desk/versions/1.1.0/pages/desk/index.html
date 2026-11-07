@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Hiring desk</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f4f2ec; --card: #fffdf8; --surface: #fffdf8; --ink: #26282a; --muted: #5f6763; --line: #d9d6cc;
+        --accent: #2d6b66; --late: #a3341f; --late-bg: #f7e1da; --soon: #8a5a12; --soon-bg: #f6ead2;
+        --ok: #3f6b4a; --ok-bg: #e2eedf; --chip: #ece9e0; --col: #f7f5ef;
+      }
+      :root[data-theme='dark'] {
+        --bg: #161817; --card: #1f2221; --surface: #1f2221; --ink: #e9ebe7; --muted: #a1aaa5; --line: #353a38;
+        --accent: #7cc1ba; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+        --ok: #8fc29b; --ok-bg: #22301f; --chip: #2a2e2c; --col: #1a1d1c;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #161817; --card: #1f2221; --surface: #1f2221; --ink: #e9ebe7; --muted: #a1aaa5; --line: #353a38;
+          --accent: #7cc1ba; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+          --ok: #8fc29b; --ok-bg: #22301f; --chip: #2a2e2c; --col: #1a1d1c;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body, system-ui, sans-serif); font-size: 15px; line-height: 1.5; padding: 1.5rem 1.25rem; }
+      main { max-width: 900px; margin: 0 auto; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.5rem; font-weight: 400; margin: 0 0 0.2rem; }
+      h2 { font-family: var(--font-heading, Georgia, serif); font-size: 1.1rem; font-weight: 400; margin: 0 0 0.6rem; }
+      h3, main h3 { font-family: var(--font-ui, system-ui, sans-serif); font-size: 0.95rem; font-weight: 600; margin: 0; }
+      .key { min-height: 30px; padding: 0.15rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; font-size: 0.82rem; white-space: nowrap; }
+      .key:hover { background: var(--chip); }
+      .cand .key { display: block; margin: 0.3rem 0 0; }
+      .role-head .key { margin-left: auto; }
+      .sub { color: var(--muted); margin: 0 0 1rem; }
+      .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; margin: 0 0 1.2rem; }
+      .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem 0.9rem; }
+      .tile b { display: block; font-size: 1.5rem; font-weight: 600; line-height: 1.1; }
+      .tile span { color: var(--muted); font-size: 0.85rem; }
+      .tile.late b { color: var(--late); }
+      .tile.soon b { color: var(--soon); }
+      section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin: 0 0 1rem; }
+      .due { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+      .due li { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr) auto; gap: 0.75rem; align-items: start; }
+      .due .when, .due li > .key { justify-self: start; }
+      .due li.empty { display: block; }
+      .when { font-size: 0.8rem; font-weight: 600; padding: 0.15rem 0.45rem; border-radius: 4px; text-align: center; background: var(--chip); color: var(--muted); }
+      .when.late { background: var(--late-bg); color: var(--late); }
+      .when.soon { background: var(--soon-bg); color: var(--soon); }
+      .what b { font-weight: 600; }
+      .what small, .meta { display: block; color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
+      .empty { color: var(--muted); font-style: italic; margin: 0; }
+      .pipelines { display: grid; gap: 1rem; }
+      .role { border-top: 1px solid var(--line); padding-top: 0.85rem; }
+      .role:first-child { border-top: 0; padding-top: 0; }
+      .role-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.75rem; margin: 0 0 0.4rem; }
+      .paused { font-size: 0.78rem; padding: 0.05rem 0.4rem; border-radius: 4px; background: var(--soon-bg); color: var(--soon); }
+      .reqs { list-style: none; margin: 0 0 0.6rem; padding: 0; display: flex; flex-wrap: wrap; gap: 0.35rem; }
+      .reqs li { font-size: 0.8rem; padding: 0.1rem 0.45rem; border-radius: 4px; background: var(--chip); }
+      .stages { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.5rem; align-items: start; }
+      .stage { background: var(--col); border: 1px solid var(--line); border-radius: 6px; padding: 0.5rem; min-width: 0; }
+      .stage h4 { margin: 0 0 0.35rem; font-family: var(--font-ui, system-ui, sans-serif); font-size: 0.78rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; display: flex; justify-content: space-between; }
+      .stage ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; }
+      .cand { background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 0.3rem 0.45rem; font-size: 0.88rem; overflow-wrap: anywhere; }
+      .cand small { display: block; color: var(--muted); font-size: 0.78rem; }
+      .stage.hired .cand { border-color: var(--ok); }
+      .closed-note { color: var(--muted); font-size: 0.82rem; margin: 0.4rem 0 0; }
+      .table-wrap { overflow-x: auto; position: relative; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+      th { text-align: left; font-weight: 600; color: var(--muted); font-size: 0.78rem; padding: 0 0.5rem 0.4rem; border-bottom: 1px solid var(--line); vertical-align: bottom; }
+      td { padding: 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+      tr:last-child td { border-bottom: 0; }
+      .score { display: inline-block; white-space: nowrap; min-width: 2.4rem; text-align: center; font-weight: 600; font-size: 0.85rem; padding: 0.05rem 0.35rem; border-radius: 4px; background: var(--chip); }
+      .score.high { background: var(--ok-bg); color: var(--ok); }
+      .score.low { background: var(--late-bg); color: var(--late); }
+      .cards-role + .cards-role { margin-top: 1rem; }
+      .cards-role h3 { margin: 0 0 0.4rem; }
+      .quotes { list-style: none; margin: 0.6rem 0 0; padding: 0; display: grid; gap: 0.4rem; font-size: 0.9rem; }
+      .quotes span { color: var(--muted); }
+      .demo-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 0 0 1rem; padding: 0.5rem 0.65rem; border: 1px solid var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--card) 88%, var(--accent)); font-size: 0.85rem; }
+      .demo-banner[hidden] { display: none; }
+      .demo-reset { flex: none; min-height: 36px; padding: 0.3rem 0.7rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; }
+      .note { color: var(--muted); font-size: 0.85rem; margin: 0.75rem 0 0; }
+      @media (max-width: 760px) {
+        .stages { grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); }
+      }
+      @media (max-width: 640px) {
+        .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .due li { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
+        .when { justify-self: start; }
+      }
+    </style>
+    <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:0 0 12px;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--line,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+    <style data-app-shell="2">
+    /* Shared app furniture from the Gezel app UX guide. The page owns everything else. */
+    :root{--app-action:var(--gezel-component-accent,#805128);--app-on-action:#fffaf3;--app-banner-bg:#f3eddf;--app-banner-line:#d6cbb8}
+    :root[data-theme=dark]{--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}
+    @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}}
+    main h1{font-weight:400}
+    html[data-gezel-fullscreen=true] main h1{font-size:clamp(28px,3vw,40px);margin-top:0}
+    .app-tabs{margin:20px 0 24px}
+    .app-actionbar{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin:16px 0 24px}
+    .app-panel>.app-actionbar:first-child{margin-top:0}
+    .app-settings{display:grid;gap:16px;max-width:760px;margin:0 0 24px}
+    .app-search{margin:0}
+    .app-search gezel-collection-filter{margin:0 0 12px;max-width:540px}
+    .app-primary{min-height:44px;padding:8px 16px;border:1px solid var(--app-action);border-radius:6px;background:var(--app-action);color:var(--app-on-action);font-weight:600}
+    .app-primary:disabled{display:none}
+    main li.empty{display:block;grid-column:1/-1}
+    html[data-app-legacy] [data-app-action]{display:none!important}
+    [data-gezel-demo-banner]:not([hidden]){display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin:0 0 16px;padding:8px 8px 8px 14px;border:1px solid var(--app-banner-line);border-radius:10px;background:var(--app-banner-bg);color:inherit;font-size:14px;line-height:1.4}
+    [data-gezel-demo-banner] button{min-height:32px;padding:4px 12px;border:1px solid var(--app-banner-line);border-radius:6px;background:transparent;color:inherit;font-size:13px}
+    @media(max-width:620px){.tiles,.stats,.summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:nth-child(3):last-child){grid-template-columns:repeat(3,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:only-child){grid-template-columns:minmax(0,1fr)!important}}
+    </style>
+    <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script>
+  </head>
+  <body>
+    <main>
+      <p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong>: Harbor Street Café’s sample hiring desk, with made-up candidates. Changes stay in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Hiring desk</h1>
+      <p class="sub" id="sub">Loading the hiring desk…</p>
+      <div class="tiles">
+        <div class="tile"><b id="t-roles">0</b><span>Open roles</span></div>
+        <div class="tile"><b id="t-play">0</b><span>Candidates in play</span></div>
+        <div class="tile"><b id="t-interviews">0</b><span>Interviews this week</span></div>
+        <div class="tile"><b id="t-cards">0</b><span>Scorecards to collect</span></div>
+      </div>
+      <section id="interviews-section">
+        <h2>Interviews and scorecards</h2>
+        <ul class="due" id="interviews"></ul>
+      </section>
+      <section id="pipelines-section">
+        <h2>Candidates by role</h2>
+        <div class="pipelines" id="pipelines"></div>
+      </section>
+      <section id="scorecards-section">
+        <h2>Scorecards</h2>
+        <div id="scorecards"></div>
+        <p class="note">Interviewers rate each role’s job-related requirements from 1 to 4. There is no overall score: compare the evidence, then decide. Candidate details stay in this project on this computer. For pay, offers or what you may ask, check with an employment lawyer or your local labor agency.</p>
+      </section>
+    </main>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        var DAY = 86400000;
+        function pad(n) { return n < 10 ? '0' + n : String(n); }
+        function iso(ms) { var d = new Date(ms); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+        function daysFromNow(n) { return iso(Date.now() + n * DAY); }
+        function stampFromNow(n) { return new Date(Date.now() + n * DAY).toISOString(); }
+
+        // ── demo desk (used only when the page opens outside Gezel); dates are relative so it never goes stale ──
+        var BARISTA = ['Coffee and milk skills', 'Warm customer service', 'Reliability and teamwork', 'Weekend availability'];
+        var demoRoles = { version: 1, stages: ['open', 'paused', 'filled', 'closed'], records: [
+          { id: 'role-1', status: 'open', fields: { title: 'Barista', requirements: BARISTA, openings: 2, manager: 'Dana', pay: '$19–21 an hour plus tips', openedAt: daysFromNow(-24) } },
+          { id: 'role-2', status: 'open', fields: { title: 'Line cook', requirements: ['Knife skills', 'Food safety habits', 'Speed during the rush', 'Food handler card'], openings: 2, manager: 'Luis', pay: '$21–24 an hour', openedAt: daysFromNow(-31) } },
+        ] };
+        var demoCandidates = { version: 1, stages: ['sourced', 'screen', 'interview', 'offer', 'hired', 'closed'], records: [
+          { id: 'cand-1', status: 'screen', fields: { name: 'Ana Ruiz', roleId: 'role-1', roleTitle: 'Barista', source: 'Job board', notes: 'Two years on a bakery counter; open on weekends.' } },
+          { id: 'cand-2', status: 'interview', fields: { name: 'Theo Brandt', roleId: 'role-1', roleTitle: 'Barista', source: 'Referral', notes: 'Referred by Luis; pulled shots at a farmers market stand.', interviewAt: daysFromNow(-1), interviewTime: '2:30 pm', interviewer: 'Dana' } },
+          { id: 'cand-3', status: 'interview', fields: { name: 'Lena Vos', roleId: 'role-1', roleTitle: 'Barista', source: 'Walk-in', interviewAt: daysFromNow(-4), interviewTime: '11:00 am', interviewer: 'Dana and Luis' } },
+          { id: 'cand-4', status: 'interview', fields: { name: 'Mei Tanaka', roleId: 'role-1', roleTitle: 'Barista', source: 'Job board', interviewAt: daysFromNow(3), interviewTime: '10:00 am', interviewer: 'Dana' } },
+          { id: 'cand-5', status: 'sourced', fields: { name: 'Jordan Price', roleId: 'role-1', roleTitle: 'Barista', source: 'Social media' } },
+          { id: 'cand-6', status: 'hired', fields: { name: 'Mira Okafor', roleId: 'role-1', roleTitle: 'Barista', source: 'Referral', notes: 'Starts next week.' } },
+          { id: 'cand-7', status: 'closed', fields: { name: 'Chris Hale', roleId: 'role-1', roleTitle: 'Barista', source: 'Job board', notes: 'Needed weekdays only.' } },
+          { id: 'cand-8', status: 'interview', fields: { name: 'Grace Kim', roleId: 'role-2', roleTitle: 'Line cook', source: 'Job board', interviewAt: daysFromNow(1), interviewTime: '9:00 am', interviewer: 'Luis' } },
+          { id: 'cand-9', status: 'screen', fields: { name: 'Omar Haddad', roleId: 'role-2', roleTitle: 'Line cook', source: 'Referral' } },
+          { id: 'cand-10', status: 'sourced', fields: { name: 'Ben Ortiz', roleId: 'role-2', roleTitle: 'Line cook', source: 'Job board' } },
+          { id: 'cand-11', status: 'hired', fields: { name: 'Jamal Reed', roleId: 'role-2', roleTitle: 'Line cook', source: 'Walk-in' } },
+        ] };
+        var demoFeedback = { version: 1, events: [
+          { at: stampFromNow(-17), kind: 'scorecard', note: 'Steamed milk for three drinks without a wasted pitcher; asked how we handle allergen orders.', data: { candidateId: 'cand-6', roleId: 'role-1', by: 'Dana', ratings: { 'Coffee and milk skills': 4, 'Warm customer service': 4, 'Reliability and teamwork': 3, 'Weekend availability': 4 } } },
+          { at: stampFromNow(-4), kind: 'scorecard', note: 'Pulled a clean shot under pressure; quieter with regulars at first.', data: { candidateId: 'cand-3', roleId: 'role-1', by: 'Dana', ratings: { 'Coffee and milk skills': 4, 'Warm customer service': 3, 'Reliability and teamwork': 3, 'Weekend availability': 4 } } },
+          { at: stampFromNow(-4), kind: 'scorecard', note: 'Cleaned as she went and asked good questions about closing.', data: { candidateId: 'cand-3', roleId: 'role-1', by: 'Luis', ratings: { 'Coffee and milk skills': 3, 'Warm customer service': 3, 'Reliability and teamwork': 4, 'Weekend availability': 4 } } },
+          { at: stampFromNow(-3), kind: 'booked', note: 'Interview booked.', data: { candidateId: 'cand-4', roleId: 'role-1', on: daysFromNow(3) } },
+        ] };
+
+        // The hiring-store rules, mirrored for the demo so the sample behaves like the live desk.
+        var STAGES = ['sourced', 'screen', 'interview', 'offer', 'hired', 'closed'];
+        var PROTECTED = /\b(age|aged|ages|young|younger|youthful|older|elderly|race|racial|ethnic|ethnicity|skin colou?r|religion|religious|gender|sex|sexual orientation|male|female|pregnant|pregnancy|maternity|disabled|disability|disabilities|national origin|nationality|native speaker|marital|married|genetic|veteran status)\b/i;
+        function daysLeft(day) { return Math.round((Date.parse(String(day).slice(0, 10) + 'T00:00:00') - Date.parse(iso(Date.now()) + 'T00:00:00')) / DAY); }
+        function dayName(day) { return ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(String(day).slice(0, 10) + 'T12:00:00').getDay()]; }
+        function parseDay(text) {
+          var raw = String(text || '').trim().toLowerCase();
+          if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+          if (raw === 'today') return daysFromNow(0);
+          if (raw === 'tomorrow') return daysFromNow(1);
+          var m = raw.match(/^(?:next |this |on )?(sun|mon|tue|wed|thu|fri|sat)[a-z]*$/);
+          if (!m) return null;
+          var diff = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].indexOf(m[1]) - new Date().getDay();
+          return daysFromNow(((diff + 6) % 7) + 1);
+        }
+        function guard(text) { var m = String(text || '').match(PROTECTED); if (m) throw new Error("Hiring Desk never rates or screens on '" + m[1].toLowerCase() + "'. Requirements and ratings cover the job only."); }
+        function words(text) { return (String(text || '').toLowerCase().match(/[a-z0-9]+/g) || []).filter(function (w) { return w.length >= 3 && ['and', 'the', 'with', 'for', 'skill', 'skills', 'good', 'great', 'strong', 'very', 'their'].indexOf(w) < 0; }).map(function (w) { return w.length > 4 ? w.replace(/ies$/, 'y').replace(/s$/, '') : w; }); }
+        function matchRequirement(label, reqs) {
+          var want = words(label), best = null, score = 0;
+          reqs.forEach(function (req) {
+            var have = words(req);
+            var hits = want.filter(function (w) { return have.some(function (h) { return h === w || (w.length >= 4 && h.indexOf(w) === 0) || (h.length >= 4 && w.indexOf(h) === 0); }); }).length;
+            if (hits > score) { best = req; score = hits; }
+          });
+          return best;
+        }
+        function parseRatings(text, reqs) {
+          var out = {}, re = /([a-z][a-z '&\/-]*?)\s*[:=(-]?\s*(\d+(?:\.\d+)?)\s*(?:\/\s*\d+|out of \d+)?\)?/gi, m;
+          while ((m = re.exec(String(text || '')))) {
+            var label = m[1].replace(/^\s*(and|plus|also|then)\s+/i, '').trim(), n = Number(m[2]);
+            if (!label) continue;
+            guard(label);
+            if (!(n >= 1 && n <= 4) || Math.round(n) !== n) throw new Error(label + ' ' + m[2] + ' is not a whole rating from 1 to 4.');
+            out[matchRequirement(label, reqs) || label.charAt(0).toUpperCase() + label.slice(1)] = n;
+          }
+          return out;
+        }
+        function nextId(records, prefix) { return prefix + '-' + (records.reduce(function (m, r) { return Math.max(m, Number(String(r.id).split('-')[1]) || 0); }, 0) + 1); }
+        function find(records, text, labelOf, noun) {
+          var wanted = String(text || '').trim().toLowerCase().replace(/['’]s\b/g, '');
+          var hits = records.filter(function (r) { return r.id === wanted || labelOf(r).toLowerCase() === wanted; });
+          if (!hits.length) hits = records.filter(function (r) { return wanted && (' ' + labelOf(r).toLowerCase() + ' ').indexOf(' ' + wanted) >= 0; });
+          if (!hits.length) hits = records.filter(function (r) { return wanted && wanted.indexOf(labelOf(r).toLowerCase()) >= 0; });
+          if (hits.length === 1) return hits[0];
+          throw new Error(hits.length ? "More than one " + noun + " matches '" + text + "'. Pass the id." : "No " + noun + " matches '" + text + "'.");
+        }
+        function findCandidate(text) {
+          var active = demoCandidates.records.filter(function (c) { return c.status !== 'hired' && c.status !== 'closed'; });
+          try { return find(active, text, function (c) { return c.fields.name; }, 'candidate'); } catch (e) { return find(demoCandidates.records, text, function (c) { return c.fields.name; }, 'candidate'); }
+        }
+        function findRole(text) {
+          if (!text) { var open = demoRoles.records.filter(function (r) { return r.status === 'open'; }); if (open.length === 1) return open[0]; throw new Error("Pass 'role'."); }
+          return find(demoRoles.records, text, function (r) { return r.fields.title; }, 'role');
+        }
+        function demoSummary(note) {
+          var active = demoCandidates.records.filter(function (c) { return c.status !== 'hired' && c.status !== 'closed'; });
+          var soon = active.filter(function (c) { return c.status === 'interview' && c.fields.interviewAt && daysLeft(c.fields.interviewAt) >= 0 && daysLeft(c.fields.interviewAt) <= 7; });
+          var live = demoRoles.records.filter(function (r) { return r.status === 'open' || r.status === 'paused'; });
+          return { openRoles: live.length, inPipeline: active.length, interviewsSoon: soon.length, summary: (note ? note + ' ' : '') + soon.length + ' interviews in the next 7 days; ' + active.length + ' candidates in play.' };
+        }
+        function demoAddRole(input) {
+          if (!input.title) throw new Error("add_role needs 'title'.");
+          var title = String(input.title).trim(), reqs = String(input.requirements || '').split(/\s*[,;\n]+\s*/).map(function (s) { return s.replace(/^(and|or)\s+/i, '').trim(); }).filter(Boolean);
+          [title].concat(reqs).forEach(guard);
+          var r = demoRoles.records.find(function (x) { return x.fields.title.toLowerCase() === title.toLowerCase(); });
+          var fields = {};
+          if (reqs.length) fields.requirements = reqs;
+          if (input.openings) fields.openings = Math.max(1, Math.round(Number(input.openings)));
+          ['manager', 'pay'].forEach(function (k) { if (input[k]) fields[k] = String(input[k]).trim(); });
+          if (r) { Object.assign(r.fields, fields); if (input.roleStatus) r.status = input.roleStatus; return demoSummary('Updated the ' + r.fields.title + ' role.'); }
+          var id = nextId(demoRoles.records, 'role');
+          demoRoles.records.push({ id: id, status: input.roleStatus || 'open', fields: Object.assign({ title: title, requirements: [], openings: 1, openedAt: daysFromNow(0) }, fields) });
+          return demoSummary('Opened ' + title + ' (' + id + ').');
+        }
+        function demoAddCandidate(input) {
+          if (!input.name) throw new Error("add_candidate needs 'name'.");
+          var role = findRole(input.role), name = String(input.name).trim();
+          var c = demoCandidates.records.find(function (x) { return x.fields.name.toLowerCase() === name.toLowerCase() && x.fields.roleId === role.id; });
+          var fields = {}, on = input.interviewOn ? parseDay(input.interviewOn) : null;
+          if (input.interviewOn && !on) throw new Error("interviewOn must be a date or a weekday like 'thursday'.");
+          if (input.source) fields.source = String(input.source).trim();
+          if (input.note) fields.notes = String(input.note).trim();
+          if (on) fields.interviewAt = on;
+          if (input.interviewTime) fields.interviewTime = String(input.interviewTime).trim();
+          if (input.interviewer) fields.interviewer = String(input.interviewer).trim();
+          var stage = input.status || (on ? 'interview' : '');
+          if (c) { Object.assign(c.fields, fields); if (stage) c.status = stage; return demoSummary('Updated ' + name + '.'); }
+          var id = nextId(demoCandidates.records, 'cand');
+          demoCandidates.records.push({ id: id, status: stage || 'sourced', fields: Object.assign({ name: name, roleId: role.id, roleTitle: role.fields.title }, fields) });
+          return demoSummary('Added ' + name + ' (' + id + ') to ' + role.fields.title + '.');
+        }
+        function demoMove(input) {
+          var c = findCandidate(input.candidate || input.name);
+          var on = input.interviewOn ? parseDay(input.interviewOn) : null;
+          if (input.interviewOn && !on) throw new Error("interviewOn must be a date or a weekday like 'thursday'.");
+          var to = input.status || (on ? 'interview' : '');
+          if (STAGES.indexOf(to) < 0) throw new Error('status must be one of ' + STAGES.join(', ') + '.');
+          var from = c.status;
+          if (on) c.fields.interviewAt = on;
+          if (input.interviewTime) c.fields.interviewTime = String(input.interviewTime).trim();
+          if (input.interviewer) c.fields.interviewer = String(input.interviewer).trim();
+          c.status = to;
+          if (on) demoFeedback.events.push({ at: new Date().toISOString(), kind: 'booked', note: 'Interview booked.', data: { candidateId: c.id, roleId: c.fields.roleId, on: on } });
+          var note = c.fields.name + (from !== to ? ' moved from ' + from + ' to ' + to : ' stays at ' + to) + (to === 'interview' && c.fields.interviewAt ? ', interview ' + dayName(c.fields.interviewAt) + ' ' + c.fields.interviewAt : '') + '.';
+          if (to === 'hired') {
+            var role = demoRoles.records.find(function (r) { return r.id === c.fields.roleId; });
+            var hired = demoCandidates.records.filter(function (x) { return x.fields.roleId === role.id && x.status === 'hired'; }).length;
+            if (hired >= (role.fields.openings || 1) && role.status === 'open') { role.status = 'filled'; note += ' ' + role.fields.title + ' is now filled.'; }
+          }
+          return demoSummary(note);
+        }
+        function demoLogFeedback(input) {
+          var c = findCandidate(input.candidate || input.name);
+          var role = demoRoles.records.find(function (r) { return r.id === c.fields.roleId; });
+          var ratings = parseRatings(input.ratings, (role && role.fields.requirements) || []);
+          var keys = Object.keys(ratings);
+          if (!keys.length && !input.note && !input.ratings) throw new Error("feedback needs 'ratings' or a 'note'.");
+          var by = String(input.by || '').trim() || 'an interviewer';
+          var text = input.note ? String(input.note).trim() : !keys.length && input.ratings ? String(input.ratings).trim() : '';
+          var event = { at: new Date().toISOString(), kind: keys.length ? 'scorecard' : 'note', data: { candidateId: c.id, roleId: c.fields.roleId, by: by } };
+          if (text) event.note = text;
+          if (keys.length) event.data.ratings = ratings;
+          demoFeedback.events.push(event);
+          return demoSummary(keys.length ? 'Scorecard from ' + by + ' for ' + c.fields.name + '.' : 'Note from ' + by + ' on ' + c.fields.name + ' saved.');
+        }
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'desk/index.html', typeName: 'Hiring Desk', params: { business: 'Harbor Street Café' } },
+          tools: {
+            page_add_role: demoAddRole,
+            add_role: demoAddRole,
+            page_add_candidate: demoAddCandidate,
+            add_candidate: demoAddCandidate,
+            page_move_candidate: demoMove,
+            move_candidate: demoMove,
+            page_log_feedback: demoLogFeedback,
+            log_feedback: demoLogFeedback,
+            hiring_status: function () { return demoSummary(''); },
+            list_candidates: function () { return demoSummary(''); },
+          },
+          data: {
+            'roles.json': function () { return demoRoles; },
+            'candidates.json': function () { return demoCandidates; },
+            'feedback.json': function () { return demoFeedback; },
+          },
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+        function applyTheme(mode) { document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light'); }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function el(tag, text, cls) { var e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
+        function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+        function niceDate(day) { var d = new Date(String(day).slice(0, 10) + 'T12:00:00'); return isFinite(d) ? d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : String(day); }
+        function whenLabel(day) { var d = daysLeft(day); return d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : niceDate(day); }
+        function upperFirst(text) { return String(text).charAt(0).toUpperCase() + String(text).slice(1); }
+        // Row action: a small key that opens a shared dialog with these values filled in.
+        function rowKey(label, tool, values, aria) {
+          var key = el('button', label, 'key');
+          key.type = 'button';
+          key.setAttribute('data-app-action', tool);
+          key.setAttribute('data-app-values', JSON.stringify(values));
+          key.setAttribute('aria-label', aria);
+          return key;
+        }
+        var NEXT_STAGE = { sourced: 'screen', screen: 'interview', interview: 'offer', offer: 'hired' };
+        var STAGE_LABELS = { sourced: 'Sourced', screen: 'Screen', interview: 'Interview', offer: 'Offer', hired: 'Hired' };
+
+        function render(rolesDoc, candDoc, fbDoc) {
+          var roles = Array.isArray(rolesDoc.records) ? rolesDoc.records : [];
+          var cands = Array.isArray(candDoc.records) ? candDoc.records : [];
+          var events = Array.isArray(fbDoc.events) ? fbDoc.events : [];
+          var live = roles.filter(function (r) { return r.status === 'open' || r.status === 'paused'; });
+          var active = cands.filter(function (c) { return c.status !== 'hired' && c.status !== 'closed'; });
+          var cardsFor = function (c) { return events.filter(function (e) { return e.kind === 'scorecard' && e.data && e.data.candidateId === c.id; }); };
+          var titleOf = function (c) { var r = roles.find(function (x) { return x.id === c.fields.roleId; }); return r ? r.fields.title : c.fields.roleTitle || ''; };
+          var byDay = function (a, b) { return String(a.fields.interviewAt).localeCompare(String(b.fields.interviewAt)); };
+          var soon = active.filter(function (c) { return c.status === 'interview' && c.fields.interviewAt && daysLeft(c.fields.interviewAt) >= 0 && daysLeft(c.fields.interviewAt) <= 7; }).sort(byDay);
+          var waiting = active.filter(function (c) {
+            return c.status === 'interview' && c.fields.interviewAt && daysLeft(c.fields.interviewAt) < 0 && !cardsFor(c).some(function (e) { return String(e.at).slice(0, 10) >= c.fields.interviewAt; });
+          }).sort(byDay);
+
+          document.getElementById('t-roles').textContent = live.length;
+          document.getElementById('t-play').textContent = active.length;
+          document.getElementById('t-interviews').textContent = soon.length;
+          document.getElementById('t-cards').textContent = waiting.length;
+          document.getElementById('t-interviews').parentNode.classList.toggle('soon', soon.length > 0);
+          document.getElementById('t-cards').parentNode.classList.toggle('late', waiting.length > 0);
+          var roleOf = function (c) { return roles.find(function (x) { return x.id === c.fields.roleId; }); };
+          document.getElementById('sub').textContent = !roles.length
+            ? 'No roles yet. Tell your recruiter which role you are hiring for and what the job needs.'
+            : (soon.length ? plural(soon.length, 'interview', 'interviews') + ' in the next 7 days. ' : 'No interviews booked this week. ') +
+              (waiting.length ? waiting.map(function (c) { return c.fields.name; }).join(' and ') + (waiting.length === 1 ? ' is' : ' are') + ' waiting on a scorecard.' : 'Every interview so far has a scorecard.');
+
+          var list = document.getElementById('interviews');
+          list.replaceChildren();
+          if (!soon.length && !waiting.length) list.append(el('li', 'Nothing booked in the next 7 days.', 'empty'));
+          waiting.forEach(function (c) {
+            var li = el('li'), what = el('div', undefined, 'what');
+            li.append(el('span', 'Scorecard due', 'when late'));
+            what.append(el('b', c.fields.name));
+            what.append(el('small', [titleOf(c), 'interviewed ' + niceDate(c.fields.interviewAt), c.fields.interviewer ? 'with ' + c.fields.interviewer : ''].filter(Boolean).join(' · ')));
+            // The scorecard opens with this candidate, the interviewer, and the role's requirements ready for a 1 to 4 each.
+            var role = roleOf(c), reqs = (role && role.fields.requirements) || [];
+            var values = { candidate: c.id };
+            if (c.fields.interviewer) values.by = c.fields.interviewer;
+            if (reqs.length) values.ratings = reqs.map(function (q) { return q + ': '; }).join(', ');
+            li.append(what, rowKey('Record scorecard', 'log_feedback', values, 'Record the scorecard for ' + c.fields.name));
+            list.append(li);
+          });
+          soon.forEach(function (c) {
+            var li = el('li'), what = el('div', undefined, 'what');
+            li.append(el('span', whenLabel(c.fields.interviewAt), 'when ' + (daysLeft(c.fields.interviewAt) <= 1 ? 'soon' : '')));
+            what.append(el('b', c.fields.name));
+            what.append(el('small', [titleOf(c), c.fields.interviewTime || '', c.fields.interviewer ? 'with ' + c.fields.interviewer : ''].filter(Boolean).join(' · ')));
+            li.append(what);
+            list.append(li);
+          });
+
+          var holder = document.getElementById('pipelines');
+          holder.replaceChildren();
+          if (!live.length) holder.append(el('p', 'No open roles. Open one with its requirements to start a pipeline.', 'empty'));
+          live.forEach(function (r) {
+            var mine = cands.filter(function (c) { return c.fields.roleId === r.id; });
+            var hired = mine.filter(function (c) { return c.status === 'hired'; }).length;
+            var art = el('article', undefined, 'role'), head = el('div', undefined, 'role-head');
+            head.append(el('h3', r.fields.title));
+            if (r.status === 'paused') head.append(el('span', 'Paused', 'paused'));
+            head.append(el('span', [hired + ' of ' + plural(r.fields.openings || 1, 'opening', 'openings') + ' filled', r.fields.manager ? 'Manager ' + r.fields.manager : '', r.fields.pay || ''].filter(Boolean).join(' · '), 'meta'));
+            head.append(rowKey('Add a candidate', 'add_candidate', { role: r.id }, 'Add a candidate for ' + r.fields.title));
+            art.append(head);
+            var reqs = el('ul', undefined, 'reqs');
+            (r.fields.requirements || []).forEach(function (q) { reqs.append(el('li', q)); });
+            if (!(r.fields.requirements || []).length) reqs.append(el('li', 'No requirements written yet'));
+            art.append(reqs);
+            var grid = el('div', undefined, 'stages');
+            ['sourced', 'screen', 'interview', 'offer', 'hired'].forEach(function (s) {
+              var col = el('div', undefined, 'stage ' + s), h = el('h4'), people = mine.filter(function (c) { return c.status === s; }), ul = el('ul');
+              h.append(el('span', STAGE_LABELS[s]), el('span', String(people.length)));
+              col.append(h);
+              people.forEach(function (c) {
+                var li = el('li', undefined, 'cand');
+                li.append(document.createTextNode(c.fields.name));
+                var cards = cardsFor(c).length;
+                var meta = s === 'interview' && c.fields.interviewAt ? (daysLeft(c.fields.interviewAt) < 0 ? 'interviewed ' : '') + niceDate(c.fields.interviewAt) : c.fields.source || '';
+                if (cards) meta = (meta ? meta + ' · ' : '') + plural(cards, 'scorecard', 'scorecards');
+                if (meta) li.append(el('small', meta));
+                if (NEXT_STAGE[s]) li.append(rowKey('Move', 'move_candidate', { candidate: c.id, status: NEXT_STAGE[s] }, 'Move ' + c.fields.name + ' to ' + STAGE_LABELS[NEXT_STAGE[s]].toLowerCase()));
+                ul.append(li);
+              });
+              col.append(ul);
+              grid.append(col);
+            });
+            art.append(grid);
+            var closed = mine.filter(function (c) { return c.status === 'closed'; }).length;
+            if (closed) art.append(el('p', plural(closed, 'candidate', 'candidates') + ' closed out of this role.', 'closed-note'));
+            holder.append(art);
+          });
+          var done = roles.filter(function (r) { return r.status === 'filled' || r.status === 'closed'; });
+          if (done.length) holder.append(el('p', 'Filled or closed: ' + done.map(function (r) { return r.fields.title + ' (' + r.status + ')'; }).join(', ') + '.', 'closed-note'));
+
+          var scores = document.getElementById('scorecards');
+          scores.replaceChildren();
+          var any = false;
+          roles.forEach(function (r) {
+            var rated = cands.filter(function (c) { return c.fields.roleId === r.id && c.status !== 'closed' && cardsFor(c).length; });
+            if (!rated.length) return;
+            any = true;
+            var reqs = (r.fields.requirements || []).slice();
+            rated.forEach(function (c) { cardsFor(c).forEach(function (e) { Object.keys(e.data.ratings || {}).forEach(function (k) { if (reqs.indexOf(k) < 0) reqs.push(k); }); }); });
+            var box = el('div', undefined, 'cards-role'), wrap = el('div', undefined, 'table-wrap'), table = el('table'), thead = el('thead'), hr = el('tr'), body = el('tbody');
+            box.append(el('h3', r.fields.title));
+            hr.append(el('th', 'Candidate'));
+            reqs.forEach(function (q) { hr.append(el('th', q)); });
+            hr.append(el('th', 'Interviewers'));
+            thead.append(hr);
+            rated.forEach(function (c) {
+              var tr = el('tr'), name = el('td'), cards = cardsFor(c);
+              name.append(el('span', c.fields.name));
+              name.append(el('span', upperFirst(c.status), 'meta'));
+              tr.append(name);
+              reqs.forEach(function (q) {
+                var vals = cards.map(function (e) { return e.data.ratings && e.data.ratings[q]; }).filter(function (v) { return typeof v === 'number'; });
+                var td = el('td');
+                if (vals.length) {
+                  var avg = Math.round((vals.reduce(function (a, b) { return a + b; }, 0) / vals.length) * 10) / 10;
+                  td.append(el('span', avg + ' / 4', 'score ' + (avg >= 3.5 ? 'high' : avg < 2 ? 'low' : '')));
+                } else td.append(el('span', '–', 'meta'));
+                tr.append(td);
+              });
+              tr.append(el('td', cards.map(function (e) { return e.data.by; }).filter(Boolean).join(', ')));
+              body.append(tr);
+            });
+            table.append(thead, body);
+            wrap.append(table);
+            box.append(wrap);
+            var quotes = el('ul', undefined, 'quotes');
+            rated.forEach(function (c) {
+              cardsFor(c).filter(function (e) { return e.note; }).slice(-2).forEach(function (e) {
+                var li = el('li');
+                li.append(el('span', c.fields.name + ', from ' + (e.data.by || 'an interviewer') + ': '));
+                li.append(document.createTextNode(e.note));
+                quotes.append(li);
+              });
+            });
+            if (quotes.childNodes.length) box.append(quotes);
+            scores.append(box);
+          });
+          if (!any) scores.append(el('p', 'Scorecards appear here once interviewers rate a candidate.', 'empty'));
+        }
+
+        window.addEventListener('gezel-app-data-changed', function () { loadDesk(); });
+        window.loadDesk = loadDesk;
+        function loadDesk() {
+          var revision = ++appLoadRevision;
+          return Promise.all([gezel.data.read('roles.json'), gezel.data.read('candidates.json'), gezel.data.read('feedback.json')]).then(function (values) {
+            if (appDisposed || revision !== appLoadRevision) return;
+            reportAppError(null);
+            render(values[0] || {}, values[1] || {}, values[2] || {});
+          }).catch(function (error) { if (!appDisposed && revision === appLoadRevision) reportAppError(error); });
+        }
+
+        loadDesk();
+        appSubscriptions.push(gezel.data.watch('roles.json', function () { loadDesk(); }));
+        appSubscriptions.push(gezel.data.watch('candidates.json', function () { loadDesk(); }));
+        appSubscriptions.push(gezel.data.watch('feedback.json', function () { loadDesk(); }));
+      })();
+    </script>
+    <script src="application.js" defer></script>
+  </body>
+</html>

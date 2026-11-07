@@ -1,0 +1,376 @@
+{
+  "schemaVersion": 1,
+  "version": "1.1.0",
+  "releasedAt": "2026-11-07T18:00:00.000Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "studio": {
+        "type": "string",
+        "title": "Who delivers the work?",
+        "description": "e.g. 'Fernwood Studio, a six-person design agency', 'a solo brand consultant'.",
+        "default": "the studio"
+      }
+    },
+    "required": [
+      "studio"
+    ]
+  },
+  "nameTemplate": "Client Delivery",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "planner",
+      "voorman": true
+    },
+    {
+      "templateId": "copywriter"
+    }
+  ],
+  "scripts": {
+    "delivery-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { type RosterRecord, rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'delivery-store',\n  description:\n    \"Read and update client delivery: projects.json and milestones.json (rosters). action:'status' for what is waiting on clients, late and due soon; 'report' for a project's weekly status; 'add_project' and 'add_milestone' to save one (an existing title is updated, never duplicated; shiftDays moves dates by a number of days); 'set_status' to move a milestone between planned, in-progress, waiting (sent to the client for approval) and approved; 'list' for every project and milestone.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'status', 'report', 'add_project', 'add_milestone', 'set_status', or 'list'.\",\n      required: true,\n    },\n    id: {\n      type: 'string',\n      description: \"A milestone id like 'ms-4' (for add_project, a project id like 'pr-2').\",\n    },\n    title: {\n      type: 'string',\n      description: \"The milestone's (or for add_project, the project's) title. Also finds it when no id is given.\",\n    },\n    project: { type: 'string', description: \"The project's id or name, e.g. 'pr-1' or 'Juniper website'.\" },\n    client: { type: 'string', description: 'The client, e.g. Juniper Press.' },\n    contact: { type: 'string', description: 'Who approves on the client side.' },\n    lead: { type: 'string', description: \"Who leads the project on the studio's side.\" },\n    owner: { type: 'string', description: 'Who owns the milestone.' },\n    dueAt: { type: 'string', description: 'The due date, YYYY-MM-DD.' },\n    shiftDays: {\n      type: 'number',\n      description:\n        \"Move the due date by this many days (negative pulls it in). On a project, moves the project's date and every milestone not yet approved.\",\n    },\n    status: { type: 'string', description: 'A project: proposed, active, on-hold, or done. A milestone: planned, in-progress, waiting, or approved.' },\n    note: { type: 'string', description: 'What happened, with the client’s feedback in their words.' },\n    withinDays: { type: 'number', description: 'How many days ahead counts as due soon (default 14).' },\n  },\n  outputs: {\n    active: { type: 'number', description: 'Active projects.' },\n    waiting: { type: 'number', description: 'Milestones waiting on a client.' },\n    late: { type: 'number', description: 'Milestones past due and not with the client.' },\n    dueSoon: { type: 'number', description: 'Open milestones due within the window.' },\n    summary: { type: 'string', description: 'What changed first, then the delivery picture (or the report or listing).' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── delivery-rules-start ──\n// Pure derivations: local calendar days, date shifts, milestone and project\n// health, and the lines the crew reads. Kept self-contained between these\n// sentinels so tests (and the page's demo) execute the shipped bytes.\nvar DAY_MS = 86400000;\nvar PROJECT_STAGES = ['proposed', 'active', 'on-hold', 'done'];\nvar MILESTONE_STAGES = ['planned', 'in-progress', 'waiting', 'approved'];\n\nfunction pad(n) {\n  return n < 10 ? '0' + n : String(n);\n}\nfunction localDay(ms) {\n  var d = new Date(ms);\n  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());\n}\nfunction isDay(text) {\n  return /^\\d{4}-\\d{2}-\\d{2}$/.test(String(text || ''));\n}\nfunction normalizeDate(text, nowMs) {\n  var raw = String(text || '').trim();\n  if (isDay(raw)) return raw;\n  // Only something that reads as a date: a month name with a day, or numbers like 12/10.\n  if (!/\\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?\\s+\\d|\\d\\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|\\d{1,4}[/.-]\\d{1,2}[/.-]\\d{1,4}/i.test(raw)) return null;\n  if (/\\d{4}/.test(raw)) {\n    var full = Date.parse(raw);\n    return isFinite(full) ? localDay(full) : null;\n  }\n  // 'December 10' names the next December 10, not one in 2001.\n  var now = new Date(nowMs || Date.now());\n  var parsed = Date.parse(raw + ' ' + now.getFullYear());\n  if (!isFinite(parsed)) return null;\n  if (parsed < now.getTime() - 31 * DAY_MS) parsed = Date.parse(raw + ' ' + (now.getFullYear() + 1));\n  return localDay(parsed);\n}\nfunction daysLeft(day, nowMs) {\n  var due = Date.parse(String(day).slice(0, 10) + 'T00:00:00');\n  var today = Date.parse(localDay(nowMs) + 'T00:00:00');\n  return Math.round((due - today) / DAY_MS);\n}\nfunction shiftDay(day, days) {\n  var d = new Date(String(day).slice(0, 10) + 'T12:00:00');\n  d.setDate(d.getDate() + Math.round(days));\n  return localDay(d.getTime());\n}\nfunction when(days) {\n  if (days < 0) return -days + (days === -1 ? ' day late' : ' days late');\n  if (days === 0) return 'due today';\n  return 'due in ' + days + (days === 1 ? ' day' : ' days');\n}\nfunction key(text) {\n  return String(text || '')\n    .normalize('NFD')\n    .replace(/[̀-ͯ]/g, '')\n    .toLowerCase()\n    .replace(/[^a-z0-9&]+/g, ' ')\n    .trim();\n}\n// 'exact', 'partial' (the title starts with the words given, contains them whole, or holds every word given), or ''.\nfunction titleMatch(title, wanted) {\n  var have = key(title);\n  var want = key(wanted);\n  if (!have || !want) return '';\n  if (have === want) return 'exact';\n  if ((' ' + have).indexOf(' ' + want) >= 0 || (' ' + want + ' ').indexOf(' ' + have + ' ') >= 0) return 'partial';\n  var words = want.split(' ').filter(function (w) {\n    return w.length > 2 && ['the', 'and', 'for'].indexOf(w) < 0;\n  });\n  return words.length && words.every(function (w) { return (' ' + have).indexOf(' ' + w) >= 0; }) ? 'partial' : '';\n}\nfunction waitedDays(m, nowMs) {\n  return m.fields && isDay(m.fields.sentAt) ? Math.max(0, -daysLeft(m.fields.sentAt, nowMs)) : 0;\n}\nfunction isLate(m, nowMs) {\n  return m.status !== 'approved' && m.status !== 'waiting' && isDay(m.fields && m.fields.dueAt) && daysLeft(m.fields.dueAt, nowMs) < 0;\n}\nfunction milestonesOf(projectId, milestones) {\n  return milestones\n    .filter(function (m) { return m.fields && m.fields.projectId === projectId; })\n    .sort(function (a, b) { return String(a.fields.dueAt || '9999').localeCompare(String(b.fields.dueAt || '9999')); });\n}\nfunction health(project, milestones, nowMs) {\n  if (project.status === 'done') return 'done';\n  var mine = milestonesOf(project.id, milestones);\n  if (mine.some(function (m) { return isLate(m, nowMs); })) return 'late';\n  if (\n    mine.some(function (m) {\n      return m.status === 'waiting' && (waitedDays(m, nowMs) >= 5 || (isDay(m.fields.dueAt) && daysLeft(m.fields.dueAt, nowMs) < 0));\n    })\n  ) return 'at risk';\n  return 'on track';\n}\nfunction milestoneLine(m, project, nowMs) {\n  var f = m.fields || {};\n  var head = f.title + ' (' + m.id + ', ' + (project ? project.fields.title : 'no project') + ')';\n  if (m.status === 'approved') return head + ' approved' + (f.approvedAt ? ' ' + f.approvedAt : '');\n  if (m.status === 'waiting') {\n    var waited = waitedDays(m, nowMs);\n    return (\n      head + ' with ' + (f.approver || (project && project.fields.contact) || 'the client') + ' for approval ' +\n      (waited === 0 ? 'since today' : 'for ' + waited + (waited === 1 ? ' day' : ' days')) +\n      ', round ' + (f.rounds || 1) + (isDay(f.dueAt) ? ', ' + when(daysLeft(f.dueAt, nowMs)) : '')\n    );\n  }\n  return head + ' ' + m.status + (isDay(f.dueAt) ? ', ' + when(daysLeft(f.dueAt, nowMs)) + ' (' + f.dueAt + ')' : ', no date') + (f.owner ? ', owner ' + f.owner : '');\n}\nfunction deliveryPicture(projects, milestones, nowMs, withinDays) {\n  var byId = {};\n  projects.forEach(function (p) { byId[p.id] = p; });\n  var active = projects.filter(function (p) { return p.status === 'active'; });\n  var live = milestones.filter(function (m) {\n    var p = byId[m.fields && m.fields.projectId];\n    return p && p.status === 'active' && m.status !== 'approved';\n  });\n  var waiting = live\n    .filter(function (m) { return m.status === 'waiting'; })\n    .sort(function (a, b) { return waitedDays(b, nowMs) - waitedDays(a, nowMs); });\n  var late = live.filter(function (m) { return isLate(m, nowMs); });\n  // One list, late first: asked what's due, a model read a separate late list as out of scope.\n  var due = live\n    .filter(function (m) { return isDay(m.fields.dueAt) && daysLeft(m.fields.dueAt, nowMs) <= withinDays; })\n    .sort(function (a, b) { return String(a.fields.dueAt).localeCompare(String(b.fields.dueAt)); });\n  var line = function (m) { return milestoneLine(m, byId[m.fields.projectId], nowMs); };\n  var parts = [\n    active.length + (active.length === 1 ? ' active project' : ' active projects') + ', ' + waiting.length + ' waiting on clients, ' + late.length + ' late on our side.',\n  ];\n  parts.push(waiting.length ? 'Waiting on clients, longest first: ' + waiting.map(line).join(' | ') + '.' : 'Nothing is waiting on a client.');\n  parts.push(\n    due.length\n      ? 'Due within ' + withinDays + ' days, late first: ' + due.map(line).join(' | ') + '.'\n      : 'Nothing due in the next ' + withinDays + ' days.',\n  );\n  parts.push(\n    active.length\n      ? 'Projects: ' + active.map(function (p) {\n          var next = milestonesOf(p.id, milestones).filter(function (m) { return m.status !== 'approved'; })[0];\n          return p.fields.title + ' (' + p.id + ', ' + (p.fields.client || 'no client') + (p.fields.lead ? ', lead ' + p.fields.lead : '') + (isDay(p.fields.dueAt) ? ', due ' + p.fields.dueAt : '') + ') ' + health(p, milestones, nowMs) + (next ? '; next: ' + next.fields.title + ' (' + next.status + ')' : '; every milestone approved');\n        }).join(' | ') + '.'\n      : 'No active projects.',\n  );\n  var other = projects.filter(function (p) { return p.status !== 'active'; });\n  if (other.length) parts.push('Also: ' + other.map(function (p) { return p.fields.title + ' (' + p.id + ', ' + p.status + ')'; }).join(', ') + '.');\n  return { active: active.length, waiting: waiting.length, late: late.length, dueSoon: due.length, summary: parts.join(' ') };\n}\nfunction weeklyReport(project, milestones, nowMs) {\n  var mine = milestonesOf(project.id, milestones);\n  var weekAgo = localDay(nowMs - 7 * DAY_MS);\n  var done = mine.filter(function (m) { return m.status === 'approved' && String(m.fields.approvedAt || '') >= weekAgo; });\n  var waiting = mine.filter(function (m) { return m.status === 'waiting'; });\n  var working = mine.filter(function (m) { return m.status === 'in-progress'; });\n  var next = mine.filter(function (m) { return m.status === 'planned'; }).slice(0, 2);\n  var client = project.fields.client || 'the client';\n  var list = function (items, fn) { return items.length ? items.map(fn).join('; ') : 'nothing'; };\n  return (\n    project.fields.title + ' (' + project.id + ') for ' + client + ', week of ' + localDay(nowMs) + ', ' + health(project, milestones, nowMs) + '. ' +\n    'Approved in the last 7 days: ' + list(done, function (m) { return m.fields.title + ' (' + m.fields.approvedAt + ')'; }) + '. ' +\n    'Waiting on ' + client + ': ' + list(waiting, function (m) { return m.fields.title + ', sent ' + (m.fields.sentAt || 'recently') + ', round ' + (m.fields.rounds || 1); }) + '. ' +\n    'In progress: ' + list(working, function (m) { return m.fields.title + (isDay(m.fields.dueAt) ? ', ' + when(daysLeft(m.fields.dueAt, nowMs)) + ' (' + m.fields.dueAt + ')' : '') + (m.fields.owner ? ', ' + m.fields.owner : ''); }) + '. ' +\n    'Next up: ' + list(next, function (m) { return m.fields.title + (isDay(m.fields.dueAt) ? ', due ' + m.fields.dueAt : ''); }) + '.' +\n    (isDay(project.fields.dueAt) ? ' Project due ' + project.fields.dueAt + '.' : '')\n  );\n}\n// ── delivery-rules-end ──\n\nconst projects = rosterStore(gezel.fs, 'projects.json', { stages: ['proposed', 'active', 'on-hold', 'done'], idPrefix: 'pr' });\nconst milestones = rosterStore(gezel.fs, 'milestones.json', {\n  stages: ['planned', 'in-progress', 'waiting', 'approved'],\n  idPrefix: 'ms',\n});\n\nfunction choose(all: RosterRecord[], wanted: string, what: string, label: (r: RosterRecord) => string): RosterRecord | null {\n  const exact = all.filter((r) => titleMatch(r.fields.title, wanted) === 'exact');\n  if (exact.length === 1) return exact[0]!;\n  const partial = exact.length > 1 ? exact : all.filter((r) => titleMatch(r.fields.title, wanted) === 'partial' || titleMatch(r.fields.client, wanted) === 'exact');\n  if (partial.length === 1) return partial[0]!;\n  if (partial.length > 1) throw new Error('More than one ' + what + \" matches '\" + wanted + \"': \" + partial.map(label).join(', ') + '. Pass id.');\n  return null;\n}\nasync function resolveProject(text: string | undefined): Promise<RosterRecord> {\n  const all = await projects.list();\n  if (!text) throw new Error(\"Pass 'project' (an id like 'pr-1' or its name). Projects: \" + (all.map((p) => p.id + ' ' + String(p.fields.title)).join(', ') || 'none') + '.');\n  const byId = all.find((p) => p.id === text.trim());\n  if (byId) return byId;\n  // 'Juniper' means the client's active project before its proposed or finished ones.\n  const label = (p: RosterRecord) => p.id + ' ' + String(p.fields.title);\n  const found = choose(all.filter((p) => p.status === 'active'), text, 'project', label) ?? choose(all, text, 'project', label);\n  if (found) return found;\n  throw new Error(\"No project matches '\" + text + \"'. Projects: \" + (all.map((p) => p.id + ' ' + String(p.fields.title)).join(', ') || 'none') + '.');\n}\nasync function resolveMilestone(): Promise<RosterRecord> {\n  const all = await milestones.list();\n  if (input.id) {\n    const byId = all.find((m) => m.id === input.id);\n    if (byId) return byId;\n    throw new Error(\"No milestone with id '\" + input.id + \"'.\");\n  }\n  if (!input.title) throw new Error(\"Pass the milestone's 'id' (e.g. 'ms-4') or 'title'.\");\n  const scoped = input.project ? milestonesOf((await resolveProject(input.project)).id, all) : all;\n  const names: Record<string, string> = {};\n  (await projects.list()).forEach((p) => (names[p.id] = String(p.fields.title)));\n  const found = choose(scoped, input.title, 'milestone', (m) => m.id + ' ' + String(m.fields.title) + ' (' + names[String(m.fields.projectId)] + ')');\n  if (found) return found;\n  throw new Error(\"No milestone matches '\" + input.title + \"'. Call list_client_projects to see them, or add it with add_milestone.\");\n}\nfunction checkDate(text: string | undefined, label: string): string | null {\n  if (!text) return null;\n  const day = normalizeDate(text);\n  if (!day) throw new Error(label + \" must be a date, e.g. '2026-12-01'.\");\n  return day;\n}\nfunction shift(input: { shiftDays?: number }): number {\n  return typeof input.shiftDays === 'number' && isFinite(input.shiftDays) ? Math.round(input.shiftDays) : 0;\n}\n\nconst today = localDay(Date.now());\nconst withinDays = typeof input.withinDays === 'number' && input.withinDays > 0 ? Math.round(input.withinDays) : 14;\nlet note = '';\nlet reply = '';\n\nif (input.action === 'add_project') {\n  if (!input.title && !input.id) throw new Error(\"add_project needs 'title'.\");\n  if (input.status && !PROJECT_STAGES.includes(input.status)) throw new Error('A project is proposed, active, on-hold, or done.');\n  const all = await projects.list();\n  const existing = input.id ? all.find((p) => p.id === input.id) : all.find((p) => titleMatch(p.fields.title, input.title) === 'exact');\n  if (input.id && !existing) throw new Error(\"No project with id '\" + input.id + \"'.\");\n  const dueAt = checkDate(input.dueAt, 'dueAt');\n  const fields: Record<string, unknown> = {\n    ...(input.id && input.title ? { title: input.title.trim() } : {}),\n    ...(input.client ? { client: input.client.trim() } : {}),\n    ...(input.contact ? { contact: input.contact.trim() } : {}),\n    ...(input.lead ? { lead: input.lead.trim() } : {}),\n    ...(dueAt ? { dueAt } : {}),\n    ...(input.note ? { notes: input.note.trim() } : {}),\n  };\n  const days = shift(input);\n  if (existing) {\n    if (days && !dueAt && isDay(existing.fields.dueAt)) fields.dueAt = shiftDay(String(existing.fields.dueAt), days);\n    await projects.update(existing.id, { fields });\n    if (input.status && input.status !== existing.status) await projects.transition(existing.id, input.status, input.note ? { note: input.note } : {});\n    let moved = 0;\n    if (days) {\n      for (const m of milestonesOf(existing.id, await milestones.list())) {\n        if (m.status === 'approved' || !isDay(m.fields.dueAt)) continue;\n        await milestones.update(m.id, { fields: { dueAt: shiftDay(String(m.fields.dueAt), days) }, note: 'Moved ' + days + ' days with the project' });\n        moved++;\n      }\n    }\n    note =\n      'Updated ' + String(fields.title ?? existing.fields.title) + '.' +\n      (days ? ' Moved ' + (days > 0 ? 'out' : 'in') + ' by ' + Math.abs(days) + (Math.abs(days) === 1 ? ' day' : ' days') + (isDay(fields.dueAt) ? ', now due ' + String(fields.dueAt) : '') + ', with ' + moved + (moved === 1 ? ' open milestone.' : ' open milestones.') : '');\n  } else {\n    if (!input.client) {\n      const near = all.filter((p) => titleMatch(p.fields.title, input.title) === 'partial');\n      throw new Error(\n        (near.length ? \"No project is titled exactly '\" + input.title + \"'. Did you mean \" + near.map((p) => p.id + ' ' + String(p.fields.title)).join(' or ') + '? Pass its id to change it, or ' : 'A new project needs ') +\n          \"'client' to add a new one.\",\n      );\n    }\n    const record = await projects.add({ status: input.status ?? 'active', fields: { title: String(input.title).trim(), ...fields } });\n    note = 'Added ' + record.id + ', ' + String(input.title).trim() + ' for ' + input.client.trim() + '.';\n  }\n} else if (input.action === 'add_milestone') {\n  if (!input.title && !input.id) throw new Error(\"add_milestone needs 'title'.\");\n  if (input.status && !MILESTONE_STAGES.includes(input.status)) throw new Error('A milestone is planned, in-progress, waiting, or approved.');\n  const all = await milestones.list();\n  let existing: RosterRecord | undefined;\n  let project: RosterRecord | null = null;\n  if (input.id) {\n    existing = all.find((m) => m.id === input.id);\n    if (!existing) throw new Error(\"No milestone with id '\" + input.id + \"'.\");\n  } else {\n    project = input.project ? await resolveProject(input.project) : null;\n    const pool = project ? milestonesOf(project.id, all) : all;\n    const same = pool.filter((m) => titleMatch(m.fields.title, input.title) === 'exact');\n    if (same.length > 1) throw new Error(\"More than one milestone is titled '\" + input.title + \"'. Pass project or id.\");\n    existing = same[0];\n  }\n  const dueAt = checkDate(input.dueAt, 'dueAt');\n  const days = shift(input);\n  const fields: Record<string, unknown> = {\n    ...(input.id && input.title ? { title: input.title.trim() } : {}),\n    ...(dueAt ? { dueAt } : {}),\n    ...(input.owner ? { owner: input.owner.trim() } : {}),\n    ...(input.note ? { notes: input.note.trim() } : {}),\n  };\n  if (existing) {\n    if (days && !dueAt) {\n      if (!isDay(existing.fields.dueAt)) throw new Error(String(existing.fields.title) + \" has no due date to move; pass 'dueAt'.\");\n      fields.dueAt = shiftDay(String(existing.fields.dueAt), days);\n    }\n    await milestones.update(existing.id, { fields, ...(days ? { note: 'Moved ' + days + ' days' } : {}) });\n    if (input.status && input.status !== existing.status) await milestones.transition(existing.id, input.status, input.note ? { note: input.note } : {});\n    note =\n      'Updated ' + String(fields.title ?? existing.fields.title) + (isDay(fields.dueAt) ? ', now due ' + String(fields.dueAt) : '') +\n      (days ? ' (' + (days > 0 ? 'moved out ' : 'pulled in ') + Math.abs(days) + (Math.abs(days) === 1 ? ' day' : ' days') + ')' : '') + '.';\n  } else {\n    if (!project) throw new Error(\"A new milestone needs 'project' (its id or name).\");\n    if (!dueAt) throw new Error(\"A new milestone needs 'dueAt' (YYYY-MM-DD).\");\n    const record = await milestones.add({\n      status: input.status ?? 'planned',\n      fields: { projectId: project.id, title: String(input.title).trim(), rounds: 0, ...fields },\n    });\n    note = 'Added ' + record.id + ', ' + String(input.title).trim() + ' on ' + String(project.fields.title) + ', due ' + dueAt + '.';\n  }\n} else if (input.action === 'set_status') {\n  if (!input.status || !MILESTONE_STAGES.includes(input.status)) throw new Error(\"set_status needs status 'planned', 'in-progress', 'waiting', or 'approved'.\");\n  const m = await resolveMilestone();\n  const project = (await projects.get(String(m.fields.projectId))) ?? null;\n  const fields: Record<string, unknown> = {};\n  if (input.status === 'waiting' && m.status !== 'waiting') {\n    fields.sentAt = today;\n    fields.rounds = (Number(m.fields.rounds) || 0) + 1;\n    fields.approver = input.contact ? input.contact.trim() : String(project?.fields.contact ?? m.fields.approver ?? '') || undefined;\n  }\n  if (input.status === 'approved' && m.status !== 'approved') fields.approvedAt = today;\n  if (m.status === 'waiting' && input.status === 'in-progress' && input.note) fields.feedback = input.note.trim();\n  if (Object.keys(fields).length) await milestones.update(m.id, { fields });\n  if (input.status !== m.status) await milestones.transition(m.id, input.status, input.note ? { note: input.note } : {});\n  const title = String(m.fields.title);\n  const on = project ? ' (' + String(project.fields.title) + ')' : '';\n  note =\n    m.status === input.status\n      ? title + on + ' was already ' + input.status + '.'\n      : input.status === 'approved'\n        ? title + on + ' is approved.'\n        : input.status === 'waiting'\n          ? title + on + ' went to ' + String(fields.approver || 'the client') + ' for approval, round ' + String(fields.rounds) + '.'\n          : m.status === 'waiting' && input.status === 'in-progress'\n            ? title + on + ' came back with changes and is in progress again' + (input.note ? ': ' + input.note.trim() : '') + '.'\n            : title + on + ' is now ' + input.status + '.';\n} else if (input.action === 'report') {\n  const all = await projects.list();\n  const ms = await milestones.list();\n  const chosen = input.project ? [await resolveProject(input.project)] : all.filter((p) => p.status === 'active');\n  reply = chosen.map((p) => weeklyReport(p, ms, Date.now())).join('\\n\\n') || 'No active projects to report on.';\n} else if (input.action === 'list') {\n  const ms = await milestones.list();\n  reply =\n    (await projects.list())\n      .map(\n        (p) =>\n          '[' + p.status + '] ' + String(p.fields.title) + ' (' + p.id + ', ' + String(p.fields.client ?? 'no client') + (p.fields.lead ? ', lead ' + String(p.fields.lead) : '') + (isDay(p.fields.dueAt) ? ', due ' + String(p.fields.dueAt) : '') + '): ' +\n          (milestonesOf(p.id, ms).map((m) => milestoneLine(m, p, Date.now())).join(' | ') || 'no milestones yet'),\n      )\n      .join('\\n') || 'No projects yet.';\n} else if (input.action !== 'status') {\n  throw new Error(\"Unknown action '\" + input.action + \"'. Use status, report, add_project, add_milestone, set_status, or list.\");\n}\n\nconst view = deliveryPicture(await projects.list(), await milestones.list(), Date.now(), withinDays);\ngezel.output({\n  active: view.active,\n  waiting: view.waiting,\n  late: view.late,\n  dueSoon: view.dueSoon,\n  summary: reply || (note ? note + ' ' : '') + view.summary,\n});\n"
+  },
+  "tools": [
+    {
+      "name": "delivery_status",
+      "description": "The delivery picture in one read, with ids: every approval waiting on a client and for how long, everything due in the next 14 days with late items first, and each active project's health and next milestone. Call it first when asked what's waiting, late or due.",
+      "script": "delivery-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "withinDays": {
+            "type": "number"
+          }
+        }
+      },
+      "bind": {
+        "action": "status"
+      },
+      "state": true
+    },
+    {
+      "name": "weekly_report",
+      "description": "This week's status for one client project, or every active one: what was approved, what waits on the client, what is in progress, and what comes next. Call it before drafting a status update and write only from it.",
+      "script": "delivery-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "report"
+      }
+    },
+    {
+      "name": "add_project",
+      "description": "Save a client project: title, client, the client's approver, the studio lead, and the due date (YYYY-MM-DD). An existing title is updated, never duplicated. When the whole project slips, pass shiftDays (days later; negative for earlier) and the board moves its date and every milestone not yet approved. Call it as soon as a project is mentioned, before you describe it.",
+      "script": "delivery-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "client": {
+            "type": "string"
+          },
+          "contact": {
+            "type": "string"
+          },
+          "lead": {
+            "type": "string"
+          },
+          "dueAt": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "proposed",
+              "active",
+              "on-hold",
+              "done"
+            ]
+          },
+          "shiftDays": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "add_project"
+      }
+    },
+    {
+      "name": "add_milestone",
+      "description": "Save a milestone on a project: title, due date (YYYY-MM-DD) and owner. An existing title on that project is updated, never duplicated. When a date slips, pass shiftDays (how many days later; negative for earlier) and the board moves it; never work out the new date yourself. Call it as soon as a milestone or a slip is mentioned.",
+      "script": "delivery-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "dueAt": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "planned",
+              "in-progress",
+              "waiting",
+              "approved"
+            ]
+          },
+          "shiftDays": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "add_milestone"
+      }
+    },
+    {
+      "name": "set_milestone_status",
+      "description": "Move a milestone: in-progress when work starts; waiting when it goes to the client for approval (the board starts counting the wait and the round); approved when the client signs off; back to in-progress, with their feedback as note, when they ask for changes. Call it the moment the person says it.",
+      "script": "delivery-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "planned",
+              "in-progress",
+              "waiting",
+              "approved"
+            ]
+          },
+          "contact": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "bind": {
+        "action": "set_status"
+      }
+    },
+    {
+      "name": "list_client_projects",
+      "description": "Every client project with all of its milestones, statuses and dates.",
+      "script": "delivery-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "list"
+      }
+    },
+    {
+      "name": "page_add_project",
+      "description": "Add or update a client project.",
+      "script": "delivery-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "client": {
+            "type": "string"
+          },
+          "contact": {
+            "type": "string"
+          },
+          "lead": {
+            "type": "string"
+          },
+          "dueAt": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "proposed",
+              "active",
+              "on-hold",
+              "done"
+            ]
+          },
+          "shiftDays": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "add_project"
+      }
+    },
+    {
+      "name": "page_add_milestone",
+      "description": "Add or update a milestone.",
+      "script": "delivery-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "dueAt": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "planned",
+              "in-progress",
+              "waiting",
+              "approved"
+            ]
+          },
+          "shiftDays": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "add_milestone"
+      }
+    },
+    {
+      "name": "page_set_milestone_status",
+      "description": "Move a milestone.",
+      "script": "delivery-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "planned",
+              "in-progress",
+              "waiting",
+              "approved"
+            ]
+          },
+          "contact": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "bind": {
+        "action": "set_status"
+      },
+      "reaction": {
+        "gezel": "planner",
+        "hideSeed": true,
+        "prompt": "The person just moved a milestone on the delivery board. The board now reads (its first sentence is what changed):\n{{output.summary}}\nIn two short sentences, confirm what changed and name the one thing to chase next: the longest wait on a client, or the next milestone due. Do not call tools."
+      }
+    }
+  ],
+  "craftbooks": [
+    "status-report",
+    "meeting-notes-to-actions",
+    "proposal-sow",
+    "case-study"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "delivery/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "projects.json"
+      },
+      {
+        "source": "workspace",
+        "path": "milestones.json"
+      }
+    ],
+    "tools": [
+      "page_add_project",
+      "page_add_milestone",
+      "page_set_milestone_status"
+    ]
+  },
+  "workspaceSeed": [
+    "projects.json",
+    "milestones.json"
+  ],
+  "minGezelVersion": "1.26280"
+}

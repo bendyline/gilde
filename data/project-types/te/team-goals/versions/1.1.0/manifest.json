@@ -1,0 +1,528 @@
+{
+  "schemaVersion": 1,
+  "version": "1.1.0",
+  "releasedAt": "2026-11-07T18:00:00.000Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "team": {
+        "type": "string",
+        "title": "Whose goals are these?",
+        "description": "e.g. 'a six-person design studio', 'the kitchen team'.",
+        "default": "the team"
+      }
+    },
+    "required": [
+      "team"
+    ]
+  },
+  "nameTemplate": "Team Goals",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "planner",
+      "voorman": true
+    }
+  ],
+  "scripts": {
+    "goals-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { logStore, rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'goals-store',\n  description:\n    \"Read and update the team's goals (goals.json), their key results (keyresults.json), weekly check-ins (checkins.json) and meeting actions (actions.json). action:'status' for the whole picture; 'add_goal' and 'add_key_result' save one (an existing title is updated, never duplicated); 'update_key_result' records progress (change is added to the current value, value replaces it); 'set_goal_status' closes or reopens a goal; 'checkin' logs a weekly check-in; 'add_action' and 'complete_action' keep the meeting actions.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description:\n        \"One of 'status', 'add_goal', 'add_key_result', 'update_key_result', 'set_goal_status', 'checkin', 'add_action', or 'complete_action'.\",\n      required: true,\n    },\n    goal: { type: 'string', description: \"A goal's id ('g-2') or (part of) its title.\" },\n    keyResult: { type: 'string', description: \"A key result's id ('kr-3') or (part of) its title.\" },\n    id: { type: 'string', description: \"A meeting action's id, e.g. 'act-2'.\" },\n    title: {\n      type: 'string',\n      description: \"The title of the goal, key result or action being saved, e.g. 'Win four new retainer clients'.\",\n    },\n    owner: { type: 'string', description: 'Who owns it.' },\n    startAt: { type: 'string', description: 'When a goal started, YYYY-MM-DD (default today).' },\n    dueAt: { type: 'string', description: 'When it is due, YYYY-MM-DD.' },\n    start: { type: 'number', description: 'Where a key result started.' },\n    current: { type: 'number', description: 'Where a key result stands now.' },\n    target: { type: 'number', description: 'Where a key result should end up.' },\n    unit: { type: 'string', description: \"What a key result counts: 'clients', '%', '$', 'hours'.\" },\n    change: {\n      type: 'number',\n      description: 'How much a key result moved: 2 for two more, -1 for one fewer. Added to its current value.',\n    },\n    value: { type: 'number', description: \"A key result's new total, only when the person gives the total.\" },\n    how: { type: 'string', description: \"The page form's choice between change and value; the script reads change or value.\" },\n    who: { type: 'string', description: 'Who is checking in.' },\n    confidence: { type: 'string', description: 'on-track, at-risk, or off-track.' },\n    status: { type: 'string', description: 'For set_goal_status: active, done, or dropped.' },\n    from: { type: 'string', description: \"The meeting an action came from, e.g. 'Monday team meeting'.\" },\n    note: { type: 'string', description: 'What happened, in their words.' },\n  },\n  outputs: {\n    active: { type: 'number', description: 'Active goals.' },\n    offPace: { type: 'number', description: 'Active goals at risk, behind or past due.' },\n    openActions: { type: 'number', description: 'Meeting actions still open.' },\n    summary: {\n      type: 'string',\n      description: 'What changed first, then every active goal (furthest behind first) with its key results, the check-ins and the open actions.',\n    },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── goals-rules-start ──\n// Pure derivations: key-result progress (current against target, from where it\n// started), a goal's pace against the share of its time already gone, the\n// week's check-ins, and the lines the crew reads. Kept self-contained between\n// these sentinels so unit tests execute the shipped bytes.\nvar DAY_MS = 86400000;\nvar STOP_WORDS = ['the', 'and', 'for', 'our', 'with', 'from', 'that', 'this', 'into', 'more'];\n\nfunction pad(n) {\n  return n < 10 ? '0' + n : String(n);\n}\nfunction localDay(ms) {\n  var d = new Date(ms);\n  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());\n}\nfunction normalizeDate(text) {\n  var raw = String(text || '').trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(raw)) return raw;\n  var parsed = Date.parse(raw);\n  return isFinite(parsed) ? localDay(parsed) : null;\n}\nfunction dayMs(day) {\n  return Date.parse(String(day).slice(0, 10) + 'T00:00:00');\n}\nfunction daysLeft(dueAt, nowMs) {\n  return Math.round((dayMs(dueAt) - dayMs(localDay(nowMs))) / DAY_MS);\n}\nfunction when(days) {\n  if (days < 0) return -days + (days === -1 ? ' day late' : ' days late');\n  if (days === 0) return 'due today';\n  return 'in ' + days + (days === 1 ? ' day' : ' days');\n}\nfunction round2(n) {\n  return Math.round(n * 100) / 100;\n}\nfunction fmt(n) {\n  var r = round2(Number(n) || 0);\n  var parts = String(Math.abs(r)).split('.');\n  parts[0] = parts[0].replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',');\n  return (r < 0 ? '-' : '') + parts.join('.');\n}\nfunction amount(n, unit) {\n  var u = String(unit || '').trim();\n  if (u === '%' || /^percent/i.test(u)) return fmt(n) + '%';\n  if (u === '$' || /^(dollars?|usd)$/i.test(u)) return '$' + fmt(n);\n  if (fmt(n) === '1' && /^[a-z]+[^su]s$/i.test(u)) u = u.slice(0, -1);\n  return fmt(n) + (u ? ' ' + u : '');\n}\nfunction percent(p) {\n  return Math.round(p * 100) + '%';\n}\nfunction normalizeConfidence(text) {\n  var t = String(text || '').trim().toLowerCase().replace(/[\\s_]+/g, '-');\n  if (/^(on-?track|green|good|fine)/.test(t)) return 'on-track';\n  if (/^(at-?risk|amber|yellow|watch|shaky|unsure)/.test(t)) return 'at-risk';\n  if (/^(off-?track|behind|red|blocked|stuck|slipping)/.test(t)) return 'off-track';\n  return null;\n}\nfunction normalizeGoalStatus(text) {\n  var t = String(text || '').trim().toLowerCase();\n  if (/^(active|open|reopen|restart|resume)/.test(t)) return 'active';\n  if (/^(done|complete|finished|met|achieved|closed)/.test(t)) return 'done';\n  if (/^(dropped|drop|cancel|abandon|parked|shelved)/.test(t)) return 'dropped';\n  return null;\n}\n// How far a key result has come from where it started toward its target, 0..1.\n// A target below the start (fewer overdue invoices) counts down the same way.\nfunction krProgress(f) {\n  var start = Number(f.start) || 0;\n  var target = Number(f.target);\n  var current = Number(f.current) || 0;\n  if (!isFinite(target)) return 0;\n  if (target === start) return current >= target ? 1 : 0;\n  return Math.max(0, Math.min(1, (current - start) / (target - start)));\n}\n// The share of a goal's window already gone, 0..1, or null without a due date.\nfunction timeGone(f, nowMs) {\n  var due = dayMs(f.dueAt || '');\n  if (!isFinite(due)) return null;\n  var start = dayMs(f.startAt || '');\n  var today = dayMs(localDay(nowMs));\n  if (!isFinite(start) || due <= start) return today >= due ? 1 : 0;\n  return Math.max(0, Math.min(1, (today - start) / (due - start)));\n}\nfunction pace(progress, gone) {\n  if (progress === null) return 'no key results yet';\n  if (progress >= 1) return 'target met';\n  if (gone === null) return 'no due date';\n  if (gone >= 1) return 'past due';\n  if (progress >= gone - 0.1) return 'on track';\n  if (progress >= gone - 0.25) return 'at risk';\n  return 'behind';\n}\nfunction titleOf(record) {\n  return String((record && record.fields && record.fields.title) || '');\n}\nfunction goalKeyResults(goal, krs) {\n  return krs.filter(function (k) {\n    return k.fields && k.fields.goalId === goal.id && k.status !== 'closed';\n  });\n}\nfunction goalProgress(goal, krs) {\n  var mine = goalKeyResults(goal, krs);\n  if (!mine.length) return null;\n  return (\n    mine.reduce(function (sum, k) {\n      return sum + krProgress(k.fields);\n    }, 0) / mine.length\n  );\n}\n// How far behind its time a goal is: the gap the board sorts by, worst first.\nfunction lag(goal, krs, nowMs) {\n  var p = goalProgress(goal, krs);\n  var gone = timeGone(goal.fields || {}, nowMs);\n  if (p === null) return -2;\n  if (gone === null) return -1;\n  return gone - p;\n}\nfunction krLine(k) {\n  var f = k.fields || {};\n  var from = Number(f.start) || 0;\n  return (\n    k.id + ' ' + f.title + ': now ' + amount(f.current || 0, f.unit) + ', target ' + amount(f.target, f.unit) +\n    (from ? ' (started at ' + amount(from, f.unit) + ')' : '') + ', ' + percent(krProgress(f)) + ' of the way'\n  );\n}\nfunction lastCheckin(goal, events) {\n  var mine = events.filter(function (e) {\n    return e.kind === 'checkin' && e.data && e.data.goalId === goal.id;\n  });\n  return mine.length ? mine[mine.length - 1] : null;\n}\nfunction checkedInSince(goal, events, sinceMs) {\n  var owner = String((goal.fields && goal.fields.owner) || '').trim().toLowerCase();\n  return events.some(function (e) {\n    if (e.kind !== 'checkin' || !e.data || Date.parse(e.at) < sinceMs) return false;\n    if (e.data.goalId) return e.data.goalId === goal.id;\n    return !!owner && String(e.data.who || '').trim().toLowerCase() === owner;\n  });\n}\nfunction goalLine(goal, krs, events, nowMs) {\n  var f = goal.fields || {};\n  var p = goalProgress(goal, krs);\n  var gone = timeGone(f, nowMs);\n  var mine = goalKeyResults(goal, krs);\n  var last = lastCheckin(goal, events);\n  return (\n    goal.id + ' ' + f.title + ' (owner ' + (f.owner || 'unassigned') +\n    (f.dueAt ? ', due ' + f.dueAt + ', ' + when(daysLeft(f.dueAt, nowMs)) : '') + '): ' +\n    (p === null ? 'no key results yet' : percent(p) + ' done' + (gone === null ? '' : ' with ' + percent(gone) + ' of the time gone') + ', ' + pace(p, gone)) +\n    (mine.length ? '. Key results: ' + mine.map(krLine).join('; ') : '') + '. ' +\n    (last\n      ? 'Last check-in ' + localDay(Date.parse(last.at)) + (last.data.who ? ' by ' + last.data.who : '') +\n        (last.data.confidence ? ', ' + String(last.data.confidence).replace('-', ' ') : '') + (last.note ? ': ' + String(last.note).replace(/[.!?\\s]+$/, '') : '')\n      : 'No check-in yet') + '.'\n  );\n}\nfunction actionLine(a, nowMs) {\n  var f = a.fields || {};\n  return a.id + ' ' + f.title + ' (' + (f.owner || 'no owner') + (f.dueAt ? ', due ' + f.dueAt + ', ' + when(daysLeft(f.dueAt, nowMs)) : '') + ')';\n}\nfunction picture(goals, krs, events, actions, nowMs) {\n  var active = goals\n    .filter(function (g) { return g.status === 'active'; })\n    .sort(function (a, b) { return lag(b, krs, nowMs) - lag(a, krs, nowMs); });\n  var paces = active.map(function (g) { return pace(goalProgress(g, krs), timeGone(g.fields || {}, nowMs)); });\n  var offPace = paces.filter(function (p) { return p === 'at risk' || p === 'behind' || p === 'past due'; }).length;\n  var onTrack = paces.filter(function (p) { return p === 'on track' || p === 'target met'; }).length;\n  var open = actions\n    .filter(function (a) { return a.status !== 'done'; })\n    .sort(function (a, b) { return String(a.fields.dueAt || '9999').localeCompare(String(b.fields.dueAt || '9999')); });\n  var since = dayMs(localDay(nowMs)) - 6 * DAY_MS;\n  var quiet = active.filter(function (g) { return !checkedInSince(g, events, since); });\n  var parts = [];\n  parts.push(\n    active.length\n      ? active.length + (active.length === 1 ? ' active goal: ' : ' active goals: ') + onTrack + ' on track, ' + offPace + ' at risk or behind.' +\n          (active.length > 1 ? ' Goals, furthest behind first:' : '')\n      : goals.length ? 'No active goals.' : 'No active goals yet.',\n  );\n  active.forEach(function (g) { parts.push(goalLine(g, krs, events, nowMs)); });\n  if (active.length) {\n    parts.push(\n      quiet.length\n        ? 'No check-in in the last 7 days: ' + quiet.map(function (g) { return (g.fields.owner || 'unassigned') + ' for ' + g.id + ' ' + g.fields.title; }).join('; ') + '.'\n        : 'Every active goal has a check-in from the last 7 days.',\n    );\n  }\n  parts.push(open.length ? 'Open actions, late ones first, then soonest due: ' + open.map(function (a) { return actionLine(a, nowMs); }).join('; ') + '.' : 'No open meeting actions.');\n  var closed = goals.filter(function (g) { return g.status !== 'active'; });\n  if (closed.length) parts.push('Closed goals: ' + closed.map(function (g) { return g.id + ' ' + g.fields.title + ' (' + g.status + ')'; }).join('; ') + '.');\n  return { active: active.length, offPace: offPace, openActions: open.length, summary: parts.join(' ') };\n}\n// Find one record by id, exact title, partial title, or every word of the\n// title; a miss lists what there is so the next call can name it.\nfunction pick(records, wanted, label) {\n  var text = String(wanted || '').trim();\n  var lower = text.toLowerCase();\n  if (!lower) throw new Error('Name the ' + label + ' by its id or title.');\n  var byId = records.filter(function (r) { return r.id === lower; });\n  if (byId.length) return byId[0];\n  var exact = records.filter(function (r) { return titleOf(r).toLowerCase() === lower; });\n  if (exact.length === 1) return exact[0];\n  var partial = records.filter(function (r) { return titleOf(r).toLowerCase().indexOf(lower) >= 0; });\n  if (partial.length === 1) return partial[0];\n  if (!partial.length) {\n    var words = (lower.match(/[a-z0-9]{3,}/g) || []).filter(function (w) { return STOP_WORDS.indexOf(w) < 0; });\n    partial = words.length\n      ? records.filter(function (r) {\n          var t = titleOf(r).toLowerCase();\n          return words.every(function (w) { return t.indexOf(w) >= 0 || t.indexOf(w.replace(/ies$/, 'y').replace(/s$/, '')) >= 0; });\n        })\n      : [];\n    if (partial.length === 1) return partial[0];\n  }\n  var known = (partial.length > 1 ? partial : records).map(function (r) { return r.id + ' ' + titleOf(r); }).join(', ');\n  throw new Error(\n    (partial.length > 1 ? 'More than one ' + label + \" matches '\" + text + \"': \" : 'No ' + label + \" matches '\" + text + \"'. Known: \") +\n      (known || 'none yet') + '. Pass the id.',\n  );\n}\nfunction pickPreferring(preferred, all, wanted, label) {\n  try {\n    return pick(preferred, wanted, label);\n  } catch (error) {\n    return pick(all, wanted, label);\n  }\n}\n// ── goals-rules-end ──\n\nconst goals = rosterStore(gezel.fs, 'goals.json', { stages: ['active', 'done', 'dropped'], idPrefix: 'g' });\nconst keyResults = rosterStore(gezel.fs, 'keyresults.json', { stages: ['active', 'closed'], idPrefix: 'kr' });\nconst checkins = logStore(gezel.fs, 'checkins.json');\nconst actions = rosterStore(gezel.fs, 'actions.json', { stages: ['open', 'done'], idPrefix: 'act' });\n\nfunction text(value: unknown): string {\n  return typeof value === 'string' ? value.trim() : '';\n}\nfunction dateInput(value: unknown, name: string): string | null {\n  if (!text(value)) return null;\n  const day = normalizeDate(value);\n  if (!day) throw new Error(name + \" must be a date, e.g. '2026-12-31'.\");\n  return day;\n}\nasync function findGoal(wanted: string) {\n  const all = await goals.list();\n  return pickPreferring(all.filter((g) => g.status === 'active'), all, wanted, 'goal');\n}\n\nconst now = Date.now();\nlet note = '';\n\nif (input.action === 'add_goal') {\n  const title = text(input.title) || text(input.goal);\n  if (!title) throw new Error(\"add_goal needs 'title', e.g. 'Win four new retainer clients'.\");\n  const dueAt = dateInput(input.dueAt, 'dueAt');\n  const startAt = dateInput(input.startAt, 'startAt');\n  const fields: Record<string, unknown> = {\n    ...(dueAt ? { dueAt } : {}),\n    ...(startAt ? { startAt } : {}),\n    ...(text(input.owner) ? { owner: text(input.owner) } : {}),\n    ...(text(input.note) ? { why: text(input.note) } : {}),\n  };\n  const existing = (await goals.list()).find((g) => titleOf(g).toLowerCase() === title.toLowerCase());\n  if (existing) {\n    await goals.update(existing.id, { fields });\n    note = 'Updated ' + existing.id + ' ' + titleOf(existing) + '.';\n  } else {\n    const record = await goals.add({ status: 'active', fields: { title, startAt: startAt ?? localDay(now), ...fields } });\n    note = 'Added ' + record.id + ' ' + title + (dueAt ? ', due ' + dueAt : '') + '.';\n  }\n} else if (input.action === 'add_key_result') {\n  if (!text(input.goal)) throw new Error(\"add_key_result needs 'goal' (its id or title) and 'title'.\");\n  const goal = await findGoal(text(input.goal));\n  const title = text(input.title) || text(input.keyResult);\n  if (!title) throw new Error(\"add_key_result needs 'title', e.g. 'New retainer clients'.\");\n  const unit = text(input.unit);\n  const existing = (await keyResults.list()).find(\n    (k) => k.fields.goalId === goal.id && titleOf(k).toLowerCase() === title.toLowerCase(),\n  );\n  const fields: Record<string, unknown> = {\n    ...(typeof input.target === 'number' ? { target: round2(input.target) } : {}),\n    ...(typeof input.current === 'number' ? { current: round2(input.current) } : {}),\n    ...(typeof input.start === 'number' ? { start: round2(input.start) } : {}),\n    ...(unit ? { unit } : {}),\n  };\n  if (existing) {\n    await keyResults.update(existing.id, { fields, note: 'Edited.' });\n    note = 'Updated ' + existing.id + ' ' + titleOf(existing) + '.';\n  } else {\n    if (typeof input.target !== 'number') throw new Error(\"A new key result needs 'target', the number it should reach.\");\n    const start = typeof input.start === 'number' ? input.start : typeof input.current === 'number' ? input.current : 0;\n    const current = typeof input.current === 'number' ? input.current : start;\n    const record = await keyResults.add({\n      status: goal.status === 'active' ? 'active' : 'closed',\n      fields: { goalId: goal.id, goal: titleOf(goal), title, start: round2(start), current: round2(current), target: round2(input.target), ...(unit ? { unit } : {}) },\n    });\n    note = 'Added ' + record.id + ' ' + title + ' to ' + goal.id + ': now ' + amount(current, unit) + ', target ' + amount(input.target, unit) + '.';\n  }\n} else if (input.action === 'update_key_result') {\n  const all = await keyResults.list();\n  let pool = all;\n  if (text(input.goal)) {\n    const goal = await findGoal(text(input.goal));\n    pool = all.filter((k) => k.fields.goalId === goal.id);\n  }\n  const wanted = text(input.keyResult) || text(input.title);\n  let kr;\n  if (wanted) kr = pickPreferring(pool.filter((k) => k.status !== 'closed'), all, wanted, 'key result');\n  else if (pool !== all && pool.length === 1) kr = pool[0]!;\n  else {\n    throw new Error(\n      \"update_key_result needs 'keyResult' (its id or title). Known: \" +\n        (pool.map((k) => k.id + ' ' + titleOf(k)).join(', ') || 'none yet') + '.',\n    );\n  }\n  const change = typeof input.change === 'number' ? input.change : null;\n  const value = typeof input.value === 'number' ? input.value : null;\n  if (change === null && value === null) {\n    throw new Error(\"update_key_result needs 'change' (how much it moved: 2, or -1) or 'value' (the new total).\");\n  }\n  const before = Number(kr.fields.current) || 0;\n  const after = round2(change !== null ? before + change : (value as number));\n  const unit = String(kr.fields.unit ?? '');\n  await keyResults.update(kr.id, {\n    fields: { current: after },\n    note: fmt(before) + ' to ' + fmt(after) + (text(input.note) ? ': ' + text(input.note) : ''),\n  });\n  await checkins.append({\n    kind: 'progress',\n    ...(text(input.note) ? { note: text(input.note) } : {}),\n    data: { goalId: kr.fields.goalId, keyResultId: kr.id, from: before, to: after, ...(text(input.who) ? { who: text(input.who) } : {}) },\n  });\n  note =\n    titleOf(kr) + ' moved from ' + amount(before, unit) + ' to ' + amount(after, unit) + ' (target ' + amount(kr.fields.target, unit) + ', ' +\n    percent(krProgress({ ...kr.fields, current: after })) + ' of the way).';\n} else if (input.action === 'set_goal_status') {\n  const status = normalizeGoalStatus(input.status);\n  if (!status) throw new Error(\"set_goal_status needs status 'active', 'done', or 'dropped'.\");\n  if (!text(input.goal)) throw new Error(\"set_goal_status needs 'goal' (its id or title).\");\n  const goal = pick(await goals.list(), text(input.goal), 'goal');\n  if (goal.status !== status) await goals.transition(goal.id, status, text(input.note) ? { note: text(input.note) } : {});\n  for (const k of await keyResults.list()) {\n    if (k.fields.goalId !== goal.id) continue;\n    const next = status === 'active' ? 'active' : 'closed';\n    if (k.status !== next) await keyResults.transition(k.id, next);\n  }\n  note = titleOf(goal) + (status === 'active' ? ' is active again.' : status === 'done' ? ' is done.' : ' was dropped.');\n} else if (input.action === 'checkin') {\n  const confidence = text(input.confidence) ? normalizeConfidence(input.confidence) : null;\n  if (text(input.confidence) && !confidence) throw new Error(\"confidence must be 'on-track', 'at-risk', or 'off-track'.\");\n  if (!text(input.note) && !confidence) throw new Error(\"A check-in needs 'note' (what they said) or 'confidence'.\");\n  const goal = text(input.goal) ? await findGoal(text(input.goal)) : null;\n  const who = text(input.who) || (goal ? String(goal.fields.owner ?? '') : '');\n  await checkins.append({\n    kind: 'checkin',\n    ...(text(input.note) ? { note: text(input.note) } : {}),\n    data: { ...(goal ? { goalId: goal.id } : {}), ...(who ? { who } : {}), ...(confidence ? { confidence } : {}) },\n  });\n  note =\n    'Logged ' + (who ? who + \"'s check-in\" : 'a check-in') + (goal ? ' on ' + titleOf(goal) : '') +\n    (confidence ? ': ' + confidence.replace('-', ' ') : '') + '.';\n} else if (input.action === 'add_action') {\n  const title = text(input.title);\n  if (!title) throw new Error(\"add_action needs 'title', e.g. 'Send Alder Co the proposal'.\");\n  const dueAt = dateInput(input.dueAt, 'dueAt');\n  let goalId = '';\n  let unlinked = '';\n  if (text(input.goal)) {\n    try {\n      goalId = (await findGoal(text(input.goal))).id;\n    } catch {\n      unlinked = \" No goal matched '\" + text(input.goal) + \"', so it is not linked to one.\";\n    }\n  }\n  const fields: Record<string, unknown> = {\n    ...(text(input.owner) ? { owner: text(input.owner) } : {}),\n    ...(dueAt ? { dueAt } : {}),\n    ...(goalId ? { goalId } : {}),\n    ...(text(input.from) ? { from: text(input.from) } : {}),\n  };\n  const existing = (await actions.list()).find((a) => a.status !== 'done' && titleOf(a).toLowerCase() === title.toLowerCase());\n  if (existing) {\n    await actions.update(existing.id, { fields });\n    note = 'Updated ' + existing.id + ' ' + titleOf(existing) + '.' + unlinked;\n  } else {\n    const record = await actions.add({ status: 'open', fields: { title, ...fields } });\n    note = 'Added ' + record.id + ' ' + title + (text(input.owner) ? ' for ' + text(input.owner) : '') + (dueAt ? ', due ' + dueAt : '') + '.' + unlinked;\n  }\n} else if (input.action === 'complete_action') {\n  const wanted = text(input.id) || text(input.title);\n  if (!wanted) throw new Error(\"complete_action needs 'id' (e.g. 'act-2') or the action's 'title'.\");\n  const all = await actions.list();\n  const done = pickPreferring(all.filter((a) => a.status !== 'done'), all, wanted, 'action');\n  if (done.status !== 'done') await actions.transition(done.id, 'done', text(input.note) ? { note: text(input.note) } : {});\n  note = 'Done: ' + titleOf(done) + (done.fields.owner ? ' (' + String(done.fields.owner) + ')' : '') + '.';\n} else if (input.action !== 'status') {\n  throw new Error(\n    \"Unknown action '\" + input.action + \"'. Use status, add_goal, add_key_result, update_key_result, set_goal_status, checkin, add_action, or complete_action.\",\n  );\n}\n\nconst view = picture(await goals.list(), await keyResults.list(), await checkins.list(), await actions.list(), Date.now());\n\ngezel.output({\n  active: view.active,\n  offPace: view.offPace,\n  openActions: view.openActions,\n  summary: (note ? note + ' ' : '') + view.summary,\n});\n"
+  },
+  "tools": [
+    {
+      "name": "goals_status",
+      "description": "The whole picture, furthest behind first: every active goal with its key results (current against target, with ids), its pace against the time gone, its last check-in, which goals have no check-in this week, and the open meeting actions with owners and due dates. Call it first when asked how things are going.",
+      "script": "goals-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "status"
+      },
+      "state": true
+    },
+    {
+      "name": "add_goal",
+      "description": "Save a goal: its title, owner and due date (YYYY-MM-DD). An existing title is updated, never duplicated. Call it as soon as a goal is named, before you describe it, then add its key results with add_key_result.",
+      "script": "goals-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "dueAt": {
+            "type": "string",
+            "description": "YYYY-MM-DD"
+          },
+          "startAt": {
+            "type": "string",
+            "description": "YYYY-MM-DD; defaults to today"
+          },
+          "note": {
+            "type": "string",
+            "description": "Why the goal matters, in their words."
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add_goal"
+      }
+    },
+    {
+      "name": "add_key_result",
+      "description": "Save a key result under a goal: what it measures, where it stands now, and the target. An existing title on that goal is updated, never duplicated. Call it as soon as one is named.",
+      "script": "goals-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "goal": {
+            "type": "string",
+            "description": "The goal's id or title."
+          },
+          "title": {
+            "type": "string",
+            "description": "What the key result measures."
+          },
+          "current": {
+            "type": "number",
+            "description": "Where it stands now."
+          },
+          "target": {
+            "type": "number",
+            "description": "Where it should end up."
+          },
+          "start": {
+            "type": "number",
+            "description": "Where it started (defaults to current)."
+          },
+          "unit": {
+            "type": "string",
+            "description": "'clients', '%', '$', 'hours'..."
+          }
+        },
+        "required": [
+          "goal",
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add_key_result"
+      }
+    },
+    {
+      "name": "update_key_result",
+      "description": "Record progress on a key result the moment the person reports it. When they say how much it moved ('two more clients', 'down 3 points'), pass change (2, -3) and the board adds it to the current value; pass value only when they give the new total. Never add it up yourself.",
+      "script": "goals-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "keyResult": {
+            "type": "string",
+            "description": "The key result's id (e.g. 'kr-3') or title."
+          },
+          "goal": {
+            "type": "string",
+            "description": "Optional: the goal's id or title, to narrow the search."
+          },
+          "change": {
+            "type": "number",
+            "description": "How much it moved: 2 for two more, -1 for one fewer."
+          },
+          "value": {
+            "type": "number",
+            "description": "The new total, only when the person gives the total."
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "update_key_result"
+      }
+    },
+    {
+      "name": "log_checkin",
+      "description": "Log a weekly check-in on a goal: who, how confident they are (on-track, at-risk or off-track), and what they said. Call it as soon as someone reports in, before you reply.",
+      "script": "goals-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "goal": {
+            "type": "string",
+            "description": "The goal's id or title."
+          },
+          "who": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "on-track",
+              "at-risk",
+              "off-track"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "description": "What they said, in their words."
+          }
+        }
+      },
+      "bind": {
+        "action": "checkin"
+      }
+    },
+    {
+      "name": "add_action",
+      "description": "Save one action agreed in a meeting: what, who owns it, when it is due (YYYY-MM-DD), and the goal it serves. An open action with the same title is updated, never duplicated. Call it for each action as soon as it is agreed, before you summarize.",
+      "script": "goals-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "The action, e.g. \"Send Alder Co the proposal\"."
+          },
+          "owner": {
+            "type": "string"
+          },
+          "dueAt": {
+            "type": "string",
+            "description": "YYYY-MM-DD"
+          },
+          "goal": {
+            "type": "string",
+            "description": "Optional: the goal it serves (id or title)."
+          },
+          "from": {
+            "type": "string",
+            "description": "The meeting it came from, e.g. 'Monday team meeting'."
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add_action"
+      }
+    },
+    {
+      "name": "complete_action",
+      "description": "Mark a meeting action done the moment the person says it is.",
+      "script": "goals-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "complete_action"
+      }
+    },
+    {
+      "name": "set_goal_status",
+      "description": "Close a goal as done or dropped, or reopen it.",
+      "script": "goals-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "goal": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "done",
+              "dropped"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "goal",
+          "status"
+        ]
+      },
+      "bind": {
+        "action": "set_goal_status"
+      }
+    },
+    {
+      "name": "page_add_goal",
+      "description": "Add or update a goal.",
+      "script": "goals-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "dueAt": {
+            "type": "string",
+            "description": "YYYY-MM-DD"
+          },
+          "startAt": {
+            "type": "string",
+            "description": "YYYY-MM-DD; defaults to today"
+          },
+          "note": {
+            "type": "string",
+            "description": "Why the goal matters, in their words."
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add_goal"
+      }
+    },
+    {
+      "name": "page_add_key_result",
+      "description": "Add or update a key result.",
+      "script": "goals-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "goal": {
+            "type": "string",
+            "description": "The goal's id or title."
+          },
+          "title": {
+            "type": "string",
+            "description": "What the key result measures."
+          },
+          "current": {
+            "type": "number",
+            "description": "Where it stands now."
+          },
+          "target": {
+            "type": "number",
+            "description": "Where it should end up."
+          },
+          "start": {
+            "type": "number",
+            "description": "Where it started (defaults to current)."
+          },
+          "unit": {
+            "type": "string",
+            "description": "'clients', '%', '$', 'hours'..."
+          }
+        },
+        "required": [
+          "goal",
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add_key_result"
+      }
+    },
+    {
+      "name": "page_update_key_result",
+      "description": "Record progress on a key result.",
+      "script": "goals-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "keyResult": {
+            "type": "string",
+            "description": "The key result's id (e.g. 'kr-3') or title."
+          },
+          "goal": {
+            "type": "string",
+            "description": "Optional: the goal's id or title, to narrow the search."
+          },
+          "change": {
+            "type": "number",
+            "description": "How much it moved: 2 for two more, -1 for one fewer."
+          },
+          "value": {
+            "type": "number",
+            "description": "The new total, only when the person gives the total."
+          },
+          "note": {
+            "type": "string"
+          },
+          "how": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "update_key_result"
+      },
+      "reaction": {
+        "gezel": "planner",
+        "hideSeed": true,
+        "prompt": "The person just recorded progress on the goals page. The board now reads (its first sentence is what changed):\n{{output.summary}}\nIn two short sentences, confirm what moved and how that goal is pacing now, and name the one next step that would help it most. Do not call tools."
+      }
+    },
+    {
+      "name": "page_log_checkin",
+      "description": "Log a check-in.",
+      "script": "goals-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "goal": {
+            "type": "string",
+            "description": "The goal's id or title."
+          },
+          "who": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "on-track",
+              "at-risk",
+              "off-track"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "description": "What they said, in their words."
+          }
+        }
+      },
+      "bind": {
+        "action": "checkin"
+      },
+      "reaction": {
+        "gezel": "planner",
+        "hideSeed": true,
+        "prompt": "The person just logged a check-in on the goals page. The board now reads (its first sentence is what changed):\n{{output.summary}}\nIn two short sentences, acknowledge the check-in, and if that goal is at risk or behind, suggest one concrete action the team could agree to. Do not call tools."
+      }
+    },
+    {
+      "name": "page_add_action",
+      "description": "Add a meeting action.",
+      "script": "goals-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "The action, e.g. \"Send Alder Co the proposal\"."
+          },
+          "owner": {
+            "type": "string"
+          },
+          "dueAt": {
+            "type": "string",
+            "description": "YYYY-MM-DD"
+          },
+          "goal": {
+            "type": "string",
+            "description": "Optional: the goal it serves (id or title)."
+          },
+          "from": {
+            "type": "string",
+            "description": "The meeting it came from, e.g. 'Monday team meeting'."
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add_action"
+      }
+    },
+    {
+      "name": "page_complete_action",
+      "description": "Mark a meeting action done.",
+      "script": "goals-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "complete_action"
+      }
+    }
+  ],
+  "craftbooks": [
+    "weekly-review",
+    "status-report",
+    "meeting-notes-to-actions",
+    "standup-summary",
+    "kpi-scorecard"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "goals/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "goals.json"
+      },
+      {
+        "source": "workspace",
+        "path": "keyresults.json"
+      },
+      {
+        "source": "workspace",
+        "path": "checkins.json"
+      },
+      {
+        "source": "workspace",
+        "path": "actions.json"
+      }
+    ],
+    "tools": [
+      "page_add_goal",
+      "page_add_key_result",
+      "page_update_key_result",
+      "page_log_checkin",
+      "page_add_action",
+      "page_complete_action"
+    ]
+  },
+  "workspaceSeed": [
+    "goals.json",
+    "keyresults.json",
+    "checkins.json",
+    "actions.json"
+  ],
+  "minGezelVersion": "1.26280"
+}

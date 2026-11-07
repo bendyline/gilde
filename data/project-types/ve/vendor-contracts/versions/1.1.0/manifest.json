@@ -1,0 +1,545 @@
+{
+  "schemaVersion": 1,
+  "version": "1.1.0",
+  "releasedAt": "2026-11-07T18:00:00.000Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "business": {
+        "type": "string",
+        "title": "What kind of business is this?",
+        "description": "e.g. 'a café in Portland', 'a six-person design studio'.",
+        "default": "the business"
+      }
+    },
+    "required": [
+      "business"
+    ]
+  },
+  "nameTemplate": "Vendor & Contract Desk",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "kantoormeester",
+      "voorman": true
+    },
+    {
+      "templateId": "reviewer"
+    }
+  ],
+  "scripts": {
+    "contracts-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'contracts-store',\n  description:\n    \"Read and update the vendor and contract desk (contracts.json and vendors.json). action:'status' for what needs deciding (notice dates and automatic renewals, missed ones first) and yearly spend; 'add' to save a contract (an existing id or title is updated, never duplicated; percentChange and monthlyChange adjust its price); 'renew' when one was renewed; 'cancel' when notice was given; 'set_status' to mark one under review, active again, or ended; 'add_vendor' to save a vendor; 'attach_file' to link a contract file under contract-files/; 'list' for every contract and vendor.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'status', 'add', 'renew', 'cancel', 'set_status', 'add_vendor', 'attach_file', or 'list'.\",\n      required: true,\n    },\n    id: { type: 'string', description: \"Contract id, e.g. 'ct-3'.\" },\n    title: {\n      type: 'string',\n      description: \"The contract's name, e.g. 'Linen service'. Also finds it when no id is given.\",\n    },\n    vendor: { type: 'string', description: 'The vendor or supplier, e.g. Bayside Linen. Also finds its contract.' },\n    category: {\n      type: 'string',\n      description: 'food, supplies, linen, equipment, software, utilities, services, premises, insurance, or other.',\n    },\n    endAt: {\n      type: 'string',\n      description: 'When the current term ends, YYYY-MM-DD (for month-to-month, the next billing date). For renew: the new end date.',\n    },\n    autoRenew: { type: 'string', description: 'yes when it renews on its own unless notice is given, otherwise no.' },\n    renewMonths: { type: 'number', description: 'Length of each term in months (default 12; 1 for month-to-month).' },\n    noticeDays: { type: 'number', description: 'Days of notice needed before the end date to cancel or change it.' },\n    annualCost: { type: 'number', description: 'What it costs a year, in dollars.' },\n    monthlyCost: { type: 'number', description: 'What it costs a month, in dollars (kept as a yearly cost).' },\n    percentChange: { type: 'number', description: 'A price change in percent: 6 for a 6% increase, -10 for a 10% cut.' },\n    monthlyChange: { type: 'number', description: 'A price change in dollars a month: 40 for $40 more a month.' },\n    owner: { type: 'string', description: 'Who looks after it.' },\n    contact: { type: 'string', description: \"For add_vendor: the vendor's contact, phone or email.\" },\n    status: { type: 'string', description: 'For set_status: active, reviewing, or ended.' },\n    note: { type: 'string', description: 'What happened, with any reference number exactly as written.' },\n    file: { type: 'string', description: \"Workspace path of a contract file, e.g. 'contract-files/linen-2026.pdf'.\" },\n    withinDays: { type: 'number', description: 'How many days ahead counts as coming up (default 90).' },\n  },\n  outputs: {\n    decisionsDue: { type: 'number', description: 'Contracts needing attention within the window.' },\n    autoRenewWarnings: { type: 'number', description: 'Contracts that renew on their own whose notice date is near or already passed.' },\n    annualSpend: { type: 'number', description: 'Yearly spend across live contracts, in dollars.' },\n    contracts: { type: 'number', description: 'Contracts on the desk.' },\n    summary: { type: 'string', description: 'The desk picture, or the listing.' },\n  },\n  requires: ['workspace.read', 'workspace.write', 'reminders'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── contracts-rules-start ──\n// Pure derivations: a contract's current term end (one that renews on its own\n// and passed its end date has renewed itself), its notice date, what it needs\n// now, and the desk line the crew reads. Kept self-contained between these\n// sentinels so unit tests execute the shipped bytes.\nvar DAY_MS = 86400000;\nvar WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];\nvar MONTH_KEYS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];\n\nfunction pad(n) {\n  return n < 10 ? '0' + n : String(n);\n}\nfunction localDay(ms) {\n  var d = new Date(ms);\n  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());\n}\nfunction noon(day) {\n  return new Date(String(day).slice(0, 10) + 'T12:00:00');\n}\nfunction addDays(day, n) {\n  var d = noon(day);\n  d.setDate(d.getDate() + n);\n  return localDay(d.getTime());\n}\nfunction addMonths(day, months) {\n  var d = noon(day);\n  var date = d.getDate();\n  d.setDate(1);\n  d.setMonth(d.getMonth() + months);\n  // The 31st rolls to the last day of a shorter month, not into the next one.\n  d.setDate(Math.min(date, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));\n  return localDay(d.getTime());\n}\nfunction daysLeft(day, nowMs) {\n  var due = Date.parse(String(day).slice(0, 10) + 'T00:00:00');\n  var today = Date.parse(localDay(nowMs) + 'T00:00:00');\n  return Math.round((due - today) / DAY_MS);\n}\nfunction dayName(day) {\n  return WEEKDAYS[noon(day).getDay()];\n}\nfunction parseDay(text, nowMs, direction) {\n  var raw = String(text == null ? '' : text).trim().toLowerCase().replace(/[.,]/g, ' ').replace(/\\s+/g, ' ').trim();\n  if (!raw) return null;\n  var iso = raw.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})(?:t.*)?$/);\n  if (iso) return iso[1] + '-' + pad(Number(iso[2])) + '-' + pad(Number(iso[3]));\n  var today = localDay(nowMs);\n  if (raw === 'today' || raw === 'now') return today;\n  if (raw === 'tomorrow') return addDays(today, 1);\n  if (raw === 'yesterday') return addDays(today, -1);\n  var rel = raw.match(/^(?:in )?(\\d{1,3}) (day|days|week|weeks)( ago| from now)?$/);\n  if (rel) {\n    var n = Number(rel[1]) * (rel[2].charAt(0) === 'w' ? 7 : 1);\n    return addDays(today, rel[3] === ' ago' ? -n : n);\n  }\n  var wd = raw.match(/^(this |next |last |on |coming )?(sun|mon|tue|wed|thu|fri|sat)[a-z]*$/);\n  if (wd) {\n    var target = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].indexOf(wd[2]);\n    var now = noon(today).getDay();\n    if (direction === 'past' || wd[1] === 'last ') {\n      var back = (now - target + 7) % 7;\n      return addDays(today, -(wd[1] === 'last ' && back === 0 ? 7 : back));\n    }\n    if (wd[1] === 'this ') return addDays(today, (target - now + 7) % 7);\n    return addDays(today, ((target - now + 6) % 7) + 1);\n  }\n  var md = raw.match(/^(?:[a-z]+day )?([a-z]{3,9}) (\\d{1,2})(?:st|nd|rd|th)?(?: (\\d{4}))?$/);\n  var dm = raw.match(/^(?:[a-z]+day )?(\\d{1,2})(?:st|nd|rd|th)? (?:of )?([a-z]{3,9})(?: (\\d{4}))?$/);\n  var parts = md ? { month: md[1], date: md[2], year: md[3] } : dm ? { month: dm[2], date: dm[1], year: dm[3] } : null;\n  if (parts) {\n    var m = MONTH_KEYS.indexOf(parts.month.slice(0, 3));\n    if (m < 0) return null;\n    var date = Number(parts.date);\n    if (date < 1 || date > 31) return null;\n    if (parts.year) return parts.year + '-' + pad(m + 1) + '-' + pad(date);\n    var year = noon(today).getFullYear();\n    var guess = year + '-' + pad(m + 1) + '-' + pad(date);\n    var d = daysLeft(guess, nowMs);\n    if (direction === 'past' && d > 0) guess = year - 1 + guess.slice(4);\n    if (direction !== 'past' && d < 0) guess = year + 1 + guess.slice(4);\n    return guess;\n  }\n  return null;\n}\nfunction matches(records, text, labelOf) {\n  var wanted = String(text == null ? '' : text).trim().toLowerCase().replace(/['\\u2019]s\\b/g, '').replace(/\\s+/g, ' ');\n  if (!wanted) return [];\n  var tiers = [\n    function (r) { return String(r.id).toLowerCase() === wanted; },\n    function (r) { return labelOf(r).toLowerCase() === wanted; },\n    function (r) { return labelOf(r).toLowerCase().indexOf(wanted) === 0; },\n    function (r) { return (' ' + labelOf(r).toLowerCase() + ' ').indexOf(' ' + wanted + ' ') >= 0; },\n    function (r) { return labelOf(r).toLowerCase().indexOf(wanted) >= 0; },\n    function (r) { var l = labelOf(r).toLowerCase(); return l.length >= 3 && wanted.indexOf(l) >= 0; },\n  ];\n  for (var i = 0; i < tiers.length; i++) {\n    var hit = records.filter(tiers[i]);\n    if (hit.length) return hit;\n  }\n  return [];\n}\nfunction describe(records, labelOf) {\n  return records.map(function (r) { return r.id + ' ' + labelOf(r); }).join(', ');\n}\nfunction splitList(text) {\n  var raw = String(text == null ? '' : text).trim();\n  if (/^\\[/.test(raw)) {\n    try {\n      var parsed = JSON.parse(raw);\n      if (Array.isArray(parsed)) return parsed.map(function (s) { return String(s).trim(); }).filter(Boolean);\n    } catch (e) {\n      // Not JSON after all; split it as text.\n    }\n  }\n  return raw\n    .split(/\\s*[,;\\n]+\\s*/)\n    .map(function (s) { return s.replace(/^(and|or|plus)\\s+/i, '').replace(/[.\\s]+$/, '').trim(); })\n    .filter(Boolean);\n}\nvar CATEGORIES = [\"food\",\"supplies\",\"linen\",\"equipment\",\"software\",\"utilities\",\"services\",\"premises\",\"insurance\",\"other\"];\nvar DEFAULT_NOTICE_DAYS = 30;\nvar FILLER = ['the', 'our', 'contract', 'contracts', 'agreement', 'with', 'for', 'and', 'from', 'deal'];\n\nfunction yes(value) {\n  return value === true || /^(yes|true|y|auto|automatic|automatically)$/i.test(String(value == null ? '' : value).trim());\n}\nfunction money(cents) {\n  var n = Math.round(Number(cents) || 0);\n  var sign = n < 0 ? '-' : '';\n  n = Math.abs(n);\n  var dollars = String(Math.floor(n / 100)).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',');\n  return sign + '$' + dollars + (n % 100 ? '.' + pad(n % 100) : '');\n}\nfunction inDays(days) {\n  if (days < 0) return -days + (days === -1 ? ' day ago' : ' days ago');\n  if (days === 0) return 'today';\n  return 'in ' + days + (days === 1 ? ' day' : ' days');\n}\nfunction termMonths(f) {\n  var m = Number(f.renewMonths);\n  return m > 0 ? Math.round(m) : 12;\n}\nfunction noticeOf(f) {\n  if (f.noticeDays === undefined || f.noticeDays === null || f.noticeDays === '') return null;\n  var n = Number(f.noticeDays);\n  return n >= 0 ? Math.round(n) : null;\n}\n// Rolled from the recorded date a whole number of terms at a time, so a 31st never drifts.\n// A contract with notice given (fixed) ends on its recorded date.\nfunction termEnd(f, nowMs, fixed) {\n  if (!f.endAt) return null;\n  var first = String(f.endAt).slice(0, 10);\n  if (fixed || !yes(f.autoRenew)) return first;\n  var end = first;\n  for (var k = 1; k <= 600 && daysLeft(end, nowMs) < 0; k++) end = addMonths(first, k * termMonths(f));\n  return end;\n}\nfunction view(record, nowMs) {\n  var f = record.fields || {};\n  var end = termEnd(f, nowMs, record.status === 'cancelling' || record.status === 'ended');\n  var notice = noticeOf(f);\n  var noticeBy = end ? addDays(end, -(notice === null ? DEFAULT_NOTICE_DAYS : notice)) : null;\n  return {\n    end: end,\n    noticeBy: noticeBy,\n    notice: notice,\n    auto: yes(f.autoRenew),\n    rolled: !!end && end !== String(f.endAt).slice(0, 10),\n    toNotice: noticeBy ? daysLeft(noticeBy, nowMs) : null,\n    toEnd: end ? daysLeft(end, nowMs) : null,\n  };\n}\n// notice: renews on its own unless notice goes out by a date inside the window.\n// locked: renews on its own and this term's notice date has passed.\n// ending: a fixed term ends; decide inside the window. expired: it ended unrenewed.\nfunction stateOf(record, nowMs, withinDays) {\n  var v = view(record, nowMs);\n  if (record.status === 'ended') return 'ended';\n  if (!v.end) return 'undated';\n  if (record.status === 'cancelling') return v.toEnd < 0 ? 'ended' : 'cancelling';\n  if (v.auto) return v.toNotice < 0 ? 'locked' : v.toNotice <= withinDays ? 'notice' : 'later';\n  if (v.toEnd < 0) return 'expired';\n  return v.toNotice <= withinDays ? 'ending' : 'later';\n}\nfunction renewText(f) {\n  var m = termMonths(f);\n  return m === 1 ? 'for another month' : 'for another ' + m + ' months';\n}\nfunction costText(f) {\n  return typeof f.annualCents === 'number' ? money(f.annualCents) + ' a year' : 'cost not recorded';\n}\nfunction line(record, nowMs, withinDays) {\n  var f = record.fields || {};\n  var v = view(record, nowMs);\n  var s = stateOf(record, nowMs, withinDays);\n  var assumed = v.notice === null ? ' (notice period not recorded; ' + DEFAULT_NOTICE_DAYS + ' days assumed)' : '';\n  var what =\n    s === 'ended' ? 'ended' + (v.end ? ' ' + v.end : '')\n    : s === 'undated' ? 'no end date recorded'\n    : s === 'cancelling' ? 'notice given; ends ' + v.end + ' (' + inDays(v.toEnd) + ')'\n    : s === 'locked' ? 'its notice date ' + v.noticeBy + ' has passed, so it renews automatically on ' + v.end + ' (' + inDays(v.toEnd) + ') ' + renewText(f)\n    : s === 'expired' ? 'ended ' + v.end + ' (' + inDays(v.toEnd) + ') and does not renew on its own: record a renewal or mark it ended'\n    : v.auto ? 'give notice by ' + v.noticeBy + ' (' + inDays(v.toNotice) + ') or it renews automatically on ' + v.end + ' ' + renewText(f) + assumed\n    : 'ends ' + v.end + ' (' + inDays(v.toEnd) + ') and does not renew on its own; decide by ' + v.noticeBy + ' (' + inDays(v.toNotice) + ')' + assumed;\n  return (\n    f.title + ' (' + record.id + ', ' + (f.vendor || 'no vendor') + (f.owner ? ', owner ' + f.owner : '') + '): ' + what +\n    (record.status === 'reviewing' ? '; under review' : '') +\n    '; ' + costText(f) +\n    (f.file ? '; contract file ' + f.file : '')\n  );\n}\n// Missed dates first (ended unrenewed, then too late to cancel), then the soonest date to act on.\nfunction urgency(record, nowMs, withinDays) {\n  var v = view(record, nowMs);\n  var s = stateOf(record, nowMs, withinDays);\n  if (s === 'expired') return -100000 + v.toEnd;\n  if (s === 'locked') return -50000 + v.toEnd;\n  return v.toNotice;\n}\nfunction picture(contracts, vendorCount, nowMs, withinDays) {\n  var states = contracts.map(function (r) { return stateOf(r, nowMs, withinDays); });\n  var pick = function (names) {\n    return contracts.filter(function (r, i) { return names.indexOf(states[i]) >= 0; });\n  };\n  var live = contracts.filter(function (r, i) { return states[i] !== 'ended'; });\n  var annual = live.reduce(function (sum, r) { return sum + (Number(r.fields && r.fields.annualCents) || 0); }, 0);\n  var due = pick(['expired', 'locked', 'notice', 'ending']).sort(function (a, b) {\n    return urgency(a, nowMs, withinDays) - urgency(b, nowMs, withinDays);\n  });\n  var warnings = pick(['locked', 'notice']).length;\n  var parts = [\n    live.length + ' live ' + (live.length === 1 ? 'contract' : 'contracts') + ' with ' + vendorCount + ' ' + (vendorCount === 1 ? 'vendor' : 'vendors') + ', ' + money(annual) + ' a year' + (warnings ? '; ' + warnings + (warnings === 1 ? ' renews on its own' : ' renew on their own') + ' soon' : '') + '.',\n  ];\n  // One list, missed dates first: a model asked what needs deciding reads one list, not side lists.\n  parts.push(\n    due.length\n      ? 'Needing a decision within ' + withinDays + ' days, most urgent first: ' + due.map(function (r) { return line(r, nowMs, withinDays); }).join(' | ') + '.'\n      : 'Nothing needs a decision in the next ' + withinDays + ' days.',\n  );\n  var cancelling = pick(['cancelling']);\n  if (cancelling.length) parts.push('Notice already given: ' + cancelling.map(function (r) { return line(r, nowMs, withinDays); }).join(' | ') + '.');\n  var undated = pick(['undated']);\n  if (undated.length) parts.push('No end date recorded: ' + undated.map(function (r) { return r.fields.title + ' (' + r.id + ')'; }).join(', ') + '.');\n  var later = pick(['later']).sort(function (a, b) { return view(a, nowMs).toNotice - view(b, nowMs).toNotice; });\n  if (later.length) {\n    var next = view(later[0], nowMs);\n    parts.push('Next after that: ' + later[0].fields.title + ', ' + (next.auto ? 'give notice by ' : 'decide by ') + next.noticeBy + '.');\n  }\n  var spend = {};\n  live.forEach(function (r) {\n    var kind = (r.fields && r.fields.category) || 'other';\n    spend[kind] = (spend[kind] || 0) + (Number(r.fields && r.fields.annualCents) || 0);\n  });\n  var kinds = Object.keys(spend).filter(function (k) { return spend[k] > 0; }).sort(function (a, b) { return spend[b] - spend[a]; });\n  if (kinds.length) parts.push('Yearly spend by kind: ' + kinds.map(function (k) { return k + ' ' + money(spend[k]); }).join(', ') + '.');\n  return { decisionsDue: due.length, autoRenewWarnings: warnings, annualCents: annual, summary: parts.join(' ') };\n}\nfunction contractLabel(r) {\n  return String((r.fields && r.fields.title) || '');\n}\n// By id or title first, then the vendor's name, then every telling word of the request.\nfunction findContracts(records, text) {\n  var hit = matches(records, text, contractLabel);\n  if (hit.length) return hit;\n  hit = matches(records, text, function (r) { return String((r.fields && r.fields.vendor) || ''); });\n  if (hit.length) return hit;\n  var want = String(text == null ? '' : text).toLowerCase().split(/[^a-z0-9]+/).filter(function (w) {\n    return w.length > 2 && FILLER.indexOf(w) < 0;\n  });\n  if (!want.length) return [];\n  return records.filter(function (r) {\n    var have = (contractLabel(r) + ' ' + String((r.fields && r.fields.vendor) || '')).toLowerCase().split(/[^a-z0-9]+/);\n    return want.every(function (w) {\n      var stem = w.replace(/s$/, '');\n      return have.some(function (h) { return h.indexOf(stem) === 0; });\n    });\n  });\n}\n// ── contracts-rules-end ──\n\nconst contracts = rosterStore(gezel.fs, 'contracts.json', {\n  stages: ['active', 'reviewing', 'cancelling', 'ended'],\n  idPrefix: 'ct',\n});\nconst vendors = rosterStore(gezel.fs, 'vendors.json', {\n  stages: ['active', 'inactive'],\n  idPrefix: 'vn',\n});\ntype Contract = Awaited<ReturnType<typeof contracts.list>>[number];\n\nconst now = Date.now();\nconst today = localDay(now);\nconst withinDays = typeof input.withinDays === 'number' && input.withinDays > 0 ? Math.round(input.withinDays) : 90;\nlet note = '';\n\nfunction clip(text: string, max: number): string {\n  return text.length > max ? text.slice(0, max - 1) + '…' : text;\n}\nfunction known(all: Contract[]): string {\n  return describe(all, contractLabel) || 'none yet';\n}\n\nasync function resolveContract(): Promise<Contract> {\n  const all = await contracts.list();\n  const text = input.id || input.title || input.vendor;\n  if (!text) throw new Error(\"Pass 'id' (e.g. 'ct-3') or the contract's 'title'. Contracts: \" + known(all) + '.');\n  const hits = findContracts(all, text);\n  if (hits.length === 1) return hits[0]!;\n  if (hits.length > 1) throw new Error(\"More than one contract matches '\" + text + \"': \" + describe(hits, contractLabel) + '. Pass id.');\n  throw new Error(\"No contract matches '\" + text + \"'. Contracts: \" + known(all) + '.');\n}\n\nasync function ensureVendor(name: string, category: string | undefined) {\n  const wanted = name.trim().toLowerCase();\n  const found = (await vendors.list()).find((v) => String(v.fields.name ?? '').toLowerCase() === wanted);\n  if (found) return found;\n  return vendors.add({ status: 'active', fields: { name: name.trim(), category: category ?? 'other' } });\n}\n\nfunction dollars(value: unknown): number | undefined {\n  return typeof value === 'number' && isFinite(value) && value >= 0 ? Math.round(value * 100) : undefined;\n}\n\n// The yearly cost a call states or implies: a stated cost wins, then the relative changes apply.\nfunction priced(current: unknown): { cents?: number; change: string } {\n  const monthly = dollars(input.monthlyCost);\n  const stated = dollars(input.annualCost) ?? (monthly === undefined ? undefined : monthly * 12);\n  const relative = typeof input.percentChange === 'number' || typeof input.monthlyChange === 'number';\n  if (!relative) return { cents: stated, change: '' };\n  const base = stated ?? (typeof current === 'number' ? current : undefined);\n  if (base === undefined) throw new Error('There is no recorded cost to change yet; pass annualCost or monthlyCost.');\n  let next = base;\n  if (typeof input.percentChange === 'number') next = Math.round(next * (1 + input.percentChange / 100));\n  if (typeof input.monthlyChange === 'number') next += Math.round(input.monthlyChange * 100) * 12;\n  next = Math.max(0, next);\n  return { cents: next, change: 'price from ' + money(base) + ' to ' + money(next) + ' a year' };\n}\n\n// The desk's one reminder sits two weeks ahead of the soonest notice date (or a fixed term's end).\nasync function remindNextNotice(all: Contract[]): Promise<void> {\n  const lead = 14 * DAY_MS;\n  const next = all\n    .filter((r) => r.status === 'active' || r.status === 'reviewing')\n    .map((r) => {\n      const v = view(r, now);\n      const day = v.toNotice !== null && v.toNotice >= 0 ? v.noticeBy : !v.auto && v.toEnd !== null && v.toEnd >= 0 ? v.end : null;\n      return { r, v, day, at: day ? Date.parse(day + 'T09:00:00') - lead : NaN };\n    })\n    .filter((x) => x.day && x.at > now)\n    .sort((a, b) => a.at - b.at)[0];\n  try {\n    if (!next || next.at - now > 30 * DAY_MS) {\n      await gezel.reminder.clear();\n    } else {\n      const title = String(next.r.fields.title);\n      const onNotice = next.day === next.v.noticeBy;\n      await gezel.reminder.set({\n        at: new Date(next.at).toISOString(),\n        title: clip(onNotice ? 'Notice on ' + title + ' is due in two weeks' : title + ' ends in two weeks', 80),\n        body: clip(\n          onNotice\n            ? next.v.auto\n              ? 'Give notice by ' + next.day + ' or it renews on ' + next.v.end + '. Open the contract desk to decide.'\n              : 'Decide by ' + next.day + ' whether to renew; it ends ' + next.v.end + '.'\n            : 'It ends ' + next.v.end + ' and does not renew on its own.',\n          160,\n        ),\n      });\n    }\n  } catch {\n    // Reminders are a convenience; the desk is the record.\n  }\n}\n\nif (input.action === 'add') {\n  const all = await contracts.list();\n  const wanted = String(input.title ?? '').trim().toLowerCase();\n  let existing = input.id\n    ? all.find((r) => r.id === input.id)\n    : all.find((r) => String(r.fields.title ?? '').toLowerCase() === wanted);\n  if (input.id && !existing) throw new Error('No contract ' + input.id + '. Contracts: ' + known(all) + '.');\n  const endAt = input.endAt ? parseDay(input.endAt, now, 'future') : null;\n  if (input.endAt && !endAt) throw new Error(\"endAt must be a date, e.g. '2027-03-31'.\");\n  const relative = typeof input.percentChange === 'number' || typeof input.monthlyChange === 'number';\n  // A call with no end date cannot start a contract, so a loose title names an existing one.\n  if (!existing && wanted && (!endAt || relative)) {\n    const loose = findContracts(all, input.title);\n    if (loose.length === 1) existing = loose[0];\n    else if (loose.length > 1) throw new Error(\"More than one contract matches '\" + input.title + \"': \" + describe(loose, contractLabel) + '. Pass id.');\n    else if (relative) throw new Error(\"No contract matches '\" + input.title + \"' to change its price. Contracts: \" + known(all) + '.');\n  }\n  if (!existing && !wanted) throw new Error(\"add needs 'title'.\");\n  if (input.noticeDays !== undefined && !(Number(input.noticeDays) >= 0)) throw new Error('noticeDays must be zero or more.');\n  const category = CATEGORIES.indexOf(String(input.category)) >= 0 ? String(input.category) : undefined;\n  const vendor = input.vendor ? await ensureVendor(input.vendor, category) : null;\n  const price = priced(existing ? existing.fields.annualCents : undefined);\n  const fields: Record<string, unknown> = {\n    ...(vendor ? { vendor: String(vendor.fields.name), vendorId: vendor.id } : {}),\n    ...(category ? { category } : {}),\n    ...(endAt ? { endAt } : {}),\n    ...(input.autoRenew ? { autoRenew: yes(input.autoRenew) ? 'yes' : 'no' } : {}),\n    ...(typeof input.renewMonths === 'number' && input.renewMonths > 0 ? { renewMonths: Math.round(input.renewMonths) } : {}),\n    ...(typeof input.noticeDays === 'number' ? { noticeDays: Math.round(input.noticeDays) } : {}),\n    ...(price.cents !== undefined ? { annualCents: price.cents } : {}),\n    ...(input.owner ? { owner: input.owner.trim() } : {}),\n    ...(input.note ? { notes: input.note.trim() } : {}),\n  };\n  if (existing) {\n    await contracts.update(existing.id, { fields, ...(price.change ? { note: 'Price change: ' + price.change + '.' } : {}) });\n    note = 'Updated ' + String(existing.fields.title) + (price.change ? ': ' + price.change : '') + '.';\n  } else {\n    if (!endAt) throw new Error(\"A new contract needs 'endAt': when its current term ends (YYYY-MM-DD; for month-to-month, the next billing date).\");\n    const record = await contracts.add({\n      status: 'active',\n      fields: {\n        title: String(input.title).trim(),\n        category: category ?? (vendor ? String(vendor.fields.category ?? 'other') : 'other'),\n        autoRenew: 'no',\n        ...fields,\n      },\n    });\n    note = 'Added ' + record.id + ' ' + String(record.fields.title) + '.';\n  }\n} else if (input.action === 'renew') {\n  const r = await resolveContract();\n  const v = view(r, now);\n  const months = typeof input.renewMonths === 'number' && input.renewMonths > 0 ? Math.round(input.renewMonths) : termMonths(r.fields);\n  const nextEnd = input.endAt ? parseDay(input.endAt, now, 'future') : v.end ? addMonths(v.end, months) : null;\n  if (input.endAt && !nextEnd) throw new Error(\"endAt must be a date, e.g. '2027-12-14'.\");\n  if (!nextEnd) throw new Error(\"renew needs 'endAt': the new end date.\");\n  const price = priced(r.fields.annualCents);\n  const fields: Record<string, unknown> = {\n    endAt: nextEnd,\n    lastRenewedAt: today,\n    ...(typeof input.renewMonths === 'number' && input.renewMonths > 0 ? { renewMonths: months } : {}),\n    ...(price.cents !== undefined ? { annualCents: price.cents } : {}),\n  };\n  await contracts.update(r.id, { fields, note: input.note ?? 'Renewed through ' + nextEnd + '.' });\n  if (r.status !== 'active') await contracts.transition(r.id, 'active', { note: 'Renewed.' });\n  const after = view({ id: r.id, status: 'active', fields: { ...r.fields, ...fields } }, now);\n  note =\n    String(r.fields.title) + ' renewed through ' + nextEnd + (price.cents !== undefined ? ' at ' + money(price.cents) + ' a year' : '') +\n    (after.auto ? '; next notice date ' + after.noticeBy : '') + '.';\n} else if (input.action === 'cancel') {\n  const r = await resolveContract();\n  if (r.status === 'ended') throw new Error(String(r.fields.title) + ' has already ended.');\n  const v = view(r, now);\n  if (v.end && v.end !== r.fields.endAt) await contracts.update(r.id, { fields: { endAt: v.end } });\n  await contracts.transition(r.id, 'cancelling', { note: input.note ?? 'Notice given.' });\n  const late = v.auto && v.toNotice !== null && v.toNotice < 0;\n  note =\n    'Notice recorded for ' + String(r.fields.title) + (v.end ? '; it ends ' + v.end : '') + '.' +\n    (late ? ' Its notice date ' + v.noticeBy + ' had already passed, so confirm with ' + String(r.fields.vendor || 'the vendor') + ' whether it renews for one more term first.' : '');\n} else if (input.action === 'set_status') {\n  if (['active', 'reviewing', 'ended'].indexOf(String(input.status)) < 0) throw new Error(\"set_status needs status 'active', 'reviewing' or 'ended'.\");\n  const r = await resolveContract();\n  await contracts.transition(r.id, String(input.status), input.note ? { note: input.note } : {});\n  note = String(r.fields.title) + (input.status === 'reviewing' ? ' is under review.' : input.status === 'ended' ? ' has ended.' : ' is active.');\n} else if (input.action === 'add_vendor') {\n  const name = String(input.vendor ?? input.title ?? '').trim();\n  if (!name) throw new Error(\"add_vendor needs 'vendor': the vendor's name.\");\n  const category = CATEGORIES.indexOf(String(input.category)) >= 0 ? String(input.category) : undefined;\n  const found = (await vendors.list()).find((v) => String(v.fields.name ?? '').toLowerCase() === name.toLowerCase());\n  const fields: Record<string, unknown> = {\n    ...(category ? { category } : {}),\n    ...(input.contact ? { contact: input.contact.trim() } : {}),\n    ...(input.note ? { notes: input.note.trim() } : {}),\n  };\n  if (found) {\n    await vendors.update(found.id, { fields });\n    note = 'Updated vendor ' + String(found.fields.name) + '.';\n  } else {\n    const v = await vendors.add({ status: 'active', fields: { name, category: category ?? 'other', ...fields } });\n    note = 'Added vendor ' + v.id + ' ' + name + '.';\n  }\n} else if (input.action === 'attach_file') {\n  const raw = String(input.file ?? '').trim().replace(/\\\\/g, '/').replace(/^\\.?\\/+/, '');\n  if (!raw) throw new Error(\"attach_file needs 'file', e.g. 'contract-files/linen-2026.pdf'.\");\n  if (raw.split('/').indexOf('..') >= 0) throw new Error('file must be a path inside the workspace.');\n  const file = raw.indexOf('/') < 0 ? 'contract-files/' + raw : raw;\n  const r = await resolveContract();\n  await contracts.update(r.id, { fields: { file }, note: 'Contract file: ' + file + '.' });\n  note = 'Linked ' + file + ' to ' + String(r.fields.title) + '.';\n} else if (input.action !== 'status' && input.action !== 'list') {\n  throw new Error(\"Unknown action '\" + input.action + \"'. Use status, add, renew, cancel, set_status, add_vendor, attach_file, or list.\");\n}\n\nconst all = await contracts.list();\nconst vendorList = await vendors.list();\nconst desk = picture(all, vendorList.filter((v) => v.status === 'active').length, now, withinDays);\nawait remindNextNotice(all);\n\nfunction vendorLine(v: (typeof vendorList)[number]): string {\n  const name = String(v.fields.name ?? '');\n  const own = all.filter(\n    (r) => (r.fields.vendorId === v.id || String(r.fields.vendor ?? '').toLowerCase() === name.toLowerCase()) && stateOf(r, now, withinDays) !== 'ended',\n  );\n  const cents = own.reduce((sum, r) => sum + (Number(r.fields.annualCents) || 0), 0);\n  return (\n    name + ' (' + v.id + ', ' + String(v.fields.category ?? 'other') + (v.fields.contact ? ', contact ' + String(v.fields.contact) : '') + (v.status !== 'active' ? ', inactive' : '') + '): ' +\n    (own.length ? own.length + (own.length === 1 ? ' contract, ' : ' contracts, ') + money(cents) + ' a year' : 'no contract on the desk')\n  );\n}\n\n// Vendors without a contract (the electrician you call) are otherwise invisible to a status read.\nconst callOnly = vendorList.filter((v) => v.status === 'active' && vendorLine(v).endsWith('no contract on the desk')).slice(0, 8);\nconst extra = callOnly.length\n  ? ' Vendors with no contract on the desk: ' +\n    callOnly.map((v) => String(v.fields.name) + ' (' + String(v.fields.category ?? 'other') + (v.fields.contact ? ', ' + String(v.fields.contact) : '') + ')').join(', ') + '.'\n  : '';\n\ngezel.output({\n  decisionsDue: desk.decisionsDue,\n  autoRenewWarnings: desk.autoRenewWarnings,\n  annualSpend: desk.annualCents / 100,\n  contracts: all.length,\n  summary:\n    input.action === 'list'\n      ? (all.map((r) => '[' + r.status + '] ' + line(r, now, withinDays)).join('\\n') || 'No contracts yet.') +\n        '\\n\\nVendors:\\n' + (vendorList.map(vendorLine).join('\\n') || 'none yet')\n      : (note ? note + ' ' : '') + desk.summary + extra,\n});\n"
+  },
+  "tools": [
+    {
+      "name": "contracts_status",
+      "description": "What needs deciding on the contract desk: notice dates and automatic renewals within 90 days, missed ones first, each with vendor, owner, dates and yearly cost, plus yearly spend by kind. Call it first when asked what's coming up or what the business spends.",
+      "script": "contracts-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "withinDays": {
+            "type": "number"
+          }
+        }
+      },
+      "bind": {
+        "action": "status"
+      },
+      "state": true
+    },
+    {
+      "name": "add_contract",
+      "description": "Save a contract: title, vendor, kind, yearly or monthly cost in dollars, when the current term ends (YYYY-MM-DD), whether it renews on its own, notice days and owner. An existing id or title is updated, never duplicated. For a price change pass percentChange or monthlyChange and let the desk do the math. Call it as soon as a contract or a price change is mentioned, before you describe it.",
+      "script": "contracts-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "vendor": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "food",
+              "supplies",
+              "linen",
+              "equipment",
+              "software",
+              "utilities",
+              "services",
+              "premises",
+              "insurance",
+              "other"
+            ]
+          },
+          "endAt": {
+            "type": "string"
+          },
+          "autoRenew": {
+            "type": "string",
+            "enum": [
+              "yes",
+              "no"
+            ]
+          },
+          "renewMonths": {
+            "type": "number"
+          },
+          "noticeDays": {
+            "type": "number"
+          },
+          "annualCost": {
+            "type": "number"
+          },
+          "monthlyCost": {
+            "type": "number"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "percentChange": {
+            "type": "number"
+          },
+          "monthlyChange": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add"
+      }
+    },
+    {
+      "name": "renew_contract",
+      "description": "Record that a contract was renewed. Leave endAt out to extend it one more term from its current end date; pass annualCost or monthlyCost when the price changed. Call it the moment the person says it's renewed.",
+      "script": "contracts-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "vendor": {
+            "type": "string"
+          },
+          "endAt": {
+            "type": "string"
+          },
+          "renewMonths": {
+            "type": "number"
+          },
+          "annualCost": {
+            "type": "number"
+          },
+          "monthlyCost": {
+            "type": "number"
+          },
+          "percentChange": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "renew"
+      }
+    },
+    {
+      "name": "cancel_contract",
+      "description": "Record that notice went out to end a contract, with how it was sent and any reference exactly as written. It stays on the desk until its end date. Call it the moment the person says notice was given.",
+      "script": "contracts-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "vendor": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "cancel"
+      }
+    },
+    {
+      "name": "set_contract_status",
+      "description": "Mark a contract under review (renegotiating or comparing quotes), active again, or ended.",
+      "script": "contracts-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "vendor": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "reviewing",
+              "ended"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "bind": {
+        "action": "set_status"
+      }
+    },
+    {
+      "name": "add_vendor",
+      "description": "Save a vendor with its kind and contact, including one with no contract (the electrician you call when something breaks). An existing name is updated, never duplicated.",
+      "script": "contracts-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "vendor": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "food",
+              "supplies",
+              "linen",
+              "equipment",
+              "software",
+              "utilities",
+              "services",
+              "premises",
+              "insurance",
+              "other"
+            ]
+          },
+          "contact": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "vendor"
+        ]
+      },
+      "bind": {
+        "action": "add_vendor"
+      }
+    },
+    {
+      "name": "attach_contract_file",
+      "description": "Link a contract file the person added under contract-files/ to its contract.",
+      "script": "contracts-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "vendor": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ]
+      },
+      "bind": {
+        "action": "attach_file"
+      }
+    },
+    {
+      "name": "list_contracts",
+      "description": "Every contract and vendor with status, dates, yearly cost, contact and contract file.",
+      "script": "contracts-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "list"
+      }
+    },
+    {
+      "name": "page_add_contract",
+      "description": "Add or update a contract.",
+      "script": "contracts-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "vendor": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "food",
+              "supplies",
+              "linen",
+              "equipment",
+              "software",
+              "utilities",
+              "services",
+              "premises",
+              "insurance",
+              "other"
+            ]
+          },
+          "endAt": {
+            "type": "string"
+          },
+          "autoRenew": {
+            "type": "string",
+            "enum": [
+              "yes",
+              "no"
+            ]
+          },
+          "renewMonths": {
+            "type": "number"
+          },
+          "noticeDays": {
+            "type": "number"
+          },
+          "annualCost": {
+            "type": "number"
+          },
+          "monthlyCost": {
+            "type": "number"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "endAt"
+        ]
+      },
+      "bind": {
+        "action": "add"
+      }
+    },
+    {
+      "name": "page_renew_contract",
+      "description": "Record a renewal.",
+      "script": "contracts-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "vendor": {
+            "type": "string"
+          },
+          "endAt": {
+            "type": "string"
+          },
+          "renewMonths": {
+            "type": "number"
+          },
+          "annualCost": {
+            "type": "number"
+          },
+          "monthlyCost": {
+            "type": "number"
+          },
+          "percentChange": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "renew"
+      },
+      "reaction": {
+        "gezel": "kantoormeester",
+        "hideSeed": true,
+        "prompt": "The person just recorded a renewal on the contract desk page. The desk now reads (its first sentence is what changed):\n{{output.summary}}\nIn two short sentences, confirm the new end date and next notice date, and name the next contract that needs a decision. Do not call tools."
+      }
+    },
+    {
+      "name": "page_cancel_contract",
+      "description": "Record that notice was given.",
+      "script": "contracts-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "vendor": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "cancel"
+      },
+      "reaction": {
+        "gezel": "kantoormeester",
+        "hideSeed": true,
+        "prompt": "The person just recorded a notice on the contract desk page. The desk now reads (its first sentence is what changed):\n{{output.summary}}\nIn two short sentences, confirm when the contract ends and anything to check with the vendor, and name the next contract that needs a decision. Do not call tools."
+      }
+    },
+    {
+      "name": "page_add_vendor",
+      "description": "Add or update a vendor.",
+      "script": "contracts-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "vendor": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "food",
+              "supplies",
+              "linen",
+              "equipment",
+              "software",
+              "utilities",
+              "services",
+              "premises",
+              "insurance",
+              "other"
+            ]
+          },
+          "contact": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "vendor"
+        ]
+      },
+      "bind": {
+        "action": "add_vendor"
+      }
+    }
+  ],
+  "craftbooks": [
+    "subscription-audit",
+    "comparison-matrix",
+    "contract-template"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "desk/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "contracts.json"
+      },
+      {
+        "source": "workspace",
+        "path": "vendors.json"
+      },
+      {
+        "source": "workspace",
+        "path": "contract-files",
+        "subtree": true
+      }
+    ],
+    "imports": [
+      {
+        "id": "contract-files",
+        "source": "workspace",
+        "path": "contract-files",
+        "accept": [
+          ".pdf",
+          ".png",
+          ".jpg",
+          ".jpeg",
+          ".webp",
+          ".heic",
+          ".docx",
+          ".txt",
+          ".md"
+        ],
+        "maxFileBytes": 26214400
+      }
+    ],
+    "tools": [
+      "page_add_contract",
+      "page_renew_contract",
+      "page_cancel_contract",
+      "page_add_vendor"
+    ]
+  },
+  "workspaceSeed": [
+    "contracts.json",
+    "vendors.json"
+  ],
+  "minGezelVersion": "1.26280"
+}

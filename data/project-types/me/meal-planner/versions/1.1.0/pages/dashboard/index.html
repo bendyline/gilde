@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Meal planner</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2; --card: #fff; --ink: #2b2620; --muted: #7a7166;
+        --accent: #b5651d; --track: #ece5da; --good: #4a7c59; --warn: #a4552e; --soon: #7d5a00;
+      }
+      :root[data-theme='dark'] {
+        --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+        --accent: #e0894a; --track: #3a352f; --good: #7fae8d; --warn: #d98a63; --soon: #e3bb5c;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+          --accent: #e0894a; --track: #3a352f; --good: #7fae8d; --warn: #d98a63; --soon: #e3bb5c;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 16px/1.5 var(--font-body, system-ui, sans-serif); background: var(--bg); color: var(--ink); padding: 1.5rem 1.25rem; }
+      main { max-width: 680px; margin: 0 auto; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.35rem; font-weight: 600; margin: 0 0 0.15rem; }
+      .sub { color: var(--muted); font-size: 0.95rem; margin: 0 0 0.9rem; }
+      .week { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.85rem 0 0.4rem; margin-bottom: 0.75rem; }
+      .week > h2 { margin: 0 1rem 0.4rem; }
+      .day { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) auto; gap: 0.6rem; align-items: center; padding: 0.4rem 1rem; font-size: 0.95rem; }
+      .day + .day { border-top: 1px solid var(--track); }
+      .day .name { color: var(--muted); }
+      .day.past .meal { color: var(--muted); }
+      .day.today { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+      .day.today .name { color: var(--accent); font-weight: 600; }
+      .day .meal.unplanned { color: var(--muted); font-style: italic; }
+      .panel { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.85rem 1rem; font-size: 0.95rem; margin-bottom: 0.75rem; }
+      .panel h2, .week > h2 { font-family: var(--font-ui, system-ui, sans-serif); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+      .panel h2 { margin: 0 0 0.5rem; }
+      .panel ul { margin: 0; padding-left: 0; list-style: none; }
+      .panel li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.6rem; margin: 0; padding: 0.35rem 0; border-bottom: 1px solid var(--track); }
+      .panel li:last-child { border-bottom: 0; }
+      .panel li .item { flex: 1 1 8rem; min-width: 0; }
+      .panel li.empty { display: block; border: 0; }
+      .lvl { display: inline-block; border-radius: 4px; padding: 0 0.4rem; font-family: var(--font-ui, system-ui, sans-serif); font-size: 0.78rem; font-weight: 600; line-height: 1.6; }
+      .lvl.out { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+      .lvl.low { color: var(--soon); border: 1px dashed var(--soon); }
+      .lvl.stocked { color: var(--good); border: 1px solid color-mix(in srgb, var(--good) 45%, transparent); }
+      .key { min-height: 32px; padding: 0.2rem 0.7rem; border: 1px solid color-mix(in srgb, var(--muted) 40%, var(--track)); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font-family: var(--font-ui, system-ui, sans-serif); font-size: 0.85rem; white-space: nowrap; }
+      .key:hover { border-color: var(--ink); }
+      @media (max-width: 520px) { .day { grid-template-columns: 5.5rem minmax(0, 1fr) auto; } }
+      .empty { color: var(--muted); font-style: italic; }
+      .demo-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0 0 0.85rem;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--card) 88%, var(--accent));
+        color: var(--ink);
+        font-size: 0.8rem;
+      }
+      .demo-banner[hidden] { display: none; }
+      .demo-banner strong { font-weight: 700; }
+      .demo-reset {
+        flex: none;
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: var(--card);
+        color: var(--ink);
+        cursor: pointer;
+        font: inherit;
+      }
+      .demo-reset:hover { border-color: var(--ink); }
+    </style>
+  <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:20px 0;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--border,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}html[data-gezel-fullscreen=true] .board{min-width:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}.tiles,.stats,.summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}.board,.columns{max-width:100%;overflow-x:auto}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+    <style data-app-shell="2">
+    /* Shared app furniture from the Gezel app UX guide. The page owns everything else. */
+    :root{--app-action:var(--gezel-component-accent,#805128);--app-on-action:#fffaf3;--app-banner-bg:#f3eddf;--app-banner-line:#d6cbb8}
+    :root[data-theme=dark]{--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}
+    @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}}
+    main h1{font-weight:400}
+    html[data-gezel-fullscreen=true] main h1{font-size:clamp(28px,3vw,40px);margin-top:0}
+    .app-tabs{margin:20px 0 24px}
+    .app-actionbar{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin:16px 0 24px}
+    .app-panel>.app-actionbar:first-child{margin-top:0}
+    .app-settings{display:grid;gap:16px;max-width:760px;margin:0 0 24px}
+    .app-search{margin:0}
+    .app-search gezel-collection-filter{margin:0 0 12px;max-width:540px}
+    .app-primary{min-height:44px;padding:8px 16px;border:1px solid var(--app-action);border-radius:6px;background:var(--app-action);color:var(--app-on-action);font-weight:600}
+    .app-primary:disabled{display:none}
+    main li.empty{display:block;grid-column:1/-1}
+    html[data-app-legacy] [data-app-action]{display:none!important}
+    [data-gezel-demo-banner]:not([hidden]){display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin:0 0 16px;padding:8px 8px 8px 14px;border:1px solid var(--app-banner-line);border-radius:10px;background:var(--app-banner-bg);color:inherit;font-size:14px;line-height:1.4}
+    [data-gezel-demo-banner] button{min-height:32px;padding:4px 12px;border:1px solid var(--app-banner-line);border-radius:6px;background:transparent;color:inherit;font-size:13px}
+    @media(max-width:620px){.tiles,.stats,.summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:nth-child(3):last-child){grid-template-columns:repeat(3,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:only-child){grid-template-columns:minmax(0,1fr)!important}}
+    </style>
+  <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script></head>
+  <body>
+    <main>
+<p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong> — sample data stays in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Meal planner</h1>
+      <p class="sub" id="sub">Loading the week…</p>
+      <section class="week" id="week-section">
+        <h2>This week’s dinners</h2>
+        <div id="week"></div>
+      </section>
+      <section class="panel" id="groceries-section">
+        <h2>Grocery list</h2>
+        <ul id="groceries"><li class="empty">Nothing needed — the pantry is holding.</li></ul>
+      </section>
+      <section class="panel" id="pantry-section">
+        <h2>Everything in the pantry</h2>
+        <ul id="pantry"><li class="empty">The pantry list is empty.</li></ul>
+      </section>
+    </main>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        var DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
+        // ── demo week (used only when the page opens as a raw file) ──
+        var demoMenu = { days: {
+          monday: 'Roasted tomato pasta',
+          tuesday: 'Miso salmon bowls',
+          wednesday: 'Chickpea stew and bread',
+          thursday: 'Leftovers',
+          friday: 'Mushroom tacos',
+          saturday: 'Dinner with friends',
+        } };
+        var demoPantry = { records: [
+          { id: 'food-1', status: 'low', fields: { name: 'Olive oil' } },
+          { id: 'food-2', status: 'out', fields: { name: 'Limes' } },
+          { id: 'food-3', status: 'low', fields: { name: 'Brown rice' } },
+          { id: 'food-4', status: 'stocked', fields: { name: 'Eggs' } },
+          { id: 'food-5', status: 'stocked', fields: { name: 'Canned tomatoes' } },
+          { id: 'food-6', status: 'stocked', fields: { name: 'Spinach' } },
+          { id: 'food-7', status: 'stocked', fields: { name: 'Feta' } },
+          { id: 'food-8', status: 'stocked', fields: { name: 'Black beans' } },
+          { id: 'food-9', status: 'stocked', fields: { name: 'Tortillas' } },
+          { id: 'food-10', status: 'stocked', fields: { name: 'Chickpeas' } },
+        ] };
+        function demoGap() {
+          return demoPantry.records.filter(function (r) { return r.status !== 'stocked'; });
+        }
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'dashboard/index.html', typeName: 'Meal Planner', params: { household: 'the household' } },
+          tools: {
+"page_set_menu": function(input) { demoMenu.days[input.day]=input.meal; return {saved:true}; },
+"page_pantry_add": function(input) { var level=input.level||'stocked',wanted=String(input.name).trim().toLowerCase(),r=demoPantry.records.find(function(r){return r.fields.name.toLowerCase()===wanted;}); if(r)r.status=level; else demoPantry.records.push({id:'food-'+(demoPantry.records.length+1),status:level,fields:{name:String(input.name).trim()}}); return {saved:true}; },
+"page_pantry_level": function(input) { var r=demoPantry.records.find(function(r){return r.id===input.id;});if(!r)throw new Error('Choose an item.');r.status=input.level; return {saved:true}; },
+"grocery_list": function() { var gap=demoGap(); return {groceries:gap.length,summary:gap.map(function(r){return r.fields.name+' ('+r.status+')';}).join('\n')||'The grocery list is empty.'}; }
+},
+data: {
+            'menu.json': function () { return demoMenu; },
+            'pantry.json': function () { return demoPantry; },
+          },
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+
+        function applyTheme(mode) {
+          document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light');
+        }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+        // The person's own day, not UTC: an evening in the Americas is still tonight.
+        function today() { return DAYS[(new Date().getDay() + 6) % 7]; }
+        var LEVELS = { stocked: 'Stocked', low: 'Running low', out: 'Out' };
+        function title(d) { return d.charAt(0).toUpperCase() + d.slice(1); }
+        function node(tag, text, className) { var n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (className) n.className = className; return n; }
+        function rowKey(text, tool, label, values) {
+          var key = node('button', text, 'key');
+          key.type = 'button';
+          key.setAttribute('aria-label', label);
+          key.setAttribute('data-app-action', tool);
+          key.setAttribute('data-app-values', JSON.stringify(values));
+          return key;
+        }
+        function itemRow(r, keyText, values) {
+          var name = String((r.fields && r.fields.name) || r.id), li = node('li');
+          li.append(node('span', name, 'item'), node('span', LEVELS[r.status] || String(r.status), 'lvl ' + r.status),
+            rowKey(keyText, 'pantry_level', (keyText === 'Got it' ? 'Mark ' + name + ' stocked' : 'Update the stock of ' + name), values));
+          return li;
+        }
+
+        function render(menu, pantry) {
+          var days = (menu && menu.days) || {};
+          var planned = DAYS.filter(function (d) { return days[d]; }).length;
+          var now = today(), nowIndex = DAYS.indexOf(now);
+          var tonight = days[now];
+          document.getElementById('sub').textContent =
+            (tonight ? 'Tonight: ' + tonight + ' · ' : 'Nothing planned tonight · ') + planned + ' of 7 planned';
+
+          var week = document.getElementById('week');
+          week.replaceChildren.apply(week, DAYS.map(function (d, i) {
+            var row = node('div', undefined, 'day' + (d === now ? ' today' : i < nowIndex ? ' past' : ''));
+            row.append(node('span', title(d), 'name'),
+              days[d] ? node('span', String(days[d]), 'meal') : node('span', 'not planned', 'meal unplanned'),
+              rowKey(days[d] ? 'Change' : 'Plan', 'set_menu', (days[d] ? 'Change ' : 'Plan ') + title(d) + '’s dinner', { day: d, meal: days[d] || '' }));
+            return row;
+          }));
+
+          var records = (pantry && pantry.records) || [];
+          var gap = records.filter(function (r) { return r.status === 'low' || r.status === 'out'; })
+            .sort(function (a, b) { return (a.status === 'out' ? 0 : 1) - (b.status === 'out' ? 0 : 1); });
+          var groceries = document.getElementById('groceries');
+          groceries.replaceChildren.apply(groceries, gap.length
+            ? gap.map(function (r) { return itemRow(r, 'Got it', { id: r.id, level: 'stocked' }); })
+            : [node('li', 'Nothing needed — the pantry is holding.', 'empty')]);
+          var all = document.getElementById('pantry');
+          all.replaceChildren.apply(all, records.length
+            ? records.slice().sort(function (a, b) { return String(a.fields && a.fields.name).localeCompare(String(b.fields && b.fields.name)); })
+              .map(function (r) { return itemRow(r, 'Update', { id: r.id, level: r.status }); })
+            : [node('li', 'The pantry list is empty.', 'empty')]);
+        }
+
+        window.addEventListener('gezel-app-data-changed', function(){ loadWeek(); });
+        function loadWeek(){
+var revision=++appLoadRevision;
+return Promise.all([gezel.data.read('menu.json'),gezel.data.read('pantry.json')]).then(function(values){if(appDisposed||revision!==appLoadRevision)return;reportAppError(null);render(values[0]||{},values[1]||{});}).catch(function(error){if(!appDisposed&&revision===appLoadRevision)reportAppError(error);});
+}
+
+        loadWeek();
+        appSubscriptions.push(gezel.data.watch('menu.json', function () { loadWeek(); }));
+        appSubscriptions.push(gezel.data.watch('pantry.json', function () { loadWeek(); }));
+      })();
+    </script>
+  <script src="application.js" defer></script>
+  </body>
+</html>

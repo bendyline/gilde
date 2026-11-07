@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Client delivery</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f4f3ee; --card: #fdfcf8; --ink: #24272a; --muted: #5f655f; --line: #d8d8cd;
+        --accent: #2f6b5e; --late: #a3341f; --late-bg: #f7e1da; --soon: #8a5a12; --soon-bg: #f6ead2;
+        --ok: #3f6b4a; --ok-bg: #e2eedf; --chip: #ebeae1; --wait: #2c5d7a; --wait-bg: #dfeaf1;
+      }
+      :root[data-theme='dark'] {
+        --bg: #151817; --card: #1e2221; --ink: #e9ece7; --muted: #9ea69f; --line: #343a37;
+        --accent: #8fcdbd; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+        --ok: #8fc29b; --ok-bg: #22301f; --chip: #2a2f2d; --wait: #9cc6e3; --wait-bg: #1f2f3a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #151817; --card: #1e2221; --ink: #e9ece7; --muted: #9ea69f; --line: #343a37;
+          --accent: #8fcdbd; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+          --ok: #8fc29b; --ok-bg: #22301f; --chip: #2a2f2d; --wait: #9cc6e3; --wait-bg: #1f2f3a;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body, system-ui, sans-serif); font-size: 15px; line-height: 1.5; padding: 1.5rem 1.25rem; }
+      main { max-width: 900px; margin: 0 auto; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.5rem; font-weight: 400; margin: 0 0 0.2rem; }
+      h2 { font-family: var(--font-heading, Georgia, serif); font-size: 1.1rem; font-weight: 400; margin: 0 0 0.6rem; }
+      h3, main h3 { font-family: var(--font-ui, system-ui, sans-serif); font-size: 0.95rem; font-weight: 600; margin: 0; }
+      .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+      .key { min-height: 32px; padding: 0.2rem 0.65rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; font-size: 0.85rem; white-space: nowrap; }
+      .key:hover { background: var(--chip); }
+      .row-actions { text-align: right; white-space: nowrap; }
+      .project footer { margin: 0.7rem 0 0; }
+      .sub { color: var(--muted); margin: 0 0 1rem; }
+      .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; margin: 0 0 1.2rem; }
+      .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem 0.9rem; }
+      .tile b { display: block; font-size: 1.5rem; font-weight: 600; line-height: 1.1; }
+      .tile span { color: var(--muted); font-size: 0.85rem; }
+      .tile.wait b { color: var(--wait); }
+      .tile.late b { color: var(--late); }
+      .tile.soon b { color: var(--soon); }
+      section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin: 0 0 1rem; }
+      .due { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
+      .due li { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) auto; gap: 0.75rem; align-items: start; }
+      .due .when, .due li > .key { justify-self: start; }
+      .when { font-size: 0.8rem; font-weight: 600; padding: 0.15rem 0.45rem; border-radius: 4px; text-align: center; background: var(--wait-bg); color: var(--wait); }
+      .when.long { background: var(--late-bg); color: var(--late); }
+      .due b { font-weight: 600; }
+      .meta { display: block; color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
+      .empty { color: var(--muted); font-style: italic; margin: 0; }
+      li.empty { display: block; }
+      .projects { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 0.75rem; }
+      .project { border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem 0.85rem; min-width: 0; }
+      .project header { display: flex; justify-content: space-between; align-items: start; gap: 0.5rem; margin: 0 0 0.15rem; }
+      .track { list-style: none; margin: 0.6rem 0 0; padding: 0; display: grid; gap: 0.3rem; font-size: 0.88rem; }
+      .track li { display: grid; grid-template-columns: 0.7rem minmax(0, 1fr) auto; gap: 0.45rem; align-items: baseline; }
+      .dot { width: 0.6rem; height: 0.6rem; border-radius: 50%; border: 2px solid var(--muted); display: inline-block; }
+      .dot.approved { background: var(--ok); border-color: var(--ok); }
+      .dot.waiting { background: var(--wait); border-color: var(--wait); }
+      .dot.in-progress { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 45%, transparent); }
+      .dot.late { border-color: var(--late); background: var(--late); }
+      .track time { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
+      .track .done { color: var(--muted); }
+      .chip { display: inline-block; font-size: 0.78rem; padding: 0.05rem 0.4rem; border-radius: 4px; background: var(--chip); white-space: nowrap; }
+      .chip.on-track, .chip.approved { background: var(--ok-bg); color: var(--ok); }
+      .chip.at-risk, .chip.in-progress { background: var(--soon-bg); color: var(--soon); }
+      .chip.late { background: var(--late-bg); color: var(--late); }
+      .chip.waiting { background: var(--wait-bg); color: var(--wait); }
+      .others { color: var(--muted); font-size: 0.85rem; margin: 0.75rem 0 0; }
+      .reports { display: grid; gap: 0.9rem; }
+      .report { border-left: 3px solid var(--accent); padding: 0.1rem 0 0.1rem 0.8rem; }
+      .report dl { margin: 0.35rem 0 0; display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); gap: 0.2rem 0.75rem; font-size: 0.9rem; }
+      .report dt { color: var(--muted); }
+      .report dd { margin: 0; }
+      .table-wrap { overflow-x: auto; position: relative; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+      .table-wrap table { min-width: 34rem; }
+      th { text-align: left; font-weight: 600; color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 0.5rem 0.4rem; border-bottom: 1px solid var(--line); }
+      td { padding: 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+      tr:last-child td { border-bottom: 0; }
+      .demo-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 0 0 1rem; padding: 0.5rem 0.65rem; border: 1px solid var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--card) 88%, var(--accent)); font-size: 0.85rem; }
+      .demo-banner[hidden] { display: none; }
+      .demo-reset { flex: none; min-height: 36px; padding: 0.3rem 0.7rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; }
+      .note { color: var(--muted); font-size: 0.85rem; margin: 0.75rem 0 0; }
+      @media (max-width: 640px) {
+        .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .due li { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
+        .when { justify-self: start; }
+        .report dl { grid-template-columns: minmax(0, 1fr); }
+        .report dt { margin-top: 0.3rem; }
+      }
+    </style>
+    <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:0 0 12px;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--line,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+    <style data-app-shell="2">
+    /* Shared app furniture from the Gezel app UX guide. The page owns everything else. */
+    :root{--app-action:var(--gezel-component-accent,#805128);--app-on-action:#fffaf3;--app-banner-bg:#f3eddf;--app-banner-line:#d6cbb8}
+    :root[data-theme=dark]{--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}
+    @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}}
+    main h1{font-weight:400}
+    html[data-gezel-fullscreen=true] main h1{font-size:clamp(28px,3vw,40px);margin-top:0}
+    .app-tabs{margin:20px 0 24px}
+    .app-actionbar{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin:16px 0 24px}
+    .app-panel>.app-actionbar:first-child{margin-top:0}
+    .app-settings{display:grid;gap:16px;max-width:760px;margin:0 0 24px}
+    .app-search{margin:0}
+    .app-search gezel-collection-filter{margin:0 0 12px;max-width:540px}
+    .app-primary{min-height:44px;padding:8px 16px;border:1px solid var(--app-action);border-radius:6px;background:var(--app-action);color:var(--app-on-action);font-weight:600}
+    .app-primary:disabled{display:none}
+    main li.empty{display:block;grid-column:1/-1}
+    html[data-app-legacy] [data-app-action]{display:none!important}
+    [data-gezel-demo-banner]:not([hidden]){display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin:0 0 16px;padding:8px 8px 8px 14px;border:1px solid var(--app-banner-line);border-radius:10px;background:var(--app-banner-bg);color:inherit;font-size:14px;line-height:1.4}
+    [data-gezel-demo-banner] button{min-height:32px;padding:4px 12px;border:1px solid var(--app-banner-line);border-radius:6px;background:transparent;color:inherit;font-size:13px}
+    @media(max-width:620px){.tiles,.stats,.summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:nth-child(3):last-child){grid-template-columns:repeat(3,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:only-child){grid-template-columns:minmax(0,1fr)!important}}
+    </style>
+    <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script>
+  </head>
+  <body>
+    <main>
+      <p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong>: Fernwood Studio’s sample client work. Changes stay in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Client delivery</h1>
+      <p class="sub" id="sub">Loading the delivery board…</p>
+      <div class="tiles">
+        <div class="tile"><b id="t-active">0</b><span>Active projects</span></div>
+        <div class="tile"><b id="t-waiting">0</b><span>Waiting on clients</span></div>
+        <div class="tile"><b id="t-late">0</b><span>Late on our side</span></div>
+        <div class="tile"><b id="t-soon">0</b><span>Due in 14 days</span></div>
+      </div>
+      <section id="waiting-section">
+        <h2>Waiting on clients</h2>
+        <ul class="due" id="waiting"></ul>
+      </section>
+      <section id="projects-section">
+        <h2>Projects</h2>
+        <div class="projects" id="projects"></div>
+        <p class="others" id="others" hidden></p>
+      </section>
+      <section id="report-section">
+        <h2>This week’s status</h2>
+        <div class="reports" id="reports"></div>
+        <p class="note">Ask your planner to turn one into a note for the client. Billing lives in Freelance Office.</p>
+      </section>
+      <section id="milestones-section">
+        <h2>All milestones</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Milestone</th><th>Project</th><th>Owner</th><th>Due</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr></thead>
+            <tbody id="milestones-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        // The delivery-store rules, copied from the manifest's script so the sample behaves like the live board.
+// ── delivery-rules-start ──
+// Pure derivations: local calendar days, date shifts, milestone and project
+// health, and the lines the crew reads. Kept self-contained between these
+// sentinels so tests (and the page's demo) execute the shipped bytes.
+var DAY_MS = 86400000;
+var PROJECT_STAGES = ['proposed', 'active', 'on-hold', 'done'];
+var MILESTONE_STAGES = ['planned', 'in-progress', 'waiting', 'approved'];
+
+function pad(n) {
+  return n < 10 ? '0' + n : String(n);
+}
+function localDay(ms) {
+  var d = new Date(ms);
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+}
+function isDay(text) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(text || ''));
+}
+function normalizeDate(text, nowMs) {
+  var raw = String(text || '').trim();
+  if (isDay(raw)) return raw;
+  // Only something that reads as a date: a month name with a day, or numbers like 12/10.
+  if (!/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d|\d\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|\d{1,4}[/.-]\d{1,2}[/.-]\d{1,4}/i.test(raw)) return null;
+  if (/\d{4}/.test(raw)) {
+    var full = Date.parse(raw);
+    return isFinite(full) ? localDay(full) : null;
+  }
+  // 'December 10' names the next December 10, not one in 2001.
+  var now = new Date(nowMs || Date.now());
+  var parsed = Date.parse(raw + ' ' + now.getFullYear());
+  if (!isFinite(parsed)) return null;
+  if (parsed < now.getTime() - 31 * DAY_MS) parsed = Date.parse(raw + ' ' + (now.getFullYear() + 1));
+  return localDay(parsed);
+}
+function daysLeft(day, nowMs) {
+  var due = Date.parse(String(day).slice(0, 10) + 'T00:00:00');
+  var today = Date.parse(localDay(nowMs) + 'T00:00:00');
+  return Math.round((due - today) / DAY_MS);
+}
+function shiftDay(day, days) {
+  var d = new Date(String(day).slice(0, 10) + 'T12:00:00');
+  d.setDate(d.getDate() + Math.round(days));
+  return localDay(d.getTime());
+}
+function when(days) {
+  if (days < 0) return -days + (days === -1 ? ' day late' : ' days late');
+  if (days === 0) return 'due today';
+  return 'due in ' + days + (days === 1 ? ' day' : ' days');
+}
+function key(text) {
+  return String(text || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9&]+/g, ' ')
+    .trim();
+}
+// 'exact', 'partial' (the title starts with the words given, contains them whole, or holds every word given), or ''.
+function titleMatch(title, wanted) {
+  var have = key(title);
+  var want = key(wanted);
+  if (!have || !want) return '';
+  if (have === want) return 'exact';
+  if ((' ' + have).indexOf(' ' + want) >= 0 || (' ' + want + ' ').indexOf(' ' + have + ' ') >= 0) return 'partial';
+  var words = want.split(' ').filter(function (w) {
+    return w.length > 2 && ['the', 'and', 'for'].indexOf(w) < 0;
+  });
+  return words.length && words.every(function (w) { return (' ' + have).indexOf(' ' + w) >= 0; }) ? 'partial' : '';
+}
+function waitedDays(m, nowMs) {
+  return m.fields && isDay(m.fields.sentAt) ? Math.max(0, -daysLeft(m.fields.sentAt, nowMs)) : 0;
+}
+function isLate(m, nowMs) {
+  return m.status !== 'approved' && m.status !== 'waiting' && isDay(m.fields && m.fields.dueAt) && daysLeft(m.fields.dueAt, nowMs) < 0;
+}
+function milestonesOf(projectId, milestones) {
+  return milestones
+    .filter(function (m) { return m.fields && m.fields.projectId === projectId; })
+    .sort(function (a, b) { return String(a.fields.dueAt || '9999').localeCompare(String(b.fields.dueAt || '9999')); });
+}
+function health(project, milestones, nowMs) {
+  if (project.status === 'done') return 'done';
+  var mine = milestonesOf(project.id, milestones);
+  if (mine.some(function (m) { return isLate(m, nowMs); })) return 'late';
+  if (
+    mine.some(function (m) {
+      return m.status === 'waiting' && (waitedDays(m, nowMs) >= 5 || (isDay(m.fields.dueAt) && daysLeft(m.fields.dueAt, nowMs) < 0));
+    })
+  ) return 'at risk';
+  return 'on track';
+}
+function milestoneLine(m, project, nowMs) {
+  var f = m.fields || {};
+  var head = f.title + ' (' + m.id + ', ' + (project ? project.fields.title : 'no project') + ')';
+  if (m.status === 'approved') return head + ' approved' + (f.approvedAt ? ' ' + f.approvedAt : '');
+  if (m.status === 'waiting') {
+    var waited = waitedDays(m, nowMs);
+    return (
+      head + ' with ' + (f.approver || (project && project.fields.contact) || 'the client') + ' for approval ' +
+      (waited === 0 ? 'since today' : 'for ' + waited + (waited === 1 ? ' day' : ' days')) +
+      ', round ' + (f.rounds || 1) + (isDay(f.dueAt) ? ', ' + when(daysLeft(f.dueAt, nowMs)) : '')
+    );
+  }
+  return head + ' ' + m.status + (isDay(f.dueAt) ? ', ' + when(daysLeft(f.dueAt, nowMs)) + ' (' + f.dueAt + ')' : ', no date') + (f.owner ? ', owner ' + f.owner : '');
+}
+function deliveryPicture(projects, milestones, nowMs, withinDays) {
+  var byId = {};
+  projects.forEach(function (p) { byId[p.id] = p; });
+  var active = projects.filter(function (p) { return p.status === 'active'; });
+  var live = milestones.filter(function (m) {
+    var p = byId[m.fields && m.fields.projectId];
+    return p && p.status === 'active' && m.status !== 'approved';
+  });
+  var waiting = live
+    .filter(function (m) { return m.status === 'waiting'; })
+    .sort(function (a, b) { return waitedDays(b, nowMs) - waitedDays(a, nowMs); });
+  var late = live.filter(function (m) { return isLate(m, nowMs); });
+  // One list, late first: asked what's due, a model read a separate late list as out of scope.
+  var due = live
+    .filter(function (m) { return isDay(m.fields.dueAt) && daysLeft(m.fields.dueAt, nowMs) <= withinDays; })
+    .sort(function (a, b) { return String(a.fields.dueAt).localeCompare(String(b.fields.dueAt)); });
+  var line = function (m) { return milestoneLine(m, byId[m.fields.projectId], nowMs); };
+  var parts = [
+    active.length + (active.length === 1 ? ' active project' : ' active projects') + ', ' + waiting.length + ' waiting on clients, ' + late.length + ' late on our side.',
+  ];
+  parts.push(waiting.length ? 'Waiting on clients, longest first: ' + waiting.map(line).join(' | ') + '.' : 'Nothing is waiting on a client.');
+  parts.push(
+    due.length
+      ? 'Due within ' + withinDays + ' days, late first: ' + due.map(line).join(' | ') + '.'
+      : 'Nothing due in the next ' + withinDays + ' days.',
+  );
+  parts.push(
+    active.length
+      ? 'Projects: ' + active.map(function (p) {
+          var next = milestonesOf(p.id, milestones).filter(function (m) { return m.status !== 'approved'; })[0];
+          return p.fields.title + ' (' + p.id + ', ' + (p.fields.client || 'no client') + (p.fields.lead ? ', lead ' + p.fields.lead : '') + (isDay(p.fields.dueAt) ? ', due ' + p.fields.dueAt : '') + ') ' + health(p, milestones, nowMs) + (next ? '; next: ' + next.fields.title + ' (' + next.status + ')' : '; every milestone approved');
+        }).join(' | ') + '.'
+      : 'No active projects.',
+  );
+  var other = projects.filter(function (p) { return p.status !== 'active'; });
+  if (other.length) parts.push('Also: ' + other.map(function (p) { return p.fields.title + ' (' + p.id + ', ' + p.status + ')'; }).join(', ') + '.');
+  return { active: active.length, waiting: waiting.length, late: late.length, dueSoon: due.length, summary: parts.join(' ') };
+}
+function weeklyReport(project, milestones, nowMs) {
+  var mine = milestonesOf(project.id, milestones);
+  var weekAgo = localDay(nowMs - 7 * DAY_MS);
+  var done = mine.filter(function (m) { return m.status === 'approved' && String(m.fields.approvedAt || '') >= weekAgo; });
+  var waiting = mine.filter(function (m) { return m.status === 'waiting'; });
+  var working = mine.filter(function (m) { return m.status === 'in-progress'; });
+  var next = mine.filter(function (m) { return m.status === 'planned'; }).slice(0, 2);
+  var client = project.fields.client || 'the client';
+  var list = function (items, fn) { return items.length ? items.map(fn).join('; ') : 'nothing'; };
+  return (
+    project.fields.title + ' (' + project.id + ') for ' + client + ', week of ' + localDay(nowMs) + ', ' + health(project, milestones, nowMs) + '. ' +
+    'Approved in the last 7 days: ' + list(done, function (m) { return m.fields.title + ' (' + m.fields.approvedAt + ')'; }) + '. ' +
+    'Waiting on ' + client + ': ' + list(waiting, function (m) { return m.fields.title + ', sent ' + (m.fields.sentAt || 'recently') + ', round ' + (m.fields.rounds || 1); }) + '. ' +
+    'In progress: ' + list(working, function (m) { return m.fields.title + (isDay(m.fields.dueAt) ? ', ' + when(daysLeft(m.fields.dueAt, nowMs)) + ' (' + m.fields.dueAt + ')' : '') + (m.fields.owner ? ', ' + m.fields.owner : ''); }) + '. ' +
+    'Next up: ' + list(next, function (m) { return m.fields.title + (isDay(m.fields.dueAt) ? ', due ' + m.fields.dueAt : ''); }) + '.' +
+    (isDay(project.fields.dueAt) ? ' Project due ' + project.fields.dueAt + '.' : '')
+  );
+}
+// ── delivery-rules-end ──
+        function daysFromNow(n) { return localDay(Date.now() + n * DAY_MS); }
+
+        // ── demo board (used only when the page opens outside Gezel); dates are relative so it never goes stale ──
+        function rec(id, status, fields) { return { id: id, status: status, fields: fields, history: [] }; }
+        var demoProjects = { version: 1, stages: PROJECT_STAGES.slice(), records: [
+          rec('pr-1', 'active', { title: 'Juniper Press website redesign', client: 'Juniper Press', contact: 'Mei Lin', lead: 'Ruth', dueAt: daysFromNow(40) }),
+          rec('pr-2', 'active', { title: 'Harbor Street Café menu and signage', client: 'Harbor Street Café', contact: 'Dana', lead: 'Sam', dueAt: daysFromNow(12) }),
+          rec('pr-3', 'active', { title: 'Brightline Electric van wraps', client: 'Brightline Electric', contact: 'Tomás', lead: 'Ines', dueAt: daysFromNow(25) }),
+          rec('pr-4', 'proposed', { title: 'Juniper Press spring catalog', client: 'Juniper Press', contact: 'Mei Lin', lead: 'Ruth', dueAt: daysFromNow(95) }),
+        ] };
+        var demoMilestones = { version: 1, stages: MILESTONE_STAGES.slice(), records: [
+          rec('ms-1', 'approved', { projectId: 'pr-1', title: 'Sitemap and wireframes', dueAt: daysFromNow(-12), owner: 'Ruth', rounds: 1, sentAt: daysFromNow(-14), approvedAt: daysFromNow(-10), approver: 'Mei Lin' }),
+          rec('ms-2', 'waiting', { projectId: 'pr-1', title: 'Homepage design', dueAt: daysFromNow(2), owner: 'Ruth', rounds: 1, sentAt: daysFromNow(-6), approver: 'Mei Lin' }),
+          rec('ms-3', 'in-progress', { projectId: 'pr-1', title: 'Inner page templates', dueAt: daysFromNow(9), owner: 'Ruth', rounds: 0 }),
+          rec('ms-4', 'planned', { projectId: 'pr-1', title: 'Build and launch', dueAt: daysFromNow(40), owner: 'Theo', rounds: 0 }),
+          rec('ms-5', 'approved', { projectId: 'pr-2', title: 'Menu copy', dueAt: daysFromNow(-6), owner: 'Sam', rounds: 1, sentAt: daysFromNow(-7), approvedAt: daysFromNow(-4), approver: 'Dana' }),
+          rec('ms-6', 'waiting', { projectId: 'pr-2', title: 'Menu layout', dueAt: daysFromNow(3), owner: 'Sam', rounds: 2, sentAt: daysFromNow(-2), approver: 'Dana', feedback: 'Bigger prices, and move the breakfast section first.' }),
+          rec('ms-7', 'in-progress', { projectId: 'pr-2', title: 'Window signage', dueAt: daysFromNow(5), owner: 'Sam', rounds: 0 }),
+          rec('ms-8', 'planned', { projectId: 'pr-2', title: 'Print files to the printer', dueAt: daysFromNow(12), owner: 'Sam', rounds: 0 }),
+          rec('ms-9', 'in-progress', { projectId: 'pr-3', title: 'Wrap concepts', dueAt: daysFromNow(-2), owner: 'Ines', rounds: 0 }),
+          rec('ms-10', 'planned', { projectId: 'pr-3', title: 'Final wrap artwork', dueAt: daysFromNow(18), owner: 'Ines', rounds: 0 }),
+          rec('ms-11', 'planned', { projectId: 'pr-3', title: 'Install with the wrap shop', dueAt: daysFromNow(25), owner: 'Ines', rounds: 0 }),
+        ] };
+
+        // Demo handlers: the same actions the delivery-store script takes, on the in-page sample.
+        function nextId(records, prefix) { return prefix + '-' + (records.reduce(function (m, r) { return Math.max(m, Number(String(r.id).split('-')[1]) || 0); }, 0) + 1); }
+        function choose(records, wanted, what) {
+          var exact = records.filter(function (r) { return titleMatch(r.fields.title, wanted) === 'exact'; });
+          if (exact.length === 1) return exact[0];
+          var partial = exact.length > 1 ? exact : records.filter(function (r) { return titleMatch(r.fields.title, wanted) === 'partial' || titleMatch(r.fields.client, wanted) === 'exact'; });
+          if (partial.length === 1) return partial[0];
+          if (partial.length > 1) throw new Error('More than one ' + what + " matches '" + wanted + "'. Pass id.");
+          return null;
+        }
+        function project(text) {
+          var all = demoProjects.records;
+          var hit = all.find(function (p) { return p.id === String(text || '').trim(); }) || choose(all.filter(function (p) { return p.status === 'active'; }), text, 'project') || choose(all, text, 'project');
+          if (!hit) throw new Error("No project matches '" + text + "'.");
+          return hit;
+        }
+        function milestone(input) {
+          if (input.id) { var byId = demoMilestones.records.find(function (m) { return m.id === input.id; }); if (byId) return byId; throw new Error("No milestone with id '" + input.id + "'."); }
+          if (!input.title) throw new Error("Pass the milestone's 'id' or 'title'.");
+          var pool = input.project ? milestonesOf(project(input.project).id, demoMilestones.records) : demoMilestones.records;
+          var hit = choose(pool, input.title, 'milestone');
+          if (!hit) throw new Error("No milestone matches '" + input.title + "'.");
+          return hit;
+        }
+        function picture(note) { var v = deliveryPicture(demoProjects.records, demoMilestones.records, Date.now(), 14); return Object.assign(v, { summary: (note ? note + ' ' : '') + v.summary }); }
+        function date(text) { if (!text) return null; var d = normalizeDate(text); if (!d) throw new Error("dueAt must be a date, e.g. '2026-12-01'."); return d; }
+        function demoAddProject(input) {
+          if (input.status && PROJECT_STAGES.indexOf(input.status) < 0) throw new Error('A project is proposed, active, on-hold, or done.');
+          var p = input.id ? demoProjects.records.find(function (r) { return r.id === input.id; }) : demoProjects.records.find(function (r) { return titleMatch(r.fields.title, input.title) === 'exact'; });
+          var dueAt = date(input.dueAt), days = Math.round(Number(input.shiftDays) || 0);
+          var fields = {};
+          ['client', 'contact', 'lead'].forEach(function (k) { if (input[k]) fields[k] = String(input[k]).trim(); });
+          if (dueAt) fields.dueAt = dueAt;
+          if (p) {
+            if (days && !dueAt && isDay(p.fields.dueAt)) fields.dueAt = shiftDay(p.fields.dueAt, days);
+            Object.assign(p.fields, fields);
+            if (input.status) p.status = input.status;
+            var moved = 0;
+            if (days) milestonesOf(p.id, demoMilestones.records).forEach(function (m) { if (m.status !== 'approved' && isDay(m.fields.dueAt)) { m.fields.dueAt = shiftDay(m.fields.dueAt, days); moved++; } });
+            return picture('Updated ' + p.fields.title + '.' + (days ? ' Moved by ' + days + ' days, now due ' + p.fields.dueAt + ', with ' + moved + ' open milestones.' : ''));
+          }
+          if (!input.title) throw new Error("add_project needs 'title'.");
+          if (!input.client) throw new Error("A new project needs 'client'.");
+          p = rec(nextId(demoProjects.records, 'pr'), input.status || 'active', Object.assign({ title: String(input.title).trim() }, fields));
+          demoProjects.records.push(p);
+          return picture('Added ' + p.id + ', ' + p.fields.title + ' for ' + p.fields.client + '.');
+        }
+        function demoAddMilestone(input) {
+          if (input.status && MILESTONE_STAGES.indexOf(input.status) < 0) throw new Error('A milestone is planned, in-progress, waiting, or approved.');
+          var p = !input.id && input.project ? project(input.project) : null;
+          var m = input.id ? milestone(input) : (p ? milestonesOf(p.id, demoMilestones.records) : demoMilestones.records).find(function (r) { return titleMatch(r.fields.title, input.title) === 'exact'; });
+          var dueAt = date(input.dueAt), days = Math.round(Number(input.shiftDays) || 0);
+          if (m) {
+            if (dueAt) m.fields.dueAt = dueAt; else if (days) m.fields.dueAt = shiftDay(m.fields.dueAt, days);
+            if (input.owner) m.fields.owner = String(input.owner).trim();
+            if (input.status) m.status = input.status;
+            return picture('Updated ' + m.fields.title + ', now due ' + m.fields.dueAt + (days ? ' (moved ' + days + ' days)' : '') + '.');
+          }
+          if (!input.title) throw new Error("add_milestone needs 'title'.");
+          if (!p) throw new Error("A new milestone needs 'project'.");
+          if (!dueAt) throw new Error("A new milestone needs 'dueAt'.");
+          m = rec(nextId(demoMilestones.records, 'ms'), input.status || 'planned', { projectId: p.id, title: String(input.title).trim(), dueAt: dueAt, owner: input.owner ? String(input.owner).trim() : undefined, rounds: 0 });
+          demoMilestones.records.push(m);
+          return picture('Added ' + m.id + ', ' + m.fields.title + ' on ' + p.fields.title + ', due ' + dueAt + '.');
+        }
+        function demoSetStatus(input) {
+          if (MILESTONE_STAGES.indexOf(input.status) < 0) throw new Error("set_status needs status 'planned', 'in-progress', 'waiting', or 'approved'.");
+          var m = milestone(input), p = demoProjects.records.find(function (r) { return r.id === m.fields.projectId; }), was = m.status, today = localDay(Date.now());
+          if (input.status === 'waiting' && was !== 'waiting') { m.fields.sentAt = today; m.fields.rounds = (Number(m.fields.rounds) || 0) + 1; m.fields.approver = input.contact || (p && p.fields.contact) || m.fields.approver; }
+          if (input.status === 'approved' && was !== 'approved') m.fields.approvedAt = today;
+          if (was === 'waiting' && input.status === 'in-progress' && input.note) m.fields.feedback = String(input.note).trim();
+          m.status = input.status;
+          var on = p ? ' (' + p.fields.title + ')' : '';
+          return picture(was === input.status ? m.fields.title + on + ' was already ' + input.status + '.' : input.status === 'approved' ? m.fields.title + on + ' is approved.' : input.status === 'waiting' ? m.fields.title + on + ' went to ' + (m.fields.approver || 'the client') + ' for approval, round ' + m.fields.rounds + '.' : m.fields.title + on + ' is now ' + input.status + '.');
+        }
+        function demoReport(input) {
+          var chosen = input.project ? [project(input.project)] : demoProjects.records.filter(function (p) { return p.status === 'active'; });
+          return Object.assign(picture(''), { summary: chosen.map(function (p) { return weeklyReport(p, demoMilestones.records, Date.now()); }).join('\n\n') });
+        }
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'delivery/index.html', typeName: 'Client Delivery', params: { studio: 'Fernwood Studio' } },
+          tools: {
+            page_add_project: demoAddProject, add_project: demoAddProject,
+            page_add_milestone: demoAddMilestone, add_milestone: demoAddMilestone,
+            page_set_milestone_status: demoSetStatus, set_milestone_status: demoSetStatus,
+            delivery_status: function () { return picture(''); },
+            weekly_report: demoReport,
+            list_client_projects: function () { return picture(''); },
+          },
+          data: {
+            'projects.json': function () { return demoProjects; },
+            'milestones.json': function () { return demoMilestones; },
+          },
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+        function applyTheme(mode) { document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light'); }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function el(tag, text, cls) { var e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
+        function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+        function niceDate(day) { var d = new Date(String(day).slice(0, 10) + 'T12:00:00'); return isFinite(d) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : String(day); }
+        function chip(text, cls) { return el('span', text, 'chip ' + String(cls || '').replace(' ', '-')); }
+        var LABEL = { planned: 'Planned', 'in-progress': 'In progress', waiting: 'With client', approved: 'Approved' };
+        function cap(text) { return String(text).charAt(0).toUpperCase() + String(text).slice(1); }
+        // Dates stay on one line inside running meta text: "due Dec 17", never "due Dec / 17".
+        function keep(text) { return String(text).replace(/ /g, '\u00a0'); }
+        // Row action: a small key that opens a shared dialog with these values filled in.
+        function rowKey(label, tool, values, aria) {
+          var key = el('button', label, 'key');
+          key.type = 'button';
+          key.setAttribute('data-app-action', tool);
+          key.setAttribute('data-app-values', JSON.stringify(values));
+          key.setAttribute('aria-label', aria);
+          return key;
+        }
+
+        function render(projects, milestones) {
+          var now = Date.now();
+          var view = deliveryPicture(projects, milestones, now, 14);
+          var byId = {};
+          projects.forEach(function (p) { byId[p.id] = p; });
+          var active = projects.filter(function (p) { return p.status === 'active'; });
+          var live = milestones.filter(function (m) { var p = byId[m.fields.projectId]; return p && p.status === 'active' && m.status !== 'approved'; });
+          var waiting = live.filter(function (m) { return m.status === 'waiting'; }).sort(function (a, b) { return waitedDays(b, now) - waitedDays(a, now); });
+
+          document.getElementById('t-active').textContent = view.active;
+          document.getElementById('t-waiting').textContent = view.waiting;
+          document.getElementById('t-late').textContent = view.late;
+          document.getElementById('t-soon').textContent = view.dueSoon;
+          document.getElementById('t-waiting').parentNode.classList.toggle('wait', view.waiting > 0);
+          document.getElementById('t-late').parentNode.classList.toggle('late', view.late > 0);
+          document.getElementById('t-soon').parentNode.classList.toggle('soon', view.dueSoon > 0);
+          document.getElementById('sub').textContent = !projects.length
+            ? 'No client projects yet. Tell your planner about one, or add it here.'
+            : plural(view.active, 'active project', 'active projects') + '. ' +
+              (view.waiting ? plural(view.waiting, 'approval is', 'approvals are') + ' out with clients' + (waiting[0] && waitedDays(waiting[0], now) ? ', the longest for ' + plural(waitedDays(waiting[0], now), 'day', 'days') : '') + '. ' : 'Nothing waiting on clients. ') +
+              (view.late ? plural(view.late, 'milestone is', 'milestones are') + ' late on our side.' : 'Nothing late on our side.');
+
+          var list = document.getElementById('waiting');
+          list.replaceChildren();
+          if (!waiting.length) list.append(el('li', 'Nothing is out with a client right now.', 'empty'));
+          waiting.forEach(function (m) {
+            var waited = waitedDays(m, now), li = el('li'), what = el('div'), p = byId[m.fields.projectId];
+            li.append(el('span', waited ? plural(waited, 'day', 'days') : 'Sent today', 'when' + (waited >= 5 ? ' long' : '')));
+            what.append(el('b', m.fields.title));
+            what.append(el('span', [p.fields.title, 'with ' + (m.fields.approver || p.fields.contact || 'the client'), 'round ' + (m.fields.rounds || 1), isDay(m.fields.dueAt) ? 'due ' + keep(niceDate(m.fields.dueAt)) : '', m.fields.feedback ? 'last feedback: ' + m.fields.feedback : ''].filter(Boolean).join(' · '), 'meta'));
+            li.append(what, rowKey('Approved', 'set_milestone_status', { id: m.id, status: 'approved' }, 'Mark ' + m.fields.title + ' approved'));
+            list.append(li);
+          });
+
+          var holder = document.getElementById('projects');
+          holder.replaceChildren();
+          if (!active.length) holder.append(el('p', 'No active projects.', 'empty'));
+          active.forEach(function (p) {
+            var card = el('article', undefined, 'project'), head = el('header'), title = el('div'), h = health(p, milestones, now);
+            title.append(el('h3', p.fields.title));
+            title.append(el('span', [p.fields.client, p.fields.lead ? 'lead ' + p.fields.lead : '', isDay(p.fields.dueAt) ? 'due ' + keep(niceDate(p.fields.dueAt)) : ''].filter(Boolean).join(' · '), 'meta'));
+            head.append(title, chip(cap(h), h));
+            card.append(head);
+            var track = el('ol', undefined, 'track'), mine = milestonesOf(p.id, milestones);
+            if (!mine.length) track.append(el('li', 'No milestones yet.', 'empty'));
+            mine.forEach(function (m) {
+              var li = el('li'), late = isLate(m, now);
+              li.append(el('span', undefined, 'dot ' + (late ? 'late' : m.status)));
+              var name = el('span', m.fields.title, m.status === 'approved' ? 'done' : '');
+              li.title = LABEL[m.status] + (late ? ', late' : '');
+              li.append(name);
+              li.append(el('time', m.status === 'waiting' ? 'with client' : late ? when(daysLeft(m.fields.dueAt, now)) : isDay(m.fields.dueAt) ? niceDate(m.fields.dueAt) : ''));
+              track.append(li);
+            });
+            card.append(track);
+            var foot = el('footer');
+            foot.append(rowKey('Add a milestone', 'add_milestone', { project: p.id }, 'Add a milestone to ' + p.fields.title));
+            card.append(foot);
+            holder.append(card);
+          });
+          var others = projects.filter(function (p) { return p.status !== 'active'; });
+          var line = document.getElementById('others');
+          line.hidden = !others.length;
+          line.textContent = others.length ? 'Also: ' + others.map(function (p) { return p.fields.title + ' (' + p.status.replace('-', ' ') + ')'; }).join(', ') + '.' : '';
+
+          var reports = document.getElementById('reports');
+          reports.replaceChildren();
+          if (!active.length) reports.append(el('p', 'A status draft appears here for each active project.', 'empty'));
+          var weekAgo = localDay(now - 7 * DAY_MS);
+          active.forEach(function (p) {
+            var mine = milestonesOf(p.id, milestones), box = el('div', undefined, 'report'), dl = el('dl');
+            box.append(el('h3', !p.fields.client || String(p.fields.title).indexOf(p.fields.client) === 0 ? p.fields.title : p.fields.client + ': ' + p.fields.title));
+            var rows = [
+              ['Approved this week', mine.filter(function (m) { return m.status === 'approved' && String(m.fields.approvedAt || '') >= weekAgo; }).map(function (m) { return m.fields.title; })],
+              ['Waiting on ' + (p.fields.contact || 'you'), mine.filter(function (m) { return m.status === 'waiting'; }).map(function (m) { return m.fields.title + ' (round ' + (m.fields.rounds || 1) + ')'; })],
+              ['In progress', mine.filter(function (m) { return m.status === 'in-progress'; }).map(function (m) { return m.fields.title + (isDay(m.fields.dueAt) ? ', ' + (isLate(m, now) ? when(daysLeft(m.fields.dueAt, now)) : 'due ' + niceDate(m.fields.dueAt)) : ''); })],
+              ['Next up', mine.filter(function (m) { return m.status === 'planned'; }).slice(0, 2).map(function (m) { return m.fields.title + (isDay(m.fields.dueAt) ? ', ' + niceDate(m.fields.dueAt) : ''); })],
+            ];
+            rows.forEach(function (row) { dl.append(el('dt', row[0]), el('dd', row[1].length ? row[1].join('; ') : 'Nothing')); });
+            box.append(dl);
+            reports.append(box);
+          });
+
+          var body = document.getElementById('milestones-body');
+          body.replaceChildren();
+          if (!milestones.length) { var tr0 = el('tr'), td0 = el('td', 'No milestones yet.', 'empty'); td0.colSpan = 6; tr0.append(td0); body.append(tr0); }
+          milestones.slice().sort(function (a, b) { return (a.status === 'approved') - (b.status === 'approved') || String(a.fields.dueAt || '9999').localeCompare(String(b.fields.dueAt || '9999')); }).forEach(function (m) {
+            var tr = el('tr'), p = byId[m.fields.projectId], st = el('td'), late = isLate(m, now);
+            tr.append(el('td', m.fields.title), el('td', p ? p.fields.title : '–'), el('td', m.fields.owner || '–'), el('td', isDay(m.fields.dueAt) ? niceDate(m.fields.dueAt) : '–'));
+            st.append(chip(late ? 'Late' : LABEL[m.status], late ? 'late' : m.status));
+            var acts = el('td', undefined, 'row-actions');
+            if (m.status !== 'approved') acts.append(rowKey('Update', 'set_milestone_status', { id: m.id }, 'Update ' + m.fields.title));
+            tr.append(st, acts);
+            body.append(tr);
+          });
+        }
+
+        function records(doc) { return doc && Array.isArray(doc.records) ? doc.records : []; }
+        window.addEventListener('gezel-app-data-changed', function () { loadBoard(); });
+        window.loadBoard = loadBoard;
+        function loadBoard() {
+          var revision = ++appLoadRevision;
+          return Promise.all([gezel.data.read('projects.json'), gezel.data.read('milestones.json')]).then(function (v) {
+            if (appDisposed || revision !== appLoadRevision) return;
+            reportAppError(null);
+            render(records(v[0]), records(v[1]));
+          }).catch(function (error) { if (!appDisposed && revision === appLoadRevision) reportAppError(error); });
+        }
+        loadBoard();
+        appSubscriptions.push(gezel.data.watch('projects.json', function () { loadBoard(); }));
+        appSubscriptions.push(gezel.data.watch('milestones.json', function () { loadBoard(); }));
+      })();
+    </script>
+    <script src="application.js" defer></script>
+  </body>
+</html>

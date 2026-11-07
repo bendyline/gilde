@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Inventory and reorder</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f5f2ec; --card: #fffcf7; --ink: #28241f; --muted: #6a6156; --line: #ddd4c6;
+        --accent: #3f6474; --out: #a3341f; --out-bg: #f7e1da; --low: #8a5a12; --low-bg: #f6ead2;
+        --ok: #3f6b4a; --ok-bg: #e2eedf; --chip: #ede6da; --way: #355f80; --way-bg: #dfe9f1;
+      }
+      :root[data-theme='dark'] {
+        --bg: #171614; --card: #211f1c; --ink: #eee8de; --muted: #a89e90; --line: #39342d;
+        --accent: #8cb8c9; --out: #f0927a; --out-bg: #3c231c; --low: #e6bd72; --low-bg: #3a2f1c;
+        --ok: #8fc29b; --ok-bg: #22301f; --chip: #2c2823; --way: #9cc3e2; --way-bg: #1f2b36;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #171614; --card: #211f1c; --ink: #eee8de; --muted: #a89e90; --line: #39342d;
+          --accent: #8cb8c9; --out: #f0927a; --out-bg: #3c231c; --low: #e6bd72; --low-bg: #3a2f1c;
+          --ok: #8fc29b; --ok-bg: #22301f; --chip: #2c2823; --way: #9cc3e2; --way-bg: #1f2b36;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body, system-ui, sans-serif); font-size: 15px; line-height: 1.5; padding: 1.5rem 1.25rem; }
+      main { max-width: 900px; margin: 0 auto; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.5rem; font-weight: 400; margin: 0 0 0.2rem; }
+      h2 { font-family: var(--font-heading, Georgia, serif); font-size: 1.1rem; font-weight: 400; margin: 0 0 0.6rem; }
+      .sub { color: var(--muted); margin: 0 0 1rem; }
+      .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; margin: 0 0 1.2rem; }
+      .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem 0.9rem; }
+      .tile b { display: block; font-size: 1.5rem; font-weight: 600; line-height: 1.1; }
+      .tile span { color: var(--muted); font-size: 0.85rem; }
+      .tile.out b { color: var(--out); }
+      .tile.low b { color: var(--low); }
+      .tile.way b { color: var(--way); }
+      section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin: 0 0 1rem; }
+      .due { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+      .due li { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) auto; gap: 0.75rem; align-items: start; }
+      .due .chip, .due li > .key { justify-self: start; }
+      .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+      .key { min-height: 32px; padding: 0.2rem 0.65rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; font-size: 0.85rem; white-space: nowrap; }
+      .key:hover { background: var(--chip); }
+      .row-actions { text-align: right; white-space: nowrap; }
+      .row-actions .key + .key, .order-keys .key + .key { margin-left: 0.35rem; }
+      .order-keys { margin: 0.5rem 0 0; }
+      .supplier .key { margin: 0.5rem 0 0; }
+      .draft-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; margin: 0 0 0.75rem; }
+      .draft-row .meta { display: inline; }
+      .chip { display: inline-block; font-size: 0.78rem; font-weight: 600; padding: 0.1rem 0.45rem; border-radius: 4px; background: var(--chip); color: var(--muted); text-align: center; white-space: nowrap; }
+      .chip.out { background: var(--out-bg); color: var(--out); }
+      .chip.low { background: var(--low-bg); color: var(--low); }
+      .chip.ok, .chip.received { background: var(--ok-bg); color: var(--ok); }
+      .chip.way, .chip.sent { background: var(--way-bg); color: var(--way); }
+      .chip.draft { background: var(--chip); color: var(--ink); border: 1px dashed var(--muted); }
+      .due .what b { font-weight: 600; }
+      .due .what small, .meta { display: block; color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
+      .empty { color: var(--muted); font-style: italic; margin: 0; }
+      .orders { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 0.75rem; }
+      .order { border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem 0.85rem; background: var(--bg); min-width: 0; }
+      .order.draft { border-style: dashed; }
+      .order header { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; margin: 0 0 0.4rem; }
+      .order header b { font-weight: 600; overflow-wrap: anywhere; }
+      .order ul { list-style: none; margin: 0 0 0.5rem; padding: 0; display: grid; gap: 0.2rem; font-size: 0.9rem; }
+      .order li { display: flex; justify-content: space-between; gap: 0.5rem; }
+      .order li span:last-child { color: var(--muted); white-space: nowrap; }
+      .order footer { display: flex; justify-content: space-between; gap: 0.5rem; border-top: 1px solid var(--line); padding-top: 0.4rem; font-size: 0.85rem; flex-wrap: wrap; }
+      .order footer b { font-weight: 600; }
+      .order footer span { color: var(--muted); }
+      .table-wrap { overflow-x: auto; position: relative; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+      th { text-align: left; font-weight: 600; color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 0.5rem 0.4rem; border-bottom: 1px solid var(--line); }
+      td { padding: 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+      td.n, th.n { font-variant-numeric: tabular-nums; text-align: right; }
+      #stock-section table { min-width: 560px; }
+      tr:last-child td { border-bottom: 0; }
+      .suppliers { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 0.6rem; }
+      .supplier { border: 1px solid var(--line); border-radius: 10px; padding: 0.65rem 0.8rem; background: var(--bg); }
+      .supplier b { display: block; font-weight: 600; }
+      .supplier .lead { font-size: 1.1rem; }
+      .demo-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 0 0 1rem; padding: 0.5rem 0.65rem; border: 1px solid var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--card) 88%, var(--accent)); font-size: 0.85rem; }
+      .demo-banner[hidden] { display: none; }
+      .demo-reset { flex: none; min-height: 36px; padding: 0.3rem 0.7rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; }
+      .note { color: var(--muted); font-size: 0.85rem; margin: 0.75rem 0 0; }
+      @media (max-width: 640px) {
+        .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .due li { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
+        .due .chip { justify-self: start; }
+      }
+    </style>
+    <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:0 0 12px;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--line,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+    <style data-app-shell="2">
+    /* Shared app furniture from the Gezel app UX guide. The page owns everything else. */
+    :root{--app-action:var(--gezel-component-accent,#805128);--app-on-action:#fffaf3;--app-banner-bg:#f3eddf;--app-banner-line:#d6cbb8}
+    :root[data-theme=dark]{--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}
+    @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}}
+    main h1{font-weight:400}
+    html[data-gezel-fullscreen=true] main h1{font-size:clamp(28px,3vw,40px);margin-top:0}
+    .app-tabs{margin:20px 0 24px}
+    .app-actionbar{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin:16px 0 24px}
+    .app-panel>.app-actionbar:first-child{margin-top:0}
+    .app-settings{display:grid;gap:16px;max-width:760px;margin:0 0 24px}
+    .app-search{margin:0}
+    .app-search gezel-collection-filter{margin:0 0 12px;max-width:540px}
+    .app-primary{min-height:44px;padding:8px 16px;border:1px solid var(--app-action);border-radius:6px;background:var(--app-action);color:var(--app-on-action);font-weight:600}
+    .app-primary:disabled{display:none}
+    main li.empty{display:block;grid-column:1/-1}
+    html[data-app-legacy] [data-app-action]{display:none!important}
+    [data-gezel-demo-banner]:not([hidden]){display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin:0 0 16px;padding:8px 8px 8px 14px;border:1px solid var(--app-banner-line);border-radius:10px;background:var(--app-banner-bg);color:inherit;font-size:14px;line-height:1.4}
+    [data-gezel-demo-banner] button{min-height:32px;padding:4px 12px;border:1px solid var(--app-banner-line);border-radius:6px;background:transparent;color:inherit;font-size:13px}
+    @media(max-width:620px){.tiles,.stats,.summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:nth-child(3):last-child){grid-template-columns:repeat(3,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:only-child){grid-template-columns:minmax(0,1fr)!important}}
+    </style>
+    <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script>
+  </head>
+  <body>
+    <main>
+      <p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong>: Harbor Street Café’s sample stockroom. Changes stay in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Inventory and reorder</h1>
+      <p class="sub" id="sub">Loading the stock list…</p>
+      <div class="tiles">
+        <div class="tile"><b id="t-out">0</b><span>Out</span></div>
+        <div class="tile"><b id="t-low">0</b><span>At or below reorder point</span></div>
+        <div class="tile"><b id="t-way">0</b><span id="t-way-label">Orders on the way</span></div>
+        <div class="tile"><b id="t-drafts">0</b><span id="t-drafts-label">Drafts to check</span></div>
+      </div>
+      <section id="reorder-section">
+        <h2>Reorder now</h2>
+        <div class="draft-row" id="draft-row">
+          <button type="button" class="app-primary" id="draft-button" disabled>Draft this week’s orders</button>
+          <span class="meta" id="draft-status" role="status"></span>
+        </div>
+        <ul class="due" id="reorder"></ul>
+      </section>
+      <section id="orders-section">
+        <h2>Purchase orders</h2>
+        <div class="orders" id="orders"></div>
+        <p class="note">Drafts are suggestions for you to check. Nothing is ordered until you place it with the supplier and mark it sent; prices are the last ones you gave.</p>
+      </section>
+      <section id="stock-section">
+        <h2>Stock</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Item</th><th class="n">On hand</th><th class="n">Reorder at</th><th class="n">Order up to</th><th>Supplier</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr></thead>
+            <tbody id="stock-body"></tbody>
+          </table>
+        </div>
+      </section>
+      <section id="suppliers-section">
+        <h2>Suppliers</h2>
+        <div class="suppliers" id="suppliers"></div>
+      </section>
+    </main>
+    <script src="rules.js"></script>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        var rules = window.stockRules;
+        var DAY = 86400000;
+        function daysFromNow(n) { return rules.localDay(Date.now() + n * DAY); }
+
+        // ── demo stockroom (used only when the page opens outside Gezel); dates are relative so it never goes stale ──
+        function demoState() {
+          var state = { items: [], orders: [] };
+          [
+            ['Espresso beans', 'bag', 6, 8, 20, 'Coastal Roasters', 5, 42],
+            ['Decaf beans', 'bag', 3, 2, 6, 'Coastal Roasters', 5, 46],
+            ['Whole milk', 'gallon', 14, 12, 40, 'Valley Dairy', 2, 4.2],
+            ['Oat milk', 'carton', 0, 10, 36, 'Valley Dairy', 2, 3.8],
+            ['12 oz hot cups', 'sleeve of 50', 9, 6, 24, 'Bayside Paper Co.', 7, 6.5],
+            ['16 oz cold cups', 'sleeve of 50', 4, 6, 20, 'Bayside Paper Co.', 7, 7.25],
+            ['Hot cup lids', 'sleeve of 100', 5, 4, 16, 'Bayside Paper Co.', 7, 5.1],
+            ['Napkins', 'case', 3, 1, 4, 'Bayside Paper Co.', 7, 31],
+            ['Vanilla syrup', 'bottle', 2, 3, 12, 'Harbor Wholesale', 4, 9.75],
+            ['Raw sugar packets', 'case', 2, 1, 3, 'Harbor Wholesale', 4, 24],
+          ].forEach(function (row) {
+            state = rules.run('add', { name: row[0], unit: row[1], onHand: row[2], reorderPoint: row[3], par: row[4], supplier: row[5], leadDays: row[6], unitCost: row[7] }, state, Date.now()).state;
+          });
+          state.orders = [
+            { id: 'po-1', status: 'received', fields: { supplier: 'Coastal Roasters', lines: [
+              { itemId: 'it-1', name: 'Espresso beans', unit: 'bag', qty: 12, unitCostCents: 4200 },
+              { itemId: 'it-2', name: 'Decaf beans', unit: 'bag', qty: 4, unitCostCents: 4600 },
+            ], totalCents: 68800, sentAt: daysFromNow(-9), leadDays: 5, expectedAt: daysFromNow(-4), receivedAt: daysFromNow(-4) } },
+            { id: 'po-2', status: 'sent', fields: { supplier: 'Bayside Paper Co.', lines: [
+              { itemId: 'it-6', name: '16 oz cold cups', unit: 'sleeve of 50', qty: 16, unitCostCents: 725 },
+            ], totalCents: 11600, sentAt: daysFromNow(-2), leadDays: 7, expectedAt: daysFromNow(5) } },
+          ];
+          return state;
+        }
+        var demo = demoState();
+        // Every tool runs the inventory-store rules on the sample, exactly as the live store does.
+        function demoTool(action) {
+          return function (input) {
+            var result = rules.run(action, input || {}, demo, Date.now());
+            demo = result.state;
+            return result.output;
+          };
+        }
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'stock/index.html', typeName: 'Inventory & Reorder', params: { business: 'Harbor Street Café' } },
+          tools: {
+            page_add_item: demoTool('add'),
+            add_item: demoTool('add'),
+            page_record_stock: demoTool('stock'),
+            record_stock: demoTool('stock'),
+            page_draft_orders: demoTool('draft_orders'),
+            draft_orders: demoTool('draft_orders'),
+            page_update_order: demoTool('update_order'),
+            update_order: demoTool('update_order'),
+            stock_status: demoTool('status'),
+            list_stock: demoTool('list'),
+          },
+          data: {
+            'items.json': function () { return { version: 1, stages: ['ok', 'low', 'out'], records: demo.items }; },
+            'orders.json': function () { return { version: 1, stages: ['draft', 'sent', 'received', 'cancelled'], records: demo.orders }; },
+          },
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+        function applyTheme(mode) { document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light'); }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function el(tag, text, cls) { var e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
+        function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+        function niceDate(day) { var d = new Date(String(day).slice(0, 10) + 'T12:00:00'); return isFinite(d) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : String(day); }
+        function n(value) { var v = rules.num(value); return v === null ? 0 : v; }
+        var OPEN = ['draft', 'sent'];
+        // Dates stay on one line inside running text: "expected Nov 12", never "expected Nov / 12".
+        function keep(text) { return String(text).replace(/ /g, '\u00a0'); }
+        // Row action: a small key that opens a shared dialog with these values filled in.
+        function rowKey(label, tool, values, aria) {
+          var key = el('button', label, 'key');
+          key.type = 'button';
+          key.setAttribute('data-app-action', tool);
+          key.setAttribute('data-app-values', JSON.stringify(values));
+          key.setAttribute('aria-label', aria);
+          return key;
+        }
+        var draftable = 0;
+
+        function render(itemsDoc, ordersDoc) {
+          var items = Array.isArray(itemsDoc.records) ? itemsDoc.records : [];
+          var orders = Array.isArray(ordersDoc.records) ? ordersDoc.records : [];
+          var status = function (r) { return rules.stockStatus(r.fields || {}); };
+          var openOrderFor = function (r) { return orders.filter(function (o) { return OPEN.indexOf(o.status) >= 0 && (o.fields.lines || []).some(function (l) { return l.itemId === r.id; }); })[0]; };
+          var needs = items.filter(function (r) { return status(r) !== 'ok'; }).sort(function (a, b) {
+            var sa = status(a), sb = status(b);
+            if (sa !== sb) return sa === 'out' ? -1 : 1;
+            return n(a.fields.onHand) / Math.max(1, n(a.fields.reorderPoint)) - n(b.fields.onHand) / Math.max(1, n(b.fields.reorderPoint)) || String(a.fields.name).localeCompare(String(b.fields.name));
+          });
+          var out = needs.filter(function (r) { return status(r) === 'out'; });
+          var sent = orders.filter(function (o) { return o.status === 'sent'; }).sort(function (a, b) { return String(a.fields.expectedAt || '').localeCompare(String(b.fields.expectedAt || '')); });
+          var drafts = orders.filter(function (o) { return o.status === 'draft'; });
+          var draftTotal = drafts.reduce(function (sum, o) { return sum + n(o.fields.totalCents); }, 0);
+
+          document.getElementById('t-out').textContent = out.length;
+          document.getElementById('t-low').textContent = needs.length - out.length;
+          document.getElementById('t-way').textContent = sent.length;
+          document.getElementById('t-drafts').textContent = drafts.length;
+          document.getElementById('t-out').parentNode.classList.toggle('out', out.length > 0);
+          document.getElementById('t-low').parentNode.classList.toggle('low', needs.length - out.length > 0);
+          document.getElementById('t-way').parentNode.classList.toggle('way', sent.length > 0);
+          // The draft key appears only when something low is on no order yet; otherwise the line says why.
+          draftable = needs.filter(function (r) { return !openOrderFor(r); }).length;
+          document.getElementById('draft-button').disabled = !draftable;
+          document.getElementById('draft-status').textContent = draftable ? plural(draftable, 'item needs', 'items need') + ' an order.' : needs.length ? 'Every item that needs it is already on an order.' : '';
+          document.getElementById('draft-row').hidden = !needs.length;
+          document.getElementById('t-drafts-label').textContent = drafts.length ? 'Drafts to check, ' + rules.money(draftTotal) : 'Drafts to check';
+          document.getElementById('sub').textContent = !items.length
+            ? 'Nothing on the stock list yet. Tell your stock keeper what you keep on the shelf and when to reorder it.'
+            : (needs.length
+                ? [out.length ? plural(out.length, 'item is', 'items are') + ' out' : '', needs.length - out.length ? plural(needs.length - out.length, 'item is', 'items are') + ' at or below the reorder point' : ''].filter(Boolean).join(' and ').replace(/^./, function (c) { return c.toUpperCase(); }) + '. '
+                : 'Everything is above its reorder point. ') +
+              (drafts.length ? plural(drafts.length, 'draft order is', 'draft orders are') + ' waiting for you.' : sent.length ? plural(sent.length, 'order is', 'orders are') + ' on the way.' : '');
+
+          var list = document.getElementById('reorder');
+          list.replaceChildren();
+          if (!needs.length) list.append(el('li', items.length ? 'Nothing needs reordering right now.' : 'Items you add appear here when they run low.', 'empty'));
+          needs.forEach(function (r) {
+            var f = r.fields, o = openOrderFor(r), s = status(r), li = el('li'), what = el('div', undefined, 'what');
+            li.append(el('span', o && o.status === 'sent' ? 'On the way' : s === 'out' ? 'Out' : 'Low', 'chip ' + (o && o.status === 'sent' ? 'way' : s)));
+            what.append(el('b', f.name));
+            what.append(el('small', [
+              rules.amount(n(f.onHand), f.unit) + ' on hand, reorder at ' + n(f.reorderPoint),
+              o && o.status === 'sent' ? 'ordered' + (o.fields.expectedAt ? ', expected ' + keep(niceDate(o.fields.expectedAt)) : '') : 'order ' + rules.amount(rules.orderQty(f), f.unit) + (o ? ' (on a draft order)' : ''),
+              f.supplier ? f.supplier + (rules.num(f.leadDays) !== null ? ', ' + f.leadDays + '-day lead' : '') : 'no supplier yet',
+            ].join(' · ')));
+            li.append(what);
+            if (o && o.status === 'sent') li.append(rowKey('Mark received', 'update_order', { order: o.id, status: 'received' }, 'Mark the ' + o.fields.supplier + ' order received'));
+            list.append(li);
+          });
+
+          var holder = document.getElementById('orders');
+          holder.replaceChildren();
+          var received = orders.filter(function (o) { return o.status === 'received'; }).slice(-3).reverse();
+          var shown = drafts.concat(sent, received);
+          if (!shown.length) holder.append(el('p', 'No orders yet. Ask your stock keeper to draft this week’s orders.', 'empty'));
+          shown.forEach(function (o) {
+            var f = o.fields, card = el('article', undefined, 'order ' + o.status), head = el('header'), title = el('div'), lines = el('ul'), foot = el('footer');
+            title.append(el('b', f.supplier));
+            head.append(title, el('span', o.status === 'draft' ? 'Draft' : o.status === 'sent' ? 'Sent' : 'Received', 'chip ' + o.status));
+            (f.lines || []).forEach(function (l) {
+              var li = el('li');
+              li.append(el('span', l.name + ', ' + rules.amount(n(l.qty), l.unit)), el('span', rules.money(Math.round(n(l.qty) * n(l.unitCostCents)))));
+              lines.append(li);
+            });
+            var lead = rules.num(f.leadDays) !== null ? f.leadDays : (rules.suppliers(items).filter(function (s) { return s.name === f.supplier; })[0] || {}).leadDays;
+            var when = o.status === 'draft' ? 'Not sent yet' + (lead !== null && lead !== undefined ? ' · ' + lead + '-day lead' : '')
+              : o.status === 'sent' ? 'Sent ' + niceDate(f.sentAt) + (f.expectedAt ? ' · expected ' + niceDate(f.expectedAt) : '')
+              : 'Received ' + niceDate(f.receivedAt);
+            foot.append(el('b', rules.money(n(f.totalCents))), el('span', when));
+            card.append(head, lines, foot);
+            // Row actions: the next step for this order, prefilled.
+            var keys = el('div', undefined, 'order-keys');
+            if (o.status === 'draft') keys.append(rowKey('Mark sent', 'update_order', { order: o.id, status: 'sent' }, 'Mark the ' + f.supplier + ' draft sent'), rowKey('Cancel', 'update_order', { order: o.id, status: 'cancelled' }, 'Cancel the ' + f.supplier + ' draft'));
+            if (o.status === 'sent') keys.append(rowKey('Mark received', 'update_order', { order: o.id, status: 'received' }, 'Mark the ' + f.supplier + ' order received'));
+            if (keys.childNodes.length) card.append(keys);
+            holder.append(card);
+          });
+
+          var body = document.getElementById('stock-body');
+          body.replaceChildren();
+          if (!items.length) { var tr0 = el('tr'), td0 = el('td', 'The stock list is empty.', 'empty'); td0.colSpan = 7; tr0.append(td0); body.append(tr0); }
+          items.slice().sort(function (a, b) { return String(a.fields.name).localeCompare(String(b.fields.name)); }).forEach(function (r) {
+            var f = r.fields, tr = el('tr'), name = el('td'), s = status(r);
+            name.append(el('span', f.name));
+            if (f.unit) name.append(el('span', 'per ' + f.unit + (rules.num(f.unitCostCents) ? ', ' + rules.money(f.unitCostCents) : ''), 'meta'));
+            tr.append(name, el('td', String(n(f.onHand)), 'n'), el('td', String(n(f.reorderPoint)), 'n'), el('td', rules.num(f.par) !== null ? String(f.par) : '–', 'n'), el('td', f.supplier || '–'));
+            var st = el('td'); st.append(el('span', s === 'ok' ? 'In stock' : s === 'low' ? 'Low' : 'Out', 'chip ' + s)); tr.append(st);
+            var acts = el('td', undefined, 'row-actions');
+            acts.append(rowKey('Log', 'record_stock', { item: r.id }, 'Log what came in or went out of ' + f.name), rowKey('Count', 'count_shelf', { item: r.id }, 'Count the ' + f.name + ' on the shelf'));
+            tr.append(acts);
+            body.append(tr);
+          });
+
+          var sup = document.getElementById('suppliers');
+          sup.replaceChildren();
+          var vendors = rules.suppliers(items);
+          if (!vendors.length) sup.append(el('p', 'Suppliers appear here as you add items from them.', 'empty'));
+          vendors.forEach(function (s) {
+            var card = el('div', undefined, 'supplier'), o = sent.filter(function (x) { return x.fields.supplier === s.name; })[0];
+            card.append(el('b', s.name));
+            card.append(el('span', s.leadDays !== null ? s.leadDays + '-day lead' : 'No lead time yet', 'lead'));
+            card.append(el('span', plural(s.items, 'item', 'items') + (s.low ? ', ' + s.low + ' to reorder' : ''), 'meta'));
+            if (o) card.append(el('span', 'An order is on the way' + (o.fields.expectedAt ? ', expected ' + keep(niceDate(o.fields.expectedAt)) : ''), 'meta'));
+            if (needs.some(function (r) { return r.fields.supplier === s.name && !openOrderFor(r); })) card.append(rowKey('Draft an order', 'draft_orders', { supplier: s.name }, 'Draft an order from ' + s.name));
+            sup.append(card);
+          });
+        }
+
+        document.getElementById('draft-button').addEventListener('click', function () {
+          var button = this, status = document.getElementById('draft-status');
+          if (!draftable) return;
+          button.disabled = true;
+          status.textContent = 'Drafting…';
+          gezel.tools.invoke('page_draft_orders', {}).then(function () {
+            window.dispatchEvent(new Event('gezel-app-data-changed'));
+          }, function (error) {
+            status.textContent = 'Could not draft the orders. ' + (error && error.message ? error.message : 'Try again.');
+            button.disabled = false;
+          });
+        });
+        window.addEventListener('gezel-app-data-changed', function () { loadStock(); });
+        window.loadStock = loadStock;
+        function loadStock() {
+          var revision = ++appLoadRevision;
+          return Promise.all([gezel.data.read('items.json'), gezel.data.read('orders.json')]).then(function (values) {
+            if (appDisposed || revision !== appLoadRevision) return;
+            reportAppError(null);
+            render(values[0] || {}, values[1] || {});
+          }).catch(function (error) { if (!appDisposed && revision === appLoadRevision) reportAppError(error); });
+        }
+
+        loadStock();
+        appSubscriptions.push(gezel.data.watch('items.json', function () { loadStock(); }));
+        appSubscriptions.push(gezel.data.watch('orders.json', function () { loadStock(); }));
+      })();
+    </script>
+    <script src="application.js" defer></script>
+  </body>
+</html>

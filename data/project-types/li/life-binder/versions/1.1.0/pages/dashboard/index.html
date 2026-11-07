@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Life binder</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2; --card: #fff; --ink: #2b2620; --muted: #7a7166;
+        --accent: #b5651d; --track: #ece5da; --good: #4a7c59; --warn: #a4552e; --soon: #7d5a00;
+      }
+      :root[data-theme='dark'] {
+        --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+        --accent: #e0894a; --track: #3a352f; --good: #7fae8d; --warn: #d98a63; --soon: #e3bb5c;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+          --accent: #e0894a; --track: #3a352f; --good: #7fae8d; --warn: #d98a63; --soon: #e3bb5c;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 16px/1.5 var(--font-body, system-ui, sans-serif); background: var(--bg); color: var(--ink); padding: 1.5rem 1.25rem; }
+      main { max-width: 620px; margin: 0 auto; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.35rem; font-weight: 600; margin: 0 0 0.15rem; }
+      .sub { color: var(--muted); font-size: 0.95rem; margin: 0 0 0.9rem; }
+      .meter { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.85rem 1rem; margin-bottom: 0.75rem; }
+      .meter .line { display: flex; justify-content: space-between; font-size: 0.95rem; margin-bottom: 0.4rem; }
+      .bar { background: var(--track); border-radius: 4px; height: 10px; overflow: hidden; }
+      .bar > span { display: block; height: 100%; background: var(--good); border-radius: 4px; transition: width 0.3s ease; }
+      .list { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.85rem 0 0.4rem; }
+      .list > h2 { margin: 0 1rem 0.5rem; font-family: var(--font-ui, system-ui, sans-serif); font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+      .list > .app-search { padding: 0 1rem; }
+      .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.4rem 0.8rem; align-items: start; padding: 0.6rem 1rem; font-size: 0.95rem; }
+      .row + .row { border-top: 1px solid var(--track); }
+      .row .name { font-weight: 600; }
+      .row .where, .row .hint, .row .when { display: block; color: var(--muted); font-size: 0.85rem; }
+      #list .empty { margin: 0.2rem 1rem 0.5rem; color: var(--muted); font-style: italic; }
+      .chip { display: inline-block; border-radius: 4px; padding: 0 0.4rem; margin-left: 0.4rem; font-family: var(--font-ui, system-ui, sans-serif); font-size: 0.78rem; font-weight: 600; line-height: 1.6; vertical-align: 0.1em; }
+      .chip.missing { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+      .chip.review { color: var(--soon); border: 1px dashed var(--soon); }
+      .chip.present { color: var(--good); border: 1px solid color-mix(in srgb, var(--good) 45%, transparent); }
+      .row-keys { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: flex-end; }
+      .key { min-height: 32px; padding: 0.2rem 0.7rem; border: 1px solid color-mix(in srgb, var(--muted) 40%, var(--track)); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font-family: var(--font-ui, system-ui, sans-serif); font-size: 0.85rem; white-space: nowrap; }
+      .key:hover { border-color: var(--ink); }
+      @media (max-width: 560px) { .row { grid-template-columns: 1fr; } .row-keys { justify-content: flex-start; } }
+      .privacy { color: var(--muted); font-size: 0.85rem; text-align: center; margin-top: 0.75rem; }
+      .demo-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0 0 0.85rem;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--card) 88%, var(--accent));
+        color: var(--ink);
+        font-size: 0.8rem;
+      }
+      .demo-banner[hidden] { display: none; }
+      .demo-banner strong { font-weight: 700; }
+      .demo-reset {
+        flex: none;
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: var(--card);
+        color: var(--ink);
+        cursor: pointer;
+        font: inherit;
+      }
+      .demo-reset:hover { border-color: var(--ink); }
+    </style>
+  <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:20px 0;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--border,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}html[data-gezel-fullscreen=true] .board{min-width:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}.tiles,.stats,.summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}.board,.columns{max-width:100%;overflow-x:auto}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+    <style data-app-shell="2">
+    /* Shared app furniture from the Gezel app UX guide. The page owns everything else. */
+    :root{--app-action:var(--gezel-component-accent,#805128);--app-on-action:#fffaf3;--app-banner-bg:#f3eddf;--app-banner-line:#d6cbb8}
+    :root[data-theme=dark]{--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}
+    @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}}
+    main h1{font-weight:400}
+    html[data-gezel-fullscreen=true] main h1{font-size:clamp(28px,3vw,40px);margin-top:0}
+    .app-tabs{margin:20px 0 24px}
+    .app-actionbar{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin:16px 0 24px}
+    .app-panel>.app-actionbar:first-child{margin-top:0}
+    .app-settings{display:grid;gap:16px;max-width:760px;margin:0 0 24px}
+    .app-search{margin:0}
+    .app-search gezel-collection-filter{margin:0 0 12px;max-width:540px}
+    .app-primary{min-height:44px;padding:8px 16px;border:1px solid var(--app-action);border-radius:6px;background:var(--app-action);color:var(--app-on-action);font-weight:600}
+    .app-primary:disabled{display:none}
+    main li.empty{display:block;grid-column:1/-1}
+    html[data-app-legacy] [data-app-action]{display:none!important}
+    [data-gezel-demo-banner]:not([hidden]){display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin:0 0 16px;padding:8px 8px 8px 14px;border:1px solid var(--app-banner-line);border-radius:10px;background:var(--app-banner-bg);color:inherit;font-size:14px;line-height:1.4}
+    [data-gezel-demo-banner] button{min-height:32px;padding:4px 12px;border:1px solid var(--app-banner-line);border-radius:6px;background:transparent;color:inherit;font-size:13px}
+    @media(max-width:620px){.tiles,.stats,.summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:nth-child(3):last-child){grid-template-columns:repeat(3,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:only-child){grid-template-columns:minmax(0,1fr)!important}}
+    </style>
+  <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script></head>
+  <body>
+    <main>
+<p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong> — sample data stays in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Life binder</h1>
+      <p class="sub" id="sub">Loading the checklist…</p>
+      <div class="meter">
+        <div class="line"><span id="m-label">—</span><span id="m-count">—</span></div>
+        <div class="bar"><span id="m-bar" style="width: 0%"></span></div>
+      </div>
+      <section class="list" id="documents-section">
+        <h2>Documents</h2>
+        <div id="list"></div>
+      </section>
+      <p class="privacy">Gezel records where each paper is kept, never what it says.</p>
+    </main>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        var YEAR = 365 * 24 * 60 * 60 * 1000;
+
+        // ── demo checklist (used only when the page opens as a raw file) ──
+        function demoAgo(days) { return new Date(Date.now() - days * 86400000).toISOString(); }
+        function demoDoc(n, status, reviewed, fields) {
+          var at = demoAgo(reviewed);
+          if (status === 'present') fields.reviewedAt = at;
+          return { id: 'doc-' + n, status: status, createdAt: demoAgo(500), updatedAt: at, fields: fields, history: [{ at: demoAgo(500), from: null, to: 'missing' }].concat(status === 'present' ? [{ at: at, from: 'missing', to: 'present' }] : []) };
+        }
+        var demoBinder = { records: [
+          demoDoc(1, 'present', 40, { name: 'Will', location: 'Blue fire box, hall closet', note: 'Signed original; a copy is with the family lawyer.' }),
+          demoDoc(2, 'missing', 500, { name: 'Medical directives', note: 'Living will and healthcare proxy.' }),
+          demoDoc(3, 'present', 430, { name: 'Life insurance policy', location: 'Filing cabinet, top drawer' }),
+          demoDoc(4, 'present', 410, { name: 'Home insurance', location: 'Blue fire box, hall closet' }),
+          demoDoc(5, 'present', 90, { name: 'Accounts list', location: 'Filing cabinet, top drawer', note: 'Institutions only, no credentials.' }),
+          demoDoc(6, 'present', 60, { name: 'Passwords location', location: 'Sealed envelope in the blue fire box' }),
+          demoDoc(7, 'missing', 500, { name: 'Emergency contacts', note: 'Who to call first: family, lawyer, doctor.' }),
+          demoDoc(8, 'present', 200, { name: 'Deeds and titles', location: 'Safe deposit box at the credit union' }),
+          demoDoc(9, 'present', 20, { name: 'Passport copies', location: 'Travel folder' }),
+          demoDoc(10, 'missing', 500, { name: 'Pet care instructions', note: 'Feeding, the vet, and who can take the dog.' }),
+        ] };
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'dashboard/index.html', typeName: 'Life Binder', params: { household: 'our family' } },
+          tools: (function () {
+            // Mirrors the binder-store script: a document by id or exact name, missing -> present.
+            var YEAR_MS = 365 * 86400000;
+            function find(input) {
+              var r = input.id ? demoBinder.records.find(function (x) { return x.id === input.id; })
+                : input.name ? demoBinder.records.find(function (x) { return String(x.fields.name).toLowerCase() === String(input.name).toLowerCase(); }) : null;
+              if (!r) throw new Error('Choose a document.');
+              return r;
+            }
+            function move(r, to) {
+              var at = new Date().toISOString();
+              if (r.status !== to) r.history = (r.history || []).concat([{ at: at, from: r.status, to: to }]);
+              r.status = to;
+              r.updatedAt = at;
+            }
+            function status() {
+              var now = Date.now(), present = 0, missing = [], stale = [];
+              demoBinder.records.forEach(function (r) {
+                if (r.status !== 'present') { missing.push(r.fields.name); return; }
+                present += 1;
+                if (now - Date.parse(r.fields.reviewedAt || r.updatedAt) > YEAR_MS) stale.push(r.fields.name);
+              });
+              return { total: demoBinder.records.length, present: present, missing: missing.length, stale: stale.length,
+                summary: present + ' of ' + demoBinder.records.length + ' in place' + (missing.length ? '. Missing: ' + missing.join(', ') : '. Nothing missing') + (stale.length ? '. Due a review: ' + stale.join(', ') + '.' : '.') };
+            }
+            return {
+              page_record_document: function (input) {
+                if (!input.name || !String(input.name).trim()) throw new Error('Name the document.');
+                var r = demoBinder.records.find(function (x) { return String(x.fields.name).toLowerCase() === String(input.name).trim().toLowerCase(); });
+                if (!r) {
+                  var max = demoBinder.records.reduce(function (n, x) { return Math.max(n, Number(x.id.slice(4)) || 0); }, 0);
+                  r = { id: 'doc-' + (max + 1), status: 'missing', createdAt: new Date().toISOString(), fields: { name: String(input.name).trim() }, history: [] };
+                  demoBinder.records.push(r);
+                }
+                if (input.location) r.fields.location = String(input.location);
+                if (input.note) r.fields.note = String(input.note);
+                r.fields.reviewedAt = new Date().toISOString();
+                move(r, 'present');
+                return status();
+              },
+              page_mark_reviewed: function (input) {
+                var r = find(input);
+                r.fields.reviewedAt = new Date().toISOString();
+                move(r, 'present');
+                return status();
+              },
+              page_mark_missing: function (input) { move(find(input), 'missing'); return status(); },
+              binder_status: function () { return status(); },
+            };
+          })(),
+          data: {
+            'documents.json': function () { return demoBinder; },
+          },
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+
+        function applyTheme(mode) {
+          document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light');
+        }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+        function node(tag, text, className) { var n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (className) n.className = className; return n; }
+        function dayText(ms) {
+          var d = new Date(ms), opts = { month: 'short', day: 'numeric' };
+          if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+          return d.toLocaleDateString('en-US', opts);
+        }
+        function rowKey(text, tool, label, values) {
+          var key = node('button', text, 'key');
+          key.type = 'button';
+          key.setAttribute('aria-label', label);
+          key.setAttribute('data-app-action', tool);
+          key.setAttribute('data-app-values', JSON.stringify(values));
+          return key;
+        }
+
+        function render(binder) {
+          var records = Array.isArray(binder.records) ? binder.records : [];
+          var present = records.filter(function (r) { return r.status === 'present'; });
+          var now = Date.now();
+          var gaps = records.length - present.length;
+          var due = present.filter(function (r) {
+            var f = r.fields || {}, reviewed = typeof f.reviewedAt === 'string' ? Date.parse(f.reviewedAt) : Date.parse(r.updatedAt);
+            return isFinite(reviewed) && now - reviewed > YEAR;
+          }).length;
+          document.getElementById('sub').textContent =
+            records.length === 0 ? 'The checklist is empty. Start with one document you know exists.'
+              : (gaps === 0 ? 'Everything in place.' : gaps + (gaps === 1 ? ' gap' : ' gaps') + ' to close.') +
+                (due ? ' ' + due + (due === 1 ? ' document is' : ' documents are') + ' due a review.' : gaps === 0 ? ' Well done.' : '');
+          document.getElementById('m-label').textContent = 'In place';
+          document.getElementById('m-count').textContent = present.length + ' of ' + records.length;
+          document.getElementById('m-bar').style.width =
+            (records.length ? Math.round((present.length / records.length) * 100) : 0) + '%';
+
+          var list = document.getElementById('list');
+          list.replaceChildren.apply(list, records
+            .slice()
+            .sort(function (a, b) { return a.status === b.status ? 0 : a.status === 'missing' ? -1 : 1; })
+            .map(function (r) {
+              var f = r.fields || {}, name = String(f.name || r.id);
+              var reviewed = typeof f.reviewedAt === 'string' ? Date.parse(f.reviewedAt) : Date.parse(r.updatedAt);
+              var stale = r.status === 'present' && isFinite(reviewed) && now - reviewed > YEAR;
+              var row = node('div', undefined, 'row ' + r.status), text = node('div'), keys = node('div', undefined, 'row-keys');
+              text.append(node('span', name, 'name'),
+                node('span', r.status !== 'present' ? 'Missing' : stale ? 'Review due' : 'In place', 'chip ' + (r.status !== 'present' ? 'missing' : stale ? 'review' : 'present')));
+              if (f.location) text.append(node('span', f.location, 'where'));
+              if (r.status !== 'present' && f.note) text.append(node('span', f.note, 'hint'));
+              if (r.status === 'present' && isFinite(reviewed)) text.append(node('span', 'Last reviewed ' + dayText(reviewed), 'when'));
+              if (r.status !== 'present') keys.append(rowKey('Record it', 'record_document', 'Record where the ' + name + ' is kept', { name: name }));
+              else if (stale) keys.append(rowKey('Mark reviewed', 'mark_reviewed', 'Mark the ' + name + ' reviewed', { id: r.id }));
+              row.append(text, keys);
+              return row;
+            }));
+          if (!records.length) list.replaceChildren(node('p', 'Nothing on the checklist yet.', 'empty'));
+        }
+
+        window.addEventListener('gezel-app-data-changed', function(){ loadBinder(); });
+        function loadBinder(){
+var revision=++appLoadRevision;
+return Promise.all([gezel.data.read('documents.json')]).then(function(values){if(appDisposed||revision!==appLoadRevision)return;reportAppError(null);render(values[0]||{});}).catch(function(error){if(!appDisposed&&revision===appLoadRevision)reportAppError(error);});
+}
+
+        loadBinder();
+        appSubscriptions.push(gezel.data.watch('documents.json', function () { loadBinder(); }));
+      })();
+    </script>
+  <script src="application.js" defer></script>
+  </body>
+</html>

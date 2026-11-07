@@ -1,0 +1,549 @@
+{
+  "schemaVersion": 1,
+  "version": "1.1.0",
+  "releasedAt": "2026-11-07T18:00:00.000Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "organization": {
+        "type": "string",
+        "title": "Who is applying?",
+        "description": "e.g. 'a small literary press', 'a community theater in Tacoma'.",
+        "default": "the organization"
+      },
+      "focus": {
+        "type": "string",
+        "title": "What will the funding support?",
+        "description": "e.g. 'new translations and author readings'.",
+        "default": "its work"
+      }
+    },
+    "required": [
+      "organization",
+      "focus"
+    ]
+  },
+  "nameTemplate": "Grants & Proposals",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "aanjager",
+      "voorman": true
+    },
+    {
+      "templateId": "researcher"
+    },
+    {
+      "templateId": "copywriter"
+    }
+  ],
+  "scripts": {
+    "grants-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'grants-store',\n  description:\n    \"Read and update the funding pipeline (opportunities.json) and each submission's requirements checklist (requirements.json). action:'status' for the open opportunities by deadline with what each still needs, what awaits a decision, and the outcomes; 'add' saves an opportunity (an existing title is updated, never duplicated); 'update' changes one (extendDays moves its deadline later); 'stage' moves one to prospect, drafting, submitted or passed; 'outcome' records awarded, declined or passed; 'add_requirement' and 'check_requirement' keep the checklist.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'status', 'add', 'update', 'stage', 'outcome', 'add_requirement', or 'check_requirement'.\",\n      required: true,\n    },\n    opportunity: { type: 'string', description: \"An opportunity's id ('op-2') or (part of) its title.\" },\n    title: { type: 'string', description: \"The opportunity's or requirement's title, e.g. 'Small Press Grant' or 'Budget narrative'.\" },\n    titles: { type: 'json', description: 'Several requirement titles at once, as a list.' },\n    requirement: { type: 'string', description: \"A requirement's id ('req-4') or (part of) its title.\" },\n    funder: { type: 'string', description: 'Who gives the money, e.g. Oregon Literary Arts.' },\n    kind: { type: 'string', description: 'grant, rfp, fellowship, sponsorship, or other.' },\n    deadline: { type: 'string', description: 'The submission deadline, YYYY-MM-DD.' },\n    extendDays: { type: 'number', description: 'How many days later the deadline moved, e.g. 14.' },\n    ask: { type: 'number', description: 'The amount requested, in dollars, e.g. 8000.' },\n    award: { type: 'number', description: 'The amount awarded, in dollars.' },\n    fit: { type: 'string', description: 'strong, good, or long shot.' },\n    url: { type: 'string', description: 'Where the guidelines live.' },\n    stage: { type: 'string', description: 'prospect, drafting, submitted, or passed.' },\n    outcome: { type: 'string', description: 'awarded, declined, or passed.' },\n    owner: { type: 'string', description: 'Who is preparing a requirement.' },\n    done: { type: 'boolean', description: 'For check_requirement: false reopens it (default true).' },\n    withinDays: { type: 'number', description: 'How many days ahead counts as due soon (default 30).' },\n    note: { type: 'string', description: 'What happened, with any reference number exactly as written.' },\n  },\n  outputs: {\n    open: { type: 'number', description: 'Opportunities still being considered or drafted.' },\n    dueSoon: { type: 'number', description: 'Open opportunities due within the window, missed deadlines included.' },\n    awaiting: { type: 'number', description: 'Submissions awaiting a decision.' },\n    awarded: { type: 'number', description: 'Total awarded, in dollars.' },\n    summary: {\n      type: 'string',\n      description: 'What changed first, then the open opportunities by deadline with what each still needs, the submissions awaiting a decision, and the outcomes.',\n    },\n  },\n  requires: ['workspace.read', 'workspace.write', 'reminders'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── grants-rules-start ──\n// Pure derivations: days to a deadline in local calendar days, a moved\n// deadline, money in integer cents, each submission's readiness, and the\n// pipeline lines the crew reads. Kept self-contained between these sentinels\n// so unit tests execute the shipped bytes.\nvar DAY_MS = 86400000;\nvar OPEN_STAGES = ['prospect', 'drafting'];\nvar STOP_WORDS = ['the', 'and', 'for', 'our', 'with', 'from', 'that', 'this', 'into', 'grant', 'fund'];\n\nfunction pad(n) {\n  return n < 10 ? '0' + n : String(n);\n}\nfunction localDay(ms) {\n  var d = new Date(ms);\n  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());\n}\nfunction normalizeDate(text) {\n  var raw = String(text || '').trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(raw)) return raw;\n  var parsed = Date.parse(raw);\n  return isFinite(parsed) ? localDay(parsed) : null;\n}\nfunction dayMs(day) {\n  return Date.parse(String(day).slice(0, 10) + 'T00:00:00');\n}\nfunction daysLeft(day, nowMs) {\n  return Math.round((dayMs(day) - dayMs(localDay(nowMs))) / DAY_MS);\n}\nfunction addDays(day, days) {\n  var d = new Date(String(day).slice(0, 10) + 'T12:00:00');\n  d.setDate(d.getDate() + Math.round(days));\n  return localDay(d.getTime());\n}\nfunction when(days) {\n  if (days < 0) return -days + (days === -1 ? ' day late' : ' days late');\n  if (days === 0) return 'due today';\n  return 'in ' + days + (days === 1 ? ' day' : ' days');\n}\nfunction toCents(amount) {\n  if (typeof amount !== 'number' || !isFinite(amount) || amount < 0) return null;\n  return Math.round(amount * 100);\n}\nfunction money(cents) {\n  var c = Math.round(Number(cents) || 0);\n  var whole = Math.floor(Math.abs(c) / 100);\n  var rest = Math.abs(c) % 100;\n  return (c < 0 ? '-' : '') + '$' + String(whole).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',') + (rest ? '.' + pad(rest) : '');\n}\nfunction normalizeFit(text) {\n  var t = String(text || '').trim().toLowerCase();\n  if (!t) return null;\n  if (/long|weak|low|poor|stretch|unlikely|reach/.test(t)) return 'long shot';\n  if (/strong|great|excellent|perfect|high|ideal/.test(t)) return 'strong';\n  if (/good|ok|fair|decent|medium|possible|moderate|solid/.test(t)) return 'good';\n  return null;\n}\nfunction normalizeKind(text) {\n  var t = String(text || '').trim().toLowerCase();\n  if (!t) return null;\n  if (/rfp|request for proposal|proposal|tender|bid|contract/.test(t)) return 'rfp';\n  if (/fellow|residen/.test(t)) return 'fellowship';\n  if (/sponsor/.test(t)) return 'sponsorship';\n  if (/grant|award|fund/.test(t)) return 'grant';\n  return 'other';\n}\nfunction normalizeStage(text) {\n  var t = String(text || '').trim().toLowerCase();\n  if (/^(prospect|research|consider|maybe|watch|idea)/.test(t)) return 'prospect';\n  if (/^(draft|writ|work|start|in.progress|prepar)/.test(t)) return 'drafting';\n  if (/^(submit|sent|applied|filed|delivered)/.test(t)) return 'submitted';\n  if (/^(pass|skip|not.apply|withdr|drop)/.test(t)) return 'passed';\n  return null;\n}\nfunction normalizeOutcome(text) {\n  var t = String(text || '').trim().toLowerCase();\n  if (/^(award|won|win|funded|granted|approved|accepted|yes)/.test(t)) return 'awarded';\n  if (/^(declin|reject|denied|turned|unsuccess|lost|no\\b)/.test(t)) return 'declined';\n  if (/^(pass|withdr|skip|drop)/.test(t)) return 'passed';\n  return null;\n}\nfunction titleOf(record) {\n  return String((record && record.fields && record.fields.title) || '');\n}\nfunction requirementsFor(op, reqs) {\n  return reqs.filter(function (r) {\n    return r.fields && r.fields.opportunityId === op.id;\n  });\n}\nfunction readiness(op, reqs) {\n  var mine = requirementsFor(op, reqs);\n  var open = mine.filter(function (r) { return r.status !== 'done'; });\n  return { done: mine.length - open.length, total: mine.length, open: open };\n}\nfunction opLine(op, reqs, nowMs) {\n  var f = op.fields || {};\n  var r = readiness(op, reqs);\n  var facts = [f.funder, f.kind, f.fit ? f.fit + ' fit' : '', typeof f.askCents === 'number' ? 'ask ' + money(f.askCents) : '', op.status].filter(Boolean);\n  return (\n    op.id + ' ' + f.title + ' (' + facts.join(', ') + ')' +\n    (f.deadline ? ' due ' + f.deadline + ', ' + when(daysLeft(f.deadline, nowMs)) : ', no deadline yet') +\n    '; requirements ' +\n    (r.total\n      ? r.done + ' of ' + r.total + ' done' + (r.open.length ? ', still to do: ' + r.open.map(function (x) { return x.id + ' ' + titleOf(x); }).join(', ') : ', ready to submit')\n      : 'not listed yet')\n  );\n}\nfunction picture(ops, reqs, nowMs, withinDays) {\n  var byDeadline = function (a, b) { return String(a.fields.deadline).localeCompare(String(b.fields.deadline)); };\n  var open = ops.filter(function (o) { return OPEN_STAGES.indexOf(o.status) >= 0; });\n  // One list, missed deadlines first: asked \"what's due\", a model reads a side list as out of scope.\n  var dated = open.filter(function (o) { return o.fields && o.fields.deadline; }).sort(byDeadline);\n  var undated = open.filter(function (o) { return !(o.fields && o.fields.deadline); });\n  var soon = dated.filter(function (o) { return daysLeft(o.fields.deadline, nowMs) <= withinDays; });\n  var awaiting = ops.filter(function (o) { return o.status === 'submitted'; });\n  var awarded = ops.filter(function (o) { return o.status === 'awarded'; });\n  var declined = ops.filter(function (o) { return o.status === 'declined'; });\n  var passed = ops.filter(function (o) { return o.status === 'passed'; });\n  var askCents = open.reduce(function (sum, o) { return sum + (typeof o.fields.askCents === 'number' ? o.fields.askCents : 0); }, 0);\n  var awardedCents = awarded.reduce(function (sum, o) { return sum + (typeof o.fields.awardCents === 'number' ? o.fields.awardCents : 0); }, 0);\n  var parts = [];\n  parts.push(\n    open.length\n      ? open.length + (open.length === 1 ? ' open opportunity' : ' open opportunities') + (askCents ? ', asking ' + money(askCents) + ' in all' : '') + ', ' + soon.length + ' due within ' + withinDays + ' days.'\n      : ops.length ? 'No open opportunities.' : 'No open opportunities yet.',\n  );\n  if (dated.length) parts.push('Open opportunities by deadline, soonest first: ' + dated.map(function (o) { return opLine(o, reqs, nowMs); }).join(' | ') + '.');\n  if (undated.length) parts.push('No deadline yet: ' + undated.map(function (o) { return opLine(o, reqs, nowMs); }).join(' | ') + '.');\n  parts.push(\n    awaiting.length\n      ? 'Submitted, awaiting a decision: ' +\n          awaiting.map(function (o) {\n            var f = o.fields;\n            return o.id + ' ' + f.title + ' (' + [f.funder, typeof f.askCents === 'number' ? 'ask ' + money(f.askCents) : '', f.submittedAt ? 'submitted ' + f.submittedAt : ''].filter(Boolean).join(', ') + ')';\n          }).join('; ') + '.'\n      : 'Nothing awaiting a decision.',\n  );\n  if (awarded.length || declined.length || passed.length) {\n    parts.push(\n      'Outcomes: ' + awarded.length + ' awarded' +\n        (awarded.length ? ' (' + money(awardedCents) + ': ' + awarded.map(function (o) { return titleOf(o) + ' ' + money(o.fields.awardCents || 0); }).join(', ') + ')' : '') +\n        ', ' + declined.length + ' declined, ' + passed.length + ' passed on.',\n    );\n  }\n  return { open: open.length, dueSoon: soon.length, awaiting: awaiting.length, awardedCents: awardedCents, summary: parts.join(' ') };\n}\n// Find one record by id, exact title, partial title, or every word of the\n// title; a miss lists what there is so the next call can name it.\nfunction pick(records, wanted, label) {\n  var text = String(wanted || '').trim();\n  var lower = text.toLowerCase();\n  if (!lower) throw new Error('Name the ' + label + ' by its id or title.');\n  var byId = records.filter(function (r) { return r.id === lower; });\n  if (byId.length) return byId[0];\n  var exact = records.filter(function (r) { return titleOf(r).toLowerCase() === lower; });\n  if (exact.length === 1) return exact[0];\n  var partial = records.filter(function (r) {\n    var t = titleOf(r).toLowerCase();\n    var funder = String((r.fields && r.fields.funder) || '').toLowerCase();\n    return t.indexOf(lower) >= 0 || (funder && funder.indexOf(lower) >= 0);\n  });\n  if (partial.length === 1) return partial[0];\n  if (!partial.length) {\n    var words = (lower.match(/[a-z0-9]{3,}/g) || []).filter(function (w) { return STOP_WORDS.indexOf(w) < 0; });\n    partial = words.length\n      ? records.filter(function (r) {\n          var t = (titleOf(r) + ' ' + String((r.fields && r.fields.funder) || '')).toLowerCase();\n          return words.every(function (w) { return t.indexOf(w) >= 0 || t.indexOf(w.replace(/ies$/, 'y').replace(/s$/, '')) >= 0; });\n        })\n      : [];\n    if (partial.length === 1) return partial[0];\n  }\n  var known = (partial.length > 1 ? partial : records).map(function (r) { return r.id + ' ' + titleOf(r); }).join(', ');\n  throw new Error(\n    (partial.length > 1 ? 'More than one ' + label + \" matches '\" + text + \"': \" : 'No ' + label + \" matches '\" + text + \"'. Known: \") +\n      (known || 'none yet') + '. Pass the id.',\n  );\n}\nfunction pickPreferring(preferred, all, wanted, label) {\n  try {\n    return pick(preferred, wanted, label);\n  } catch (error) {\n    return pick(all, wanted, label);\n  }\n}\nfunction requirementTitles(single, list) {\n  var items = [];\n  if (Array.isArray(list)) items = list.map(function (x) { return String(x); });\n  else if (typeof list === 'string') items = list.split(/\\s*(?:;|\\n)\\s*/);\n  if (single) items.unshift(String(single));\n  var seen = [];\n  return items\n    .map(function (x) { return x.replace(/^[\\s*-]+/, '').trim(); })\n    .filter(function (x) {\n      if (!x || seen.indexOf(x.toLowerCase()) >= 0) return false;\n      seen.push(x.toLowerCase());\n      return true;\n    });\n}\n// ── grants-rules-end ──\n\nconst opportunities = rosterStore(gezel.fs, 'opportunities.json', {\n  stages: ['prospect', 'drafting', 'submitted', 'awarded', 'declined', 'passed'],\n  idPrefix: 'op',\n});\nconst requirements = rosterStore(gezel.fs, 'requirements.json', { stages: ['todo', 'done'], idPrefix: 'req' });\n\nfunction text(value: unknown): string {\n  return typeof value === 'string' ? value.trim() : '';\n}\nasync function findOpportunity(wanted: string) {\n  const all = await opportunities.list();\n  const live = all.filter((o) => OPEN_STAGES.includes(o.status) || o.status === 'submitted');\n  return pickPreferring(live, all, wanted, 'opportunity');\n}\n\n// The desk's one reminder sits two weeks ahead of the soonest open deadline.\nasync function remindNextDeadline(): Promise<void> {\n  const now = Date.now();\n  const lead = 14 * DAY_MS;\n  const reqs = await requirements.list();\n  const next = (await opportunities.list())\n    .filter((o) => OPEN_STAGES.includes(o.status) && typeof o.fields.deadline === 'string')\n    .map((o) => ({ op: o, at: Date.parse(String(o.fields.deadline) + 'T09:00:00') - lead }))\n    .filter((o) => o.at > now)\n    .sort((a, b) => a.at - b.at)[0];\n  try {\n    if (!next || next.at - now > 30 * DAY_MS) {\n      await gezel.reminder.clear();\n    } else {\n      const name = titleOf(next.op);\n      const ready = readiness(next.op, reqs);\n      await gezel.reminder.set({\n        at: new Date(next.at).toISOString(),\n        title: (name.length > 58 ? name.slice(0, 57) + '…' : name) + ' is due in two weeks',\n        body: 'Deadline ' + String(next.op.fields.deadline) + '. ' + (ready.total ? ready.done + ' of ' + ready.total + ' requirements done.' : 'No requirements listed yet.'),\n      });\n    }\n  } catch {\n    // Reminders are a convenience; the pipeline is the record.\n  }\n}\n\n// The fields an add or update sets; a missing deadline to extend is an error.\nfunction changes(existingDeadline: string | null): { fields: Record<string, unknown>; said: string[] } {\n  const fields: Record<string, unknown> = {};\n  const said: string[] = [];\n  if (text(input.funder)) fields.funder = text(input.funder);\n  if (text(input.kind)) fields.kind = normalizeKind(input.kind);\n  if (text(input.fit)) {\n    const fit = normalizeFit(input.fit);\n    if (!fit) throw new Error(\"fit must be 'strong', 'good', or 'long shot'.\");\n    fields.fit = fit;\n  }\n  if (text(input.url)) fields.url = text(input.url);\n  if (text(input.note)) fields.notes = text(input.note);\n  if (typeof input.ask === 'number') {\n    const cents = toCents(input.ask);\n    if (cents === null) throw new Error('ask must be an amount in dollars, e.g. 8000.');\n    fields.askCents = cents;\n    said.push('ask ' + money(cents));\n  }\n  let deadline = existingDeadline;\n  if (text(input.deadline)) {\n    const day = normalizeDate(input.deadline);\n    if (!day) throw new Error(\"deadline must be a date, e.g. '2026-12-15'.\");\n    deadline = day;\n    fields.deadline = day;\n    said.push('deadline ' + day);\n  }\n  if (typeof input.extendDays === 'number' && input.extendDays !== 0) {\n    if (!deadline) throw new Error('There is no deadline to move yet; pass deadline (YYYY-MM-DD).');\n    const moved = addDays(deadline, input.extendDays);\n    said.push('deadline moved from ' + deadline + ' to ' + moved);\n    fields.deadline = moved;\n  }\n  return { fields, said };\n}\n\nconst withinDays = typeof input.withinDays === 'number' && input.withinDays > 0 ? Math.round(input.withinDays) : 30;\nlet note = '';\n\nif (input.action === 'add') {\n  const title = text(input.title) || text(input.opportunity);\n  if (!title) throw new Error(\"add needs 'title', e.g. 'Small Press Grant'.\");\n  const existing = (await opportunities.list()).find((o) => titleOf(o).toLowerCase() === title.toLowerCase());\n  const { fields, said } = changes(existing ? String(existing.fields.deadline ?? '') || null : null);\n  if (existing) {\n    await opportunities.update(existing.id, { fields, ...(said.length ? { note: said.join('; ') } : {}) });\n    note = 'Updated ' + existing.id + ' ' + titleOf(existing) + (said.length ? ': ' + said.join(', ') : '') + '.';\n  } else {\n    const record = await opportunities.add({ status: 'prospect', fields: { title, kind: 'grant', ...fields } });\n    note = 'Added ' + record.id + ' ' + title + (fields.deadline ? ', due ' + String(fields.deadline) : '') + '.';\n  }\n} else if (input.action === 'update') {\n  const wanted = text(input.opportunity) || text(input.title);\n  if (!wanted) throw new Error(\"update needs 'opportunity' (its id or title).\");\n  const op = await findOpportunity(wanted);\n  const { fields, said } = changes(String(op.fields.deadline ?? '') || null);\n  if (!Object.keys(fields).length) {\n    throw new Error('Nothing to change: pass deadline, extendDays, ask, fit, funder, kind, url or note.');\n  }\n  await opportunities.update(op.id, { fields, ...(said.length ? { note: said.join('; ') } : {}) });\n  note = 'Updated ' + op.id + ' ' + titleOf(op) + (said.length ? ': ' + said.join(', ') : '') + '.';\n} else if (input.action === 'stage') {\n  const stage = normalizeStage(input.stage);\n  if (!stage) throw new Error(\"stage must be 'prospect', 'drafting', 'submitted', or 'passed'.\");\n  const wanted = text(input.opportunity) || text(input.title);\n  if (!wanted) throw new Error(\"stage needs 'opportunity' (its id or title).\");\n  const op = await findOpportunity(wanted);\n  if (op.status !== stage) await opportunities.transition(op.id, stage, text(input.note) ? { note: text(input.note) } : {});\n  const ready = readiness(op, await requirements.list());\n  if (stage === 'submitted') {\n    await opportunities.update(op.id, { fields: { submittedAt: localDay(Date.now()) } });\n    note =\n      titleOf(op) + ' is submitted.' +\n      (ready.open.length ? ' ' + ready.open.length + ' requirement' + (ready.open.length === 1 ? ' was' : 's were') + ' still open: ' + ready.open.map(titleOf).join(', ') + '.' : '');\n  } else {\n    note = titleOf(op) + (stage === 'passed' ? ' is passed on.' : ' is now ' + stage + '.');\n  }\n} else if (input.action === 'outcome') {\n  const outcome = normalizeOutcome(input.outcome);\n  if (!outcome) throw new Error(\"outcome must be 'awarded', 'declined', or 'passed'.\");\n  const wanted = text(input.opportunity) || text(input.title);\n  if (!wanted) throw new Error(\"outcome needs 'opportunity' (its id or title).\");\n  const op = await findOpportunity(wanted);\n  const fields: Record<string, unknown> = { decidedAt: localDay(Date.now()) };\n  if (outcome === 'awarded' && typeof input.award === 'number') {\n    const cents = toCents(input.award);\n    if (cents === null) throw new Error('award must be an amount in dollars, e.g. 6000.');\n    fields.awardCents = cents;\n  }\n  if (text(input.note)) fields.outcomeNote = text(input.note);\n  await opportunities.update(op.id, { fields });\n  if (op.status !== outcome) await opportunities.transition(op.id, outcome, text(input.note) ? { note: text(input.note) } : {});\n  note =\n    titleOf(op) + (outcome === 'awarded' ? ' was awarded' + (typeof fields.awardCents === 'number' ? ' ' + money(fields.awardCents as number) : '') : outcome === 'declined' ? ' was declined' : ' is passed on') +\n    (outcome === 'awarded' && typeof op.fields.askCents === 'number' ? ' (asked ' + money(op.fields.askCents as number) + ')' : '') + '.';\n} else if (input.action === 'add_requirement') {\n  const wanted = text(input.opportunity);\n  if (!wanted) throw new Error(\"add_requirement needs 'opportunity' (its id or title) and 'title'.\");\n  const op = await findOpportunity(wanted);\n  const titles = requirementTitles(text(input.title), input.titles);\n  if (!titles.length) throw new Error(\"add_requirement needs 'title', e.g. 'Budget narrative'.\");\n  const mine = requirementsFor(op, await requirements.list());\n  const added: string[] = [];\n  const kept: string[] = [];\n  for (const title of titles) {\n    const existing = mine.find((r) => titleOf(r).toLowerCase() === title.toLowerCase());\n    if (existing) {\n      if (text(input.owner)) await requirements.update(existing.id, { fields: { owner: text(input.owner) } });\n      kept.push(titleOf(existing));\n      continue;\n    }\n    const record = await requirements.add({\n      status: 'todo',\n      fields: { opportunityId: op.id, opportunity: titleOf(op), title, ...(text(input.owner) ? { owner: text(input.owner) } : {}) },\n    });\n    added.push(record.id + ' ' + title);\n  }\n  note =\n    (added.length ? 'Added to ' + titleOf(op) + ': ' + added.join(', ') + '.' : '') +\n    (kept.length ? (added.length ? ' ' : '') + 'Already on its list: ' + kept.join(', ') + '.' : '');\n} else if (input.action === 'check_requirement') {\n  const wanted = text(input.requirement) || text(input.title);\n  if (!wanted) throw new Error(\"check_requirement needs 'requirement' (its id or title).\");\n  let pool = await requirements.list();\n  const all = pool;\n  if (text(input.opportunity)) {\n    const op = await findOpportunity(text(input.opportunity));\n    pool = pool.filter((r) => r.fields.opportunityId === op.id);\n  }\n  const done = input.done !== false;\n  const req = pickPreferring(\n    pool.filter((r) => (done ? r.status !== 'done' : r.status === 'done')),\n    pool.length ? pool : all,\n    wanted,\n    'requirement',\n  );\n  const target = done ? 'done' : 'todo';\n  if (req.status !== target) await requirements.transition(req.id, target, text(input.note) ? { note: text(input.note) } : {});\n  const op = (await opportunities.list()).find((o) => o.id === req.fields.opportunityId);\n  const ready = op ? readiness(op, await requirements.list()) : null;\n  note =\n    (done ? 'Done: ' : 'Reopened: ') + titleOf(req) + (op ? ' for ' + titleOf(op) : '') +\n    (ready ? ' (' + ready.done + ' of ' + ready.total + ' requirements done).' : '.');\n} else if (input.action !== 'status') {\n  throw new Error(\"Unknown action '\" + input.action + \"'. Use status, add, update, stage, outcome, add_requirement, or check_requirement.\");\n}\n\nconst view = picture(await opportunities.list(), await requirements.list(), Date.now(), withinDays);\nawait remindNextDeadline();\n\ngezel.output({\n  open: view.open,\n  dueSoon: view.dueSoon,\n  awaiting: view.awaiting,\n  awarded: view.awardedCents / 100,\n  summary: (note ? note + ' ' : '') + view.summary,\n});\n"
+  },
+  "tools": [
+    {
+      "name": "grants_status",
+      "description": "The whole pipeline: every open opportunity by deadline, soonest first (missed ones included), each with its funder, fit, ask, stage and the requirements still to do (with ids); what is submitted and awaiting a decision; and the outcomes so far. Call it first when asked what's due or where things stand.",
+      "script": "grants-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "withinDays": {
+            "type": "number"
+          }
+        }
+      },
+      "bind": {
+        "action": "status"
+      },
+      "state": true
+    },
+    {
+      "name": "add_opportunity",
+      "description": "Save a funding opportunity or request for proposals: its title, funder, kind, deadline (YYYY-MM-DD), the ask in dollars, and how well it fits. An existing title is updated, never duplicated. Call it as soon as one is mentioned, before you describe it.",
+      "script": "grants-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "e.g. 'Small Press Grant'"
+          },
+          "funder": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "grant",
+              "rfp",
+              "fellowship",
+              "sponsorship",
+              "other"
+            ]
+          },
+          "deadline": {
+            "type": "string",
+            "description": "YYYY-MM-DD"
+          },
+          "ask": {
+            "type": "number",
+            "description": "The amount requested, in dollars."
+          },
+          "fit": {
+            "type": "string",
+            "enum": [
+              "strong",
+              "good",
+              "long shot"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add"
+      }
+    },
+    {
+      "name": "update_opportunity",
+      "description": "Change an opportunity already on the list. When the funder moves the deadline by some days or weeks ('extended by two weeks'), pass extendDays (14) and the desk moves it; pass deadline only when they give the new date. Never work the date out yourself. Call it the moment they tell you, before you reply.",
+      "script": "grants-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "opportunity": {
+            "type": "string",
+            "description": "The opportunity's id (e.g. 'op-2') or title."
+          },
+          "extendDays": {
+            "type": "number",
+            "description": "How many days later the deadline moved, e.g. 14 for two weeks."
+          },
+          "deadline": {
+            "type": "string",
+            "description": "A new deadline, YYYY-MM-DD, only when they give the date."
+          },
+          "ask": {
+            "type": "number",
+            "description": "A new amount requested, in dollars."
+          },
+          "fit": {
+            "type": "string",
+            "enum": [
+              "strong",
+              "good",
+              "long shot"
+            ]
+          },
+          "funder": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "grant",
+              "rfp",
+              "fellowship",
+              "sponsorship",
+              "other"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "opportunity"
+        ]
+      },
+      "bind": {
+        "action": "update"
+      }
+    },
+    {
+      "name": "set_stage",
+      "description": "Move an opportunity to prospect, drafting, submitted (the moment it is sent, with any confirmation number as the note) or passed (decided not to apply). Call it as soon as the person says it moved.",
+      "script": "grants-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "opportunity": {
+            "type": "string",
+            "description": "The opportunity's id (e.g. 'op-2') or title."
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "prospect",
+              "drafting",
+              "submitted",
+              "passed"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "description": "Any confirmation number, exactly as given."
+          }
+        },
+        "required": [
+          "opportunity",
+          "stage"
+        ]
+      },
+      "bind": {
+        "action": "stage"
+      }
+    },
+    {
+      "name": "record_outcome",
+      "description": "Record the funder's decision the moment it comes in: awarded (with the amount in dollars), declined, or passed. Put reporting dates or feedback in the note.",
+      "script": "grants-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "opportunity": {
+            "type": "string",
+            "description": "The opportunity's id (e.g. 'op-2') or title."
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "awarded",
+              "declined",
+              "passed"
+            ]
+          },
+          "award": {
+            "type": "number",
+            "description": "The amount awarded, in dollars."
+          },
+          "note": {
+            "type": "string",
+            "description": "Reporting dates, feedback or conditions, in their words."
+          }
+        },
+        "required": [
+          "opportunity",
+          "outcome"
+        ]
+      },
+      "bind": {
+        "action": "outcome"
+      }
+    },
+    {
+      "name": "add_requirement",
+      "description": "Add what a submission needs to its checklist (a budget narrative, work samples, a board list, letters of support): one as title, or several as titles. Existing items are kept, never duplicated. Call it as soon as the guidelines are read or the person lists them.",
+      "script": "grants-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "opportunity": {
+            "type": "string",
+            "description": "The opportunity's id (e.g. 'op-2') or title."
+          },
+          "title": {
+            "type": "string",
+            "description": "One thing the submission needs, e.g. 'Budget narrative'."
+          },
+          "titles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Several requirements at once."
+          },
+          "owner": {
+            "type": "string",
+            "description": "Who is preparing it."
+          }
+        },
+        "required": [
+          "opportunity"
+        ]
+      },
+      "bind": {
+        "action": "add_requirement"
+      }
+    },
+    {
+      "name": "check_requirement",
+      "description": "Check a requirement off the moment the person says it is ready (done: false reopens it).",
+      "script": "grants-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "requirement": {
+            "type": "string",
+            "description": "The requirement's id (e.g. 'req-4') or title."
+          },
+          "opportunity": {
+            "type": "string",
+            "description": "The opportunity's id (e.g. 'op-2') or title."
+          },
+          "done": {
+            "type": "boolean",
+            "description": "false reopens it."
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "requirement"
+        ]
+      },
+      "bind": {
+        "action": "check_requirement"
+      }
+    },
+    {
+      "name": "page_add_opportunity",
+      "description": "Add or update an opportunity.",
+      "script": "grants-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "e.g. 'Small Press Grant'"
+          },
+          "funder": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "grant",
+              "rfp",
+              "fellowship",
+              "sponsorship",
+              "other"
+            ]
+          },
+          "deadline": {
+            "type": "string",
+            "description": "YYYY-MM-DD"
+          },
+          "ask": {
+            "type": "number",
+            "description": "The amount requested, in dollars."
+          },
+          "fit": {
+            "type": "string",
+            "enum": [
+              "strong",
+              "good",
+              "long shot"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add"
+      }
+    },
+    {
+      "name": "page_add_requirement",
+      "description": "Add a requirement to a submission.",
+      "script": "grants-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "opportunity": {
+            "type": "string",
+            "description": "The opportunity's id (e.g. 'op-2') or title."
+          },
+          "title": {
+            "type": "string",
+            "description": "One thing the submission needs, e.g. 'Budget narrative'."
+          },
+          "titles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Several requirements at once."
+          },
+          "owner": {
+            "type": "string",
+            "description": "Who is preparing it."
+          }
+        },
+        "required": [
+          "opportunity"
+        ]
+      },
+      "bind": {
+        "action": "add_requirement"
+      }
+    },
+    {
+      "name": "page_check_requirement",
+      "description": "Check a requirement off, or reopen it.",
+      "script": "grants-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "requirement": {
+            "type": "string",
+            "description": "The requirement's id (e.g. 'req-4') or title."
+          },
+          "opportunity": {
+            "type": "string",
+            "description": "The opportunity's id (e.g. 'op-2') or title."
+          },
+          "done": {
+            "type": "boolean",
+            "description": "false reopens it."
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "requirement"
+        ]
+      },
+      "bind": {
+        "action": "check_requirement"
+      }
+    },
+    {
+      "name": "page_set_stage",
+      "description": "Move an opportunity to another stage.",
+      "script": "grants-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "opportunity": {
+            "type": "string",
+            "description": "The opportunity's id (e.g. 'op-2') or title."
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "prospect",
+              "drafting",
+              "submitted",
+              "passed"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "description": "Any confirmation number, exactly as given."
+          }
+        },
+        "required": [
+          "opportunity",
+          "stage"
+        ]
+      },
+      "bind": {
+        "action": "stage"
+      },
+      "reaction": {
+        "gezel": "aanjager",
+        "hideSeed": true,
+        "prompt": "The person just moved an opportunity on the grants page. The pipeline now reads (its first sentence is what changed):\n{{output.summary}}\nIn two short sentences, confirm the move (if it was submitted, note any requirement that was still open), and name the next deadline to work on. Do not call tools."
+      }
+    },
+    {
+      "name": "page_record_outcome",
+      "description": "Record the funder's decision.",
+      "script": "grants-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "opportunity": {
+            "type": "string",
+            "description": "The opportunity's id (e.g. 'op-2') or title."
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "awarded",
+              "declined",
+              "passed"
+            ]
+          },
+          "award": {
+            "type": "number",
+            "description": "The amount awarded, in dollars."
+          },
+          "note": {
+            "type": "string",
+            "description": "Reporting dates, feedback or conditions, in their words."
+          }
+        },
+        "required": [
+          "opportunity",
+          "outcome"
+        ]
+      },
+      "bind": {
+        "action": "outcome"
+      },
+      "reaction": {
+        "gezel": "aanjager",
+        "hideSeed": true,
+        "prompt": "The person just recorded a funder's decision on the grants page. The pipeline now reads (its first sentence is what changed):\n{{output.summary}}\nIn two short sentences, respond to the decision: for an award, suggest the thank-you and noting the reporting dates; for a decline, suggest asking the program officer for feedback. Then name the next deadline. Do not call tools."
+      }
+    }
+  ],
+  "craftbooks": [
+    "research-report",
+    "proposal-sow",
+    "evidence-brief"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "grants/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "opportunities.json"
+      },
+      {
+        "source": "workspace",
+        "path": "requirements.json"
+      }
+    ],
+    "tools": [
+      "page_add_opportunity",
+      "page_add_requirement",
+      "page_check_requirement",
+      "page_set_stage",
+      "page_record_outcome"
+    ]
+  },
+  "workspaceSeed": [
+    "opportunities.json",
+    "requirements.json"
+  ],
+  "minGezelVersion": "1.26280"
+}

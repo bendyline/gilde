@@ -1,0 +1,864 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Event desk</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f6f2ec; --card: #fffcf7; --ink: #2a2420; --muted: #6d6158; --line: #ddd2c6;
+        --accent: #74466e; --late: #a3341f; --late-bg: #f7e1da; --soon: #8a5a12; --soon-bg: #f6ead2;
+        --ok: #3f6b4a; --ok-bg: #e2eedf; --chip: #efe6dc; --fill: #74466e; --fill-soft: #dcc6d8;
+      }
+      :root[data-theme='dark'] {
+        --bg: #181614; --card: #221e1c; --ink: #efe8df; --muted: #a99c90; --line: #3b332e;
+        --accent: #d7a8cf; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+        --ok: #8fc29b; --ok-bg: #22301f; --chip: #2e2724; --fill: #c58fbd; --fill-soft: #4a3546;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #181614; --card: #221e1c; --ink: #efe8df; --muted: #a99c90; --line: #3b332e;
+          --accent: #d7a8cf; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+          --ok: #8fc29b; --ok-bg: #22301f; --chip: #2e2724; --fill: #c58fbd; --fill-soft: #4a3546;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body, system-ui, sans-serif); font-size: 15px; line-height: 1.5; padding: 1.5rem 1.25rem; }
+      main { max-width: 900px; margin: 0 auto; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.5rem; font-weight: 400; margin: 0 0 0.2rem; }
+      h2 { font-family: var(--font-heading, Georgia, serif); font-size: 1.1rem; font-weight: 400; margin: 0 0 0.6rem; }
+      .sub { color: var(--muted); margin: 0 0 0.2rem; }
+      .details { color: var(--muted); font-size: 0.85rem; margin: 0 0 1rem; overflow-wrap: anywhere; }
+      .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; margin: 0 0 1.2rem; }
+      .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem 0.9rem; }
+      .tile b { display: block; font-size: 1.5rem; font-weight: 600; line-height: 1.1; }
+      .tile span { color: var(--muted); font-size: 0.85rem; }
+      .tile.soon b { color: var(--soon); }
+      .tile.late b { color: var(--late); }
+      section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin: 0 0 1rem; }
+      .lead { margin: 0 0 0.6rem; font-size: 0.9rem; color: var(--muted); }
+      .table-wrap { overflow-x: auto; position: relative; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+      .table-wrap table { min-width: 34rem; }
+      th { text-align: left; font-weight: 600; color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 0.5rem 0.4rem; border-bottom: 1px solid var(--line); }
+      td { padding: 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+      tr:last-child td { border-bottom: 0; }
+      td.num, th.num { text-align: right; white-space: nowrap; }
+      td.actions { white-space: nowrap; }
+      tr.chosen td { background: color-mix(in srgb, var(--card) 86%, var(--accent)); }
+      .meta { display: block; color: var(--muted); font-size: 0.82rem; overflow-wrap: anywhere; }
+      .chip { display: inline-block; font-size: 0.78rem; padding: 0.05rem 0.4rem; border-radius: 4px; background: var(--chip); white-space: nowrap; }
+      .chip.ok { background: var(--ok-bg); color: var(--ok); }
+      .chip.soon { background: var(--soon-bg); color: var(--soon); }
+      .chip.late { background: var(--late-bg); color: var(--late); }
+      .short { color: var(--late); }
+      .key { min-height: 32px; padding: 0.2rem 0.65rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); font: inherit; font-size: 0.85rem; cursor: pointer; white-space: nowrap; }
+      .key:hover { background: var(--chip); }
+      .row-actions { text-align: right; white-space: nowrap; }
+      td.meta { display: table-cell; }
+      .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+      .show li > .key { justify-self: start; }
+      .needs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 0.75rem; }
+      .show { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.45rem; }
+      .show li { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr) auto; gap: 0.75rem; align-items: start; }
+      .show .at { font-size: 0.8rem; font-weight: 600; padding: 0.15rem 0.45rem; border-radius: 4px; text-align: center; background: var(--chip); }
+      .show li.arrival .at { background: transparent; border: 1px dashed var(--line); color: var(--muted); font-weight: 400; }
+      .show li.arrival .what { color: var(--muted); }
+      .bar { display: flex; height: 14px; border-radius: 4px; overflow: hidden; background: var(--chip); margin: 0.4rem 0 0.5rem; }
+      .bar i { display: block; height: 100%; }
+      .bar .paid { background: var(--fill); }
+      .bar .signed { background: var(--fill-soft); }
+      .legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1.1rem; font-size: 0.85rem; color: var(--muted); margin: 0 0 0.6rem; }
+      .legend b { color: var(--ink); font-weight: 600; }
+      .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 0.35rem; vertical-align: baseline; }
+      .empty { color: var(--muted); font-style: italic; margin: 0; }
+      li.empty { display: block; }
+      #by-kind li { grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; padding: 0.2rem 0; border-bottom: 1px solid var(--line); }
+      #by-kind li:last-child { border-bottom: 0; }
+      #by-kind .at { order: 2; padding: 0; background: transparent; text-align: right; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+      .demo-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 0 0 1rem; padding: 0.5rem 0.65rem; border: 1px solid var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--card) 88%, var(--accent)); font-size: 0.85rem; }
+      .demo-banner[hidden] { display: none; }
+      .demo-reset { flex: none; min-height: 36px; padding: 0.3rem 0.7rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; }
+      .note { color: var(--muted); font-size: 0.85rem; margin: 0.75rem 0 0; }
+      @media (max-width: 640px) {
+        .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .show li { grid-template-columns: minmax(0, 1fr); gap: 0.15rem; }
+        .show .at { justify-self: start; }
+      }
+    </style>
+    <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:0 0 12px;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--line,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+    <style data-app-shell="2">
+    /* Shared app furniture from the Gezel app UX guide. The page owns everything else. */
+    :root{--app-action:var(--gezel-component-accent,#805128);--app-on-action:#fffaf3;--app-banner-bg:#f3eddf;--app-banner-line:#d6cbb8}
+    :root[data-theme=dark]{--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}
+    @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}}
+    main h1{font-weight:400}
+    html[data-gezel-fullscreen=true] main h1{font-size:clamp(28px,3vw,40px);margin-top:0}
+    .app-tabs{margin:20px 0 24px}
+    .app-actionbar{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin:16px 0 24px}
+    .app-panel>.app-actionbar:first-child{margin-top:0}
+    .app-settings{display:grid;gap:16px;max-width:760px;margin:0 0 24px}
+    .app-search{margin:0}
+    .app-search gezel-collection-filter{margin:0 0 12px;max-width:540px}
+    .app-primary{min-height:44px;padding:8px 16px;border:1px solid var(--app-action);border-radius:6px;background:var(--app-action);color:var(--app-on-action);font-weight:600}
+    .app-primary:disabled{display:none}
+    main li.empty{display:block;grid-column:1/-1}
+    html[data-app-legacy] [data-app-action]{display:none!important}
+    [data-gezel-demo-banner]:not([hidden]){display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin:0 0 16px;padding:8px 8px 8px 14px;border:1px solid var(--app-banner-line);border-radius:10px;background:var(--app-banner-bg);color:inherit;font-size:14px;line-height:1.4}
+    [data-gezel-demo-banner] button{min-height:32px;padding:4px 12px;border:1px solid var(--app-banner-line);border-radius:6px;background:transparent;color:inherit;font-size:13px}
+    @media(max-width:620px){.tiles,.stats,.summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:nth-child(3):last-child){grid-template-columns:repeat(3,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:only-child){grid-template-columns:minmax(0,1fr)!important}}
+    </style>
+    <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script>
+  </head>
+  <body>
+    <main>
+      <p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong>: Fernwood Studio’s sample client summit. Changes stay in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Event desk</h1>
+      <div class="intro">
+        <p class="sub" id="sub">Loading the event…</p>
+        <p class="details" id="details"></p>
+      </div>
+      <div class="tiles">
+        <div class="tile"><b id="t-days">–</b><span id="t-days-label">Days to go</span></div>
+        <div class="tile"><b id="t-coming">0</b><span id="t-coming-label">Coming</span></div>
+        <div class="tile"><b id="t-diet">0</b><span>Dietary answers to chase</span></div>
+        <div class="tile"><b id="t-left">$0</b><span id="t-left-label">Left to commit</span></div>
+      </div>
+      <section id="venues-section">
+        <h2>Venues</h2>
+        <p class="lead" id="venues-lead"></p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Venue</th><th class="num">Holds</th><th class="num">Hire</th><th>Catering</th><th>Sound and screens</th><th class="num" id="venues-for">All in</th><th>Status</th></tr></thead>
+            <tbody id="venues-body"></tbody>
+          </table>
+        </div>
+      </section>
+      <section id="vendors-section">
+        <h2>Vendors and deposits</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Vendor</th><th>Kind</th><th class="num">Contract</th><th class="num">Paid</th><th>Next payment</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr></thead>
+            <tbody id="vendors-body"></tbody>
+          </table>
+        </div>
+        <p class="note">The desk tracks what you agreed and what you paid. It does not read contract terms; for cancellation or liability clauses, ask the vendor or a lawyer.</p>
+      </section>
+      <section id="guests-section">
+        <h2>Guests</h2>
+        <p class="lead" id="guests-lead"></p>
+        <div class="needs" id="needs"></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Guest</th><th>Company</th><th>RSVP</th><th class="num">Party</th><th>Dietary</th><th><span class="sr-only">Actions</span></th></tr></thead>
+            <tbody id="guests-body"></tbody>
+          </table>
+        </div>
+      </section>
+      <section id="show-section">
+        <h2>Run of show</h2>
+        <ul class="show" id="show"></ul>
+      </section>
+      <section id="budget-section">
+        <h2>Budget</h2>
+        <div class="bar" id="bar" role="img" aria-label="Budget"></div>
+        <div class="legend" id="legend"></div>
+        <ul class="show" id="by-kind"></ul>
+      </section>
+    </main>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        // The event-desk-store rules, copied from the manifest's script so the sample behaves like the live desk.
+// ── event-desk-rules-start ──
+// Pure derivations: money in integer cents, local calendar days, clock times,
+// dietary answers, the venue comparison and the desk picture the crew reads.
+// Kept self-contained between these sentinels so tests (and the page's demo)
+// execute the shipped bytes.
+var DAY_MS = 86400000;
+var VENUE_STAGES = ['shortlisted', 'visited', 'held', 'booked', 'declined'];
+var VENDOR_STAGES = ['quoted', 'booked', 'paid', 'dropped'];
+var GUEST_STAGES = ['invited', 'yes', 'no'];
+var VENDOR_KINDS = ['venue', 'catering', 'av', 'entertainment', 'photography', 'rentals', 'decor', 'transport', 'other'];
+
+function pad(n) {
+  return n < 10 ? '0' + n : String(n);
+}
+function localDay(ms) {
+  var d = new Date(ms);
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+}
+function isDay(text) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(text || ''));
+}
+function normalizeDate(text, nowMs) {
+  var raw = String(text || '').trim();
+  if (isDay(raw)) return raw;
+  // Only something that reads as a date: a month name with a day, or numbers like 12/10.
+  if (!/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d|\d\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|\d{1,4}[/.-]\d{1,2}[/.-]\d{1,4}/i.test(raw)) return null;
+  if (/\d{4}/.test(raw)) {
+    var full = Date.parse(raw);
+    return isFinite(full) ? localDay(full) : null;
+  }
+  // 'December 10' names the next December 10, not one in 2001.
+  var now = new Date(nowMs || Date.now());
+  var parsed = Date.parse(raw + ' ' + now.getFullYear());
+  if (!isFinite(parsed)) return null;
+  if (parsed < now.getTime() - 31 * DAY_MS) parsed = Date.parse(raw + ' ' + (now.getFullYear() + 1));
+  return localDay(parsed);
+}
+function daysLeft(day, nowMs) {
+  var due = Date.parse(String(day).slice(0, 10) + 'T00:00:00');
+  var today = Date.parse(localDay(nowMs) + 'T00:00:00');
+  return Math.round((due - today) / DAY_MS);
+}
+function when(days) {
+  if (days < 0) return -days + (days === -1 ? ' day late' : ' days late');
+  if (days === 0) return 'due today';
+  return 'in ' + days + (days === 1 ? ' day' : ' days');
+}
+function key(text) {
+  return String(text || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9&]+/g, ' ')
+    .trim();
+}
+// 'exact', 'partial' (the name starts with the words given, or contains them whole), or ''.
+function nameMatch(name, wanted) {
+  var have = key(name);
+  var want = key(wanted);
+  if (!have || !want) return '';
+  if (have === want) return 'exact';
+  return (' ' + have).indexOf(' ' + want) >= 0 || (' ' + want + ' ').indexOf(' ' + have + ' ') >= 0 ? 'partial' : '';
+}
+function toCents(amount) {
+  var n = typeof amount === 'string' ? Number(String(amount).replace(/[$,\s]/g, '')) : amount;
+  return typeof n === 'number' && isFinite(n) ? Math.round(n * 100) : null;
+}
+function money(cents) {
+  var c = Math.round(Number(cents) || 0);
+  var sign = c < 0 ? '-' : '';
+  c = Math.abs(c);
+  var whole = String(Math.floor(c / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return sign + '$' + whole + (c % 100 ? '.' + pad(c % 100) : '');
+}
+function normalizeTime(text) {
+  var m = String(text || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .match(/^(\d{1,2})(?:[:.h](\d{2}))?(a\.?m\.?|p\.?m\.?)?$/);
+  if (!m) return null;
+  var h = Number(m[1]);
+  var min = m[2] ? Number(m[2]) : 0;
+  if (m[3]) {
+    if (h < 1 || h > 12) return null;
+    if (m[3].charAt(0) === 'p' && h !== 12) h += 12;
+    if (m[3].charAt(0) === 'a' && h === 12) h = 0;
+  }
+  if (h > 23 || min > 59) return null;
+  return pad(h) + ':' + pad(min);
+}
+function clock(hhmm) {
+  var parts = String(hhmm || '').split(':');
+  var h = Number(parts[0]);
+  if (!isFinite(h) || parts.length !== 2) return String(hhmm || '');
+  return ((h % 12) || 12) + (parts[1] === '00' ? '' : ':' + parts[1]) + (h < 12 ? ' am' : ' pm');
+}
+function normalizeDietary(text) {
+  var t = String(text || '').trim().toLowerCase().replace(/\s+/g, ' ').replace(/[.!]+$/, '');
+  if (!t) return '';
+  if (/^(none|no|nothing|n\/?a|no restrictions?|no needs|no dietary needs|nothing special|eats anything|anything)$/.test(t)) return 'none';
+  var aliases = {
+    veg: 'vegetarian',
+    veggie: 'vegetarian',
+    gf: 'gluten-free',
+    'gluten free': 'gluten-free',
+    'no gluten': 'gluten-free',
+    'dairy free': 'dairy-free',
+    'no dairy': 'dairy-free',
+    nuts: 'nut allergy',
+    'no nuts': 'nut allergy',
+    'nut free': 'nut allergy',
+  };
+  return aliases[t] || t;
+}
+function people(guest) {
+  var n = Number(guest && guest.fields && guest.fields.partySize);
+  return n >= 1 ? Math.round(n) : 1;
+}
+function paidFor(vendorId, entries) {
+  return entries
+    .filter(function (e) {
+      return e.kind === 'out' && e.data && e.data.vendorId === vendorId;
+    })
+    .reduce(function (sum, e) {
+      return sum + (Number(e.amountCents) || 0);
+    }, 0);
+}
+function blankEvent() {
+  return { version: 1, occasion: '', date: '', time: '', venue: '', host: '', rsvp: '', headcount: 0, budgetCents: 0, program: [] };
+}
+function guestTag(g, extra) {
+  var f = g.fields || {};
+  return f.name + ' (' + g.id + (f.company ? ', ' + f.company : '') + (extra ? ', ' + extra : '') + (people(g) > 1 ? ', party of ' + people(g) : '') + ')';
+}
+function venueCost(venue, guests) {
+  var f = venue.fields || {};
+  var fee = Number(f.feeCents) || 0;
+  var perHead = Number(f.cateringPerHeadCents) || 0;
+  var total = fee + perHead * guests;
+  return { fee: fee, perHead: perHead, total: total, each: guests > 0 ? Math.round(total / guests) : 0 };
+}
+function compareVenues(venues, guests) {
+  var live = venues.filter(function (v) {
+    return v.status !== 'declined';
+  });
+  if (!live.length) return { fits: 0, summary: 'No venues on the shortlist yet.' };
+  var rows = live.map(function (v) {
+    var f = v.fields || {};
+    var cap = Number(f.capacity) || 0;
+    var cost = venueCost(v, guests);
+    return { v: v, cap: cap, fits: cap >= guests, cost: cost };
+  });
+  rows.sort(function (a, b) {
+    return (b.fits ? 1 : 0) - (a.fits ? 1 : 0) || a.cost.each - b.cost.each;
+  });
+  var lines = rows.map(function (r) {
+    var f = r.v.fields || {};
+    return (
+      f.name + ' (' + r.v.id + ', ' + r.v.status + '): ' +
+      (r.cap ? 'holds ' + r.cap + (r.fits ? ', fits ' + guests : ', ' + (guests - r.cap) + ' short for ' + guests) : 'capacity unknown') +
+      '; hire ' + money(r.cost.fee) +
+      (r.cost.perHead
+        ? ' plus in-house catering at ' + money(r.cost.perHead) + ' a guest = ' + money(r.cost.total) + ' for ' + guests + ' (' + money(r.cost.each) + ' a guest)'
+        : ', bring your own caterer') +
+      '; sound and screens ' + (f.av === 'included' ? 'included' : 'extra') +
+      (f.location ? '; ' + f.location : '') +
+      (f.notes ? '; ' + f.notes : '')
+    );
+  });
+  var fit = rows.filter(function (r) { return r.fits; });
+  var small = rows.filter(function (r) { return r.cap && !r.fits; });
+  return {
+    fits: fit.length,
+    summary:
+      'Venues for ' + guests + ' guests, those that fit first: ' + lines.join(' | ') + '. ' +
+      (fit.length ? 'Fits ' + guests + ': ' + fit.map(function (r) { return r.v.fields.name; }).join(', ') + '.' : 'None of them holds ' + guests + '.') +
+      (small.length ? ' Too small: ' + small.map(function (r) { return r.v.fields.name; }).join(', ') + '.' : ''),
+  };
+}
+function deskPicture(event, venues, vendors, guests, entries, nowMs) {
+  var ev = event || blankEvent();
+  var parts = [];
+  var days = isDay(ev.date) ? daysLeft(ev.date, nowMs) : null;
+  parts.push(
+    (ev.occasion || 'The event') +
+      (days === null ? (ev.date ? ', date to confirm (' + ev.date + ')' : ', date not set') : ' on ' + ev.date + (days > 0 ? ' (' + days + (days === 1 ? ' day' : ' days') + ' to go)' : days === 0 ? ' (today)' : ' (' + -days + ' days ago)')) +
+      (ev.time ? ', ' + ev.time : '') +
+      (ev.venue ? ', at ' + ev.venue : ', venue not booked yet') +
+      (ev.host ? ', hosted by ' + ev.host : '') +
+      '.',
+  );
+  var yes = guests.filter(function (g) { return g.status === 'yes'; });
+  var no = guests.filter(function (g) { return g.status === 'no'; });
+  var waiting = guests.filter(function (g) { return g.status === 'invited'; });
+  var attending = yes.reduce(function (sum, g) { return sum + people(g); }, 0);
+  parts.push(
+    'RSVPs: ' + yes.length + ' yes (' + attending + (attending === 1 ? ' person' : ' people') + ' with the guests they bring), ' + no.length + ' no, ' + waiting.length + ' not replied yet' +
+      (ev.headcount ? '; planning for ' + ev.headcount : '') + '.',
+  );
+  // One list a dietary question selects: attending guests first, then those who have not replied.
+  var noAnswer = yes.filter(function (g) { return !g.fields.dietary; });
+  var pending = noAnswer.map(function (g) { return guestTag(g, 'attending'); }).concat(
+    waiting.filter(function (g) { return !g.fields.dietary; }).map(function (g) { return guestTag(g, 'not replied'); }),
+  );
+  parts.push(
+    !guests.length ? 'No guests on the list yet.' : pending.length ? 'No dietary answer yet, attending first: ' + pending.join(' | ') + '.' : 'Every guest has a dietary answer.',
+  );
+  var tally = {};
+  yes.forEach(function (g) {
+    var d = g.fields.dietary;
+    if (d && d !== 'none') tally[d] = (tally[d] || 0) + 1;
+  });
+  var needs = Object.keys(tally).sort().map(function (d) { return d + ' ' + tally[d]; });
+  parts.push(needs.length ? 'Dietary needs among those attending: ' + needs.join(', ') + '.' : 'No dietary needs among those attending so far.');
+  if (waiting.length) parts.push('Not replied yet: ' + waiting.map(function (g) { return guestTag(g, ''); }).join(', ') + '.');
+
+  var live = vendors.filter(function (v) { return v.status !== 'dropped'; });
+  var due = [];
+  live.forEach(function (v) {
+    var f = v.fields || {};
+    var paid = paidFor(v.id, entries);
+    var deposit = Number(f.depositCents) || 0;
+    if (v.status !== 'quoted' && deposit > paid) {
+      due.push({ at: f.depositDueAt || '9999-12-31', text: f.name + ' (' + v.id + ') deposit ' + money(deposit - paid) + (isDay(f.depositDueAt) ? ', due ' + f.depositDueAt + ' (' + when(daysLeft(f.depositDueAt, nowMs)) + ')' : ', no due date') });
+    }
+  });
+  due.sort(function (a, b) { return a.at.localeCompare(b.at); });
+  parts.push(due.length ? 'Deposits still to pay, soonest first: ' + due.map(function (d) { return d.text; }).join(' | ') + '.' : 'No deposits outstanding.');
+
+  var signed = live.filter(function (v) { return v.status === 'booked' || v.status === 'paid'; });
+  var contracted = signed.reduce(function (sum, v) { return sum + (Number(v.fields.contractCents) || 0); }, 0);
+  var paidTotal = entries.filter(function (e) { return e.kind === 'out'; }).reduce(function (sum, e) { return sum + (Number(e.amountCents) || 0); }, 0);
+  var budget = Number(ev.budgetCents) || 0;
+  var left = budget - contracted;
+  parts.push(
+    (budget ? 'Budget ' + money(budget) + ': ' : 'No budget set: ') +
+      money(contracted) + ' signed with booked vendors, ' + money(paidTotal) + ' paid, ' + money(contracted - paidTotal) + ' still owed on signed contracts' +
+      (budget ? ', ' + (left >= 0 ? money(left) + ' left to commit' : money(-left) + ' over budget') : '') + '.',
+  );
+  parts.push(
+    live.length
+      ? 'Vendors: ' + live.map(function (v) {
+          var f = v.fields || {};
+          return f.name + ' (' + v.id + ', ' + (f.category || 'other') + ', ' + v.status + (f.contractCents ? ', ' + money(f.contractCents) : '') + ', paid ' + money(paidFor(v.id, entries)) + (f.arrival ? ', arrives ' + clock(f.arrival) : '') + ')';
+        }).join(' | ') + '.'
+      : 'No vendors yet.',
+  );
+  parts.push(
+    venues.length
+      ? 'Venues: ' + venues.map(function (v) { return v.fields.name + ' (' + v.id + ', ' + v.status + (v.fields.capacity ? ', holds ' + v.fields.capacity : '') + ')'; }).join(', ') + '.'
+      : 'No venues on the shortlist yet.',
+  );
+  var program = (ev.program || []).slice().sort(function (a, b) { return String(a.time).localeCompare(String(b.time)); });
+  parts.push(
+    program.length
+      ? 'Run of show: ' + program.map(function (p) { return clock(p.time) + ' ' + p.item + (p.owner ? ' (' + p.owner + ')' : ''); }).join(' | ') + '.'
+      : 'The run of show is empty.',
+  );
+  return { attending: attending, noDietaryAnswer: noAnswer.map(function (g) { return String(g.fields.name); }), budgetLeftCents: left, summary: parts.join(' ') };
+}
+// ── event-desk-rules-end ──
+        function daysFromNow(n) { return localDay(Date.now() + n * DAY_MS); }
+        function stampFromNow(n) { return new Date(Date.now() + n * DAY_MS).toISOString(); }
+
+        // ── demo event (used only when the page opens outside Gezel); dates are relative so it never goes stale ──
+        var demoEvent = {
+          version: 1, occasion: 'Fernwood Client Summit', date: daysFromNow(38), time: '3:00 to 8:30 pm', venue: '', host: 'Fernwood Studio',
+          rsvp: 'Reply to Mara Okafor by ' + new Date(Date.now() + 17 * DAY_MS).toLocaleDateString('en-US', { month: 'long', day: 'numeric' }),
+          headcount: 80, budgetCents: 1800000,
+          program: [
+            { id: 'rs-1', time: '15:00', item: 'Doors open, coffee and name badges', owner: 'Mara' },
+            { id: 'rs-2', time: '15:30', item: 'Welcome from Fernwood', owner: 'Elena' },
+            { id: 'rs-3', time: '15:45', item: 'Client panel: design that pays its way', owner: 'Ruth' },
+            { id: 'rs-4', time: '16:45', item: 'Break and studio showcase', owner: 'Sam' },
+            { id: 'rs-5', time: '17:30', item: 'Workshops in three rooms', owner: 'Ines' },
+            { id: 'rs-6', time: '18:45', item: 'Dinner and trio', owner: 'Mara' },
+          ],
+        };
+        function rec(id, status, fields) { return { id: id, status: status, fields: fields, history: [] }; }
+        var demoVenues = { version: 1, stages: VENUE_STAGES.slice(), records: [
+          rec('ve-1', 'visited', { name: 'The Foundry', capacity: 120, feeCents: 480000, av: 'included', location: 'Eastside warehouse, 10 minutes from the studio', notes: 'Bring your own caterer' }),
+          rec('ve-2', 'held', { name: 'Larkspur Hall', capacity: 90, feeCents: 340000, cateringPerHeadCents: 5200, av: 'extra', location: 'Downtown, by the river', notes: 'On hold until Friday' }),
+          rec('ve-3', 'shortlisted', { name: 'Pier 9 Loft', capacity: 70, feeCents: 260000, av: 'included', location: 'Waterfront' }),
+        ] };
+        var demoVendors = { version: 1, stages: VENDOR_STAGES.slice(), records: [
+          rec('vn-1', 'booked', { name: 'Sorrel Kitchen', category: 'catering', contractCents: 720000, depositCents: 180000, depositDueAt: daysFromNow(9), contact: 'Joelle, 555-0142', arrival: '14:00' }),
+          rec('vn-2', 'booked', { name: 'Brightwave AV', category: 'av', contractCents: 145000, depositCents: 50000, depositDueAt: daysFromNow(-6), contact: 'Dev, 555-0187', arrival: '13:30' }),
+          rec('vn-3', 'quoted', { name: 'The Late Shift Trio', category: 'entertainment', contractCents: 120000, depositCents: 30000, depositDueAt: daysFromNow(20), arrival: '18:00' }),
+          rec('vn-4', 'paid', { name: 'Halide Photo', category: 'photography', contractCents: 95000, depositCents: 0, contact: 'Rosa, 555-0129', arrival: '14:30' }),
+        ] };
+        var demoGuests = { version: 1, stages: GUEST_STAGES.slice(), records: [
+          rec('gu-1', 'yes', { name: 'Mei Lin', company: 'Juniper Press', partySize: 1, dietary: 'vegetarian' }),
+          rec('gu-2', 'yes', { name: 'Owen Park', company: 'Juniper Press', partySize: 1, dietary: 'none' }),
+          rec('gu-3', 'yes', { name: 'Dana Whitfield', company: 'Harbor Street Café', partySize: 1 }),
+          rec('gu-4', 'invited', { name: 'Tomás Rivera', company: 'Brightline Electric', partySize: 1 }),
+          rec('gu-5', 'yes', { name: 'Priya Nair', company: 'Alder & Co', partySize: 2, dietary: 'gluten-free' }),
+          rec('gu-6', 'yes', { name: 'Leo Marsh', company: 'Alder & Co', partySize: 1 }),
+          rec('gu-7', 'no', { name: 'Hannah Cole', company: 'Calder Bikes', partySize: 1 }),
+          rec('gu-8', 'yes', { name: 'Sofia Reyes', company: 'Calder Bikes', partySize: 1, dietary: 'vegan' }),
+          rec('gu-9', 'invited', { name: 'Ben Adler', company: 'Tidewater Co-op', partySize: 1 }),
+          rec('gu-10', 'yes', { name: 'Grace Kim', company: 'Tidewater Co-op', partySize: 1, dietary: 'nut allergy' }),
+          rec('gu-11', 'yes', { name: 'Marcus Webb', company: 'Marlow Gin', partySize: 2 }),
+          rec('gu-12', 'invited', { name: 'Ava Lindqvist', company: 'Marlow Gin', partySize: 1 }),
+          rec('gu-13', 'yes', { name: 'Noah Fischer', company: 'Sable & Pine', partySize: 1, dietary: 'none' }),
+          rec('gu-14', 'no', { name: 'Lena Ortiz', company: 'Sable & Pine', partySize: 1 }),
+          rec('gu-15', 'invited', { name: 'Felix Grant', company: 'Juniper Press', partySize: 1 }),
+          rec('gu-16', 'yes', { name: 'Chloe Martin', company: 'Harbor Street Café', partySize: 1, dietary: 'vegetarian' }),
+        ] };
+        var demoBudget = { version: 1, currency: 'USD', entries: [
+          { id: 'ledger-1', at: stampFromNow(-8), amountCents: 50000, kind: 'out', category: 'av', note: 'Deposit to Brightwave AV', data: { vendorId: 'vn-2', vendor: 'Brightwave AV', payment: 'deposit' } },
+          { id: 'ledger-2', at: stampFromNow(-3), amountCents: 95000, kind: 'out', category: 'photography', note: 'Paid in full, invoice HP-2207', data: { vendorId: 'vn-4', vendor: 'Halide Photo', payment: 'balance' } },
+        ] };
+
+        // Demo handlers: the same actions the event-desk-store script takes, on the in-page sample.
+        function nextId(records, prefix) { return prefix + '-' + (records.reduce(function (m, r) { return Math.max(m, Number(String(r.id).split('-')[1]) || 0); }, 0) + 1); }
+        function find(records, input, what) {
+          if (input.id) { var byId = records.find(function (r) { return r.id === input.id; }); if (byId) return byId; throw new Error('No ' + what + " with id '" + input.id + "'."); }
+          if (!input.name) throw new Error("Pass the " + what + "'s 'id' or 'name'.");
+          var exact = records.filter(function (r) { return nameMatch(r.fields.name, input.name) === 'exact'; });
+          if (exact.length === 1) return exact[0];
+          var partial = records.filter(function (r) { return nameMatch(r.fields.name, input.name) === 'partial'; });
+          if (partial.length === 1) return partial[0];
+          if (partial.length > 1) throw new Error('More than one ' + what + " matches '" + input.name + "'. Pass id.");
+          return null;
+        }
+        function cents(value, label, negative) { if (value === undefined || value === null || value === '') return null; var c = toCents(value); if (c === null || (!negative && c < 0)) throw new Error(label + ' must be an amount in dollars, e.g. 1800.'); return c; }
+        function picture(note) { var v = deskPicture(demoEvent, demoVenues.records, demoVendors.records, demoGuests.records, demoBudget.entries, Date.now()); return { attending: v.attending, noDietaryAnswer: v.noDietaryAnswer, budgetLeft: v.budgetLeftCents / 100, summary: (note ? note + ' ' : '') + v.summary }; }
+        function demoSetEvent(input) {
+          var touched = false;
+          if (input.occasion) { demoEvent.occasion = String(input.occasion).trim(); touched = true; }
+          if (input.date) { var day = normalizeDate(input.date); if (!day) throw new Error("date must be a date, e.g. '2026-12-10'."); demoEvent.date = day; touched = true; }
+          ['time', 'host', 'rsvp'].forEach(function (k) { if (input[k]) { demoEvent[k] = String(input[k]).trim(); touched = true; } });
+          if (typeof input.headcount === 'number') { if (!(input.headcount >= 1)) throw new Error('headcount must be at least 1.'); demoEvent.headcount = Math.round(input.headcount); touched = true; }
+          var whole = cents(input.budget, 'budget'); if (whole !== null) { demoEvent.budgetCents = whole; touched = true; }
+          var change = cents(input.budgetChange, 'budgetChange', true); if (change !== null) { demoEvent.budgetCents = Math.max(0, demoEvent.budgetCents + change); touched = true; }
+          if (!touched) throw new Error('set_event needs at least one detail.');
+          return picture('Saved the event details' + (whole !== null || change !== null ? '; the budget is now ' + money(demoEvent.budgetCents) : '') + '.');
+        }
+        function demoBook(input) {
+          var venue = find(demoVenues.records, input, 'venue');
+          if (!venue) throw new Error("No venue named '" + input.name + "'.");
+          var released = [];
+          demoVenues.records.forEach(function (other) {
+            if (other === venue || other.status !== 'booked') return;
+            other.status = 'declined'; released.push(other.fields.name);
+            var old = demoVendors.records.find(function (v) { return v.fields.venueId === other.id; });
+            if (old && paidFor(old.id, demoBudget.entries) === 0) old.status = 'dropped';
+          });
+          venue.status = 'booked';
+          var fee = Number(venue.fields.feeCents) || 0;
+          var line = demoVendors.records.find(function (v) { return v.fields.venueId === venue.id || nameMatch(v.fields.name, venue.fields.name) === 'exact'; });
+          if (line) { Object.assign(line.fields, { category: 'venue', venueId: venue.id, contractCents: fee }); if (line.status === 'quoted' || line.status === 'dropped') line.status = 'booked'; }
+          else demoVendors.records.push(rec(nextId(demoVendors.records, 'vn'), 'booked', { name: venue.fields.name, category: 'venue', venueId: venue.id, contractCents: fee, depositCents: 0, notes: 'Venue hire' }));
+          demoEvent.venue = venue.fields.name; demoEvent.venueId = venue.id;
+          var perHead = Number(venue.fields.cateringPerHeadCents) || 0;
+          return picture('Booked ' + venue.fields.name + ' (' + venue.id + '); its ' + money(fee) + ' hire fee is now with the signed contracts' + (perHead ? ', and its in-house catering at ' + money(perHead) + ' a guest goes in as a vendor once the count is final' : '') + (released.length ? '. Released ' + released.join(', ') : '') + '.');
+        }
+        function demoAddVenue(input) {
+          if (!input.name) throw new Error("add_venue needs 'name'.");
+          var fields = {};
+          if (typeof input.capacity === 'number' && input.capacity > 0) fields.capacity = Math.round(input.capacity);
+          var fee = cents(input.fee, 'fee'); if (fee !== null) fields.feeCents = fee;
+          var cat = cents(input.cateringPerHead, 'cateringPerHead'); if (cat !== null) fields.cateringPerHeadCents = cat;
+          if (input.av === 'included' || input.av === 'extra') fields.av = input.av;
+          if (input.location) fields.location = String(input.location).trim();
+          if (input.note) fields.notes = String(input.note).trim();
+          var venue = demoVenues.records.find(function (r) { return nameMatch(r.fields.name, input.name) === 'exact'; }), note;
+          if (venue) { Object.assign(venue.fields, fields); note = 'Updated ' + venue.fields.name + '.'; }
+          else { venue = rec(nextId(demoVenues.records, 've'), 'shortlisted', Object.assign({ name: String(input.name).trim(), av: 'extra' }, fields)); demoVenues.records.push(venue); note = 'Added ' + venue.fields.name + ' (' + venue.id + ') to the shortlist.'; }
+          if (input.status === 'booked') return demoBook({ id: venue.id });
+          if (VENUE_STAGES.indexOf(input.status) >= 0) venue.status = input.status;
+          return picture(note);
+        }
+        function demoAddVendor(input) {
+          if (!input.name) throw new Error("add_vendor needs 'name'.");
+          var vendor = demoVendors.records.find(function (r) { return nameMatch(r.fields.name, input.name) === 'exact'; });
+          var fields = {};
+          if (VENDOR_KINDS.indexOf(input.category) >= 0) fields.category = input.category;
+          var total = cents(input.contract, 'contract');
+          var change = cents(input.contractChange, 'contractChange', true);
+          if (change !== null) total = Math.max(0, (total !== null ? total : vendor ? Number(vendor.fields.contractCents) || 0 : 0) + change);
+          if (total !== null) fields.contractCents = total;
+          var deposit = cents(input.deposit, 'deposit'); if (deposit !== null) fields.depositCents = deposit;
+          if (input.depositDueAt) { var due = normalizeDate(input.depositDueAt); if (!due) throw new Error("depositDueAt must be a date, e.g. '2026-11-12'."); fields.depositDueAt = due; }
+          if (input.arrival) { var at = normalizeTime(input.arrival); if (!at) throw new Error("arrival must be a time, e.g. '2 pm'."); fields.arrival = at; }
+          if (input.contact) fields.contact = String(input.contact).trim();
+          if (input.note) fields.notes = String(input.note).trim();
+          var status = ['quoted', 'booked', 'dropped'].indexOf(input.status) >= 0 ? input.status : null;
+          if (vendor) { Object.assign(vendor.fields, fields); if (status) vendor.status = status; return picture('Updated ' + vendor.fields.name + (total !== null ? '; total now ' + money(total) : '') + '.'); }
+          vendor = rec(nextId(demoVendors.records, 'vn'), status || 'quoted', Object.assign({ name: String(input.name).trim(), category: 'other', contractCents: 0, depositCents: 0 }, fields));
+          demoVendors.records.push(vendor);
+          return picture('Added ' + vendor.fields.name + ' (' + vendor.id + ', ' + vendor.status + ').');
+        }
+        function demoPay(input) {
+          var amount = cents(input.amount, 'amount');
+          if (!amount || amount <= 0) throw new Error("pay needs a positive 'amount' in dollars.");
+          var vendor = find(demoVendors.records, input, 'vendor');
+          if (!vendor) throw new Error("No vendor named '" + input.name + "'.");
+          var before = paidFor(vendor.id, demoBudget.entries), deposit = Number(vendor.fields.depositCents) || 0;
+          var kind = ['deposit', 'balance', 'other'].indexOf(input.kind) >= 0 ? input.kind : before < deposit ? 'deposit' : 'balance';
+          var today = localDay(Date.now());
+          if (demoBudget.entries.some(function (e) { return e.data && e.data.vendorId === vendor.id && e.amountCents === amount && e.data.payment === kind && localDay(Date.parse(e.at)) === today; })) return picture('Already recorded: ' + money(amount) + ' ' + kind + ' to ' + vendor.fields.name + ' today.');
+          demoBudget.entries.push({ id: 'ledger-' + (demoBudget.entries.length + 1), at: new Date().toISOString(), amountCents: amount, kind: 'out', category: vendor.fields.category || 'other', note: input.note || kind.charAt(0).toUpperCase() + kind.slice(1) + ' to ' + vendor.fields.name, data: { vendorId: vendor.id, vendor: vendor.fields.name, payment: kind } });
+          var paid = before + amount, contract = Number(vendor.fields.contractCents) || 0;
+          if (contract > 0 && paid >= contract) vendor.status = 'paid'; else if (vendor.status === 'quoted' || vendor.status === 'dropped') vendor.status = 'booked';
+          return picture('Paid ' + money(amount) + ' ' + kind + ' to ' + vendor.fields.name + '; ' + (contract ? money(paid) + ' of ' + money(contract) + ' paid' + (paid >= contract ? ', paid in full' : ', ' + money(contract - paid) + ' to go') : money(paid) + ' paid so far') + '.');
+        }
+        function demoGuest(input, rsvp) {
+          if (input.response && GUEST_STAGES.indexOf(input.response) < 0) throw new Error('response is invited, yes, or no.');
+          var guest;
+          if (rsvp) { if (!input.response && !input.dietary && typeof input.joining !== 'number') throw new Error("rsvp needs 'response', 'dietary', or 'joining'."); guest = find(demoGuests.records, input, 'guest'); }
+          else { if (!input.name) throw new Error("add_guest needs 'name'."); guest = demoGuests.records.find(function (r) { return nameMatch(r.fields.name, input.name) === 'exact'; }); }
+          var added = !guest;
+          if (!guest) { guest = rec(nextId(demoGuests.records, 'gu'), input.response || 'invited', { name: String(input.name).trim(), partySize: 1 }); demoGuests.records.push(guest); }
+          else if (input.response) guest.status = input.response;
+          if (input.company) guest.fields.company = String(input.company).trim();
+          var dietary = normalizeDietary(input.dietary); if (dietary) guest.fields.dietary = dietary;
+          if (typeof input.partySize === 'number' && input.partySize >= 1) guest.fields.partySize = Math.round(input.partySize);
+          else if (typeof input.joining === 'number' && input.joining > 0) guest.fields.partySize = people(guest) + Math.round(input.joining);
+          var label = guest.fields.name;
+          return picture((added ? 'Added ' + label + ' (' + guest.id + ') to the list. ' : '') + label + (guest.status === 'yes' ? ' is coming' : guest.status === 'no' ? " can't come" : ' is invited') + (people(guest) > 1 ? ' with ' + (people(guest) - 1) + ' more (party of ' + people(guest) + ')' : '') + (guest.fields.dietary ? '; dietary: ' + guest.fields.dietary : guest.status === 'yes' ? '; no dietary answer yet' : '') + '.');
+        }
+        function demoProgram(input) {
+          if (!input.item) throw new Error("program needs 'item'.");
+          var time = input.time ? normalizeTime(input.time) : null;
+          if (input.time && !time) throw new Error("time must be a clock time, e.g. '4:30 pm'.");
+          var same = demoEvent.program.find(function (p) { return key(p.item) === key(input.item); }), note;
+          if (input.remove) { if (!same) throw new Error("No run-of-show item matches '" + input.item + "'."); demoEvent.program.splice(demoEvent.program.indexOf(same), 1); return picture('Took ' + same.item + ' off the run of show.'); }
+          if (same) { if (time) same.time = time; if (input.owner) same.owner = String(input.owner).trim(); note = 'Run of show: ' + clock(same.time) + ' ' + same.item + '.'; }
+          else { if (!time) throw new Error("A new run-of-show item needs 'time'."); demoEvent.program.push({ id: nextId(demoEvent.program, 'rs'), time: time, item: String(input.item).trim(), owner: input.owner ? String(input.owner).trim() : undefined }); note = 'Added to the run of show: ' + clock(time) + ' ' + String(input.item).trim() + '.'; }
+          demoEvent.program.sort(function (a, b) { return String(a.time).localeCompare(String(b.time)); });
+          return picture(note);
+        }
+        function demoCompare(input) {
+          var yes = demoGuests.records.filter(function (g) { return g.status === 'yes'; }).reduce(function (s, g) { return s + people(g); }, 0);
+          var count = typeof input.guests === 'number' && input.guests > 0 ? Math.round(input.guests) : demoEvent.headcount || yes;
+          return Object.assign(picture(''), { summary: compareVenues(demoVenues.records, count).summary });
+        }
+        function demoGuestList() {
+          return Object.assign(picture(''), { summary: demoGuests.records.map(function (g) { return '[' + g.status + '] ' + guestTag(g, '') + ': ' + (g.fields.dietary || 'no dietary answer'); }).join('\n') });
+        }
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'desk/index.html', typeName: 'Event Desk', params: { event: 'Fernwood Client Summit' } },
+          tools: {
+            page_set_event: demoSetEvent, set_event: demoSetEvent,
+            page_add_venue: demoAddVenue, add_venue: demoAddVenue,
+            page_book_venue: demoBook, book_venue: demoBook,
+            page_add_vendor: demoAddVendor, add_vendor: demoAddVendor,
+            page_record_payment: demoPay, record_payment: demoPay,
+            page_add_guest: function (input) { return demoGuest(input, false); }, add_guest: function (input) { return demoGuest(input, false); },
+            page_record_rsvp: function (input) { return demoGuest(input, true); }, record_rsvp: function (input) { return demoGuest(input, true); },
+            page_set_program_item: demoProgram, set_program_item: demoProgram,
+            compare_venues: demoCompare,
+            event_status: function () { return picture(''); },
+            guest_list: demoGuestList,
+          },
+          data: {
+            'event.json': function () { return demoEvent; },
+            'venues.json': function () { return demoVenues; },
+            'vendors.json': function () { return demoVendors; },
+            'guests.json': function () { return demoGuests; },
+            'budget.json': function () { return demoBudget; },
+          },
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+        function applyTheme(mode) { document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light'); }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function el(tag, text, cls) { var e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
+        function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+        function niceDate(day) { var d = new Date(String(day).slice(0, 10) + 'T12:00:00'); return isFinite(d) ? d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : String(day); }
+        function cell(text, cls) { var td = el('td', text); if (cls) td.className = cls; return td; }
+        function chip(text, tone) { return el('span', text, 'chip' + (tone ? ' ' + tone : '')); }
+        var KIND = { av: 'sound and screens', photography: 'photography', entertainment: 'entertainment' };
+        function kind(k) { return KIND[k] || k || 'other'; }
+        function upperFirst(text) { return String(text).charAt(0).toUpperCase() + String(text).slice(1); }
+        // Row action: a small key that opens a shared dialog with these values filled in.
+        function rowKey(label, tool, values, aria) {
+          var key = el('button', label, 'key');
+          key.type = 'button';
+          key.setAttribute('data-app-action', tool);
+          key.setAttribute('data-app-values', JSON.stringify(values));
+          key.setAttribute('aria-label', aria);
+          return key;
+        }
+        var TONE = { booked: 'ok', paid: 'ok', yes: 'ok', held: 'soon', visited: '', quoted: 'soon', invited: 'soon', no: '', declined: '', dropped: '', shortlisted: '' };
+
+        function render(ev, venues, vendors, guests, entries) {
+          ev = Object.assign(blankEvent(), ev || {});
+          var now = Date.now();
+          var days = isDay(ev.date) ? daysLeft(ev.date, now) : null;
+          var yes = guests.filter(function (g) { return g.status === 'yes'; });
+          var coming = yes.reduce(function (s, g) { return s + people(g); }, 0);
+          var noDiet = yes.filter(function (g) { return !g.fields.dietary; });
+          var live = vendors.filter(function (v) { return v.status !== 'dropped'; });
+          var signed = live.filter(function (v) { return v.status === 'booked' || v.status === 'paid'; });
+          var contracted = signed.reduce(function (s, v) { return s + (Number(v.fields.contractCents) || 0); }, 0);
+          var paidTotal = entries.filter(function (e) { return e.kind === 'out'; }).reduce(function (s, e) { return s + (Number(e.amountCents) || 0); }, 0);
+          var budget = Number(ev.budgetCents) || 0;
+
+          document.getElementById('sub').textContent = [ev.occasion || 'Your event', isDay(ev.date) ? niceDate(ev.date) : ev.date ? 'Date to confirm: ' + ev.date : 'Date not set', ev.time, ev.venue ? 'at ' + ev.venue : 'Venue not booked yet'].filter(Boolean).join(' · ');
+          document.getElementById('details').textContent = [ev.host ? 'Hosted by ' + ev.host : '', ev.headcount ? 'Planning for ' + ev.headcount + ' guests' : '', ev.rsvp ? 'RSVP: ' + ev.rsvp : ''].filter(Boolean).join(' · ');
+          document.getElementById('t-days').textContent = days === null ? '–' : days >= 0 ? days : 'Done';
+          document.getElementById('t-days-label').textContent = days === 0 ? 'Today' : days !== null && days < 0 ? 'The event has passed' : 'Days to go';
+          document.getElementById('t-coming').textContent = coming;
+          document.getElementById('t-coming-label').textContent = ev.headcount ? 'Coming, of ' + ev.headcount + ' planned' : 'Coming';
+          document.getElementById('t-diet').textContent = noDiet.length;
+          document.getElementById('t-diet').parentNode.classList.toggle('soon', noDiet.length > 0);
+          document.getElementById('t-left').textContent = budget ? money(Math.abs(budget - contracted)) : '–';
+          document.getElementById('t-left-label').textContent = !budget ? 'No budget set' : budget - contracted >= 0 ? 'Left to commit' : 'Over budget';
+          document.getElementById('t-left').parentElement.className = 'tile' + (budget && budget < contracted ? ' late' : '');
+
+          // Venues, compared for the planned headcount.
+          var count = ev.headcount || coming;
+          document.getElementById('venues-for').textContent = count ? 'For ' + count : 'All in';
+          var compared = count ? compareVenues(venues, count) : null;
+          document.getElementById('venues-lead').textContent = !venues.length ? 'No venues yet. Tell your event planner about one, with its quote.' : count ? (compared.fits ? plural(compared.fits, 'venue holds', 'venues hold') + ' ' + count + ' guests.' : 'None of the venues holds ' + count + ' guests yet.') + (ev.venue ? ' Booked: ' + ev.venue + '.' : '') : 'Set the headcount to compare costs.';
+          var vb = document.getElementById('venues-body');
+          vb.replaceChildren();
+          if (!venues.length) { var tv = el('tr'), tdv = cell('No venues on the shortlist.', 'empty'); tdv.colSpan = 7; tv.append(tdv); vb.append(tv); }
+          venues.slice().sort(function (a, b) { return (a.status === 'declined') - (b.status === 'declined') || (Number(b.fields.capacity) >= count) - (Number(a.fields.capacity) >= count); }).forEach(function (v) {
+            var f = v.fields, tr = el('tr'), name = el('td'), cost = venueCost(v, count || 0), cap = Number(f.capacity) || 0;
+            if (v.status === 'booked') tr.className = 'chosen';
+            name.append(el('span', f.name));
+            if (f.location || f.notes) name.append(el('span', [f.location, f.notes].filter(Boolean).join(' · '), 'meta'));
+            tr.append(name);
+            var holds = cell(cap ? String(cap) : '–', 'num' + (count && cap && cap < count ? ' short' : ''));
+            if (count && cap && cap < count) holds.title = (count - cap) + ' short';
+            tr.append(holds, cell(money(cost.fee), 'num'), cell(cost.perHead ? 'In-house, ' + money(cost.perHead) + ' a guest' : 'Bring your own'), cell(f.av === 'included' ? 'Included' : 'Extra'));
+            var all = cell(count ? money(cost.total) : '–', 'num');
+            if (count) all.append(el('span', cost.perHead ? money(cost.each) + ' a guest' : 'before catering', 'meta'));
+            tr.append(all);
+            var st = el('td', undefined, 'actions');
+            st.append(chip(upperFirst(v.status), TONE[v.status]));
+            if (v.status !== 'booked' && v.status !== 'declined') {
+              var book = el('button', 'Book', 'key');
+              book.type = 'button';
+              book.setAttribute('aria-label', 'Book ' + f.name);
+              book.style.marginLeft = '0.4rem';
+              book.onclick = function () {
+                book.disabled = true;
+                gezel.tools.invoke('page_book_venue', { id: v.id }).then(function () { return loadDesk(); }, function (error) { book.disabled = false; reportAppError(error); });
+              };
+              st.append(book);
+            }
+            tr.append(st);
+            vb.append(tr);
+          });
+
+          // Vendors with what is paid and the next payment.
+          var db = document.getElementById('vendors-body');
+          db.replaceChildren();
+          if (!vendors.length) { var tn = el('tr'), tdn = cell('No vendors yet.', 'empty'); tdn.colSpan = 7; tn.append(tdn); db.append(tn); }
+          vendors.slice().sort(function (a, b) { return (a.status === 'dropped') - (b.status === 'dropped'); }).forEach(function (v) {
+            var f = v.fields, tr = el('tr'), name = el('td'), paid = paidFor(v.id, entries), contract = Number(f.contractCents) || 0, deposit = Number(f.depositCents) || 0;
+            name.append(el('span', f.name));
+            if (f.contact || f.arrival) name.append(el('span', [f.contact, f.arrival ? 'arrives ' + clock(f.arrival) : ''].filter(Boolean).join(' · '), 'meta'));
+            tr.append(name, cell(upperFirst(kind(f.category))), cell(contract ? money(contract) : '–', 'num'), cell(money(paid), 'num'));
+            var next = el('td');
+            if (v.status === 'dropped') next.append(el('span', '–'));
+            else if (v.status === 'quoted') next.append(el('span', deposit ? 'Deposit ' + money(deposit) + ' to book' : 'Not booked', 'meta'));
+            else if (deposit > paid) {
+              var d = isDay(f.depositDueAt) ? daysLeft(f.depositDueAt, now) : null;
+              next.append(el('span', 'Deposit ' + money(deposit - paid)));
+              next.append(chip(d === null ? 'no date' : d < 0 ? when(d) : niceDate(f.depositDueAt), d !== null && d < 0 ? 'late' : d !== null && d <= 14 ? 'soon' : ''));
+              next.lastChild.style.marginLeft = '0.35rem';
+            } else if (contract > paid) next.append(el('span', 'Balance ' + money(contract - paid)));
+            else next.append(el('span', 'Paid in full', 'meta'));
+            tr.append(next);
+            var st = el('td'); st.append(chip(upperFirst(v.status), TONE[v.status])); tr.append(st);
+            // Row action: pay what is due next, prefilled with the amount.
+            var acts = el('td', undefined, 'row-actions');
+            if (v.status === 'booked' && deposit > paid) acts.append(rowKey('Pay deposit', 'record_payment', { id: v.id, amount: (deposit - paid) / 100, kind: 'deposit' }, 'Record the deposit for ' + f.name));
+            else if (v.status === 'booked' && contract > paid) acts.append(rowKey('Pay balance', 'record_payment', { id: v.id, amount: (contract - paid) / 100, kind: 'balance' }, 'Record the balance for ' + f.name));
+            tr.append(acts);
+            db.append(tr);
+          });
+
+          // Guests, with dietary needs for the caterer.
+          var no = guests.filter(function (g) { return g.status === 'no'; }).length, waiting = guests.filter(function (g) { return g.status === 'invited'; }).length;
+          document.getElementById('guests-lead').textContent = guests.length ? plural(yes.length, 'yes', 'yes') + ' (' + plural(coming, 'person', 'people') + ') · ' + no + ' no · ' + waiting + ' not replied' + (noDiet.length ? ' · ' + plural(noDiet.length, 'dietary answer', 'dietary answers') + ' to chase. In red: guests who are coming but have not said what they eat.' : '') : 'No guests yet. Add the invite list here or tell your event planner.';
+          var tally = {};
+          yes.forEach(function (g) { var d = g.fields.dietary; if (d && d !== 'none') tally[d] = (tally[d] || 0) + 1; });
+          var needs = document.getElementById('needs');
+          needs.replaceChildren();
+          Object.keys(tally).sort().forEach(function (d) { needs.append(chip(d + ' ' + tally[d])); });
+          if (noDiet.length) needs.append(chip(noDiet.length + ' still to answer', 'soon'));
+          var gb = document.getElementById('guests-body');
+          gb.replaceChildren();
+          if (!guests.length) { var tg = el('tr'), tdg = cell('The invite list is empty.', 'empty'); tdg.colSpan = 6; tg.append(tdg); gb.append(tg); }
+          var order = { yes: 0, invited: 1, no: 2 };
+          guests.slice().sort(function (a, b) { return order[a.status] - order[b.status] || String(a.fields.name).localeCompare(String(b.fields.name)); }).forEach(function (g) {
+            var tr = el('tr'), st = el('td');
+            st.append(chip(g.status === 'invited' ? 'Waiting' : upperFirst(g.status), TONE[g.status]));
+            var diet = g.fields.dietary ? cell(g.fields.dietary === 'none' ? 'No needs' : g.fields.dietary) : cell(g.status === 'no' ? '–' : 'Not answered', g.status === 'yes' ? 'short' : 'meta');
+            var acts = el('td', undefined, 'row-actions');
+            if (g.status === 'invited') acts.append(rowKey('Record RSVP', 'record_rsvp', { id: g.id }, 'Record the RSVP from ' + g.fields.name));
+            else if (g.status === 'yes' && !g.fields.dietary) acts.append(rowKey('Add dietary', 'record_rsvp', { id: g.id, response: 'yes' }, 'Add dietary needs for ' + g.fields.name));
+            tr.append(cell(g.fields.name), cell(g.fields.company || '–'), st, cell(String(people(g)), 'num'), diet, acts);
+            gb.append(tr);
+          });
+
+          // Run of show, with vendor arrivals in their place.
+          var show = document.getElementById('show');
+          show.replaceChildren();
+          var rows = (ev.program || []).map(function (p) { return { time: p.time, text: p.item, who: p.owner, arrival: false, item: p }; })
+            .concat(signed.filter(function (v) { return v.fields.arrival; }).map(function (v) { return { time: v.fields.arrival, text: v.fields.name + ' arrives', who: upperFirst(kind(v.fields.category)), arrival: true }; }));
+          rows.sort(function (a, b) { return String(a.time).localeCompare(String(b.time)) || (b.arrival - a.arrival); });
+          if (!rows.length) show.append(el('li', 'Nothing on the run of show yet. Add the first item here or ask your event planner.', 'empty'));
+          rows.forEach(function (r) {
+            var li = el('li', undefined, r.arrival ? 'arrival' : ''), what = el('div', undefined, 'what');
+            li.append(el('span', clock(r.time), 'at'));
+            what.append(el('span', r.text));
+            if (r.who) what.append(el('span', r.arrival ? r.who : 'On point: ' + r.who, 'meta'));
+            li.append(what);
+            if (r.item) li.append(rowKey('Change', 'set_program_item', { time: r.item.time, item: r.item.item, owner: r.item.owner || '' }, 'Change the time or who is on point for ' + r.item.item));
+            show.append(li);
+          });
+
+          // Budget against what is signed and paid.
+          var scale = Math.max(budget, contracted, 1);
+          var bar = document.getElementById('bar');
+          bar.replaceChildren();
+          var paidBar = el('i', undefined, 'paid'), signedBar = el('i', undefined, 'signed');
+          paidBar.style.width = (Math.min(paidTotal, contracted) / scale) * 100 + '%';
+          signedBar.style.width = (Math.max(0, contracted - paidTotal) / scale) * 100 + '%';
+          bar.append(paidBar, signedBar);
+          bar.setAttribute('aria-label', 'Paid ' + money(paidTotal) + ', signed ' + money(contracted) + (budget ? ' of a ' + money(budget) + ' budget' : ''));
+          var legend = document.getElementById('legend');
+          legend.replaceChildren();
+          [['paid', 'Paid', paidTotal], ['signed', 'Signed, not yet paid', Math.max(0, contracted - paidTotal)]].forEach(function (row) {
+            var item = el('span'), sw = el('span', undefined, 'swatch');
+            sw.style.background = row[0] === 'paid' ? 'var(--fill)' : 'var(--fill-soft)';
+            item.append(sw, document.createTextNode(row[1] + ' '), el('b', money(row[2])));
+            legend.append(item);
+          });
+          var rest = el('span');
+          rest.append(document.createTextNode(budget ? (budget >= contracted ? 'Left to commit ' : 'Over budget ') : 'No budget set'), budget ? el('b', money(Math.abs(budget - contracted))) : '');
+          legend.append(rest);
+          var byKind = document.getElementById('by-kind');
+          byKind.replaceChildren();
+          var kinds = {};
+          signed.forEach(function (v) { var k = v.fields.category || 'other'; kinds[k] = (kinds[k] || 0) + (Number(v.fields.contractCents) || 0); });
+          Object.keys(kinds).sort(function (a, b) { return kinds[b] - kinds[a]; }).forEach(function (k) {
+            var li = el('li'), what = el('div', undefined, 'what');
+            li.append(el('span', money(kinds[k]), 'at'));
+            what.append(el('span', kind(k).charAt(0).toUpperCase() + kind(k).slice(1)));
+            li.append(what);
+            byKind.append(li);
+          });
+          if (!signed.length) byKind.append(el('li', 'Nothing signed yet.', 'empty'));
+        }
+
+        function list(doc, field) { return doc && Array.isArray(doc[field]) ? doc[field] : []; }
+        window.addEventListener('gezel-app-data-changed', function () { loadDesk(); });
+        window.loadDesk = loadDesk;
+        function loadDesk() {
+          var revision = ++appLoadRevision;
+          return Promise.all(['event.json', 'venues.json', 'vendors.json', 'guests.json', 'budget.json'].map(function (path) { return gezel.data.read(path); })).then(function (v) {
+            if (appDisposed || revision !== appLoadRevision) return;
+            reportAppError(null);
+            render(v[0] || {}, list(v[1], 'records'), list(v[2], 'records'), list(v[3], 'records'), list(v[4], 'entries'));
+          }).catch(function (error) { if (!appDisposed && revision === appLoadRevision) reportAppError(error); });
+        }
+        loadDesk();
+        ['event.json', 'venues.json', 'vendors.json', 'guests.json', 'budget.json'].forEach(function (path) {
+          appSubscriptions.push(gezel.data.watch(path, function () { loadDesk(); }));
+        });
+      })();
+    </script>
+    <script src="application.js" defer></script>
+  </body>
+</html>

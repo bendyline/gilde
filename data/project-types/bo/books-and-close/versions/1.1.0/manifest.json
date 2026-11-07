@@ -1,0 +1,496 @@
+{
+  "schemaVersion": 1,
+  "version": "1.1.0",
+  "releasedAt": "2026-11-07T18:00:00.000Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "business": {
+        "type": "string",
+        "title": "What kind of business is this?",
+        "description": "e.g. 'a three-person electrical contractor', 'a café in Portland'.",
+        "default": "the business"
+      },
+      "currency": {
+        "type": "string",
+        "title": "Which currency are the books kept in?",
+        "description": "A three-letter code, e.g. USD, EUR or GBP.",
+        "default": "USD"
+      }
+    },
+    "required": [
+      "business",
+      "currency"
+    ]
+  },
+  "nameTemplate": "Books & Month Close",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "bookkeeper",
+      "voorman": true
+    }
+  ],
+  "scripts": {
+    "books-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { ledgerStore, rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'books-store',\n  description:\n    \"Read and update the books: the ledger (ledger.json), the month-close checklist (close.json) and the receipts inbox (inbox/). action:'status' for last month's P&L, the close checklist and what is waiting; 'record' to book money in or out (the same receipt, or the same payee, date and amount, updates the entry instead of adding it twice); 'categorize' to give an entry its category; 'tick' to check off a close step; 'close' to close a finished month once every step is done; 'reopen' to reopen a closed month; 'list' for the entries.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'status', 'record', 'categorize', 'tick', 'close', 'reopen', or 'list'.\",\n      required: true,\n    },\n    id: { type: 'string', description: \"Ledger entry id, e.g. 'ledger-7'.\" },\n    payee: {\n      type: 'string',\n      description: \"Who was paid, or who paid, e.g. 'Hillside Hardware'. Also finds an entry when no id is given.\",\n    },\n    amount: { type: 'number', description: 'Amount in ordinary units, e.g. 284.17. Always positive.' },\n    kind: {\n      type: 'string',\n      description: \"expense or income. Defaults from the category; a supplier's refund is income on its expense category.\",\n    },\n    category: { type: 'string', description: 'materials, subcontractors, payroll, vehicle, tools, insurance, rent, utilities, software, marketing, office, professional-fees, bank-fees, licenses, meals, other, sales, other-income, owner-draw, uncategorized.' },\n    date: { type: 'string', description: 'The day the money moved, YYYY-MM-DD (default today).' },\n    file: { type: 'string', description: \"The receipt's path in the inbox, e.g. 'inbox/hillside-1029.jpg'.\" },\n    note: { type: 'string', description: 'What it was for, with any reference number exactly as written.' },\n    month: { type: 'string', description: 'A month, YYYY-MM (default: the month being closed).' },\n    step: { type: 'string', description: 'A close step: receipts, categories, bank, card, payroll, income, review.' },\n    done: { type: 'boolean', description: 'For tick: false unticks the step.' },\n  },\n  outputs: {\n    waiting: { type: 'number', description: 'Receipts in the inbox not booked yet.' },\n    uncategorized: { type: 'number', description: 'Entries that still need a category.' },\n    closeMonth: { type: 'string', description: 'The month being closed, YYYY-MM.' },\n    stepsLeft: { type: 'number', description: 'Close steps still to do for that month.' },\n    net: { type: 'number', description: \"That month's net profit, in ordinary units like amount (negative for a loss).\" },\n    summary: { type: 'string', description: 'What changed, then the books picture; or the listing.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── books-rules-start ──\n// Pure derivations shared by the script, the page and the sample conversation:\n// integer-cent money, the P&L by category group, the receipts still waiting in\n// the inbox, and the month-close checklist. Kept self-contained between these\n// sentinels so unit tests execute the shipped bytes.\nvar CATEGORY_GROUP = {\n  materials: 'cost',\n  subcontractors: 'cost',\n  payroll: 'expense',\n  vehicle: 'expense',\n  tools: 'expense',\n  insurance: 'expense',\n  rent: 'expense',\n  utilities: 'expense',\n  software: 'expense',\n  marketing: 'expense',\n  office: 'expense',\n  'professional-fees': 'expense',\n  'bank-fees': 'expense',\n  licenses: 'expense',\n  meals: 'expense',\n  other: 'expense',\n  sales: 'income',\n  'other-income': 'income',\n  'owner-draw': 'equity',\n  uncategorized: 'unsorted',\n};\nvar CATEGORIES = Object.keys(CATEGORY_GROUP);\nvar CATEGORY_WORDS = {\n  income: 'sales', revenue: 'sales', sale: 'sales', job: 'sales', jobs: 'sales', interest: 'other-income', refund: 'other-income',\n  material: 'materials', supplies: 'materials', supply: 'materials', parts: 'materials', stock: 'materials',\n  subcontractor: 'subcontractors', contractor: 'subcontractors', contractors: 'subcontractors',\n  wages: 'payroll', salary: 'payroll', salaries: 'payroll',\n  fuel: 'vehicle', gas: 'vehicle', van: 'vehicle', truck: 'vehicle', mileage: 'vehicle',\n  tool: 'tools', equipment: 'tools',\n  advertising: 'marketing', ads: 'marketing',\n  phone: 'utilities', internet: 'utilities', electric: 'utilities',\n  legal: 'professional-fees', accounting: 'professional-fees', accountant: 'professional-fees',\n  fees: 'bank-fees', 'bank-fee': 'bank-fees', license: 'licenses', permit: 'licenses', permits: 'licenses',\n  meal: 'meals', food: 'meals', draw: 'owner-draw', 'owner-draws': 'owner-draw',\n  unknown: 'uncategorized', 'not-sure': 'uncategorized',\n};\nvar GROUP_ORDER = ['income', 'cost', 'expense', 'equity'];\nvar STEPS = [\n  { id: 'receipts', label: 'Book every receipt in the inbox', words: ['receipt', 'inbox'] },\n  { id: 'categories', label: 'Give every entry a category', words: ['categor'] },\n  { id: 'bank', label: 'Match the bank statement', words: ['bank', 'checking'] },\n  { id: 'card', label: 'Match the card statement', words: ['card', 'credit'] },\n  { id: 'payroll', label: 'Record payroll and subcontractor payments', words: ['payroll', 'wage', 'subcontract'] },\n  { id: 'income', label: 'Record every customer payment', words: ['customer', 'payment', 'invoice', 'income', 'deposit'] },\n  { id: 'review', label: 'Review the P&L with the owner', words: ['review', 'p&l', 'owner', 'profit'] },\n];\nvar MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];\n\nfunction pad(n) {\n  return n < 10 ? '0' + n : String(n);\n}\nfunction localDay(ms) {\n  var d = new Date(ms);\n  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());\n}\nfunction normalizeDate(text) {\n  var raw = String(text || '').trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(raw)) return raw;\n  var parsed = Date.parse(raw);\n  return isFinite(parsed) ? localDay(parsed) : null;\n}\nfunction prevMonth(month) {\n  var y = Number(month.slice(0, 4));\n  var m = Number(month.slice(5, 7)) - 1;\n  if (m < 1) {\n    m = 12;\n    y -= 1;\n  }\n  return y + '-' + pad(m);\n}\nfunction monthName(month) {\n  return MONTHS[Number(String(month).slice(5, 7)) - 1] + ' ' + String(month).slice(0, 4);\n}\n// 'YYYY-MM', a date, 'last month', or a month name; a bare name means its latest past or current occurrence.\nfunction normalizeMonth(text, nowMs) {\n  var raw = String(text || '').trim().toLowerCase();\n  var current = localDay(nowMs).slice(0, 7);\n  if (/^\\d{4}-\\d{2}$/.test(raw)) return raw;\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(raw)) return raw.slice(0, 7);\n  if (/last|previous/.test(raw)) return prevMonth(current);\n  if (/this|current/.test(raw)) return current;\n  for (var i = 0; i < 12; i++) {\n    if (raw.indexOf(MONTHS[i].toLowerCase().slice(0, 3)) === 0) {\n      var year = raw.match(/\\d{4}/);\n      var candidate = (year ? year[0] : current.slice(0, 4)) + '-' + pad(i + 1);\n      if (!year && candidate > current) candidate = Number(current.slice(0, 4)) - 1 + '-' + pad(i + 1);\n      return candidate;\n    }\n  }\n  return null;\n}\n// Integer cents from 284.17, '284.17' or '$1,912.40', with no float arithmetic; null unless positive.\nfunction toCents(value) {\n  var text = typeof value === 'number' ? (isFinite(value) ? String(value) : '') : String(value == null ? '' : value);\n  var m = /^(\\d+)(?:\\.(\\d*))?$/.exec(text.replace(/[$,\\s]/g, ''));\n  if (!m) return null;\n  var frac = (m[2] || '') + '000';\n  var cents = Number(m[1]) * 100 + Number(frac.slice(0, 2)) + (Number(frac.charAt(2)) >= 5 ? 1 : 0);\n  return cents > 0 ? cents : null;\n}\nfunction money(cents) {\n  var abs = Math.abs(Math.round(cents));\n  var whole = String(Math.floor(abs / 100)).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',');\n  return (cents < 0 ? '-' : '') + whole + '.' + pad(abs % 100);\n}\nfunction normalizeCategory(text) {\n  var key = String(text || '').trim().toLowerCase().replace(/&/g, 'and').replace(/[\\s_]+/g, '-');\n  if (Object.prototype.hasOwnProperty.call(CATEGORY_GROUP, key)) return key;\n  if (Object.prototype.hasOwnProperty.call(CATEGORY_WORDS, key)) return CATEGORY_WORDS[key];\n  var words = key.split('-');\n  for (var i = 0; i < words.length; i++) {\n    if (Object.prototype.hasOwnProperty.call(CATEGORY_GROUP, words[i])) return words[i];\n    if (Object.prototype.hasOwnProperty.call(CATEGORY_WORDS, words[i])) return CATEGORY_WORDS[words[i]];\n  }\n  return null;\n}\nfunction normalizeStep(text) {\n  var raw = String(text || '').trim().toLowerCase();\n  for (var i = 0; i < STEPS.length; i++) if (STEPS[i].id === raw) return STEPS[i].id;\n  for (var j = 0; j < STEPS.length; j++) {\n    for (var k = 0; k < STEPS[j].words.length; k++) if (raw.indexOf(STEPS[j].words[k]) >= 0) return STEPS[j].id;\n  }\n  return null;\n}\nfunction stepLabel(id) {\n  for (var i = 0; i < STEPS.length; i++) if (STEPS[i].id === id) return STEPS[i].label;\n  return id;\n}\nfunction entryDate(entry) {\n  return String((entry.data && entry.data.date) || entry.at || '').slice(0, 10);\n}\nfunction monthOf(entry) {\n  return entryDate(entry).slice(0, 7);\n}\nfunction payeeOf(entry) {\n  return String((entry.data && entry.data.payee) || entry.note || '');\n}\nfunction groupOf(entry) {\n  var group = CATEGORY_GROUP[entry.category] || 'expense';\n  return group === 'unsorted' ? (entry.kind === 'in' ? 'income' : 'expense') : group;\n}\nfunction entryLine(entry) {\n  return (\n    entry.id + ' ' + entryDate(entry) + ' ' + payeeOf(entry) + ' ' + money(entry.amountCents) +\n    (entry.kind === 'in' ? ' in, ' : ' out, ') + entry.category +\n    (entry.data && entry.data.file ? ' (receipt ' + entry.data.file + ')' : '')\n  );\n}\n// The month's P&L: income less cost of jobs is gross profit; less expenses is net profit. Owner draws stay off it.\nfunction pnl(entries, month) {\n  var rows = {};\n  var totals = { income: 0, cost: 0, expense: 0, equity: 0 };\n  var count = 0;\n  entries.forEach(function (e) {\n    if (monthOf(e) !== month) return;\n    count += 1;\n    var group = groupOf(e);\n    var cents = e.kind === (group === 'income' ? 'in' : 'out') ? e.amountCents : -e.amountCents;\n    totals[group] += cents;\n    var key = group + ':' + e.category;\n    if (!rows[key]) rows[key] = { group: group, category: e.category, cents: 0 };\n    rows[key].cents += cents;\n  });\n  var lines = Object.keys(rows)\n    .map(function (k) { return rows[k]; })\n    .sort(function (a, b) { return GROUP_ORDER.indexOf(a.group) - GROUP_ORDER.indexOf(b.group) || b.cents - a.cents; });\n  var gross = totals.income - totals.cost;\n  return {\n    month: month, count: count, incomeCents: totals.income, costCents: totals.cost, grossCents: gross,\n    expenseCents: totals.expense, netCents: gross - totals.expense, drawCents: totals.equity, lines: lines,\n  };\n}\nfunction pnlLine(p) {\n  if (!p.count) return monthName(p.month) + ': nothing booked.';\n  var part = function (group) {\n    var rows = p.lines.filter(function (l) { return l.group === group; }).map(function (l) { return l.category + ' ' + money(l.cents); });\n    return rows.length ? ' (' + rows.join(', ') + ')' : '';\n  };\n  return (\n    monthName(p.month) + ': income ' + money(p.incomeCents) + part('income') +\n    '; cost of jobs ' + money(p.costCents) + part('cost') +\n    '; gross profit ' + money(p.grossCents) +\n    '; expenses ' + money(p.expenseCents) + part('expense') +\n    '; net profit ' + money(p.netCents) + (p.netCents < 0 ? ' (a loss)' : '') +\n    (p.drawCents ? '; owner draws ' + money(p.drawCents) + ', not on the P&L' : '') + '.'\n  );\n}\n// Inbox files that no entry names as its receipt yet.\nfunction waitingFiles(names, entries) {\n  var booked = {};\n  entries.forEach(function (e) {\n    if (e.data && e.data.file) booked[String(e.data.file)] = true;\n  });\n  return names\n    .filter(function (n) { return n.charAt(0) !== '.' && !booked['inbox/' + n]; })\n    .map(function (n) { return 'inbox/' + n; });\n}\nfunction needsCategory(entries, month) {\n  return entries.filter(function (e) { return e.category === 'uncategorized' && (!month || monthOf(e) === month); });\n}\nfunction closeRecord(closes, month) {\n  for (var i = 0; i < closes.length; i++) if (closes[i].fields && closes[i].fields.month === month) return closes[i];\n  return null;\n}\nfunction isClosed(closes, month) {\n  var r = closeRecord(closes, month);\n  return !!r && r.status === 'closed';\n}\n// The month to close: the earliest finished month with entries that is still open, else last month.\nfunction monthToClose(entries, closes, nowMs) {\n  var current = localDay(nowMs).slice(0, 7);\n  var months = {};\n  entries.forEach(function (e) {\n    var m = monthOf(e);\n    if (m && m < current) months[m] = true;\n  });\n  closes.forEach(function (r) {\n    if (r.fields && r.fields.month && r.fields.month < current) months[r.fields.month] = true;\n  });\n  var open = Object.keys(months).filter(function (m) { return !isClosed(closes, m); }).sort();\n  return open.length ? open[0] : prevMonth(current);\n}\nfunction closeView(month, entries, closes, waiting) {\n  var rec = closeRecord(closes, month);\n  var fields = (rec && rec.fields) || {};\n  var done = fields.done || {};\n  var notes = fields.notes || {};\n  var closed = !!rec && rec.status === 'closed';\n  var unsorted = needsCategory(entries, month);\n  var steps = STEPS.map(function (s) {\n    var ticked = !!done[s.id];\n    var auto = s.id === 'receipts' ? waiting.length === 0 : s.id === 'categories' ? unsorted.length === 0 : false;\n    var ok = closed || (s.id === 'categories' ? auto : auto || ticked);\n    return { id: s.id, label: s.label, done: ok, on: done[s.id] || '', note: notes[s.id] || '', auto: auto && !ticked };\n  });\n  var left = steps.filter(function (s) { return !s.done; });\n  return { month: month, closed: closed, closedOn: fields.closedOn || '', steps: steps, left: left, ready: !closed && left.length === 0, unsorted: unsorted };\n}\nfunction closeLine(view) {\n  if (view.closed) return monthName(view.month) + ' is closed' + (view.closedOn ? ' (closed ' + view.closedOn + ')' : '') + '.';\n  var count = view.steps.length - view.left.length;\n  return (\n    'Close of ' + monthName(view.month) + ': ' + count + ' of ' + view.steps.length + ' steps done. ' +\n    (view.ready\n      ? 'Every step is done, so it is ready to close.'\n      : 'Still to do: ' + view.left.map(function (s) { return s.label + ' (' + s.id + ')'; }).join('; ') + '.')\n  );\n}\nfunction picture(entries, closes, inboxNames, nowMs, focusMonth) {\n  var current = localDay(nowMs).slice(0, 7);\n  var last = prevMonth(current);\n  var closing = monthToClose(entries, closes, nowMs);\n  var waiting = waitingFiles(inboxNames, entries);\n  var unsorted = needsCategory(entries);\n  var view = closeView(closing, entries, closes, waiting);\n  var parts = [];\n  var shown = [];\n  function addPnl(month) {\n    if (!month || shown.indexOf(month) >= 0) return;\n    shown.push(month);\n    var label = month === last ? 'P&L for last month, ' : month === current ? 'This month so far, ' : 'P&L for ';\n    parts.push(label + pnlLine(pnl(entries, month)));\n  }\n  addPnl(focusMonth);\n  addPnl(last);\n  addPnl(closing);\n  parts.push(closeLine(view));\n  parts.push(\n    waiting.length\n      ? waiting.length + (waiting.length === 1 ? ' receipt is' : ' receipts are') + ' waiting in the inbox to be booked: ' + waiting.join(', ') + '.'\n      : 'No receipts are waiting in the inbox.',\n  );\n  parts.push(\n    unsorted.length\n      ? unsorted.length + (unsorted.length === 1 ? ' entry needs' : ' entries need') + ' a category: ' + unsorted.map(entryLine).join(' | ') + '.'\n      : 'Every entry has a category.',\n  );\n  addPnl(current);\n  var closedMonths = closes\n    .filter(function (r) { return r.status === 'closed' && r.fields && r.fields.month; })\n    .map(function (r) { return r.fields.month; })\n    .sort();\n  if (closedMonths.length) parts.push('Closed months: ' + closedMonths.map(monthName).join(', ') + '.');\n  return { closing: closing, view: view, waiting: waiting, unsorted: unsorted, netCents: pnl(entries, closing).netCents, summary: parts.join(' ') };\n}\n// ── books-rules-end ──\n\ntype Entry = {\n  id: string;\n  at: string;\n  amountCents: number;\n  kind: 'in' | 'out';\n  category: string;\n  note?: string;\n  data?: Record<string, unknown>;\n};\n\nconst ledger = ledgerStore(gezel.fs, 'ledger.json');\nconst closeBook = rosterStore(gezel.fs, 'close.json', { stages: ['open', 'closed'], idPrefix: 'close' });\nconst now = Date.now();\nconst today = localDay(now);\nconst currentMonth = today.slice(0, 7);\n\nasync function inboxNames(): Promise<string[]> {\n  try {\n    return (await gezel.fs.list('inbox')).filter((e) => !e.isDirectory).map((e) => e.name).sort();\n  } catch {\n    return [];\n  }\n}\n\n// ledgerStore only appends; a correction rewrites the one entry in place, in the store's own file format.\nasync function patchEntry(id: string, patch: (entry: Entry) => void): Promise<Entry> {\n  const file = JSON.parse(await gezel.fs.read('ledger.json')) as { entries: Entry[] };\n  const entry = file.entries.find((e) => e.id === id);\n  if (!entry) throw new Error('No ledger entry ' + id + '.');\n  patch(entry);\n  await gezel.fs.write('ledger.json', JSON.stringify(file, null, 2) + '\\n');\n  return entry;\n}\n\nfunction resolveEntry(all: Entry[]): Entry {\n  if (input.id) {\n    const hit = all.find((e) => e.id === input.id);\n    if (hit) return hit;\n    throw new Error(\"No entry '\" + input.id + \"'. Call action:'list' to see the entries.\");\n  }\n  const wanted = (input.payee ?? '').trim().toLowerCase();\n  if (wanted) {\n    let hits = all.filter((e) => payeeOf(e).toLowerCase() === wanted);\n    if (!hits.length) {\n      hits = all.filter((e) => {\n        const p = payeeOf(e).toLowerCase();\n        return !!p && (p.includes(wanted) || wanted.includes(p));\n      });\n    }\n    const cents = toCents(input.amount);\n    if (hits.length > 1 && cents) {\n      const same = hits.filter((e) => e.amountCents === cents);\n      if (same.length) hits = same;\n    }\n    if (hits.length > 1) {\n      const unsorted = hits.filter((e) => e.category === 'uncategorized');\n      if (unsorted.length === 1) hits = unsorted;\n    }\n    if (hits.length === 1) return hits[0]!;\n    if (hits.length > 1) {\n      throw new Error(\"More than one entry matches '\" + input.payee + \"': \" + hits.map(entryLine).join(' | ') + '. Pass id.');\n    }\n  }\n  throw new Error(\"Pass 'id' (e.g. 'ledger-7') or the entry's 'payee'. Call action:'list' to see the entries.\");\n}\n\nfunction kindOf(text: string | undefined): 'in' | 'out' | null {\n  const k = String(text ?? '').trim().toLowerCase();\n  return k === 'income' || k === 'in' ? 'in' : k === 'expense' || k === 'out' ? 'out' : null;\n}\nfunction naturalKind(category: string): 'in' | 'out' {\n  return CATEGORY_GROUP[category] === 'income' ? 'in' : 'out';\n}\nfunction normalizeFile(file: string): string {\n  const clean = file.trim().replace(/\\\\/g, '/').replace(/^\\.?\\//, '');\n  return clean.includes('/') ? clean : 'inbox/' + clean;\n}\nfunction pickMonth(all: Entry[], closes: unknown[]): string {\n  const month = input.month ? normalizeMonth(input.month, now) : monthToClose(all, closes, now);\n  if (!month) throw new Error(\"month must be YYYY-MM, e.g. '\" + prevMonth(currentMonth) + \"'.\");\n  if (month >= currentMonth) throw new Error(monthName(month) + \" isn't over yet. Close steps are for a finished month.\");\n  return month;\n}\nasync function ensureClose(month: string, closes: unknown[]) {\n  const found = closeRecord(closes, month);\n  if (found) return found;\n  return closeBook.add({ id: 'close-' + month, status: 'open', fields: { month, done: {}, notes: {} } });\n}\nfunction lockedMessage(month: string): string {\n  return monthName(month) + ' is closed. Reopen it first (reopen_month), or date the entry in an open month.';\n}\n\nconst closeList = await closeBook.list();\nlet note = '';\n\nif (input.action === 'record') {\n  const cents = toCents(input.amount);\n  if (cents === null) throw new Error(\"record needs a positive 'amount' in ordinary units, e.g. 284.17.\");\n  const payee = (input.payee ?? '').trim();\n  if (!payee) throw new Error(\"record needs 'payee': who was paid, or who paid.\");\n  const date = input.date ? normalizeDate(input.date) : today;\n  if (!date) throw new Error(\"date must be a date, e.g. '\" + today + \"'.\");\n  const category = input.category ? normalizeCategory(input.category) : null;\n  if (input.category && !category) {\n    throw new Error(\"Unknown category '\" + input.category + \"'. Use one of: \" + CATEGORIES.join(', ') + '.');\n  }\n  const explicit = kindOf(input.kind);\n  const kind = explicit ?? naturalKind(category ?? 'uncategorized');\n  const file = input.file ? normalizeFile(input.file) : undefined;\n  if (isClosed(closeList, date.slice(0, 7))) throw new Error(lockedMessage(date.slice(0, 7)));\n  const all = (await ledger.list()) as Entry[];\n  const same = all.find(\n    (e) =>\n      (file && e.data?.file === file) ||\n      (entryDate(e) === date && e.amountCents === cents && payeeOf(e).toLowerCase() === payee.toLowerCase()),\n  );\n  if (same) {\n    if (isClosed(closeList, monthOf(same))) throw new Error(lockedMessage(monthOf(same)));\n    const updated = await patchEntry(same.id, (entry) => {\n      entry.amountCents = cents;\n      entry.at = date + 'T12:00:00.000Z';\n      if (category) entry.category = category;\n      if (explicit || category) entry.kind = kind;\n      if (input.note) entry.note = input.note.trim();\n      // A payee typed differently keeps its booked spelling; a re-read receipt may correct it.\n      entry.data = { ...(entry.data ?? {}), date, ...(file && same.data?.file === file ? { payee } : {}), ...(file ? { file } : {}) };\n    });\n    note = 'Already in the books, so updated it instead of adding it twice: ' + entryLine(updated) + '.';\n  } else {\n    const added = await ledger.add({\n      amountCents: cents,\n      kind,\n      category: category ?? 'uncategorized',\n      at: date + 'T12:00:00.000Z',\n      ...(input.note ? { note: input.note.trim() } : {}),\n      data: { date, payee, ...(file ? { file } : {}) },\n    });\n    note = 'Booked ' + entryLine(added) + '.' + (category ? '' : ' It needs a category: ask what it was for.');\n  }\n} else if (input.action === 'categorize') {\n  const category = normalizeCategory(input.category ?? '');\n  if (!category || category === 'uncategorized') {\n    throw new Error(\"categorize needs 'category', one of: \" + CATEGORIES.filter((c) => c !== 'uncategorized').join(', ') + '.');\n  }\n  const entry = resolveEntry((await ledger.list()) as Entry[]);\n  if (isClosed(closeList, monthOf(entry))) throw new Error(lockedMessage(monthOf(entry)));\n  const updated = await patchEntry(entry.id, (e) => {\n    const explicit = kindOf(input.kind);\n    if (explicit) e.kind = explicit;\n    else if (e.category === 'uncategorized') e.kind = naturalKind(category);\n    e.category = category;\n    if (input.note) e.note = input.note.trim();\n  });\n  note = payeeOf(updated) + ' (' + updated.id + ', ' + money(updated.amountCents) + ' on ' + entryDate(updated) + ') is now under ' + category + '.';\n} else if (input.action === 'tick') {\n  const step = normalizeStep(input.step ?? '');\n  if (!step) throw new Error(\"tick needs 'step': \" + STEPS.map((s) => s.id).join(', ') + '.');\n  const all = (await ledger.list()) as Entry[];\n  const month = pickMonth(all, closeList);\n  if (step === 'categories') {\n    const left = needsCategory(all, month);\n    if (left.length) {\n      throw new Error(left.length + ' entries in ' + monthName(month) + ' still need a category: ' + left.map(entryLine).join(' | ') + '. Give each one its category; this step checks itself.');\n    }\n    note = 'Every entry in ' + monthName(month) + ' has a category, so that step checks itself.';\n  } else {\n    const rec = await ensureClose(month, closeList);\n    if (rec.status === 'closed') throw new Error(monthName(month) + ' is already closed. Reopen it to change its checklist.');\n    const done: Record<string, string> = { ...((rec.fields.done as Record<string, string>) ?? {}) };\n    const notes: Record<string, string> = { ...((rec.fields.notes as Record<string, string>) ?? {}) };\n    if (input.done === false) {\n      delete done[step];\n      delete notes[step];\n    } else {\n      done[step] = today;\n      if (input.note) notes[step] = input.note.trim();\n    }\n    await closeBook.update(rec.id, { fields: { done, notes }, note: stepLabel(step) + (input.done === false ? ': unticked' : ': done') });\n    note = stepLabel(step) + (input.done === false ? ' is unticked' : ' is done') + ' for ' + monthName(month) + '.';\n  }\n} else if (input.action === 'close') {\n  const all = (await ledger.list()) as Entry[];\n  const month = pickMonth(all, closeList);\n  const existing = closeRecord(closeList, month);\n  if (existing && existing.status === 'closed') {\n    note = monthName(month) + ' was already closed.';\n  } else {\n    const view = closeView(month, all, closeList, waitingFiles(await inboxNames(), all));\n    if (!view.ready) {\n      throw new Error(monthName(month) + ' is not ready to close. Still to do: ' + view.left.map((s) => s.label + ' (' + s.id + ')').join('; ') + '.');\n    }\n    const rec = existing ?? (await ensureClose(month, closeList));\n    const result = pnl(all, month);\n    await closeBook.update(rec.id, { fields: { closedOn: today, netCents: result.netCents } });\n    await closeBook.transition(rec.id, 'closed', { note: 'Closed with net profit ' + money(result.netCents) });\n    note = monthName(month) + ' is closed with net profit ' + money(result.netCents) + '. Its entries are locked until it is reopened.';\n  }\n} else if (input.action === 'reopen') {\n  const closed = closeList.filter((r) => r.status === 'closed').map((r) => String(r.fields.month)).sort();\n  const month = input.month ? normalizeMonth(input.month, now) : closed[closed.length - 1];\n  if (!month) throw new Error('No month is closed.');\n  const rec = closeRecord(closeList, month);\n  if (!rec || rec.status !== 'closed') throw new Error(monthName(month) + ' is not closed.');\n  await closeBook.transition(rec.id, 'open', { note: input.note ?? 'Reopened' });\n  note = monthName(month) + ' is open again. Close it once the change is booked.';\n} else if (input.action !== 'status' && input.action !== 'list') {\n  throw new Error(\"Unknown action '\" + input.action + \"'. Use status, record, categorize, tick, close, reopen, or list.\");\n}\n\nconst entries = (await ledger.list()) as Entry[];\nconst closes = await closeBook.list();\nconst focus = input.month ? normalizeMonth(input.month, now) : null;\nconst view = picture(entries, closes, await inboxNames(), now, input.action === 'status' ? focus : null);\nconst rows = entries.filter((e) => !focus || monthOf(e) === focus);\nconst listing =\n  input.action === 'list'\n    ? (focus ? 'Entries in ' + monthName(focus) + ' (' + rows.length + '):\\n' : 'Latest entries (' + Math.min(rows.length, 80) + ' of ' + rows.length + '):\\n') +\n      (rows.slice(-80).map(entryLine).join('\\n') || 'None.')\n    : '';\n\ngezel.output({\n  waiting: view.waiting.length,\n  uncategorized: view.unsorted.length,\n  closeMonth: view.closing,\n  stepsLeft: view.view.left.length,\n  net: view.netCents / 100,\n  summary: listing || (note ? note + ' ' : '') + view.summary,\n});\n"
+  },
+  "tools": [
+    {
+      "name": "books_status",
+      "description": "Last month's P&L (income, cost of jobs, gross and net profit by category), the month-close checklist with the steps still to do, receipts waiting in the inbox, and entries that need a category, each with its id. Call it first for any question about the books.",
+      "script": "books-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "month": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "status"
+      },
+      "state": true
+    },
+    {
+      "name": "record_entry",
+      "description": "Book money in or out: payee, amount in ordinary units (e.g. 284.17), date (YYYY-MM-DD), category, and the receipt's inbox path when there is one. The same receipt, or the same payee, date and amount, updates the entry instead of adding it twice. Call it as soon as a payment, sale or receipt is mentioned, before you describe it. When the category is unclear, leave it out and ask.",
+      "script": "books-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "payee": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "date": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "materials",
+              "subcontractors",
+              "payroll",
+              "vehicle",
+              "tools",
+              "insurance",
+              "rent",
+              "utilities",
+              "software",
+              "marketing",
+              "office",
+              "professional-fees",
+              "bank-fees",
+              "licenses",
+              "meals",
+              "other",
+              "sales",
+              "other-income",
+              "owner-draw",
+              "uncategorized"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "expense",
+              "income"
+            ]
+          },
+          "file": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "payee",
+          "amount"
+        ]
+      },
+      "bind": {
+        "action": "record"
+      }
+    },
+    {
+      "name": "categorize_entry",
+      "description": "Give an entry its category, or change it, found by id or payee. Call it the moment the person says what a charge was for.",
+      "script": "books-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "payee": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "materials",
+              "subcontractors",
+              "payroll",
+              "vehicle",
+              "tools",
+              "insurance",
+              "rent",
+              "utilities",
+              "software",
+              "marketing",
+              "office",
+              "professional-fees",
+              "bank-fees",
+              "licenses",
+              "meals",
+              "other",
+              "sales",
+              "other-income",
+              "owner-draw"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "expense",
+              "income"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "category"
+        ]
+      },
+      "bind": {
+        "action": "categorize"
+      }
+    },
+    {
+      "name": "tick_close_step",
+      "description": "Check off a month-close step for the month being closed: bank, card, payroll, income, review, or receipts (when the leftover inbox files are set aside). Call it as soon as the person says a step is done.",
+      "script": "books-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "step": {
+            "type": "string",
+            "enum": [
+              "receipts",
+              "categories",
+              "bank",
+              "card",
+              "payroll",
+              "income",
+              "review"
+            ]
+          },
+          "month": {
+            "type": "string"
+          },
+          "done": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "step"
+        ]
+      },
+      "bind": {
+        "action": "tick"
+      }
+    },
+    {
+      "name": "close_month",
+      "description": "Close a finished month once every step on its checklist is done; its entries are then locked. If steps are left, the error names them.",
+      "script": "books-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "month": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "close"
+      }
+    },
+    {
+      "name": "reopen_month",
+      "description": "Reopen a closed month so an entry in it can be fixed. Close it again afterward.",
+      "script": "books-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "month": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "reopen"
+      }
+    },
+    {
+      "name": "list_entries",
+      "description": "Every entry for a month (YYYY-MM), with ids, payees, amounts, categories and receipts.",
+      "script": "books-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "month": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "list"
+      }
+    },
+    {
+      "name": "page_record_entry",
+      "description": "Book money in or out.",
+      "script": "books-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "payee": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "date": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "materials",
+              "subcontractors",
+              "payroll",
+              "vehicle",
+              "tools",
+              "insurance",
+              "rent",
+              "utilities",
+              "software",
+              "marketing",
+              "office",
+              "professional-fees",
+              "bank-fees",
+              "licenses",
+              "meals",
+              "other",
+              "sales",
+              "other-income",
+              "owner-draw",
+              "uncategorized"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "expense",
+              "income"
+            ]
+          },
+          "file": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "payee",
+          "amount"
+        ]
+      },
+      "bind": {
+        "action": "record"
+      }
+    },
+    {
+      "name": "page_categorize_entry",
+      "description": "Give an entry its category.",
+      "script": "books-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "payee": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "materials",
+              "subcontractors",
+              "payroll",
+              "vehicle",
+              "tools",
+              "insurance",
+              "rent",
+              "utilities",
+              "software",
+              "marketing",
+              "office",
+              "professional-fees",
+              "bank-fees",
+              "licenses",
+              "meals",
+              "other",
+              "sales",
+              "other-income",
+              "owner-draw"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "expense",
+              "income"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "category"
+        ]
+      },
+      "bind": {
+        "action": "categorize"
+      }
+    },
+    {
+      "name": "page_tick_close_step",
+      "description": "Check off a month-close step.",
+      "script": "books-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "step": {
+            "type": "string",
+            "enum": [
+              "receipts",
+              "categories",
+              "bank",
+              "card",
+              "payroll",
+              "income",
+              "review"
+            ]
+          },
+          "month": {
+            "type": "string"
+          },
+          "done": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "step"
+        ]
+      },
+      "bind": {
+        "action": "tick"
+      }
+    },
+    {
+      "name": "page_close_month",
+      "description": "Close the month being closed.",
+      "script": "books-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "month": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "close"
+      },
+      "reaction": {
+        "gezel": "bookkeeper",
+        "hideSeed": true,
+        "prompt": "The person just closed a month on the books page. The books now read (the first sentence is what changed):\n{{output.summary}}\nIn two short sentences, confirm which month is closed and its net profit, and name the first thing to do for the next close. Do not call tools."
+      }
+    }
+  ],
+  "craftbooks": [
+    "receipt-intake"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "books/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "ledger.json"
+      },
+      {
+        "source": "workspace",
+        "path": "close.json"
+      },
+      {
+        "source": "workspace",
+        "path": "inbox",
+        "subtree": true
+      }
+    ],
+    "imports": [
+      {
+        "id": "inbox",
+        "source": "workspace",
+        "path": "inbox",
+        "accept": [
+          ".pdf",
+          ".png",
+          ".jpg",
+          ".jpeg",
+          ".webp",
+          ".heic",
+          ".txt",
+          ".md"
+        ],
+        "maxFileBytes": 26214400
+      }
+    ],
+    "tools": [
+      "page_record_entry",
+      "page_categorize_entry",
+      "page_tick_close_step",
+      "page_close_month"
+    ]
+  },
+  "workspaceSeed": [
+    "ledger.json",
+    "close.json"
+  ],
+  "minGezelVersion": "1.26280"
+}

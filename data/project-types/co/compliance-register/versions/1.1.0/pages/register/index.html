@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Compliance register</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f6f2ea; --card: #fffcf6; --ink: #29241e; --muted: #6b6155; --line: #ddd3c3;
+        --accent: #8a5226; --late: #a3341f; --late-bg: #f7e1da; --soon: #8a5a12; --soon-bg: #f6ead2;
+        --ok: #3f6b4a; --ok-bg: #e2eedf; --chip: #efe7da;
+      }
+      :root[data-theme='dark'] {
+        --bg: #181613; --card: #221f1b; --ink: #efe8dd; --muted: #a99d8d; --line: #3a342c;
+        --accent: #e0a46d; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+        --ok: #8fc29b; --ok-bg: #22301f; --chip: #2d2822;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #181613; --card: #221f1b; --ink: #efe8dd; --muted: #a99d8d; --line: #3a342c;
+          --accent: #e0a46d; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+          --ok: #8fc29b; --ok-bg: #22301f; --chip: #2d2822;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body, system-ui, sans-serif); font-size: 15px; line-height: 1.5; padding: 1.5rem 1.25rem; }
+      main { max-width: 860px; margin: 0 auto; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.5rem; font-weight: 400; margin: 0 0 0.2rem; }
+      h2 { font-family: var(--font-heading, Georgia, serif); font-size: 1.1rem; font-weight: 400; margin: 0 0 0.6rem; }
+      .sub { color: var(--muted); margin: 0 0 1rem; }
+      .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; margin: 0 0 1.2rem; }
+      .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem 0.9rem; }
+      .tile b { display: block; font-size: 1.5rem; font-weight: 600; line-height: 1.1; }
+      .tile span { color: var(--muted); font-size: 0.85rem; }
+      .tile.late b { color: var(--late); }
+      .tile.soon b { color: var(--soon); }
+      section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin: 0 0 1rem; }
+      .due { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+      .due li { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) auto; gap: 0.75rem; align-items: start; }
+      .due .when, .due li > .key { justify-self: start; }
+      .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+      .key { min-height: 32px; padding: 0.2rem 0.65rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; font-size: 0.85rem; white-space: nowrap; }
+      .key:hover { background: var(--chip); }
+      .row-actions { text-align: right; white-space: nowrap; }
+      .file-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.5rem; align-items: center; }
+      .file-row .meta { grid-column: 1 / -1; margin-top: -0.25rem; }
+      .when { font-size: 0.8rem; font-weight: 600; padding: 0.15rem 0.45rem; border-radius: 4px; text-align: center; background: var(--chip); color: var(--muted); }
+      .when.late { background: var(--late-bg); color: var(--late); }
+      .when.soon { background: var(--soon-bg); color: var(--soon); }
+      .due .what b { font-weight: 600; }
+      .due .what small, .meta { display: block; color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
+      .empty { color: var(--muted); font-style: italic; margin: 0; }
+      .table-wrap { overflow-x: auto; position: relative; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+      th { text-align: left; font-weight: 600; color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 0.5rem 0.4rem; border-bottom: 1px solid var(--line); }
+      td { padding: 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+      tr:last-child td { border-bottom: 0; }
+      .status { display: inline-block; font-size: 0.78rem; padding: 0.05rem 0.4rem; border-radius: 4px; background: var(--chip); }
+      .status.in-progress { background: var(--soon-bg); color: var(--soon); }
+      .status.done { background: var(--ok-bg); color: var(--ok); }
+      .proof-yes { color: var(--ok); }
+      .proof-no { color: var(--late); }
+      .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
+      .log { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; font-size: 0.9rem; }
+      .log time { color: var(--muted); font-size: 0.8rem; margin-right: 0.35rem; }
+      .files { display: grid; gap: 0.5rem; margin: 0 0 0.75rem; }
+      .demo-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 0 0 1rem; padding: 0.5rem 0.65rem; border: 1px solid var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--card) 88%, var(--accent)); font-size: 0.85rem; }
+      .demo-banner[hidden] { display: none; }
+      .demo-reset { flex: none; min-height: 36px; padding: 0.3rem 0.7rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; }
+      .note { color: var(--muted); font-size: 0.85rem; margin: 0.75rem 0 0; }
+      @media (max-width: 640px) {
+        .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .split { grid-template-columns: minmax(0, 1fr); }
+        .due li { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
+        .when { justify-self: start; }
+      }
+    </style>
+    <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:0 0 12px;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--line,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+    <style data-app-shell="2">
+    /* Shared app furniture from the Gezel app UX guide. The page owns everything else. */
+    :root{--app-action:var(--gezel-component-accent,#805128);--app-on-action:#fffaf3;--app-banner-bg:#f3eddf;--app-banner-line:#d6cbb8}
+    :root[data-theme=dark]{--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}
+    @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}}
+    main h1{font-weight:400}
+    html[data-gezel-fullscreen=true] main h1{font-size:clamp(28px,3vw,40px);margin-top:0}
+    .app-tabs{margin:20px 0 24px}
+    .app-actionbar{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin:16px 0 24px}
+    .app-panel>.app-actionbar:first-child{margin-top:0}
+    .app-settings{display:grid;gap:16px;max-width:760px;margin:0 0 24px}
+    .app-search{margin:0}
+    .app-search gezel-collection-filter{margin:0 0 12px;max-width:540px}
+    .app-primary{min-height:44px;padding:8px 16px;border:1px solid var(--app-action);border-radius:6px;background:var(--app-action);color:var(--app-on-action);font-weight:600}
+    .app-primary:disabled{display:none}
+    main li.empty{display:block;grid-column:1/-1}
+    html[data-app-legacy] [data-app-action]{display:none!important}
+    [data-gezel-demo-banner]:not([hidden]){display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin:0 0 16px;padding:8px 8px 8px 14px;border:1px solid var(--app-banner-line);border-radius:10px;background:var(--app-banner-bg);color:inherit;font-size:14px;line-height:1.4}
+    [data-gezel-demo-banner] button{min-height:32px;padding:4px 12px;border:1px solid var(--app-banner-line);border-radius:6px;background:transparent;color:inherit;font-size:13px}
+    @media(max-width:620px){.tiles,.stats,.summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:nth-child(3):last-child){grid-template-columns:repeat(3,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:only-child){grid-template-columns:minmax(0,1fr)!important}}
+    </style>
+    <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script>
+  </head>
+  <body>
+    <main>
+      <p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong>: Harbor Street Café’s sample register. Changes stay in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Compliance register</h1>
+      <p class="sub" id="sub">Loading the register…</p>
+      <div class="tiles">
+        <div class="tile"><b id="t-overdue">0</b><span>Overdue</span></div>
+        <div class="tile"><b id="t-soon">0</b><span>Due in 60 days</span></div>
+        <div class="tile"><b id="t-tracked">0</b><span>Tracked</span></div>
+        <div class="tile"><b id="t-proof">0</b><span>Have proof on file</span></div>
+      </div>
+      <section id="due-section">
+        <h2>Coming up</h2>
+        <ul class="due" id="due"></ul>
+      </section>
+      <section id="register-section">
+        <h2>The register</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Obligation</th><th>Kind</th><th>Owner</th><th>Next due</th><th>Status</th><th>Proof</th><th><span class="sr-only">Actions</span></th></tr></thead>
+            <tbody id="register-body"></tbody>
+          </table>
+        </div>
+      </section>
+      <section id="evidence-section">
+        <h2>Evidence</h2>
+        <div class="split">
+          <div>
+            <ul class="log" id="evidence-log"></ul>
+          </div>
+          <div>
+            <div class="files" id="evidence-files"></div>
+            <div id="add-evidence"></div>
+          </div>
+        </div>
+        <p class="note">This register records what the business has done. It is not legal advice; where a rule is unclear, ask the issuing agency, your insurer, an accountant or a lawyer.</p>
+      </section>
+    </main>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        var DAY = 86400000;
+        function pad(n) { return n < 10 ? '0' + n : String(n); }
+        function iso(ms) { var d = new Date(ms); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+        function daysFromNow(n) { return iso(Date.now() + n * DAY); }
+        function stampFromNow(n) { return new Date(Date.now() + n * DAY).toISOString(); }
+
+        // ── demo register (used only when the page opens outside Gezel); dates are relative so it never goes stale ──
+        var demoObligations = { version: 1, stages: ['open', 'in-progress', 'done'], records: [
+          { id: 'ob-1', status: 'open', fields: { title: 'Food service permit', category: 'permit', owner: 'Dana', dueAt: daysFromNow(12), recurs: 'yearly', authority: 'County Health Department' } },
+          { id: 'ob-2', status: 'open', fields: { title: 'Fire extinguisher inspection', category: 'inspection', owner: 'Luis', dueAt: daysFromNow(-5), recurs: 'yearly', authority: 'City Fire Marshal' } },
+          { id: 'ob-3', status: 'open', fields: { title: 'Sales tax return', category: 'filing', owner: 'Priya', dueAt: daysFromNow(25), recurs: 'quarterly', authority: 'State Department of Revenue' } },
+          { id: 'ob-4', status: 'in-progress', fields: { title: 'Allergen policy review', category: 'policy', owner: 'Dana', dueAt: daysFromNow(30), recurs: 'yearly' } },
+          { id: 'ob-5', status: 'open', fields: { title: 'Food handler cards (3 staff)', category: 'certification', owner: 'Dana', dueAt: daysFromNow(41), recurs: 'yearly', authority: 'County Health Department' } },
+          { id: 'ob-6', status: 'open', fields: { title: 'Grease trap service', category: 'inspection', owner: 'Luis', dueAt: daysFromNow(58), recurs: 'quarterly', authority: 'Licensed waste hauler' } },
+          { id: 'ob-7', status: 'open', fields: { title: 'General liability insurance', category: 'insurance', owner: 'Priya', dueAt: daysFromNow(74), recurs: 'yearly', authority: 'Northgate Mutual' } },
+          { id: 'ob-8', status: 'open', fields: { title: 'Business license', category: 'license', owner: 'Priya', dueAt: daysFromNow(140), recurs: 'yearly', authority: 'City Clerk' } },
+          { id: 'ob-9', status: 'open', fields: { title: 'Background music license', category: 'license', owner: 'Luis', dueAt: daysFromNow(205), recurs: 'yearly', authority: 'Music rights agency' } },
+        ] };
+        var demoEvidence = { version: 1, events: [
+          { at: stampFromNow(-353), kind: 'completed', note: 'Permit renewed; certificate FSP-22841 posted by the register.', data: { obligationId: 'ob-1', file: 'evidence/food-permit-2025.pdf' } },
+          { at: stampFromNow(-66), kind: 'completed', note: 'Q2 return filed; confirmation ST-0712-4471.', data: { obligationId: 'ob-3' } },
+          { at: stampFromNow(-291), kind: 'completed', note: 'Policy GL-5531 renewed for one year.', data: { obligationId: 'ob-7', file: 'evidence/liability-policy.pdf' } },
+          { at: stampFromNow(-32), kind: 'completed', note: 'Trap pumped; service ticket 88213.', data: { obligationId: 'ob-6' } },
+          { at: stampFromNow(-9), kind: 'evidence', note: 'Draft allergen matrix shared with the kitchen.', data: { obligationId: 'ob-4' } },
+        ] };
+        var demoFiles = [
+          { path: 'evidence/food-permit-2025.pdf', name: 'food-permit-2025.pdf', size: 184320, mtime: Date.now() - 353 * DAY },
+          { path: 'evidence/liability-policy.pdf', name: 'liability-policy.pdf', size: 412160, mtime: Date.now() - 291 * DAY },
+        ];
+
+        // The compliance-store rules, mirrored for the demo so the sample behaves like the live register.
+        var CATEGORIES = ['license', 'permit', 'filing', 'insurance', 'certification', 'inspection', 'policy', 'other'];
+        function daysLeft(dueAt) { return Math.round((Date.parse(String(dueAt).slice(0, 10) + 'T00:00:00') - Date.parse(iso(Date.now()) + 'T00:00:00')) / DAY); }
+        function rollForward(dueAt, recurs) {
+          var months = recurs === 'monthly' ? 1 : recurs === 'quarterly' ? 3 : recurs === 'yearly' ? 12 : 0;
+          if (!months) return null;
+          var d = new Date(String(dueAt).slice(0, 10) + 'T12:00:00'), day = d.getDate();
+          d.setDate(1); d.setMonth(d.getMonth() + months);
+          d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+          return iso(d.getTime());
+        }
+        function demoFind(input) {
+          if (input.id) { var byId = demoObligations.records.find(function (r) { return r.id === input.id; }); if (byId) return byId; }
+          var wanted = String(input.title || '').trim().toLowerCase();
+          var hits = demoObligations.records.filter(function (r) { return r.fields.title.toLowerCase() === wanted; });
+          if (!hits.length) hits = demoObligations.records.filter(function (r) { return wanted && r.fields.title.toLowerCase().indexOf(wanted) >= 0; });
+          if (hits.length === 1) return hits[0];
+          throw new Error("Pass 'id' (e.g. 'ob-3') or the obligation's 'title'.");
+        }
+        function demoSummary(note) {
+          var open = demoObligations.records.filter(function (r) { return r.status !== 'done'; });
+          var overdue = open.filter(function (r) { return daysLeft(r.fields.dueAt) < 0; });
+          var soon = open.filter(function (r) { var d = daysLeft(r.fields.dueAt); return d >= 0 && d <= 60; });
+          return { overdue: overdue.length, dueSoon: soon.length, tracked: demoObligations.records.length, summary: (note ? note + ' ' : '') + overdue.length + ' overdue, ' + soon.length + ' due in the next 60 days.' };
+        }
+        function demoAdd(input) {
+          if (!input.title) throw new Error("add needs 'title'.");
+          var wanted = String(input.title).trim().toLowerCase();
+          var r = demoObligations.records.find(function (x) { return x.fields.title.toLowerCase() === wanted; });
+          var fields = {};
+          ['dueAt', 'owner', 'authority'].forEach(function (k) { if (input[k]) fields[k] = String(input[k]).trim(); });
+          if (CATEGORIES.indexOf(input.category) >= 0) fields.category = input.category;
+          if (['none', 'monthly', 'quarterly', 'yearly'].indexOf(input.recurs) >= 0) fields.recurs = input.recurs;
+          if (r) { Object.assign(r.fields, fields); return demoSummary('Updated ' + r.fields.title + '.'); }
+          if (!fields.dueAt) throw new Error("A new obligation needs 'dueAt' (YYYY-MM-DD).");
+          var id = 'ob-' + (demoObligations.records.reduce(function (m, x) { return Math.max(m, Number(x.id.split('-')[1]) || 0); }, 0) + 1);
+          demoObligations.records.push({ id: id, status: 'open', fields: Object.assign({ title: String(input.title).trim(), category: 'other', recurs: 'none' }, fields) });
+          return demoSummary('Added ' + id + '.');
+        }
+        function demoComplete(input) {
+          var r = demoFind(input);
+          demoEvidence.events.push({ at: new Date().toISOString(), kind: 'completed', note: input.note || 'Completed.', data: Object.assign({ obligationId: r.id }, input.file ? { file: input.file } : {}) });
+          var next = rollForward(r.fields.dueAt, r.fields.recurs);
+          if (next) { r.fields.dueAt = next; r.fields.lastCompletedAt = iso(Date.now()); r.status = 'open'; return demoSummary(r.fields.title + ' completed; next due ' + next + '.'); }
+          r.status = 'done';
+          return demoSummary(r.fields.title + ' completed.');
+        }
+        function demoEvidenceAdd(input) {
+          var r = demoFind(input);
+          if (!input.note && !input.file) throw new Error("log_evidence needs 'note' or 'file'.");
+          demoEvidence.events.push({ at: new Date().toISOString(), kind: 'evidence', note: input.note || 'Filed ' + input.file + '.', data: Object.assign({ obligationId: r.id }, input.file ? { file: input.file } : {}) });
+          return demoSummary('Filed proof for ' + r.fields.title + '.');
+        }
+        function demoStatus(input) {
+          if (input.status !== 'open' && input.status !== 'in-progress') throw new Error("set_status needs status 'open' or 'in-progress'.");
+          var r = demoFind(input); r.status = input.status;
+          if (input.note) demoEvidence.events.push({ at: new Date().toISOString(), kind: 'note', note: input.note, data: { obligationId: r.id } });
+          return demoSummary(r.fields.title + ' is ' + input.status.replace('-', ' ') + '.');
+        }
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'register/index.html', typeName: 'Compliance Register', params: { business: 'Harbor Street Café' } },
+          tools: {
+            page_add_obligation: demoAdd,
+            add_obligation: demoAdd,
+            page_complete_obligation: demoComplete,
+            complete_obligation: demoComplete,
+            page_log_evidence: demoEvidenceAdd,
+            log_evidence: demoEvidenceAdd,
+            set_obligation_status: demoStatus,
+            register_status: function () { return demoSummary(''); },
+            list_obligations: function () { return demoSummary(''); },
+          },
+          data: {
+            'obligations.json': function () { return demoObligations; },
+            'evidence.json': function () { return demoEvidence; },
+            evidence: function () { return demoFiles.map(function (f) { return { name: f.name, kind: 'file', size: f.size, mtime: f.mtime }; }); },
+          },
+          existingPaths: demoFiles.map(function (f) { return f.path; }),
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+        var components = gezel.ui.components;
+        function applyTheme(mode) { document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light'); }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function el(tag, text, cls) { var e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
+        function when(days) { return days < 0 ? -days + (days === -1 ? ' day late' : ' days late') : days === 0 ? 'Due today' : 'In ' + days + (days === 1 ? ' day' : ' days'); }
+        function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+        function cap(text) { return String(text).charAt(0).toUpperCase() + String(text).slice(1); }
+        // Row action: a small key that opens a shared dialog with these values filled in.
+        function rowKey(label, tool, values, aria) {
+          var key = el('button', label, 'key');
+          key.type = 'button';
+          key.setAttribute('data-app-action', tool);
+          key.setAttribute('data-app-values', JSON.stringify(values));
+          key.setAttribute('aria-label', aria);
+          return key;
+        }
+        var linked = {};
+        function niceDate(day) { var d = new Date(String(day).slice(0, 10) + 'T12:00:00'); return isFinite(d) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : String(day); }
+
+        function render(register, log) {
+          var records = Array.isArray(register.records) ? register.records : [];
+          var events = Array.isArray(log.events) ? log.events : [];
+          var open = records.filter(function (r) { return r.status !== 'done' && r.fields && r.fields.dueAt; });
+          open.sort(function (a, b) { return String(a.fields.dueAt).localeCompare(String(b.fields.dueAt)); });
+          var overdue = open.filter(function (r) { return daysLeft(r.fields.dueAt) < 0; });
+          var soon = open.filter(function (r) { var d = daysLeft(r.fields.dueAt); return d >= 0 && d <= 60; });
+          var proofFor = function (r) { return events.filter(function (e) { return e.data && e.data.obligationId === r.id; }); };
+          var completedWithProof = records.filter(function (r) { return proofFor(r).length > 0; }).length;
+
+          document.getElementById('t-overdue').textContent = overdue.length;
+          document.getElementById('t-soon').textContent = soon.length;
+          document.getElementById('t-tracked').textContent = records.length;
+          document.getElementById('t-proof').textContent = records.length ? completedWithProof + ' of ' + records.length : '–';
+          document.getElementById('t-overdue').parentNode.classList.toggle('late', overdue.length > 0);
+          document.getElementById('t-soon').parentNode.classList.toggle('soon', soon.length > 0);
+          linked = {};
+          events.forEach(function (e) { var r = e.data && e.data.file && records.find(function (x) { return x.id === e.data.obligationId; }); if (r) linked[e.data.file] = r.fields.title; });
+          document.getElementById('sub').textContent = !records.length
+            ? 'Nothing on the register yet. Tell your compliance officer what the business renews, files or keeps current.'
+            : (overdue.length ? plural(overdue.length, 'item is', 'items are') + ' overdue. ' : 'Nothing overdue. ') +
+              (soon.length ? plural(soon.length, 'obligation', 'obligations') + ' due in the next 60 days.' : 'Nothing else due in the next 60 days.');
+
+          var due = document.getElementById('due');
+          due.replaceChildren();
+          var upcoming = overdue.concat(soon);
+          if (!upcoming.length) due.append(el('li', open.length ? 'Nothing due in the next 60 days. Next: ' + open[0].fields.title + ', ' + niceDate(open[0].fields.dueAt) + '.' : 'Nothing due.', 'empty'));
+          upcoming.forEach(function (r) {
+            var d = daysLeft(r.fields.dueAt), li = el('li'), what = el('div', undefined, 'what'), proof = proofFor(r), last = proof[proof.length - 1];
+            li.append(el('span', when(d), 'when ' + (d < 0 ? 'late' : d <= 30 ? 'soon' : '')));
+            what.append(el('b', r.fields.title));
+            what.append(el('small', [r.fields.owner ? 'Owner: ' + r.fields.owner : 'No owner yet', niceDate(r.fields.dueAt), r.status === 'in-progress' ? 'in progress' : '', last ? 'last proof ' + niceDate(last.at) : 'no proof on file'].filter(Boolean).join(' · ')));
+            li.append(what, rowKey('Mark done', 'complete_obligation', { id: r.id }, 'Record ' + r.fields.title + ' as done'));
+            due.append(li);
+          });
+
+          var body = document.getElementById('register-body');
+          body.replaceChildren();
+          if (!records.length) { var tr0 = el('tr'), td0 = el('td', 'The register is empty.', 'empty'); td0.colSpan = 7; tr0.append(td0); body.append(tr0); }
+          records.slice().sort(function (a, b) { return (a.status === 'done') - (b.status === 'done') || String(a.fields.dueAt).localeCompare(String(b.fields.dueAt)); }).forEach(function (r) {
+            var tr = el('tr'), proof = proofFor(r), title = el('td');
+            title.append(el('span', r.fields.title));
+            if (r.fields.authority) title.append(el('span', r.fields.authority, 'meta'));
+            tr.append(title, el('td', cap(r.fields.category || 'other')), el('td', r.fields.owner || '–'));
+            var dueCell = el('td');
+            dueCell.append(el('span', r.status === 'done' ? 'Done' : niceDate(r.fields.dueAt)));
+            if (r.fields.recurs && r.fields.recurs !== 'none') dueCell.append(el('span', cap(r.fields.recurs), 'meta'));
+            tr.append(dueCell);
+            // Open is the normal state, so only the exceptions get a chip.
+            var st = el('td'); if (r.status !== 'open') st.append(el('span', cap(r.status.replace('-', ' ')), 'status ' + r.status)); tr.append(st);
+            tr.append(el('td', proof.length ? plural(proof.length, 'record', 'records') : 'None', proof.length ? 'proof-yes' : 'proof-no'));
+            var acts = el('td', undefined, 'row-actions');
+            acts.append(rowKey('Add proof', 'log_evidence', { id: r.id }, 'File proof for ' + r.fields.title));
+            tr.append(acts);
+            body.append(tr);
+          });
+
+          var logList = document.getElementById('evidence-log');
+          logList.replaceChildren();
+          var recent = events.slice(-6).reverse();
+          if (!recent.length) logList.append(el('li', 'No proof filed yet.', 'empty'));
+          recent.forEach(function (e) {
+            var r = records.find(function (x) { return e.data && x.id === e.data.obligationId; });
+            var li = el('li');
+            li.append(el('time', niceDate(e.at)));
+            li.append(document.createTextNode((r ? r.fields.title + ': ' : '') + (e.note || '') + (e.data && e.data.file && e.note && e.note.indexOf(e.data.file) < 0 ? ' (' + String(e.data.file).split('/').pop() + ')' : '')));
+            logList.append(li);
+          });
+        }
+
+        var cards = [];
+        function renderFiles(files) {
+          cards.forEach(function (c) { c.destroy(); }); cards = [];
+          var holder = document.getElementById('evidence-files');
+          holder.replaceChildren();
+          if (!files.length) holder.append(el('p', 'Certificates, receipts and confirmations you add appear here.', 'empty'));
+          if (!components || !components.fileCard) return;
+          files.forEach(function (file) {
+            // Row action: file this document as proof for an obligation.
+            var row = el('div', undefined, 'file-row'), mount = el('div');
+            row.append(mount, rowKey('File as proof', 'log_evidence', { file: file.path }, 'File ' + file.name + ' as proof'));
+            if (linked[file.path]) row.append(el('span', 'Proof for ' + linked[file.path], 'meta'));
+            holder.append(row);
+            cards.push(components.fileCard(mount, { file: Object.assign({ source: 'workspace' }, file), variant: 'row' }));
+          });
+        }
+        function listFiles() {
+          if (demoMode) return Promise.resolve(demoFiles.concat(components && components.demo ? components.demo.files() : []));
+          return gezel.data.list('evidence').then(function (entries) {
+            return (entries || []).filter(function (e) { return e.kind !== 'dir' && e.kind !== 'directory'; }).map(function (e) { return { path: 'evidence/' + e.name, name: e.name, size: e.size, mtime: e.mtime }; });
+          }, function () { return []; });
+        }
+
+        window.addEventListener('gezel-app-data-changed', function () { loadRegister(); });
+        window.loadRegister = loadRegister;
+        function loadRegister() {
+          var revision = ++appLoadRevision;
+          return Promise.all([gezel.data.read('obligations.json'), gezel.data.read('evidence.json'), listFiles()]).then(function (values) {
+            if (appDisposed || revision !== appLoadRevision) return;
+            reportAppError(null);
+            render(values[0] || {}, values[1] || {});
+            renderFiles(values[2]);
+          }).catch(function (error) { if (!appDisposed && revision === appLoadRevision) reportAppError(error); });
+        }
+
+        if (components && components.fileAdder) {
+          components.fileAdder('#add-evidence', { target: 'evidence', onAdded: function () { loadRegister(); } });
+        }
+        loadRegister();
+        appSubscriptions.push(gezel.data.watch('obligations.json', function () { loadRegister(); }));
+        appSubscriptions.push(gezel.data.watch('evidence.json', function () { loadRegister(); }));
+      })();
+    </script>
+    <script src="application.js" defer></script>
+  </body>
+</html>

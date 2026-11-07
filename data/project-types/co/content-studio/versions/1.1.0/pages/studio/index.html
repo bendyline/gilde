@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Content studio</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f6f2ea; --card: #fffcf6; --ink: #29241e; --muted: #6b6155; --line: #ddd3c3;
+        --accent: #33607e; --late: #a3341f; --late-bg: #f7e1da; --soon: #8a5a12; --soon-bg: #f6ead2;
+        --ok: #3f6b4a; --ok-bg: #e2eedf; --plan: #33607e; --plan-bg: #dfe9f0; --chip: #efe7da; --col: #f2ece1;
+      }
+      :root[data-theme='dark'] {
+        --bg: #181613; --card: #221f1b; --ink: #efe8dd; --muted: #a99d8d; --line: #3a342c;
+        --accent: #8fbbd8; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+        --ok: #8fc29b; --ok-bg: #22301f; --plan: #8fbbd8; --plan-bg: #1d2c38; --chip: #2d2822; --col: #1d1b18;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #181613; --card: #221f1b; --ink: #efe8dd; --muted: #a99d8d; --line: #3a342c;
+          --accent: #8fbbd8; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+          --ok: #8fc29b; --ok-bg: #22301f; --plan: #8fbbd8; --plan-bg: #1d2c38; --chip: #2d2822; --col: #1d1b18;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body, system-ui, sans-serif); font-size: 15px; line-height: 1.5; padding: 1.5rem 1.25rem; }
+      main { max-width: 900px; margin: 0 auto; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.5rem; font-weight: 400; margin: 0 0 0.2rem; }
+      h2 { font-family: var(--font-heading, Georgia, serif); font-size: 1.1rem; font-weight: 400; margin: 0 0 0.6rem; }
+      .sub { color: var(--muted); margin: 0 0 1rem; }
+      .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; margin: 0 0 1.2rem; }
+      .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem 0.9rem; min-width: 0; }
+      .tile b { display: block; font-size: 1.5rem; font-weight: 600; line-height: 1.1; overflow-wrap: anywhere; }
+      .tile span { color: var(--muted); font-size: 0.85rem; }
+      .tile.late b { color: var(--late); }
+      .tile.soon b { color: var(--accent); }
+      .tile.ok b { color: var(--ok); }
+      section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin: 0 0 1rem; min-width: 0; }
+      .empty { color: var(--muted); font-style: italic; margin: 0; }
+      .meta { display: block; color: var(--muted); font-size: 0.82rem; overflow-wrap: anywhere; }
+      .board { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 0.5rem; align-items: start; }
+      .col { background: var(--col); border: 1px solid var(--line); border-radius: 6px; padding: 0.5rem; min-width: 0; }
+      .col h3 { display: flex; justify-content: space-between; align-items: baseline; font-family: var(--font-ui, system-ui, sans-serif); font-size: 0.78rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 0.45rem; }
+      .col h3 span { font-variant-numeric: tabular-nums; }
+      .cards { display: grid; gap: 0.4rem; }
+      .card { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 0.45rem 0.55rem; font-size: 0.85rem; min-width: 0; }
+      .card b { display: block; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+      .card.late { border-color: var(--late); }
+      .card .key { display: block; margin: 0.4rem 0 0; }
+      .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+      .key { min-height: 30px; padding: 0.15rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; font-size: 0.82rem; white-space: nowrap; }
+      .key:hover { background: var(--chip); }
+      .row-actions { text-align: right; white-space: nowrap; }
+      .tag { display: inline-block; font-size: 0.74rem; padding: 0.02rem 0.38rem; border-radius: 4px; background: var(--chip); color: var(--ink); margin: 0.25rem 0.25rem 0 0; white-space: nowrap; }
+      .tag.late { background: var(--late-bg); color: var(--late); }
+      .tag.soon { background: var(--soon-bg); color: var(--soon); }
+      .tag.ok { background: var(--ok-bg); color: var(--ok); }
+      .tag.plan { background: var(--plan-bg); color: var(--plan); }
+      .agenda { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.15rem; }
+      .agenda > li { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: 0.75rem; padding: 0.45rem 0; border-bottom: 1px solid var(--line); }
+      .agenda > li:last-child { border-bottom: 0; }
+      .agenda .when { font-size: 0.85rem; font-weight: 600; }
+      .agenda .when small { display: block; font-weight: 400; color: var(--muted); font-size: 0.78rem; }
+      .agenda .when.late { color: var(--late); }
+      .agenda ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; }
+      .agenda ul li { font-size: 0.9rem; overflow-wrap: anywhere; }
+      .agenda ul li .key { float: right; margin: 0 0 0.2rem 0.5rem; }
+      .agenda ul li .tag { margin: 0 0.4rem 0 0; }
+      .people { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 0.6rem; }
+      .person { border: 1px solid var(--line); border-radius: 6px; padding: 0.6rem 0.7rem; min-width: 0; }
+      .person h3 { display: flex; justify-content: space-between; align-items: baseline; font-family: var(--font-ui, system-ui, sans-serif); font-size: 0.95rem; font-weight: 600; margin: 0 0 0.35rem; }
+      .person h3 span { color: var(--muted); font-weight: 400; font-size: 0.82rem; }
+      .person ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.45rem; font-size: 0.85rem; }
+      .person li { display: grid; justify-items: start; gap: 0.1rem; }
+      .person li .tag { margin: 0; }
+      .table-wrap { overflow-x: auto; position: relative; }
+      table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 0.88rem; }
+      th { text-align: left; font-weight: 600; color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 0.5rem 0.4rem; border-bottom: 1px solid var(--line); }
+      td { padding: 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+      tr:last-child td { border-bottom: 0; }
+      td .tag { margin-top: 0; }
+      .note { color: var(--muted); font-size: 0.85rem; margin: 0.75rem 0 0; }
+      .demo-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 0 0 1rem; padding: 0.5rem 0.65rem; border: 1px solid var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--card) 88%, var(--accent)); font-size: 0.85rem; }
+      .demo-banner[hidden] { display: none; }
+      .demo-reset { flex: none; min-height: 36px; padding: 0.3rem 0.7rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; }
+      @media (max-width: 640px) {
+        .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .board { grid-template-columns: minmax(0, 1fr); }
+        .agenda > li { grid-template-columns: minmax(0, 1fr); gap: 0.3rem; }
+      }
+    </style>
+    <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:0 0 12px;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--line,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+    <style data-app-shell="2">
+    /* Shared app furniture from the Gezel app UX guide. The page owns everything else. */
+    :root{--app-action:var(--gezel-component-accent,#805128);--app-on-action:#fffaf3;--app-banner-bg:#f3eddf;--app-banner-line:#d6cbb8}
+    :root[data-theme=dark]{--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}
+    @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}}
+    main h1{font-weight:400}
+    html[data-gezel-fullscreen=true] main h1{font-size:clamp(28px,3vw,40px);margin-top:0}
+    .app-tabs{margin:20px 0 24px}
+    .app-actionbar{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin:16px 0 24px}
+    .app-panel>.app-actionbar:first-child{margin-top:0}
+    .app-settings{display:grid;gap:16px;max-width:760px;margin:0 0 24px}
+    .app-search{margin:0}
+    .app-search gezel-collection-filter{margin:0 0 12px;max-width:540px}
+    .app-primary{min-height:44px;padding:8px 16px;border:1px solid var(--app-action);border-radius:6px;background:var(--app-action);color:var(--app-on-action);font-weight:600}
+    .app-primary:disabled{display:none}
+    main li.empty{display:block;grid-column:1/-1}
+    html[data-app-legacy] [data-app-action]{display:none!important}
+    [data-gezel-demo-banner]:not([hidden]){display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin:0 0 16px;padding:8px 8px 8px 14px;border:1px solid var(--app-banner-line);border-radius:10px;background:var(--app-banner-bg);color:inherit;font-size:14px;line-height:1.4}
+    [data-gezel-demo-banner] button{min-height:32px;padding:4px 12px;border:1px solid var(--app-banner-line);border-radius:6px;background:transparent;color:inherit;font-size:13px}
+    @media(max-width:620px){.tiles,.stats,.summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:nth-child(3):last-child){grid-template-columns:repeat(3,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:only-child){grid-template-columns:minmax(0,1fr)!important}}
+    </style>
+    <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script>
+  </head>
+  <body>
+    <main>
+      <p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong>: Fernwood Studio’s sample editorial pipeline. Changes stay in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Content studio</h1>
+      <p class="sub" id="sub">Loading the studio…</p>
+      <div class="tiles">
+        <div class="tile"><b id="t-pipeline">0</b><span>In the pipeline</span></div>
+        <div class="tile"><b id="t-soon">0</b><span>Going out in 14 days</span></div>
+        <div class="tile"><b id="t-late">0</b><span>Late</span></div>
+        <div class="tile" id="t-repurposed-tile"><b id="t-repurposed">–</b><span id="t-repurposed-label">Published pieces repurposed</span></div>
+      </div>
+      <section id="pipeline-section">
+        <h2>Pipeline</h2>
+        <div class="board" id="board"></div>
+      </section>
+      <section id="calendar-section">
+        <h2>Editorial calendar</h2>
+        <ul class="agenda" id="agenda"></ul>
+        <p class="note" id="calendar-note"></p>
+      </section>
+      <section id="people-section">
+        <h2>Who has what</h2>
+        <div class="people" id="people"></div>
+      </section>
+      <section id="repurpose-section">
+        <h2>Spin-offs</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Piece</th><th>Newsletter</th><th>Social posts</th><th>Video chapters</th><th>More</th><th><span class="sr-only">Actions</span></th></tr></thead>
+            <tbody id="repurpose-body"></tbody>
+          </table>
+        </div>
+        <p class="note">Each published piece should work at least twice. Facts, figures and quotes come from sources the studio can name.</p>
+      </section>
+    </main>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        var DAY = 86400000;
+        var STAGES = ['idea', 'brief', 'draft', 'edit', 'design', 'published'];
+        var FORMATS = ['article', 'guide', 'case-study', 'interview', 'essay', 'video', 'podcast', 'other'];
+        var SPIN_FORMATS = ['newsletter', 'social-post', 'video-chapters', 'short-video', 'quote-card', 'other'];
+        var SPIN_STAGES = ['planned', 'drafted', 'scheduled', 'published'];
+        var SPIN_LABEL = { newsletter: 'Newsletter', 'social-post': 'Social post', 'video-chapters': 'Video chapters', 'short-video': 'Short video', 'quote-card': 'Quote card', other: 'Spin-off' };
+        var OFFSET = { newsletter: 3, 'social-post': 1, 'video-chapters': 7, 'short-video': 4, 'quote-card': 2, other: 7 };
+        function pad(n) { return n < 10 ? '0' + n : String(n); }
+        function iso(ms) { var d = new Date(ms); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+        function today() { return iso(Date.now()); }
+        function addDays(day, n) { var d = new Date(String(day).slice(0, 10) + 'T12:00:00'); d.setDate(d.getDate() + n); return iso(d.getTime()); }
+        function daysFromNow(n) { return addDays(today(), n); }
+        function daysLeft(day) { return Math.round((Date.parse(String(day).slice(0, 10) + 'T00:00:00') - Date.parse(today() + 'T00:00:00')) / DAY); }
+
+        // ── demo studio (used only when the page opens outside Gezel); dates are relative so it never goes stale ──
+        var demoPieces = { version: 1, stages: STAGES.slice(), records: [
+          { id: 'pc-1', status: 'published', fields: { title: 'How we price brand projects', format: 'article', assignee: 'Maya', publishAt: daysFromNow(-6), publishedAt: daysFromNow(-6), keyword: 'brand design pricing' } },
+          { id: 'pc-2', status: 'edit', fields: { title: 'Case study: Harbor Street Café rebrand', format: 'case-study', assignee: 'Jonah', publishAt: daysFromNow(5), angle: 'A café that kept its regulars through a full rebrand' } },
+          { id: 'pc-3', status: 'draft', fields: { title: 'A field guide to brand guidelines', format: 'guide', assignee: 'Maya', publishAt: daysFromNow(12), keyword: 'brand guidelines template' } },
+          { id: 'pc-4', status: 'design', fields: { title: 'Studio tour video: how a logo gets made', format: 'video', assignee: 'Ollie', publishAt: daysFromNow(-1) } },
+          { id: 'pc-5', status: 'brief', fields: { title: 'Why we stopped doing spec work', format: 'essay', assignee: 'Jonah', publishAt: daysFromNow(19) } },
+          { id: 'pc-6', status: 'idea', fields: { title: 'Interview: the printmaker behind our letterpress cards', format: 'interview' } },
+          { id: 'pc-7', status: 'published', fields: { title: 'Color systems for small brands', format: 'article', assignee: 'Maya', publishAt: daysFromNow(-20), publishedAt: daysFromNow(-20) } },
+        ] };
+        var demoCalendar = { version: 1, stages: SPIN_STAGES.slice(), records: [
+          { id: 'so-1', status: 'published', fields: { title: 'Social post 1: Color systems for small brands', pieceId: 'pc-7', format: 'social-post', publishAt: daysFromNow(-19), channel: 'LinkedIn', assignee: 'Maya' } },
+          { id: 'so-2', status: 'published', fields: { title: 'Newsletter: Color systems for small brands', pieceId: 'pc-7', format: 'newsletter', publishAt: daysFromNow(-17), channel: 'Studio newsletter', assignee: 'Maya' } },
+          { id: 'so-3', status: 'published', fields: { title: 'Social post 2: Color systems for small brands', pieceId: 'pc-7', format: 'social-post', publishAt: daysFromNow(-17), channel: 'Instagram', assignee: 'Ollie' } },
+          { id: 'so-4', status: 'scheduled', fields: { title: 'Quote card 1: Color systems for small brands', pieceId: 'pc-7', format: 'quote-card', publishAt: daysFromNow(2), channel: 'Instagram', assignee: 'Ollie' } },
+        ] };
+
+        // The content-store rules, mirrored for the demo so the sample behaves like the live studio.
+        function words(text) { return (String(text || '').toLowerCase().match(/[a-z0-9]+/g) || []).map(function (w) { return w.replace(/(ing|ed|es|s|e)$/, ''); }).filter(function (w) { return w.length > 2 && ['the', 'and', 'our', 'for', 'with', 'from', 'this', 'that', 'post', 'piece', 'article'].indexOf(w) < 0; }); }
+        function demoFind(records, input, noun) {
+          var keys = [input.id, input.title].filter(Boolean);
+          for (var k = 0; k < keys.length; k++) {
+            var lower = String(keys[k]).trim().toLowerCase();
+            var hit = records.filter(function (r) { return r.id === lower || r.fields.title.toLowerCase() === lower; });
+            if (!hit.length) hit = records.filter(function (r) { return r.fields.title.toLowerCase().indexOf(lower) >= 0; });
+            if (!hit.length) {
+              var want = words(lower), best = 0;
+              records.forEach(function (r) { var have = words(r.fields.title), score = want.filter(function (w) { return have.indexOf(w) >= 0; }).length; if (score > best) { best = score; hit = [r]; } else if (score && score === best) hit.push(r); });
+            }
+            if (hit.length === 1) return hit[0];
+            if (hit.length > 1) throw new Error('More than one ' + noun + " matches '" + keys[k] + "'. Pass id.");
+          }
+          throw new Error('No ' + noun + ' matches. Known: ' + records.map(function (r) { return r.id + ' ' + r.fields.title; }).join(', ') + '.');
+        }
+        function nextId(records, prefix) { return prefix + '-' + (records.reduce(function (m, x) { return Math.max(m, Number(x.id.split('-')[1]) || 0); }, 0) + 1); }
+        function demoSummary(note) {
+          var open = demoPieces.records.filter(function (p) { return p.status !== 'published'; });
+          var late = open.filter(function (p) { return p.fields.publishAt && daysLeft(p.fields.publishAt) < 0; }).length + demoCalendar.records.filter(function (s) { return s.status !== 'published' && daysLeft(s.fields.publishAt) < 0; }).length;
+          return { inPipeline: open.length, late: late, summary: (note ? note + ' ' : '') + 'Pipeline: ' + demoPieces.records.length + ' pieces, ' + open.length + ' in progress, ' + late + ' late.' };
+        }
+        function demoAddPiece(input) {
+          if (!input.title || !String(input.title).trim()) throw new Error("add_piece needs 'title'.");
+          var wanted = String(input.title).trim().toLowerCase();
+          var r = demoPieces.records.find(function (x) { return x.fields.title.toLowerCase() === wanted; });
+          var fields = {};
+          ['assignee', 'keyword', 'angle', 'link'].forEach(function (k) { if (input[k]) fields[k] = String(input[k]).trim(); });
+          if (input.publishAt) fields.publishAt = String(input.publishAt).slice(0, 10);
+          if (input.format) { if (FORMATS.indexOf(input.format) < 0) throw new Error('Unknown format ' + input.format + '.'); fields.format = input.format; }
+          var status = input.status && STAGES.indexOf(input.status) >= 0 ? input.status : null;
+          if (status === 'published') fields.publishedAt = fields.publishAt || today();
+          if (r) { Object.assign(r.fields, fields); if (status) r.status = status; return demoSummary('Updated ' + r.fields.title + ' (' + r.id + ').'); }
+          var id = nextId(demoPieces.records, 'pc');
+          demoPieces.records.push({ id: id, status: status || 'idea', fields: Object.assign({ title: String(input.title).trim(), format: 'article' }, fields) });
+          return demoSummary('Added ' + id + ' ' + String(input.title).trim() + '.');
+        }
+        function demoUpdatePiece(input) {
+          var r = demoFind(demoPieces.records, input, 'piece'), was = r.status;
+          if (input.publishAt) r.fields.publishAt = String(input.publishAt).slice(0, 10);
+          else if (input.shiftDays && r.fields.publishAt) r.fields.publishAt = addDays(r.fields.publishAt, Math.round(input.shiftDays));
+          ['assignee', 'keyword', 'angle', 'link'].forEach(function (k) { if (input[k]) r.fields[k] = String(input[k]).trim(); });
+          if (input.status) { if (STAGES.indexOf(input.status) < 0) throw new Error('Unknown stage ' + input.status + '.'); if (input.status === 'published' && was !== 'published') r.fields.publishedAt = today(); r.status = input.status; }
+          if (!input.status && !input.publishAt && !input.shiftDays && !input.assignee && !input.keyword && !input.angle && !input.link) throw new Error('update_piece needs a change.');
+          return demoSummary(r.fields.title + ' (' + r.id + ')' + (input.status && input.status !== was ? ' moved from ' + was + ' to ' + input.status : ' updated') + '.');
+        }
+        function demoRepurpose(input) {
+          var piece = demoFind(demoPieces.records, input, 'piece');
+          var format = SPIN_FORMATS.indexOf(input.format) >= 0 ? input.format : null;
+          if (!format) throw new Error('repurpose_piece needs format: ' + SPIN_FORMATS.join(', ') + '.');
+          var want = Math.min(10, Math.max(1, Math.round(Number(input.count) || 1)));
+          var already = demoCalendar.records.filter(function (s) { return s.fields.pieceId === piece.id && s.fields.format === format; });
+          var missing = want - already.length;
+          if (missing <= 0) return demoSummary(piece.fields.title + ' already has ' + already.length + ' of those; nothing added.');
+          var t = today(), base = piece.status !== 'published' && piece.fields.publishAt && piece.fields.publishAt >= t ? piece.fields.publishAt : t;
+          var first = input.startAt ? String(input.startAt).slice(0, 10) : addDays(base, OFFSET[format] + already.length * 2);
+          var angles = String(input.angle || '').split(/\s*\|\s*/).filter(Boolean), added = [];
+          for (var i = 0; i < missing; i++) {
+            var index = already.length + i, id = nextId(demoCalendar.records, 'so');
+            var fields = { title: SPIN_LABEL[format] + (want > 1 || index > 0 ? ' ' + (index + 1) : '') + ': ' + piece.fields.title, pieceId: piece.id, format: format, publishAt: addDays(first, i * 2) };
+            if (input.channel) fields.channel = String(input.channel).trim();
+            if (input.assignee || piece.fields.assignee) fields.assignee = String(input.assignee || piece.fields.assignee).trim();
+            if (angles[i]) fields.angle = angles[i];
+            demoCalendar.records.push({ id: id, status: 'planned', fields: fields });
+            added.push(id);
+          }
+          return demoSummary('Planned ' + missing + ' for ' + piece.fields.title + ': ' + added.join(', ') + '.');
+        }
+        function demoUpdateSpinoff(input) {
+          var r = demoFind(demoCalendar.records, input, 'spin-off'), was = r.status;
+          if (input.publishAt) r.fields.publishAt = String(input.publishAt).slice(0, 10);
+          else if (input.shiftDays && r.fields.publishAt) r.fields.publishAt = addDays(r.fields.publishAt, Math.round(input.shiftDays));
+          ['channel', 'assignee', 'angle', 'link'].forEach(function (k) { if (input[k]) r.fields[k] = String(input[k]).trim(); });
+          if (input.status) { if (SPIN_STAGES.indexOf(input.status) < 0) throw new Error('Unknown stage ' + input.status + '.'); r.status = input.status; }
+          return demoSummary(r.fields.title + ' (' + r.id + ')' + (input.status && input.status !== was ? ' moved from ' + was + ' to ' + input.status : ' updated') + '.');
+        }
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'studio/index.html', typeName: 'Content Studio', params: { business: 'Fernwood Studio', audience: 'small business owners planning a rebrand' } },
+          tools: {
+            page_add_piece: demoAddPiece,
+            add_piece: demoAddPiece,
+            page_update_piece: demoUpdatePiece,
+            update_piece: demoUpdatePiece,
+            page_repurpose_piece: demoRepurpose,
+            repurpose_piece: demoRepurpose,
+            page_update_spinoff: demoUpdateSpinoff,
+            update_spinoff: demoUpdateSpinoff,
+            studio_status: function () { return demoSummary(''); },
+            list_pieces: function () { return demoSummary(''); },
+          },
+          data: {
+            'pieces.json': function () { return demoPieces; },
+            'calendar.json': function () { return demoCalendar; },
+          },
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+        function applyTheme(mode) { document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light'); }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function el(tag, text, cls) { var e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
+        function niceDate(day) { var d = new Date(String(day).slice(0, 10) + 'T12:00:00'); return isFinite(d) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : String(day); }
+        function weekdayDate(day) { var d = new Date(String(day).slice(0, 10) + 'T12:00:00'); return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }); }
+        function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+        function when(d) { return d < 0 ? -d + (d === -1 ? ' day late' : ' days late') : d === 0 ? 'today' : d === 1 ? 'tomorrow' : 'in ' + d + ' days'; }
+        function label(format) { return String(format || 'article').replace(/-/g, ' '); }
+        function cap(text) { return String(text).charAt(0).toUpperCase() + String(text).slice(1); }
+        // Row action: a small key that opens a shared dialog with these values filled in.
+        function rowKey(text, tool, values, aria) {
+          var key = el('button', text, 'key');
+          key.type = 'button';
+          key.setAttribute('data-app-action', tool);
+          key.setAttribute('data-app-values', JSON.stringify(values));
+          key.setAttribute('aria-label', aria);
+          return key;
+        }
+        function dateTag(day, done) {
+          if (!day) return el('span', 'no date yet', 'tag');
+          var d = daysLeft(day);
+          if (done) return el('span', 'out ' + niceDate(day), 'tag ok');
+          return el('span', niceDate(day) + ' · ' + when(d), 'tag ' + (d < 0 ? 'late' : d <= 7 ? 'soon' : ''));
+        }
+
+        function render(piecesDoc, calendarDoc) {
+          var pieces = Array.isArray(piecesDoc.records) ? piecesDoc.records : [];
+          var spinoffs = Array.isArray(calendarDoc.records) ? calendarDoc.records : [];
+          var open = pieces.filter(function (p) { return p.status !== 'published'; });
+          var published = pieces.filter(function (p) { return p.status === 'published'; });
+          var spinOf = function (p) { return spinoffs.filter(function (s) { return s.fields && s.fields.pieceId === p.id; }); };
+          var items = [];
+          open.forEach(function (p) { if (p.fields.publishAt) items.push({ day: p.fields.publishAt, piece: p }); });
+          spinoffs.forEach(function (s) { if (s.status !== 'published' && s.fields.publishAt) items.push({ day: s.fields.publishAt, spin: s }); });
+          items.sort(function (a, b) { return a.day.localeCompare(b.day); });
+          var late = items.filter(function (i) { return daysLeft(i.day) < 0; });
+          var soon = items.filter(function (i) { var d = daysLeft(i.day); return d >= 0 && d <= 14; });
+          var repurposed = published.filter(function (p) { return spinOf(p).length; });
+
+          document.getElementById('t-pipeline').textContent = open.length;
+          document.getElementById('t-soon').textContent = soon.length;
+          document.getElementById('t-late').textContent = late.length;
+          document.getElementById('t-repurposed').textContent = published.length ? repurposed.length + ' of ' + published.length : '–';
+          document.getElementById('t-late').parentNode.classList.toggle('late', late.length > 0);
+          document.getElementById('t-repurposed-tile').classList.toggle('ok', published.length > 0 && repurposed.length === published.length);
+          var bare = published.filter(function (p) { return !spinOf(p).length; });
+          document.getElementById('sub').textContent = !pieces.length
+            ? 'Nothing in the pipeline yet. Pitch a piece to your managing editor, or add one here.'
+            : (late.length ? plural(late.length, 'item is', 'items are') + ' late. ' : 'Nothing late. ') +
+              (soon.length ? plural(soon.length, 'item goes', 'items go') + ' out in the next 14 days.' : 'Nothing goes out in the next 14 days.') +
+              (bare.length ? ' ' + bare[0].fields.title + ' is published but not repurposed yet.' : '');
+
+          var board = document.getElementById('board');
+          board.replaceChildren();
+          STAGES.forEach(function (stage) {
+            var col = el('div', undefined, 'col'), head = el('h3'), list = el('div', undefined, 'cards');
+            var mine = pieces.filter(function (p) { return p.status === stage; });
+            mine.sort(function (a, b) {
+              var da = stage === 'published' ? b.fields.publishedAt || b.fields.publishAt || '' : a.fields.publishAt || '9999';
+              var db = stage === 'published' ? a.fields.publishedAt || a.fields.publishAt || '' : b.fields.publishAt || '9999';
+              return String(da).localeCompare(String(db));
+            });
+            head.append(document.createTextNode(stage), el('span', String(mine.length)));
+            col.append(head);
+            if (!mine.length) list.append(el('p', stage === 'idea' ? 'Pitches land here.' : 'Nothing here.', 'empty meta'));
+            mine.slice(0, stage === 'published' ? 4 : 12).forEach(function (p) {
+              var d = p.fields.publishAt ? daysLeft(p.fields.publishAt) : null;
+              var card = el('div', undefined, 'card' + (stage !== 'published' && d !== null && d < 0 ? ' late' : ''));
+              card.append(el('b', p.fields.title));
+              card.append(el('span', label(p.fields.format) + ' · ' + (p.fields.assignee || 'unassigned'), 'meta'));
+              card.append(dateTag(stage === 'published' ? p.fields.publishedAt || p.fields.publishAt : p.fields.publishAt, stage === 'published'));
+              if (stage === 'published') { var n = spinOf(p).length; card.append(el('span', n ? plural(n, 'spin-off', 'spin-offs') : 'not repurposed yet', 'tag ' + (n ? 'plan' : 'soon'))); }
+              var next = STAGES[STAGES.indexOf(stage) + 1];
+              card.append(stage === 'published'
+                ? rowKey('Plan spin-offs', 'repurpose_piece', { id: p.id }, 'Plan spin-offs for ' + p.fields.title)
+                : rowKey('Move', 'update_piece', next ? { id: p.id, status: next } : { id: p.id }, 'Move ' + p.fields.title));
+              list.append(card);
+            });
+            if (stage === 'published' && mine.length > 4) list.append(el('p', '+' + (mine.length - 4) + ' earlier', 'meta'));
+            col.append(list);
+            board.append(col);
+          });
+
+          var agenda = document.getElementById('agenda');
+          agenda.replaceChildren();
+          var groups = [], byDay = {};
+          late.concat(items.filter(function (i) { var d = daysLeft(i.day); return d >= 0 && d <= 21; })).forEach(function (i) {
+            var key = daysLeft(i.day) < 0 ? 'late' : i.day;
+            if (!byDay[key]) { byDay[key] = []; groups.push(key); }
+            byDay[key].push(i);
+          });
+          if (!groups.length) agenda.append(el('li', 'Nothing dated in the next three weeks.', 'empty'));
+          groups.forEach(function (key) {
+            var li = el('li'), whenEl = el('div', undefined, 'when' + (key === 'late' ? ' late' : '')), list = el('ul');
+            if (key === 'late') { whenEl.append(document.createTextNode('Late')); whenEl.append(el('small', 'past their date')); }
+            else { whenEl.append(document.createTextNode(weekdayDate(key))); whenEl.append(el('small', when(daysLeft(key)))); }
+            byDay[key].forEach(function (i) {
+              var row = el('li');
+              if (i.piece) {
+                row.append(rowKey('Move', 'update_piece', { id: i.piece.id, status: STAGES[STAGES.indexOf(i.piece.status) + 1] || i.piece.status }, 'Move ' + i.piece.fields.title));
+                row.append(el('span', cap(label(i.piece.fields.format)), 'tag plan'));
+                row.append(el('b', i.piece.fields.title));
+                row.append(el('span', 'In ' + i.piece.status + ' · ' + (i.piece.fields.assignee || 'unassigned') + (key === 'late' ? ' · ' + when(daysLeft(i.day)) : ''), 'meta'));
+              } else {
+                var piece = pieces.find(function (p) { return p.id === i.spin.fields.pieceId; });
+                row.append(rowKey('Move', 'update_spinoff', { id: i.spin.id, status: SPIN_STAGES[SPIN_STAGES.indexOf(i.spin.status) + 1] || i.spin.status }, 'Move the ' + label(i.spin.fields.format) + ' for ' + (piece ? piece.fields.title : i.spin.fields.title)));
+                row.append(el('span', cap(label(i.spin.fields.format)), 'tag'));
+                row.append(document.createTextNode((piece ? piece.fields.title : i.spin.fields.title) + (i.spin.fields.channel ? ' on ' + i.spin.fields.channel : '')));
+                row.append(el('span', cap(i.spin.status) + (i.spin.fields.assignee ? ' · ' + i.spin.fields.assignee : '') + (i.spin.fields.angle ? ' · ' + i.spin.fields.angle : '') + (key === 'late' ? ' · ' + when(daysLeft(i.day)) : ''), 'meta'));
+              }
+              list.append(row);
+            });
+            li.append(whenEl, list);
+            agenda.append(li);
+          });
+          var undated = open.filter(function (p) { return !p.fields.publishAt; });
+          var later = items.filter(function (i) { return daysLeft(i.day) > 21; });
+          document.getElementById('calendar-note').textContent = 'The next three weeks, late items first.' + (later.length ? ' ' + plural(later.length, 'item is', 'items are') + ' further out.' : '') + (undated.length ? ' ' + plural(undated.length, 'piece has', 'pieces have') + ' no publish date yet.' : '');
+
+          var people = document.getElementById('people');
+          people.replaceChildren();
+          var load = {}, names = [];
+          function give(name, line, d) { var key = name || 'Unassigned'; if (!load[key]) { load[key] = []; names.push(key); } load[key].push({ line: line, d: d }); }
+          open.forEach(function (p) { give(p.fields.assignee, p.fields.title + ' · ' + p.status, p.fields.publishAt); });
+          spinoffs.forEach(function (s) { if (s.status !== 'published' && s.fields.assignee) give(s.fields.assignee, cap(label(s.fields.format)) + ' · ' + s.status, s.fields.publishAt); });
+          names.sort(function (a, b) { return (a === 'Unassigned') - (b === 'Unassigned') || load[b].length - load[a].length || a.localeCompare(b); });
+          if (!names.length) people.append(el('p', 'Nobody has open work.', 'empty'));
+          names.forEach(function (name) {
+            var card = el('div', undefined, 'person'), head = el('h3'), list = el('ul');
+            head.append(document.createTextNode(name), el('span', plural(load[name].length, 'item', 'items')));
+            load[name].sort(function (a, b) { return String(a.d || '9999').localeCompare(String(b.d || '9999')); }).forEach(function (x) {
+              var li = el('li'); li.append(document.createTextNode(x.line + ' ')); li.append(dateTag(x.d, false)); list.append(li);
+            });
+            card.append(head, list);
+            people.append(card);
+          });
+
+          var body = document.getElementById('repurpose-body');
+          body.replaceChildren();
+          var shown = pieces.filter(function (p) { return p.status === 'published' || spinOf(p).length; }).sort(function (a, b) {
+            return String(b.fields.publishedAt || b.fields.publishAt || '').localeCompare(String(a.fields.publishedAt || a.fields.publishAt || ''));
+          });
+          if (!shown.length) { var tr0 = el('tr'), td0 = el('td', 'Published pieces and their spin-offs appear here.', 'empty'); td0.colSpan = 6; tr0.append(td0); body.append(tr0); }
+          shown.forEach(function (p) {
+            var tr = el('tr'), name = el('td'), mine = spinOf(p);
+            name.append(el('span', p.fields.title));
+            name.append(el('span', p.status === 'published' ? 'published ' + niceDate(p.fields.publishedAt || p.fields.publishAt) : 'in ' + p.status, 'meta'));
+            tr.append(name);
+            [['newsletter'], ['social-post'], ['video-chapters'], ['short-video', 'quote-card', 'other']].forEach(function (formats) {
+              var cell = el('td'), these = mine.filter(function (s) { return formats.indexOf(s.fields.format) >= 0; });
+              // A published piece is expected to get a newsletter and social posts; chapters only when it is a video or podcast.
+              var expected = p.status === 'published' && (formats[0] === 'newsletter' || formats[0] === 'social-post' || (formats[0] === 'video-chapters' && /video|podcast/.test(p.fields.format)));
+              if (!these.length) cell.append(el('span', expected ? 'Not yet' : '–', expected ? 'tag soon' : 'meta'));
+              else {
+                var out = these.filter(function (s) { return s.status === 'published'; }).length;
+                cell.append(el('span', these.length === 1 ? cap(these[0].status) : out + ' of ' + these.length + ' out', 'tag ' + (out === these.length ? 'ok' : 'plan')));
+                if (formats.length > 1) cell.append(el('span', these.map(function (s) { return cap(label(s.fields.format)); }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join(', '), 'meta'));
+              }
+              tr.append(cell);
+            });
+            var acts = el('td', undefined, 'row-actions');
+            if (p.status === 'published') acts.append(rowKey('Plan', 'repurpose_piece', { id: p.id }, 'Plan spin-offs for ' + p.fields.title));
+            tr.append(acts);
+            body.append(tr);
+          });
+        }
+
+        window.addEventListener('gezel-app-data-changed', function () { loadStudio(); });
+        window.loadStudio = loadStudio;
+        function loadStudio() {
+          var revision = ++appLoadRevision;
+          return Promise.all([gezel.data.read('pieces.json'), gezel.data.read('calendar.json')]).then(function (values) {
+            if (appDisposed || revision !== appLoadRevision) return;
+            reportAppError(null);
+            render(values[0] || {}, values[1] || {});
+          }).catch(function (error) { if (!appDisposed && revision === appLoadRevision) reportAppError(error); });
+        }
+
+        loadStudio();
+        appSubscriptions.push(gezel.data.watch('pieces.json', function () { loadStudio(); }));
+        appSubscriptions.push(gezel.data.watch('calendar.json', function () { loadStudio(); }));
+      })();
+    </script>
+    <script src="application.js" defer></script>
+  </body>
+</html>

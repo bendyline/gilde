@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Shift roster</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f4f2ee; --card: #fffdf8; --ink: #27241f; --muted: #686055; --line: #dcd4c7;
+        --accent: #5a5b8a; --late: #a3341f; --late-bg: #f7e1da; --soon: #8a5a12; --soon-bg: #f6ead2;
+        --ok: #3f6b4a; --ok-bg: #e2eedf; --chip: #ece6dc; --person: #e4e4f1; --person-ink: #3d3e6b; --today: #f0ebe1;
+      }
+      :root[data-theme='dark'] {
+        --bg: #171615; --card: #211f1d; --ink: #eee8de; --muted: #a79e91; --line: #3a352e;
+        --accent: #aeb0e6; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+        --ok: #8fc29b; --ok-bg: #22301f; --chip: #2c2824; --person: #2b2c44; --person-ink: #cfd0f4; --today: #2a2621;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #171615; --card: #211f1d; --ink: #eee8de; --muted: #a79e91; --line: #3a352e;
+          --accent: #aeb0e6; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+          --ok: #8fc29b; --ok-bg: #22301f; --chip: #2c2824; --person: #2b2c44; --person-ink: #cfd0f4; --today: #2a2621;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body, system-ui, sans-serif); font-size: 15px; line-height: 1.5; padding: 1.5rem 1.25rem; }
+      main { max-width: 1040px; margin: 0 auto; container-type: inline-size; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.5rem; font-weight: 400; margin: 0 0 0.2rem; }
+      h2 { font-family: var(--font-heading, Georgia, serif); font-size: 1.1rem; font-weight: 400; margin: 0 0 0.6rem; }
+      h3 { font-size: 0.95rem; font-weight: 600; margin: 0 0 0.4rem; }
+      .sub { color: var(--muted); margin: 0 0 1rem; }
+      .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; margin: 0 0 1.2rem; }
+      .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem 0.9rem; }
+      .tile b { display: block; font-size: 1.5rem; font-weight: 600; line-height: 1.1; }
+      .tile span { color: var(--muted); font-size: 0.85rem; }
+      .tile.late b { color: var(--late); }
+      .tile.soon b { color: var(--soon); }
+      .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+      section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin: 0 0 1rem; }
+      .week-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; margin: 0 0 0.6rem; }
+      .week-head h2 { margin: 0; }
+      .week-nav { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+      .week-nav span { font-weight: 600; min-width: 9rem; text-align: center; }
+      .key { min-height: 36px; padding: 0.3rem 0.7rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; font-size: 0.9rem; }
+      .key:hover { background: var(--today); }
+      .key.primary { border-color: var(--accent); background: var(--accent); color: var(--card); }
+      .key:disabled { opacity: 0.55; cursor: default; }
+      .approval { margin: 0 0 0.75rem; font-size: 0.9rem; color: var(--muted); }
+      .approval b { color: var(--ink); font-weight: 600; }
+      .week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.45rem; }
+      .day { min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 0.45rem; background: var(--bg); }
+      .day.today { background: var(--today); border-color: var(--accent); }
+      .day header { font-size: 0.85rem; font-weight: 600; margin: 0 0 0.35rem; display: flex; justify-content: space-between; gap: 0.25rem; }
+      .day header span { color: var(--muted); font-weight: 400; }
+      .shift { border: 1px solid var(--line); border-radius: 6px; padding: 0.35rem 0.4rem; background: var(--card); margin: 0 0 0.35rem; font-size: 0.82rem; }
+      .shift.draft { border-style: dashed; border-color: var(--muted); }
+      .shift.problem { border-color: var(--late); box-shadow: inset 3px 0 0 var(--late); }
+      .shift .when { font-weight: 600; display: block; }
+      .shift .role { color: var(--muted); display: block; overflow-wrap: anywhere; }
+      .people { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.3rem; }
+      .person { display: inline-flex; align-items: center; gap: 0.1rem; background: var(--person); color: var(--person-ink); border-radius: 4px; padding: 0 0 0 0.35rem; font-size: 0.8rem; max-width: 100%; }
+      .person.problem { background: var(--late-bg); color: var(--late); }
+      .person button { border: 0; background: transparent; color: inherit; cursor: pointer; font: inherit; padding: 0 0.4rem; min-height: 28px; min-width: 28px; border-radius: 4px; }
+      .person button:hover { background: color-mix(in srgb, currentColor 15%, transparent); }
+      .open { display: inline-block; border: 1px dashed var(--soon); color: var(--soon); background: var(--soon-bg); border-radius: 4px; padding: 0 0.35rem; font: inherit; font-size: 0.8rem; cursor: pointer; }
+      .open:hover { border-style: solid; }
+      .legend { color: var(--muted); font-size: 0.8rem; margin: 0.6rem 0 0; }
+      .due { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+      .due li { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr) auto; gap: 0.75rem; align-items: start; }
+      .due .chip, .due li > .key { justify-self: start; }
+      .chip { display: inline-block; font-size: 0.78rem; font-weight: 600; padding: 0.1rem 0.45rem; border-radius: 4px; background: var(--chip); color: var(--muted); text-align: center; }
+      .chip.soon { background: var(--soon-bg); color: var(--soon); }
+      .chip.late { background: var(--late-bg); color: var(--late); }
+      .due .what b { font-weight: 600; }
+      .due .what small, .meta { display: block; color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
+      .empty { color: var(--muted); font-style: italic; margin: 0; }
+      .table-wrap { overflow-x: auto; position: relative; }
+      .row-actions { text-align: right; white-space: nowrap; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+      th { text-align: left; font-weight: 600; color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 0.5rem 0.4rem; border-bottom: 1px solid var(--line); }
+      td { padding: 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+      tr:last-child td { border-bottom: 0; }
+      .bar { height: 8px; border-radius: 4px; background: var(--chip); overflow: hidden; min-width: 80px; margin-top: 0.35rem; }
+      .bar i { display: block; height: 100%; background: var(--accent); }
+      .bar.over i { background: var(--late); }
+      .over-text { color: var(--late); font-weight: 600; }
+      .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
+      .plain { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; font-size: 0.9rem; }
+      .demo-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 0 0 1rem; padding: 0.5rem 0.65rem; border: 1px solid var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--card) 88%, var(--accent)); font-size: 0.85rem; }
+      .demo-banner[hidden] { display: none; }
+      .demo-reset { flex: none; min-height: 36px; padding: 0.3rem 0.7rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; }
+      .note { color: var(--muted); font-size: 0.85rem; margin: 0.75rem 0 0; }
+      @container (max-width: 760px) {
+        .week { grid-template-columns: minmax(0, 1fr); }
+        .day { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr); gap: 0.5rem; align-items: start; }
+        .day header { display: block; }
+        .day header span { display: block; }
+        .day .shifts { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr)); gap: 0.35rem; }
+        .day .shift { margin: 0; }
+      }
+      @media (max-width: 640px) {
+        .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .split { grid-template-columns: minmax(0, 1fr); }
+        .due li { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
+        .due .chip, .due li > .key { justify-self: start; }
+        .day { grid-template-columns: minmax(0, 1fr); }
+      }
+    </style>
+    <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:0 0 12px;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--line,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+    <style data-app-shell="2">
+    /* Shared app furniture from the Gezel app UX guide. The page owns everything else. */
+    :root{--app-action:var(--gezel-component-accent,#805128);--app-on-action:#fffaf3;--app-banner-bg:#f3eddf;--app-banner-line:#d6cbb8}
+    :root[data-theme=dark]{--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}
+    @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}}
+    main h1{font-weight:400}
+    html[data-gezel-fullscreen=true] main h1{font-size:clamp(28px,3vw,40px);margin-top:0}
+    .app-tabs{margin:20px 0 24px}
+    .app-actionbar{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin:16px 0 24px}
+    .app-panel>.app-actionbar:first-child{margin-top:0}
+    .app-settings{display:grid;gap:16px;max-width:760px;margin:0 0 24px}
+    .app-search{margin:0}
+    .app-search gezel-collection-filter{margin:0 0 12px;max-width:540px}
+    .app-primary{min-height:44px;padding:8px 16px;border:1px solid var(--app-action);border-radius:6px;background:var(--app-action);color:var(--app-on-action);font-weight:600}
+    .app-primary:disabled{display:none}
+    main li.empty{display:block;grid-column:1/-1}
+    html[data-app-legacy] [data-app-action]{display:none!important}
+    [data-gezel-demo-banner]:not([hidden]){display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin:0 0 16px;padding:8px 8px 8px 14px;border:1px solid var(--app-banner-line);border-radius:10px;background:var(--app-banner-bg);color:inherit;font-size:14px;line-height:1.4}
+    [data-gezel-demo-banner] button{min-height:32px;padding:4px 12px;border:1px solid var(--app-banner-line);border-radius:6px;background:transparent;color:inherit;font-size:13px}
+    @media(max-width:620px){.tiles,.stats,.summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:nth-child(3):last-child){grid-template-columns:repeat(3,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:only-child){grid-template-columns:minmax(0,1fr)!important}}
+    </style>
+    <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script>
+  </head>
+  <body>
+    <main>
+      <p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong>: Harbor Street Café’s sample roster for 12 staff. Changes stay in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Shift roster</h1>
+      <p class="sub" id="sub">Loading the roster…</p>
+      <div class="tiles">
+        <div class="tile"><b id="t-open">0</b><span>Open spots this week</span></div>
+        <div class="tile"><b id="t-conflicts">0</b><span>Conflicts</span></div>
+        <div class="tile"><b id="t-approve">0</b><span>Shifts to approve</span></div>
+        <div class="tile"><b id="t-hours">0</b><span>Hours scheduled</span></div>
+      </div>
+      <section id="week-section">
+        <div class="week-head">
+          <h2>The week</h2>
+          <div class="week-nav">
+            <button type="button" class="key" id="prev-week" aria-label="Previous week">Previous</button>
+            <span id="week-label" aria-live="polite"></span>
+            <button type="button" class="key" id="next-week" aria-label="Next week">Next</button>
+          </div>
+          <button type="button" class="app-primary" id="approve-week">Approve this week</button>
+        </div>
+        <p class="approval" id="approval-note" role="status"></p>
+        <div class="week" id="week"></div>
+        <p class="legend">A dashed shift is a proposal waiting for your approval. A red edge marks a clash with someone’s availability or one of your rules.</p>
+      </section>
+      <section id="gaps-section">
+        <h2>Open spots</h2>
+        <ul class="due" id="gaps"></ul>
+      </section>
+      <section id="hours-section">
+        <h2>Hours</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Person</th><th>Works</th><th>This week</th><th>Shifts</th><th><span class="sr-only">Actions</span></th></tr></thead>
+            <tbody id="hours-body"></tbody>
+          </table>
+        </div>
+      </section>
+      <section id="away-section">
+        <h2>When people can’t work</h2>
+        <ul class="plain" id="away"></ul>
+      </section>
+      <section id="rules-section">
+        <h2>Rules you set</h2>
+        <ul class="plain" id="rules"></ul>
+        <p class="note">The roster checks only the rules you state here, plus availability and overlaps. It is not legal advice: for what labor law requires, ask your state or local labor office or an employment lawyer.</p>
+      </section>
+    </main>
+    <script src="rules.js"></script>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        var rules = window.rosterRules;
+        var DAY = 86400000;
+        var today = rules.localDay(Date.now());
+        // The sample week is this week until Wednesday, then next week, so its open spots are always ahead.
+        var sampleMonday = rules.addDays(rules.mondayOf(today), (new Date().getDay() + 6) % 7 >= 3 ? 7 : 0);
+
+        // ── demo roster (used only when the page opens outside Gezel); dates are relative so it never goes stale ──
+        function demoState() {
+          var state = { staff: [], shifts: [], availability: [], rules: { version: 1, notes: [] } };
+          function act(action, input) { state = rules.run(action, Object.assign({ byPerson: true }, input), state, Date.now()).state; }
+          [
+            ['Ana', 'barista, kitchen'], ['Ben', 'barista', 20], ['Cleo', 'barista'], ['Dev', 'kitchen'],
+            ['Eli', 'kitchen, barista'], ['Fern', 'barista', 16], ['Gus', 'kitchen, barista'], ['Hana', 'barista'],
+            ['Ivo', 'barista'], ['Jade', 'kitchen, barista'], ['Kai', 'barista', 24], ['Lena', 'barista'],
+          ].forEach(function (p) { act('add_staff', { name: p[0], roles: p[1], maxHours: p[2] }); });
+          act('rules', { maxWeekHours: 40, minRestHours: 10, maxShiftHours: 8, rule: 'Two people on every weekend open' });
+          act('availability', { staff: 'Cleo', day: 'tuesday' });
+          act('availability', { staff: 'Ben', day: 'weekdays', part: 'morning' });
+          act('availability', { staff: 'Dev', day: 'one date', date: rules.addDays(sampleMonday, 4) });
+          for (var d = 0; d < 7; d++) {
+            var date = rules.addDays(sampleMonday, d);
+            act('add_shift', { date: date, start: '06:00', end: '14:00', role: 'barista', needed: 2 });
+            act('add_shift', { date: date, start: '07:00', end: '15:00', role: 'kitchen', needed: 1 });
+            act('add_shift', { date: date, start: '14:00', end: '21:00', role: 'barista', needed: 2 });
+          }
+          var sat = rules.addDays(sampleMonday, 5), thu = rules.addDays(sampleMonday, 3);
+          var find = function (date, start) { return state.shifts.filter(function (s) { return s.fields.date === date && s.fields.start === start; })[0]; };
+          act('assign', { id: find(sat, '06:00').id, staff: 'Cleo' });
+          act('assign', { id: find(sat, '14:00').id, staff: 'Ivo' });
+          // Fill the rest the way the crew would: whoever passes every rule with the fewest hours.
+          // Two spots stay open for the sample conversation: Thursday's kitchen and one on Saturday's close.
+          state.shifts.slice().sort(function (a, b) { return (a.fields.date + a.fields.start).localeCompare(b.fields.date + b.fields.start); }).forEach(function (s) {
+            if ((s.fields.date === thu && s.fields.role === 'kitchen') || (s.fields.date === sat && s.fields.start === '14:00')) return;
+            for (;;) {
+              var now = state.shifts.filter(function (x) { return x.id === s.id; })[0];
+              if (rules.staffOn(now).length >= rules.neededOf(now)) break;
+              var free = rules.freeFor(now, state);
+              if (!free.length) break;
+              act('assign', { id: now.id, staff: free[0].id });
+            }
+          });
+          act('approve', { week: sampleMonday });
+          return state;
+        }
+        var demo = demoState();
+        // Every tool runs the roster-store rules on the sample, exactly as the live store does.
+        function demoTool(action, bind) {
+          return function (input) {
+            var result = rules.run(action, Object.assign({}, input || {}, bind || {}), demo, Date.now());
+            demo = result.state;
+            return result.output;
+          };
+        }
+        var crew = { byPerson: false }, person = { byPerson: true };
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'roster/index.html', typeName: 'Shift Roster', params: { business: 'Harbor Street Café' } },
+          tools: {
+            page_add_staff: demoTool('add_staff'),
+            add_staff: demoTool('add_staff'),
+            page_add_shift: demoTool('add_shift', person),
+            add_shift: demoTool('add_shift', crew),
+            page_assign_shift: demoTool('assign', person),
+            assign_shift: demoTool('assign', crew),
+            page_set_availability: demoTool('availability'),
+            set_availability: demoTool('availability'),
+            page_set_rules: demoTool('rules'),
+            set_rules: demoTool('rules'),
+            page_approve_week: demoTool('approve', person),
+            copy_week: demoTool('copy_week'),
+            roster_status: demoTool('status'),
+          },
+          data: {
+            'staff.json': function () { return { version: 1, stages: ['active', 'inactive'], records: demo.staff }; },
+            'shifts.json': function () { return { version: 1, stages: ['draft', 'approved'], records: demo.shifts }; },
+            'availability.json': function () { return { version: 1, stages: ['active', 'cleared'], records: demo.availability }; },
+            'rules.json': function () { return demo.rules; },
+          },
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+        function applyTheme(mode) { document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light'); }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        var shownWeek = demoMode ? sampleMonday : rules.mondayOf(today);
+        var last = null;
+        function el(tag, text, cls) { var e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
+        function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+        function niceDate(day, opts) { var d = new Date(String(day).slice(0, 10) + 'T12:00:00'); return isFinite(d) ? d.toLocaleDateString(undefined, opts || { month: 'short', day: 'numeric' }) : String(day); }
+        function weekday(day) { return niceDate(day, { weekday: 'short' }); }
+        function h(n) { return Math.round(n * 10) / 10; }
+        function records(doc) { return doc && Array.isArray(doc.records) ? doc.records : []; }
+
+        function render(data) {
+          last = data;
+          var view = rules.weekView(data, shownWeek, Date.now());
+          var problemShifts = {}, problemPeople = {};
+          view.conflicts.forEach(function (c) { if (c.shiftId) problemShifts[c.shiftId] = (problemShifts[c.shiftId] || []).concat(c.text); if (c.shiftId && c.staffId) problemPeople[c.shiftId + ':' + c.staffId] = true; });
+          var upcoming = view.gaps.filter(function (g) { return !g.past; });
+          var open = upcoming.reduce(function (sum, g) { return sum + g.open; }, 0);
+          var scheduled = Object.keys(view.hours).reduce(function (sum, id) { return sum + view.hours[id]; }, 0);
+          var isThisWeek = shownWeek === rules.mondayOf(today);
+
+          document.getElementById('t-open').textContent = open;
+          document.getElementById('t-open').nextElementSibling.textContent = isThisWeek ? 'Open spots this week' : 'Open spots that week';
+          document.getElementById('t-conflicts').textContent = view.conflicts.length;
+          document.getElementById('t-open').parentNode.classList.toggle('soon', open > 0);
+          document.getElementById('t-conflicts').parentNode.classList.toggle('late', view.conflicts.length > 0);
+          document.getElementById('t-approve').textContent = view.toApprove;
+          document.getElementById('t-hours').textContent = h(scheduled);
+          document.getElementById('week-label').textContent = niceDate(shownWeek) + ' – ' + niceDate(rules.addDays(shownWeek, 6));
+          document.getElementById('sub').textContent = !data.staff.length
+            ? 'Nobody on the roster yet. Tell your shift scheduler who works here and the shifts you run.'
+            : !view.shifts.length
+              ? 'No shifts in this week yet. Ask your shift scheduler to start it from the week before.'
+              : (view.toApprove
+                  ? (open ? plural(open, 'spot is', 'spots are') + ' still open. ' : 'Every shift is covered. ') + plural(view.toApprove, 'shift is', 'shifts are') + ' waiting for your approval.'
+                  : open ? 'The week is approved, with ' + plural(open, 'spot', 'spots') + ' still open.' : 'The week is approved and every shift is covered.') +
+                (view.conflicts.length ? ' ' + plural(view.conflicts.length, 'conflict needs', 'conflicts need') + ' a look.' : '');
+
+          var approveKey = document.getElementById('approve-week');
+          approveKey.disabled = !view.toApprove;
+          approveKey.textContent = view.toApprove ? 'Approve this week (' + view.toApprove + ')' : view.shifts.length ? 'Week approved' : 'Nothing to approve';
+          if (!approvalMessage) document.getElementById('approval-note').textContent = !view.shifts.length ? '' : view.toApprove
+            ? 'Your shift scheduler proposes; nothing is final until you approve the week.'
+            : 'You approved this week. Changes the crew makes come back to you for approval.';
+
+          var grid = document.getElementById('week');
+          grid.replaceChildren();
+          for (var d = 0; d < 7; d++) {
+            var date = rules.addDays(shownWeek, d), day = el('div', undefined, 'day' + (date === today ? ' today' : '')), head = el('header'), list = el('div', undefined, 'shifts');
+            head.append(document.createTextNode(weekday(date)), el('span', niceDate(date)));
+            day.append(head, list);
+            var todays = view.shifts.filter(function (s) { return s.fields.date === date; });
+            if (!todays.length) list.append(el('p', 'No shifts', 'empty'));
+            todays.forEach(function (s) {
+              var card = el('div', undefined, 'shift ' + (s.status === 'approved' ? 'approved' : 'draft') + (problemShifts[s.id] ? ' problem' : ''));
+              if (problemShifts[s.id]) card.title = problemShifts[s.id].join('\n');
+              card.append(el('span', s.fields.start + '–' + s.fields.end, 'when'), el('span', s.fields.role || 'any role', 'role'));
+              var people = el('div', undefined, 'people'), on = rules.staffOn(s);
+              on.forEach(function (id) {
+                var p = data.staff.filter(function (x) { return x.id === id; })[0], name = p ? p.fields.name : id;
+                var chip = el('span', undefined, 'person' + (problemPeople[s.id + ':' + id] ? ' problem' : ''));
+                var off = el('button', '×');
+                off.type = 'button';
+                off.setAttribute('aria-label', 'Take ' + name + ' off ' + weekday(date) + ' ' + s.fields.start + ' ' + (s.fields.role || 'shift'));
+                off.onclick = function () { takeOff(s.id, id); };
+                chip.append(document.createTextNode(name), off);
+                people.append(chip);
+              });
+              var gap = rules.neededOf(s) - on.length;
+              if (gap > 0) {
+                var free = rules.freeFor(s, data).slice(0, 3).map(function (x) { return x.name; });
+                var openChip = el('button', gap + ' open', 'open');
+                openChip.type = 'button';
+                openChip.title = free.length ? 'Free: ' + free.join(', ') : 'Nobody passes every rule';
+                openChip.setAttribute('aria-label', 'Fill ' + weekday(date) + ' ' + s.fields.start + ' ' + (s.fields.role || 'shift') + ', ' + gap + ' open');
+                openChip.setAttribute('data-app-action', 'assign_shift');
+                openChip.setAttribute('data-app-values', JSON.stringify({ id: s.id }));
+                people.append(openChip);
+              }
+              card.append(people);
+              list.append(card);
+            });
+            grid.append(day);
+          }
+
+          var gaps = document.getElementById('gaps');
+          gaps.replaceChildren();
+          if (!upcoming.length) gaps.append(el('li', view.shifts.length ? 'Every upcoming shift this week is covered.' : 'Open spots appear here once the week has shifts.', 'empty'));
+          upcoming.forEach(function (g) {
+            var s = g.shift, li = el('li'), what = el('div', undefined, 'what'), free = rules.freeFor(s, data);
+            li.append(el('span', g.open + ' open', 'chip soon'));
+            what.append(el('b', weekday(s.fields.date) + ' ' + niceDate(s.fields.date) + ', ' + s.fields.start + '–' + s.fields.end + ' ' + (s.fields.role || '')));
+            what.append(el('small', [rules.staffOn(s).length ? 'On it: ' + rules.staffOn(s).map(function (id) { var p = data.staff.filter(function (x) { return x.id === id; })[0]; return p ? p.fields.name : id; }).join(', ') : 'Nobody on it yet', free.length ? 'Free: ' + free.slice(0, 4).map(function (x) { return x.name + ' (' + x.hours + ' h)'; }).join(', ') : 'Nobody passes every rule'].join(' · ')));
+            var fill = el('button', 'Fill', 'key');
+            fill.type = 'button';
+            fill.setAttribute('aria-label', 'Fill ' + weekday(s.fields.date) + ' ' + s.fields.start + ' ' + (s.fields.role || 'shift'));
+            fill.setAttribute('data-app-action', 'assign_shift');
+            fill.setAttribute('data-app-values', JSON.stringify({ id: s.id }));
+            li.append(what, fill);
+            gaps.append(li);
+          });
+
+          var body = document.getElementById('hours-body');
+          body.replaceChildren();
+          var people = data.staff.filter(function (p) { return p.status === 'active' || view.hours[p.id]; });
+          if (!people.length) { var tr0 = el('tr'), td0 = el('td', 'Nobody on the roster yet.', 'empty'); td0.colSpan = 5; tr0.append(td0); body.append(tr0); }
+          people.slice().sort(function (a, b) { return (view.hours[b.id] || 0) - (view.hours[a.id] || 0) || a.fields.name.localeCompare(b.fields.name); }).forEach(function (p) {
+            var tr = el('tr'), hours = view.hours[p.id] || 0, limit = rules.limitFor(p, data.rules || {}), over = limit !== null && hours > limit;
+            var name = el('td'); name.append(el('span', p.fields.name)); if (p.status !== 'active') name.append(el('span', 'not on the active staff', 'meta'));
+            var hoursCell = el('td'), bar = el('div', undefined, 'bar' + (over ? ' over' : '')), fill = el('i');
+            hoursCell.append(el('span', h(hours) + (limit !== null ? ' of ' + limit : '') + ' h', over ? 'over-text' : ''));
+            fill.style.width = Math.min(100, Math.round((hours / (limit || 40)) * 100)) + '%';
+            bar.append(fill); hoursCell.append(bar);
+            var shifts = view.shifts.filter(function (s) { return rules.staffOn(s).indexOf(p.id) >= 0; }).length;
+            var away = el('button', 'Time off', 'key'), actions = el('td', undefined, 'row-actions');
+            away.type = 'button';
+            away.setAttribute('aria-label', 'Mark when ' + p.fields.name + ' can’t work');
+            away.setAttribute('data-app-action', 'set_availability');
+            away.setAttribute('data-app-values', JSON.stringify({ staff: p.id }));
+            actions.append(away);
+            tr.append(name, el('td', (p.fields.roles || []).join(', ') || 'any role'), hoursCell, el('td', String(shifts)), actions);
+            body.append(tr);
+          });
+
+          var away = document.getElementById('away');
+          away.replaceChildren();
+          var entries = data.availability.filter(function (a) { return a.status === 'active'; });
+          if (!entries.length) away.append(el('li', 'Nobody has marked a day they can’t work.', 'empty'));
+          entries.forEach(function (a) {
+            var p = data.staff.filter(function (x) { return x.id === a.fields.staffId; })[0];
+            away.append(el('li', (p ? p.fields.name : a.fields.name) + ': unavailable ' + rules.availText(a.fields)));
+          });
+          var ruleList = document.getElementById('rules');
+          ruleList.replaceChildren();
+          var r = data.rules || {}, lines = [];
+          if (rules.num(r.maxWeekHours)) lines.push('At most ' + r.maxWeekHours + ' hours a week per person');
+          if (rules.num(r.minRestHours)) lines.push('At least ' + r.minRestHours + ' hours between shifts');
+          if (rules.num(r.maxShiftHours)) lines.push('Shifts no longer than ' + r.maxShiftHours + ' hours');
+          (r.notes || []).forEach(function (n) { lines.push(n); });
+          if (!lines.length) ruleList.append(el('li', 'No rules yet. Scheduling follows only the rules you state.', 'empty'));
+          lines.forEach(function (text) { ruleList.append(el('li', text)); });
+        }
+
+        var approvalMessage = '';
+        function say(text) { approvalMessage = text; document.getElementById('approval-note').textContent = text; }
+        function takeOff(shiftId, staffId) {
+          gezel.tools.invoke('page_assign_shift', { id: shiftId, remove: staffId }).then(function (result) {
+            say(result && result.output ? String(result.output.summary).split('. ')[0] + '.' : 'Updated.');
+            return loadRoster();
+          }).catch(function (error) { say('Could not change that shift. ' + (error.message || 'Try again.')); });
+        }
+        document.getElementById('approve-week').onclick = function () {
+          var key = this;
+          key.disabled = true;
+          gezel.tools.invoke('page_approve_week', { week: shownWeek }).then(function (result) {
+            say(result && result.output ? String(result.output.summary).split(/(?<=\.) (?=This week|Next week|The week of)/)[0] : 'Approved.');
+            return loadRoster();
+          }).catch(function (error) { key.disabled = false; say('Could not approve the week. ' + (error.message || 'Try again.')); });
+        };
+        function moveWeek(days) { shownWeek = rules.addDays(shownWeek, days); approvalMessage = ''; if (last) render(last); }
+        document.getElementById('prev-week').onclick = function () { moveWeek(-7); };
+        document.getElementById('next-week').onclick = function () { moveWeek(7); };
+        window.showRosterWeek = function (day) { shownWeek = rules.mondayOf(day); approvalMessage = ''; if (last) render(last); };
+
+        window.addEventListener('gezel-app-data-changed', function () { loadRoster(); });
+        window.loadRoster = loadRoster;
+        function loadRoster() {
+          var revision = ++appLoadRevision;
+          return Promise.all(['staff.json', 'shifts.json', 'availability.json', 'rules.json'].map(function (path) { return gezel.data.read(path); })).then(function (values) {
+            if (appDisposed || revision !== appLoadRevision) return;
+            reportAppError(null);
+            render({ staff: records(values[0]), shifts: records(values[1]), availability: records(values[2]), rules: values[3] || { version: 1, notes: [] } });
+          }).catch(function (error) { if (!appDisposed && revision === appLoadRevision) reportAppError(error); });
+        }
+
+        loadRoster();
+        ['staff.json', 'shifts.json', 'availability.json', 'rules.json'].forEach(function (path) {
+          appSubscriptions.push(gezel.data.watch(path, function () { loadRoster(); }));
+        });
+      })();
+    </script>
+    <script src="application.js" defer></script>
+  </body>
+</html>

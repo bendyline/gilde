@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Caregiving binder</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2; --card: #fff; --ink: #2b2620; --muted: #7a7166;
+        --accent: #b5651d; --track: #ece5da; --good: #4a7c59; --warn: #a4552e;
+      }
+      :root[data-theme='dark'] {
+        --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+        --accent: #e0894a; --track: #3a352f; --good: #7fae8d; --warn: #d98a63;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+          --accent: #e0894a; --track: #3a352f; --good: #7fae8d; --warn: #d98a63;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 16px/1.5 var(--font-body, system-ui, sans-serif); background: var(--bg); color: var(--ink); padding: 1.5rem 1.25rem; }
+      main { max-width: 680px; margin: 0 auto; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.35rem; font-weight: 600; margin: 0 0 0.15rem; }
+      .sub { color: var(--muted); font-size: 0.95rem; margin: 0 0 0.9rem; }
+      .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin: 0 0 0.75rem; }
+      .panel { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.85rem 1rem; font-size: 0.95rem; margin: 0 0 0.75rem; }
+      .cols .panel { margin: 0; }
+      .panel h2 { font-family: var(--font-ui, system-ui, sans-serif); font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 0.5rem; }
+      .panel ul { margin: 0; padding-left: 1.05rem; }
+      .panel li { margin: 0.3rem 0; }
+      .panel .meta { color: var(--muted); font-size: 0.85rem; }
+      .next { margin: 0; font-size: 1.05rem; }
+      .next .meta { display: block; }
+      .stopped { margin: 0.6rem 0 0; }
+      .panel ul.journal, .panel ul.dated { list-style: none; padding-left: 0; }
+      .journal li { color: var(--muted); }
+      .journal li strong { color: var(--ink); font-weight: 600; }
+      .dated li strong { font-weight: 600; }
+      #recent-more { margin: 0.5rem 0 0; }
+      .kind { display: inline-block; border-radius: 4px; padding: 0 0.35rem; font-family: var(--font-ui, system-ui, sans-serif); font-size: 0.75rem; line-height: 1.5; margin-right: 0.4rem; color: var(--muted); background: color-mix(in srgb, var(--track) 70%, transparent); }
+      .kind.symptom { color: var(--warn); background: color-mix(in srgb, var(--warn) 13%, transparent); }
+      .empty { color: var(--muted); font-style: italic; }
+      .privacy { color: var(--muted); font-size: 0.85rem; text-align: center; margin-top: 0.75rem; }
+      @media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+      /* Older hosts show every section at once, so the Home summaries would repeat the full lists. */
+      html[data-app-legacy] #next-section, html[data-app-legacy] #recent-section { display: none; }
+      html[data-app-legacy] #home-cols { grid-template-columns: 1fr; }
+      .demo-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0 0 0.85rem;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--card) 88%, var(--accent));
+        color: var(--ink);
+        font-size: 0.8rem;
+      }
+      .demo-banner[hidden] { display: none; }
+      .demo-banner strong { font-weight: 700; }
+      .demo-reset {
+        flex: none;
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: var(--card);
+        color: var(--ink);
+        cursor: pointer;
+        font: inherit;
+      }
+      .demo-reset:hover { border-color: var(--ink); }
+    </style>
+  <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:20px 0;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--border,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}html[data-gezel-fullscreen=true] .board{min-width:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}.tiles,.stats,.summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}.board,.columns{max-width:100%;overflow-x:auto}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+    <style data-app-shell="2">
+    /* Shared app furniture from the Gezel app UX guide. The page owns everything else. */
+    :root{--app-action:var(--gezel-component-accent,#805128);--app-on-action:#fffaf3;--app-banner-bg:#f3eddf;--app-banner-line:#d6cbb8}
+    :root[data-theme=dark]{--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}
+    @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}}
+    main h1{font-weight:400}
+    html[data-gezel-fullscreen=true] main h1{font-size:clamp(28px,3vw,40px);margin-top:0}
+    .app-tabs{margin:20px 0 24px}
+    .app-actionbar{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin:16px 0 24px}
+    .app-panel>.app-actionbar:first-child{margin-top:0}
+    .app-settings{display:grid;gap:16px;max-width:760px;margin:0 0 24px}
+    .app-search{margin:0}
+    .app-search gezel-collection-filter{margin:0 0 12px;max-width:540px}
+    .app-primary{min-height:44px;padding:8px 16px;border:1px solid var(--app-action);border-radius:6px;background:var(--app-action);color:var(--app-on-action);font-weight:600}
+    .app-primary:disabled{display:none}
+    main li.empty{display:block;grid-column:1/-1}
+    html[data-app-legacy] [data-app-action]{display:none!important}
+    [data-gezel-demo-banner]:not([hidden]){display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin:0 0 16px;padding:8px 8px 8px 14px;border:1px solid var(--app-banner-line);border-radius:10px;background:var(--app-banner-bg);color:inherit;font-size:14px;line-height:1.4}
+    [data-gezel-demo-banner] button{min-height:32px;padding:4px 12px;border:1px solid var(--app-banner-line);border-radius:6px;background:transparent;color:inherit;font-size:13px}
+    @media(max-width:620px){.tiles,.stats,.summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:nth-child(3):last-child){grid-template-columns:repeat(3,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:only-child){grid-template-columns:minmax(0,1fr)!important}}
+    </style>
+  <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script></head>
+  <body>
+    <main>
+<p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong> — sample data stays in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1 id="title">Caregiving binder</h1>
+      <p class="sub" id="sub">Loading the record…</p>
+      <section class="panel" id="next-section">
+        <h2>Next appointment</h2>
+        <p class="next" id="next">Nothing scheduled.</p>
+      </section>
+      <div class="cols" id="home-cols">
+        <section class="panel" id="meds-section">
+          <h2>Active medications</h2>
+          <ul id="meds"><li class="empty">None recorded yet.</li></ul>
+          <p class="meta stopped" id="stopped" hidden></p>
+        </section>
+        <section class="panel" id="recent-section">
+          <h2>Recent notes</h2>
+          <ul class="journal" id="recent"><li class="empty">The journal is empty — a quiet start.</li></ul>
+          <p class="meta" id="recent-more" hidden></p>
+        </section>
+      </div>
+      <section class="panel" id="upcoming-section">
+        <h2>Upcoming appointments</h2>
+        <ul class="dated" id="upcoming"><li class="empty">Nothing scheduled.</li></ul>
+      </section>
+      <section class="panel" id="past-section">
+        <h2>Past visits</h2>
+        <ul class="dated" id="past"><li class="empty">No past visits recorded yet.</li></ul>
+      </section>
+      <section class="panel" id="journal-section">
+        <h2>Care journal</h2>
+        <ul class="journal" id="journal"><li class="empty">The journal is empty — a quiet start.</li></ul>
+      </section>
+      <p class="privacy">This record is stored in the project's files.</p>
+    </main>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+
+        // ── demo record (used only when the page opens as a raw file) ──
+        var demoNow = Date.now();
+        function demoAgo(days) { return new Date(demoNow - days * 86400000).toISOString(); }
+        // Appointments carry a local wall-clock time, the way the person said it.
+        function demoLocal(days, hour, minute) {
+          var d = new Date(demoNow + days * 86400000);
+          function pad(n) { return String(n).padStart(2, '0'); }
+          return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(hour) + ':' + pad(minute || 0);
+        }
+        var demoMeds = { records: [
+          { id: 'med-1', status: 'active', createdAt: demoAgo(300), updatedAt: demoAgo(300), fields: { name: 'Lisinopril', dose: '10 mg each morning', prescriber: 'Dr. Chen' }, history: [{ at: demoAgo(300), from: null, to: 'active' }] },
+          { id: 'med-2', status: 'active', createdAt: demoAgo(200), updatedAt: demoAgo(200), fields: { name: 'Vitamin D', dose: '1 tablet with lunch' }, history: [{ at: demoAgo(200), from: null, to: 'active' }] },
+          { id: 'med-3', status: 'active', createdAt: demoAgo(120), updatedAt: demoAgo(120), fields: { name: 'Atorvastatin', dose: '20 mg at bedtime', prescriber: 'Dr. Chen' }, history: [{ at: demoAgo(120), from: null, to: 'active' }] },
+          { id: 'med-4', status: 'stopped', createdAt: demoAgo(24), updatedAt: demoAgo(14), fields: { name: 'Amoxicillin', dose: '500 mg three times a day', prescriber: 'Dr. Chen' }, history: [{ at: demoAgo(24), from: null, to: 'active' }, { at: demoAgo(14), from: 'active', to: 'stopped', note: 'Finished the course.' }] },
+        ] };
+        // Append order, oldest first — the shape logStore writes to care.json.
+        var demoCare = { events: [
+          { kind: 'appointment', at: demoAgo(30), note: 'Primary care visit with Dr. Chen', data: { whenAt: demoLocal(-20, 9, 30) } },
+          { kind: 'appointment', at: demoAgo(20), note: 'Primary care follow-up with Dr. Chen', data: { whenAt: demoLocal(12, 10, 30) } },
+          { kind: 'update', at: demoAgo(14), note: 'Stopped Amoxicillin — finished the course.' },
+          { kind: 'update', at: demoAgo(6), note: 'Blood pressure readings added to the visit notes.' },
+          { kind: 'appointment', at: demoAgo(5), note: 'Cardiology check-in', data: { whenAt: demoLocal(26, 14, 0) } },
+          { kind: 'note', at: demoAgo(3), note: 'Refill collected; pill organizer set for the week.' },
+          { kind: 'symptom', at: demoAgo(2), note: 'Tired after lunch most days this week.' },
+          { kind: 'symptom', at: demoAgo(1), note: 'Energy was better after an afternoon walk.' },
+        ] };
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'dashboard/index.html', typeName: 'Caregiving Binder', params: { person: 'Mom' } },
+          tools: (function () {
+            // Mirrors the care-store script: meds are a roster, everything else appends to the journal.
+            function upcoming() {
+              var now = Date.now();
+              return demoCare.events.filter(function (e) { return e.kind === 'appointment' && e.data && Date.parse(e.data.whenAt) >= now; })
+                .sort(function (a, b) { return Date.parse(a.data.whenAt) - Date.parse(b.data.whenAt); });
+            }
+            function append(kind, note, data) {
+              var event = { kind: kind, at: new Date().toISOString(), note: note };
+              if (data) event.data = data;
+              demoCare.events.push(event);
+            }
+            function active() { return demoMeds.records.filter(function (r) { return r.status === 'active'; }); }
+            function status() {
+              var next = upcoming()[0];
+              return { meds: active().length, upcoming: upcoming().length,
+                summary: active().length + ' active medication(s). ' + upcoming().length + ' upcoming appointment(s)' + (next ? ' — next: ' + String(next.data.whenAt).slice(0, 16) + ' ' + next.note : '') + '. ' +
+                  demoCare.events.filter(function (e) { return e.kind !== 'appointment'; }).length + ' journal entr(ies).' };
+            }
+            return {
+              page_log_entry: function (input) {
+                if (!input.note || !String(input.note).trim()) throw new Error('Write what happened.');
+                append(input.kind === 'symptom' || input.kind === 'update' ? input.kind : 'note', String(input.note).trim());
+                return status();
+              },
+              page_log_appointment: function (input) {
+                if (!input.note || !input.when) throw new Error('Give the appointment and its date.');
+                append('appointment', String(input.note).trim(), { whenAt: String(input.when) });
+                return status();
+              },
+              add_med: function (input) {
+                if (!input.name || !input.dose) throw new Error('Give the medication and its dose.');
+                var at = new Date().toISOString(), max = demoMeds.records.reduce(function (n, r) { return Math.max(n, Number(r.id.slice(4)) || 0); }, 0);
+                var fields = { name: String(input.name), dose: String(input.dose) };
+                if (input.prescriber) fields.prescriber = String(input.prescriber);
+                demoMeds.records.push({ id: 'med-' + (max + 1), status: 'active', createdAt: at, updatedAt: at, fields: fields, history: [{ at: at, from: null, to: 'active' }] });
+                append('update', 'Started ' + input.name + ' (' + input.dose + ').');
+                return status();
+              },
+              stop_med: function (input) {
+                var r = active().find(function (m) { return input.id ? m.id === input.id : String(m.fields.name).toLowerCase() === String(input.name || '').toLowerCase(); });
+                if (!r) throw new Error('Name an active medication.');
+                var at = new Date().toISOString();
+                r.history = (r.history || []).concat([{ at: at, from: 'active', to: 'stopped', note: input.note }]);
+                r.status = 'stopped';
+                r.updatedAt = at;
+                append('update', 'Stopped ' + r.fields.name + (input.note ? ' — ' + input.note : '') + '.');
+                return status();
+              },
+              care_status: function () { return status(); },
+              visit_prep: function () {
+                var now = Date.now(), past = demoCare.events.filter(function (e) { return e.kind === 'appointment' && e.data && Date.parse(e.data.whenAt) < now; });
+                var last = past.length ? Math.max.apply(null, past.map(function (e) { return Date.parse(e.data.whenAt); })) : null;
+                var since = demoCare.events.filter(function (e) { return e.kind !== 'appointment' && (last === null || Date.parse(e.at) > last); });
+                var out = status();
+                var line = String.fromCharCode(10);
+                out.summary = ['VISIT PREP', 'Active medications:']
+                  .concat(active().map(function (m) { return '- ' + m.fields.name + ' ' + m.fields.dose; }), ['Since the last visit:'])
+                  .concat(since.map(function (e) { return '- [' + e.kind + '] ' + e.at.slice(0, 10) + ': ' + e.note; }), ['Upcoming:'])
+                  .concat(upcoming().map(function (e) { return '- ' + String(e.data.whenAt).slice(0, 16) + ' ' + e.note; }))
+                  .join(line);
+                return out;
+              },
+            };
+          })(),
+          data: {
+            'meds.json': function () { return demoMeds; },
+            'care.json': function () { return demoCare; },
+          },
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+
+        function applyTheme(mode) {
+          document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light');
+        }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+        function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+        // A date-only appointment ('2026-11-14') stays upcoming through that local day.
+        function whenMs(value) {
+          var day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value));
+          return day ? new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3]) + 1).getTime() - 1 : Date.parse(value);
+        }
+        function friendlyDate(value, withTime) {
+          var text = String(value), day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+          var d = day ? new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3])) : new Date(text);
+          if (isNaN(d.getTime())) return text;
+          var label = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+          return withTime && !day ? label + ', ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : label;
+        }
+
+        var KIND_LABELS = { note: 'Note', symptom: 'Symptom', update: 'Update' };
+        var person = gezel.page && gezel.page.params && String(gezel.page.params.person || '').trim();
+        if (person) document.getElementById('title').textContent = person + '’s care binder';
+
+        function inDays(ms) {
+          var today = new Date(); today.setHours(0, 0, 0, 0);
+          var day = new Date(ms); day.setHours(0, 0, 0, 0);
+          var days = Math.round((day.getTime() - today.getTime()) / 86400000);
+          return days <= 0 ? 'today' : days === 1 ? 'tomorrow' : 'in ' + days + ' days';
+        }
+        function journalItem(e) {
+          return '<li><span class="kind ' + esc(e.kind) + '">' + esc(KIND_LABELS[e.kind] || e.kind) + '</span>' +
+            '<strong>' + esc(friendlyDate(e.at, false)) + '</strong> — ' + esc(e.note || '') + '</li>';
+        }
+        function appointmentItem(e) {
+          return '<li><strong>' + esc(friendlyDate(e.data.whenAt, true)) + '</strong> <span class="meta">' + esc(e.note || '') + '</span></li>';
+        }
+
+        function render(meds, care) {
+          var records = (meds && meds.records) || [];
+          var active = records.filter(function (r) { return r.status === 'active'; });
+          var stopped = records.filter(function (r) { return r.status === 'stopped'; });
+          var events = (care && care.events) || [];
+          var now = Date.now();
+          var appointments = events.filter(function (e) {
+            return e.kind === 'appointment' && e.data && e.data.whenAt && isFinite(whenMs(e.data.whenAt));
+          });
+          var upcoming = appointments.filter(function (e) { return whenMs(e.data.whenAt) >= now; })
+            .sort(function (a, b) { return whenMs(a.data.whenAt) - whenMs(b.data.whenAt); });
+          var past = appointments.filter(function (e) { return whenMs(e.data.whenAt) < now; })
+            .sort(function (a, b) { return whenMs(b.data.whenAt) - whenMs(a.data.whenAt); });
+
+          document.getElementById('sub').textContent =
+            plural(active.length, 'active medication', 'active medications') + ' · ' + plural(upcoming.length, 'upcoming appointment', 'upcoming appointments');
+
+          var next = upcoming[0];
+          document.getElementById('next').innerHTML = next
+            ? '<strong>' + esc(friendlyDate(next.data.whenAt, true)) + '</strong>, ' + esc(inDays(whenMs(next.data.whenAt))) +
+              '<span class="meta">' + esc(next.note || '') + '</span>'
+            : '<span class="empty">Nothing scheduled.</span>';
+
+          document.getElementById('meds').innerHTML = active.length
+            ? active.map(function (m) {
+                var f = m.fields || {};
+                return '<li>' + esc(f.name || m.id) + ' <span class="meta">' + esc(f.dose || '') +
+                  (f.prescriber ? ' · ' + esc(f.prescriber) : '') + '</span></li>';
+              }).join('')
+            : '<li class="empty">None recorded yet.</li>';
+          var stoppedLine = document.getElementById('stopped');
+          stoppedLine.hidden = !stopped.length;
+          stoppedLine.textContent = stopped.length
+            ? 'Stopped: ' + stopped.map(function (m) {
+                var last = (m.history || []).filter(function (h) { return h.to === 'stopped'; }).pop();
+                return String((m.fields && m.fields.name) || m.id) + (last && last.at ? ' (' + friendlyDate(last.at, false) + ')' : '');
+              }).join(', ')
+            : '';
+
+          document.getElementById('upcoming').innerHTML = upcoming.length
+            ? upcoming.map(appointmentItem).join('')
+            : '<li class="empty">Nothing scheduled.</li>';
+          document.getElementById('past').innerHTML = past.length
+            ? past.map(appointmentItem).join('')
+            : '<li class="empty">No past visits recorded yet.</li>';
+
+          var recent = events.filter(function (e) { return e.kind !== 'appointment'; }).slice().reverse();
+          var empty = '<li class="empty">The journal is empty — a quiet start.</li>';
+          document.getElementById('journal').innerHTML = recent.length ? recent.map(journalItem).join('') : empty;
+          document.getElementById('recent').innerHTML = recent.length ? recent.slice(0, 3).map(journalItem).join('') : empty;
+          var more = document.getElementById('recent-more');
+          more.hidden = recent.length <= 3;
+          more.textContent = 'The latest 3 of ' + recent.length + ' notes. The Journal has them all.';
+        }
+
+        window.addEventListener('gezel-app-data-changed', function(){ loadRecord(); });
+        function loadRecord(){
+var revision=++appLoadRevision;
+return Promise.all([gezel.data.read('meds.json'),gezel.data.read('care.json')]).then(function(values){if(appDisposed||revision!==appLoadRevision)return;reportAppError(null);render(values[0]||{},values[1]||{});}).catch(function(error){if(!appDisposed&&revision===appLoadRevision)reportAppError(error);});
+}
+
+        loadRecord();
+        appSubscriptions.push(gezel.data.watch('meds.json', function () { loadRecord(); }));
+        appSubscriptions.push(gezel.data.watch('care.json', function () { loadRecord(); }));
+      })();
+    </script>
+  <script src="application.js" defer></script>
+  </body>
+</html>

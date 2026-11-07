@@ -1,0 +1,443 @@
+{
+  "schemaVersion": 1,
+  "version": "1.1.0",
+  "releasedAt": "2026-11-07T18:00:00.000Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "business": {
+        "type": "string",
+        "title": "What kind of business is this?",
+        "description": "e.g. 'a three-person electrical contractor', 'a design studio'.",
+        "default": "the business"
+      },
+      "currency": {
+        "type": "string",
+        "title": "Which currency is the cash in?",
+        "description": "A three-letter code, e.g. USD, EUR or GBP.",
+        "default": "USD"
+      }
+    },
+    "required": [
+      "business",
+      "currency"
+    ]
+  },
+  "nameTemplate": "Cash Flow Planner",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "bookkeeper",
+      "voorman": true
+    }
+  ],
+  "scripts": {
+    "cashflow-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'cashflow-store',\n  description:\n    \"Read and update the cash plan (cashflow.json): the bank balance, the money the business expects in and out, and what-if scenarios. action:'status' for the 13-week forecast and its warning week; 'set_balance' for the cash in the bank (and the cushion to keep); 'add' to save an expected invoice or bill (an existing name is updated, never duplicated); 'settle' when one arrived or was paid; 'remove' to take one out of the plan; 'what_if' to try a scenario without changing the plan; 'list' for every item.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'status', 'set_balance', 'add', 'settle', 'remove', 'what_if', or 'list'.\",\n      required: true,\n    },\n    item: {\n      type: 'string',\n      description: \"An expected item's id (e.g. 'cf-3') or name, for settle, remove, and a what-if delay or drop.\",\n    },\n    name: { type: 'string', description: \"An item's name, e.g. 'Hollis Bakery invoice' or 'Payroll'.\" },\n    direction: { type: 'string', description: 'in for money coming in, out for a bill or cost.' },\n    amount: {\n      type: 'number',\n      description: 'Amount in ordinary units, e.g. 9600. For set_balance it may be 0 or negative.',\n    },\n    date: {\n      type: 'string',\n      description: 'YYYY-MM-DD: when it is expected (the first date, for a repeat); for set_balance, the day of the balance; for settle, the day it happened (default today).',\n    },\n    recurs: { type: 'string', description: 'none, weekly, biweekly, monthly, quarterly.' },\n    until: { type: 'string', description: 'The last date a repeat runs, YYYY-MM-DD.' },\n    cushion: { type: 'number', description: 'Cash to keep on hand, in ordinary units, e.g. 12000.' },\n    scenario: { type: 'string', description: \"A what-if's name, e.g. 'Hire an apprentice'.\" },\n    change: { type: 'string', description: 'For what_if: delay, drop, add, or clear.' },\n    weeks: { type: 'number', description: 'For a what-if delay: how many weeks later (a month late is 4).' },\n    note: { type: 'string', description: 'A short note, with any reference number exactly as written.' },\n  },\n  outputs: {\n    balance: { type: 'number', description: 'Cash in the bank, in ordinary units like amount.' },\n    lowestBalance: { type: 'number', description: 'The lowest week-end balance in the forecast, in ordinary units.' },\n    lowWeek: { type: 'string', description: 'The Monday of the tightest week, YYYY-MM-DD.' },\n    belowCushion: { type: 'number', description: 'Weeks that end below the cushion.' },\n    endBalance: { type: 'number', description: 'The balance after 13 weeks, in ordinary units.' },\n    summary: { type: 'string', description: 'What changed, then the forecast; or the listing.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── cashflow-rules-start ──\n// Pure derivations shared by the script, the page and the sample conversation:\n// integer-cent money, repeat dates, and the 13-week forecast with its tightest\n// week, for the plan and for each what-if. Kept self-contained between these\n// sentinels so unit tests execute the shipped bytes.\nvar DAY_MS = 86400000;\nvar WEEKS = 13;\nvar RECURS = ['none', 'weekly', 'biweekly', 'monthly', 'quarterly'];\nvar RECURS_TEXT = { none: 'once', weekly: 'every week', biweekly: 'every two weeks', monthly: 'every month', quarterly: 'every quarter' };\nvar SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];\n\nfunction pad(n) {\n  return n < 10 ? '0' + n : String(n);\n}\nfunction localDay(ms) {\n  var d = new Date(ms);\n  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());\n}\nfunction normalizeDate(text) {\n  var raw = String(text || '').trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(raw)) return raw;\n  var parsed = Date.parse(raw);\n  return isFinite(parsed) ? localDay(parsed) : null;\n}\n// Local noon, so adding days never trips over a daylight-saving change.\nfunction dayMs(day) {\n  return Date.parse(String(day).slice(0, 10) + 'T12:00:00');\n}\nfunction addDays(day, n) {\n  var d = new Date(dayMs(day));\n  d.setDate(d.getDate() + n);\n  return localDay(d.getTime());\n}\n// The same day of the month `months` later; the 31st lands on a shorter month's last day.\nfunction addMonths(day, months, dom) {\n  var d = new Date(dayMs(day));\n  var date = dom || d.getDate();\n  d.setDate(1);\n  d.setMonth(d.getMonth() + months);\n  d.setDate(Math.min(date, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));\n  return localDay(d.getTime());\n}\n// The k-th date of a series counted from its anchor, so a monthly 31st never drifts.\nfunction occurrence(anchor, recurs, k, dom) {\n  if (recurs === 'weekly') return addDays(anchor, 7 * k);\n  if (recurs === 'biweekly') return addDays(anchor, 14 * k);\n  if (recurs === 'monthly') return addMonths(anchor, k, dom);\n  if (recurs === 'quarterly') return addMonths(anchor, 3 * k, dom);\n  return k === 0 ? anchor : null;\n}\nfunction daysBetween(from, to) {\n  return Math.round((dayMs(to) - dayMs(from)) / DAY_MS);\n}\nfunction mondayOf(day) {\n  return addDays(day, -((new Date(dayMs(day)).getDay() + 6) % 7));\n}\nfunction weekLabel(day) {\n  return SHORT_MONTHS[Number(day.slice(5, 7)) - 1] + ' ' + Number(day.slice(8, 10));\n}\n// Integer cents from 9600, '9,600.00' or '-1240', with no float arithmetic.\nfunction parseCents(value) {\n  var text = typeof value === 'number' ? (isFinite(value) ? String(value) : '') : String(value == null ? '' : value);\n  var m = /^(-?)(\\d+)(?:\\.(\\d*))?$/.exec(text.replace(/[$,\\s]/g, ''));\n  if (!m) return null;\n  var frac = (m[3] || '') + '000';\n  var cents = Number(m[2]) * 100 + Number(frac.slice(0, 2)) + (Number(frac.charAt(2)) >= 5 ? 1 : 0);\n  return m[1] ? -cents : cents;\n}\nfunction toCents(value) {\n  var cents = parseCents(value);\n  return cents !== null && cents > 0 ? cents : null;\n}\nfunction money(cents) {\n  var abs = Math.abs(Math.round(cents));\n  var whole = String(Math.floor(abs / 100)).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',');\n  return (cents < 0 ? '-' : '') + whole + '.' + pad(abs % 100);\n}\nfunction normalizeRecurs(text) {\n  var raw = String(text || '').trim().toLowerCase();\n  if (RECURS.indexOf(raw) >= 0) return raw;\n  if (/two weeks|fortnight|bi-?weekly/.test(raw)) return 'biweekly';\n  if (/week/.test(raw)) return 'weekly';\n  if (/quarter/.test(raw)) return 'quarterly';\n  if (/month/.test(raw)) return 'monthly';\n  if (/once|one-?off|single/.test(raw)) return 'none';\n  return null;\n}\nfunction scenarioNames(records) {\n  var names = [];\n  records.forEach(function (r) {\n    var s = r.status === 'whatif' && r.fields && r.fields.scenario;\n    if (s && names.indexOf(s) < 0) names.push(s);\n  });\n  return names;\n}\n// The plan's expected items, or the plan with one what-if's changes applied.\nfunction planItems(records, scenario) {\n  var changes = records.filter(function (r) {\n    return scenario && r.status === 'whatif' && r.fields.scenario === scenario && r.fields.change !== 'add';\n  });\n  return records\n    .filter(function (r) {\n      return r.status === 'expected' || (scenario && r.status === 'whatif' && r.fields.scenario === scenario && r.fields.change === 'add');\n    })\n    .map(function (r) {\n      var shift = 0;\n      var dropped = false;\n      changes.forEach(function (c) {\n        if (c.fields.itemId !== r.id) return;\n        if (c.fields.change === 'drop') dropped = true;\n        if (c.fields.change === 'delay') shift += Math.round(Number(c.fields.weeks) || 0);\n      });\n      var f = r.fields;\n      return dropped\n        ? null\n        : { id: r.id, name: f.name, direction: f.direction, amountCents: f.amountCents, date: f.date, recurs: f.recurs || 'none', until: f.until || '', dom: f.dom, shiftDays: 7 * shift, whatIf: r.status === 'whatif' };\n    })\n    .filter(Boolean);\n}\n// Thirteen weeks from this Monday. A repeat dated before the balance is already in it; a one-off\n// that never came stays expected and is counted (and flagged late) in the first week.\nfunction forecast(file, scenario, nowMs) {\n  var today = localDay(nowMs);\n  var balance = file && file.balance && typeof file.balance.amountCents === 'number' ? file.balance : null;\n  var asOf = balance && balance.asOf ? balance.asOf : today;\n  var start = mondayOf(today);\n  var end = addDays(start, 7 * WEEKS - 1);\n  var from = asOf < start ? asOf : start;\n  var weeks = [];\n  for (var w = 0; w < WEEKS; w++) weeks.push({ start: addDays(start, 7 * w), inCents: 0, outCents: 0, items: [] });\n  var late = [];\n  planItems((file && file.records) || [], scenario).forEach(function (item) {\n    if (!item.date || !(item.amountCents > 0)) return;\n    var k = 0;\n    if (item.recurs !== 'none') {\n      var gap = daysBetween(item.date, from) - item.shiftDays;\n      var period = { weekly: 7, biweekly: 14, monthly: 31, quarterly: 92 }[item.recurs] || 7;\n      if (gap > 0) k = Math.max(0, Math.floor(gap / period) - 1);\n    }\n    for (var guard = 0; guard < 600; guard++, k++) {\n      var raw = occurrence(item.date, item.recurs, k, item.dom);\n      if (!raw || (item.until && raw > item.until)) break;\n      var day = item.shiftDays ? addDays(raw, item.shiftDays) : raw;\n      if (day > end) break;\n      if (item.recurs !== 'none' && day < asOf) continue;\n      var isLate = item.recurs === 'none' && day < today;\n      var hit = { id: item.id, name: item.name, direction: item.direction, amountCents: item.amountCents, day: day, late: isLate, whatIf: item.whatIf };\n      var week = weeks[day < start ? 0 : Math.floor(daysBetween(start, day) / 7)];\n      if (item.direction === 'in') week.inCents += item.amountCents;\n      else week.outCents += item.amountCents;\n      week.items.push(hit);\n      if (isLate) late.push(hit);\n      if (item.recurs === 'none') break;\n    }\n  });\n  var running = balance ? balance.amountCents : 0;\n  var totalIn = 0;\n  var totalOut = 0;\n  weeks.forEach(function (wk) {\n    wk.openCents = running;\n    running += wk.inCents - wk.outCents;\n    wk.closeCents = running;\n    totalIn += wk.inCents;\n    totalOut += wk.outCents;\n  });\n  var cushion = file && typeof file.cushionCents === 'number' ? file.cushionCents : 0;\n  var lowest = weeks[0];\n  weeks.forEach(function (wk) {\n    if (wk.closeCents < lowest.closeCents) lowest = wk;\n  });\n  return {\n    today: today, start: start, asOf: asOf, hasBalance: !!balance, balanceCents: balance ? balance.amountCents : 0,\n    cushionCents: cushion, weeks: weeks, lowest: lowest, late: late, inCents: totalIn, outCents: totalOut, endCents: running,\n    firstLow: weeks.filter(function (wk) { return wk.closeCents < cushion; })[0] || null,\n    firstNegative: weeks.filter(function (wk) { return wk.closeCents < 0; })[0] || null,\n    belowCushion: weeks.filter(function (wk) { return wk.closeCents < cushion; }).length,\n  };\n}\nfunction biggest(week) {\n  return week.items\n    .filter(function (i) { return i.direction === 'out'; })\n    .sort(function (a, b) { return b.amountCents - a.amountCents; })\n    .slice(0, 3)\n    .map(function (i) { return i.name + ' ' + money(i.amountCents); })\n    .reduce(function (text, part, i, all) { return text + (i === 0 ? '' : i === all.length - 1 ? ' and ' : '; ') + part; }, '');\n}\n// The answer to \"when does cash get tight?\": the warning week first, with what goes out in it.\nfunction tightLine(f) {\n  var low = f.lowest;\n  var warn = f.firstNegative || f.firstLow;\n  var week = function (w) { return 'the week of ' + weekLabel(w.start) + ' (' + w.start + ')'; };\n  var going = function (w) { var out = biggest(w); return out ? ', when ' + out + ' go out' : ''; };\n  if (!warn) {\n    return 'Cash stays above the ' + money(f.cushionCents) + ' cushion for all ' + WEEKS + ' weeks; the tightest is ' + week(low) + ', ending at ' + money(low.closeCents) + going(low) + '.';\n  }\n  return (\n    (f.firstNegative ? 'Cash runs out in ' : 'Cash first drops below the ' + money(f.cushionCents) + ' cushion in ') + week(warn) +\n    ', ending at ' + money(warn.closeCents) + going(warn) + '. ' +\n    (low === warn ? 'That is the tightest week.' : 'The tightest is ' + week(low) + ', ending at ' + money(low.closeCents) + '.')\n  );\n}\nfunction compareLine(name, plan, alt) {\n  var low = alt.lowest;\n  return (\n    name + ': tightest week ' + weekLabel(low.start) + ' at ' + money(low.closeCents) +\n    ' (plan: ' + weekLabel(plan.lowest.start) + ' at ' + money(plan.lowest.closeCents) + ')' +\n    (alt.firstNegative\n      ? '; runs out in the week of ' + weekLabel(alt.firstNegative.start)\n      : alt.firstLow\n        ? '; below the cushion from the week of ' + weekLabel(alt.firstLow.start)\n        : '; never below the cushion') +\n    '; ends the 13 weeks at ' + money(alt.endCents) + ' (plan ' + money(plan.endCents) + ')'\n  );\n}\nfunction itemLine(r, records) {\n  var f = r.fields || {};\n  if (f.change === 'delay' || f.change === 'drop') {\n    var target = records.filter(function (x) { return x.id === f.itemId; })[0];\n    var what = target ? target.fields.name + ' (' + target.id + ')' : f.itemId;\n    return r.id + ' [what-if ' + f.scenario + '] ' + (f.change === 'drop' ? 'drop ' + what : 'delay ' + what + ' by ' + f.weeks + (Number(f.weeks) === 1 ? ' week' : ' weeks'));\n  }\n  return (\n    r.id + (r.status === 'whatif' ? ' [what-if ' + f.scenario + '] add ' : ' ') + f.name + ': ' + (f.direction === 'in' ? 'in ' : 'out ') +\n    money(f.amountCents || 0) + ' ' + (f.recurs && f.recurs !== 'none' ? RECURS_TEXT[f.recurs] + ' from ' + f.date + (f.until ? ' until ' + f.until : '') : 'on ' + f.date) +\n    (r.status === 'done' ? ' (done)' : '')\n  );\n}\nfunction cashPicture(file, nowMs, scenario) {\n  var records = (file && file.records) || [];\n  var plan = forecast(file, null, nowMs);\n  var view = scenario ? forecast(file, scenario, nowMs) : plan;\n  var planned = records.filter(function (r) { return r.status === 'expected'; }).length;\n  if (!plan.hasBalance && !planned) {\n    return { plan: plan, view: view, summary: 'The plan is empty: no bank balance and no expected income or bills yet. Ask for today’s bank balance, the regular bills (payroll, rent, suppliers) and the invoices still to be paid.' };\n  }\n  var parts = [(scenario ? 'With the what-if ' + scenario + ': ' : '') + tightLine(view)];\n  parts.push(\n    plan.hasBalance\n      ? 'Cash in the bank: ' + money(plan.balanceCents) + ' as of ' + plan.asOf + ' (cushion ' + money(plan.cushionCents) + ').' +\n          (daysBetween(plan.asOf, plan.today) > 7 ? ' That balance is ' + daysBetween(plan.asOf, plan.today) + ' days old; a fresh one sharpens the forecast.' : '')\n      : 'No bank balance yet, so the forecast starts from zero. Ask for today’s balance.',\n  );\n  if (view.late.length) {\n    parts.push('Late, counted in this week until it arrives or is moved: ' + view.late.map(function (i) { return i.name + ' (' + i.id + ', ' + (i.direction === 'in' ? 'in ' : 'out ') + money(i.amountCents) + ', expected ' + i.day + ')'; }).join('; ') + '.');\n  }\n  parts.push(\n    'Week by week, ending balance: ' +\n      view.weeks.map(function (wk) { return weekLabel(wk.start) + ' ' + money(wk.closeCents) + ' (in ' + money(wk.inCents) + ', out ' + money(wk.outCents) + ')'; }).join(' | ') + '.',\n  );\n  parts.push('Over 13 weeks: in ' + money(view.inCents) + ', out ' + money(view.outCents) + ', ending at ' + money(view.endCents) + '.');\n  var names = scenarioNames(records);\n  if (names.length) {\n    parts.push('What-ifs: ' + names.map(function (n) { return compareLine(n, plan, forecast(file, n, nowMs)); }).join(' | ') + '.');\n  }\n  return { plan: plan, view: view, summary: parts.join(' ') };\n}\n// ── cashflow-rules-end ──\n\nconst STAGES: [string, ...string[]] = ['expected', 'whatif', 'done', 'removed'];\nconst plan = rosterStore(gezel.fs, 'cashflow.json', { stages: STAGES, idPrefix: 'cf' });\nconst now = Date.now();\nconst today = localDay(now);\n\ntype CashRecord = Awaited<ReturnType<typeof plan.list>>[number];\n\n// The balance and cushion sit beside the records in the same file; the roster store keeps them on every write.\nasync function loadFile(): Promise<Record<string, any>> {\n  let raw: string;\n  try {\n    raw = await gezel.fs.read('cashflow.json');\n  } catch {\n    return { version: 1, stages: [...STAGES], records: [] };\n  }\n  return JSON.parse(raw);\n}\nasync function saveTop(patch: Record<string, unknown>): Promise<void> {\n  const file = await loadFile();\n  Object.assign(file, patch);\n  await gezel.fs.write('cashflow.json', JSON.stringify(file, null, 2) + '\\n');\n}\n\nconst GENERIC = ['invoice', 'payment', 'bill', 'from', 'with', 'final'];\nfunction matches(records: CashRecord[], text: string, statuses: string[]): CashRecord[] {\n  const wanted = text.trim().toLowerCase();\n  const pool = records.filter((r) => statuses.includes(r.status) && (r.status === 'expected' || r.fields.change === 'add'));\n  const byId = pool.filter((r) => r.id === wanted);\n  if (byId.length) return byId;\n  const nameOf = (r: CashRecord) => String(r.fields.name ?? '').toLowerCase();\n  const exact = pool.filter((r) => nameOf(r) === wanted);\n  if (exact.length) return exact;\n  const partial = pool.filter((r) => nameOf(r).includes(wanted) || (!!nameOf(r) && wanted.includes(nameOf(r))));\n  if (partial.length) return partial;\n  // Fall back to distinctive shared words: 'Hollis invoice' finds 'Hollis Bakery lighting retrofit'.\n  const words = (wanted.match(/[a-z]{4,}/g) ?? []).filter((w) => !GENERIC.includes(w));\n  let best: CashRecord[] = [];\n  let score = 0;\n  for (const r of pool) {\n    const hits = words.filter((w) => nameOf(r).includes(w)).length;\n    if (hits > score) {\n      best = [r];\n      score = hits;\n    } else if (hits && hits === score) best.push(r);\n  }\n  return best;\n}\nfunction resolveOne(records: CashRecord[], text: string, what: string): CashRecord {\n  if (!text.trim()) throw new Error(\"Pass 'item': the id (e.g. 'cf-3') or the name of \" + what + \". Call action:'list' to see them.\");\n  const hits = matches(records, text, ['expected']);\n  if (hits.length === 1) return hits[0]!;\n  if (!hits.length) throw new Error(\"Nothing expected in the plan matches '\" + text + \"'. Call action:'list' to see the items.\");\n  throw new Error(\"More than one item matches '\" + text + \"': \" + hits.map((r) => itemLine(r, records)).join(' | ') + '. Pass the id.');\n}\nfunction directionOf(text: string | undefined): 'in' | 'out' | null {\n  const d = String(text ?? '').trim().toLowerCase();\n  if (/^(in|income|incoming|receivable|invoice)$/.test(d)) return 'in';\n  if (/^(out|outgoing|expense|bill|cost|payable)$/.test(d)) return 'out';\n  return null;\n}\nfunction itemFields(isNew: boolean): Record<string, unknown> {\n  const fields: Record<string, unknown> = {};\n  if (input.direction) {\n    const d = directionOf(input.direction);\n    if (!d) throw new Error(\"direction must be 'in' (money coming in) or 'out' (a bill).\");\n    fields.direction = d;\n  }\n  if (input.amount !== undefined && input.amount !== null) {\n    const cents = toCents(input.amount);\n    if (cents === null) throw new Error(\"amount must be positive, in ordinary units, e.g. 9600.\");\n    fields.amountCents = cents;\n  }\n  if (input.date) {\n    const d = normalizeDate(input.date);\n    if (!d) throw new Error(\"date must be a date, e.g. '\" + today + \"'.\");\n    fields.date = d;\n    fields.dom = Number(d.slice(8, 10));\n  }\n  if (input.recurs) {\n    const r = normalizeRecurs(input.recurs);\n    if (!r) throw new Error('recurs must be one of: ' + RECURS.join(', ') + '.');\n    fields.recurs = r;\n  }\n  if (input.until) {\n    const u = normalizeDate(input.until);\n    if (!u) throw new Error('until must be a date, YYYY-MM-DD.');\n    fields.until = u;\n  }\n  if (input.note) fields.note = input.note.trim();\n  if (isNew) {\n    if (!fields.direction) throw new Error(\"A new item needs 'direction': in for money coming in, out for a bill.\");\n    if (!fields.amountCents) throw new Error(\"A new item needs a positive 'amount', e.g. 9600.\");\n    if (!fields.date) throw new Error(\"A new item needs 'date', YYYY-MM-DD (the first date, for a repeat).\");\n    if (!fields.recurs) fields.recurs = 'none';\n  }\n  return fields;\n}\n\nlet note = '';\nlet focus: string | null = null;\n\nif (input.action === 'set_balance') {\n  const cents = parseCents(input.amount);\n  if (cents === null) throw new Error(\"set_balance needs 'amount': the cash in the bank in ordinary units, e.g. 18420.\");\n  const asOf = input.date ? normalizeDate(input.date) : today;\n  if (!asOf) throw new Error(\"date must be a date, e.g. '\" + today + \"'.\");\n  const patch: Record<string, unknown> = { balance: { amountCents: cents, asOf } };\n  if (input.cushion !== undefined && input.cushion !== null) {\n    const cushion = parseCents(input.cushion);\n    if (cushion === null || cushion < 0) throw new Error('cushion must be zero or more, e.g. 12000.');\n    patch.cushionCents = cushion;\n  }\n  await saveTop(patch);\n  note = 'Bank balance set to ' + money(cents) + ' as of ' + asOf + (typeof patch.cushionCents === 'number' ? ', with a cushion of ' + money(patch.cushionCents) : '') + '.';\n} else if (input.action === 'add') {\n  const name = (input.name ?? input.item ?? '').trim();\n  if (!name) throw new Error(\"add needs 'name', e.g. 'Hollis Bakery invoice'.\");\n  const records = await plan.list();\n  const existing = records.find((r) => r.status === 'expected' && String(r.fields.name ?? '').toLowerCase() === name.toLowerCase());\n  if (existing) {\n    const updated = await plan.update(existing.id, { fields: itemFields(false), note: 'Updated' });\n    note = 'Updated ' + itemLine(updated, records) + '.';\n  } else {\n    const added = await plan.add({ status: 'expected', fields: { name, ...itemFields(true) } });\n    note = 'Added ' + itemLine(added, records) + '.';\n  }\n} else if (input.action === 'settle') {\n  const records = await plan.list();\n  const rec = resolveOne(records, input.item ?? input.name ?? '', 'the item that came in or was paid');\n  const f = rec.fields;\n  const cents = input.amount !== undefined && input.amount !== null ? toCents(input.amount) : Number(f.amountCents);\n  if (!cents) throw new Error('amount must be positive, in ordinary units.');\n  const on = input.date ? normalizeDate(input.date) : today;\n  if (!on) throw new Error(\"date must be a date, e.g. '\" + today + \"'.\");\n  const file = await loadFile();\n  const asOf = file.balance && typeof file.balance.amountCents === 'number' ? String(file.balance.asOf) : null;\n  const recurs = String(f.recurs ?? 'none');\n  let after = '';\n  if (recurs !== 'none') {\n    // The settled one is the first the forecast still counts: on or after the balance date.\n    const from = asOf ?? today;\n    let k = 0;\n    let day = occurrence(String(f.date), recurs, 0, f.dom as number);\n    while (day && day < from && k < 1000) day = occurrence(String(f.date), recurs, ++k, f.dom as number);\n    const next = occurrence(String(f.date), recurs, k + 1, f.dom as number) as string;\n    if (f.until && next > String(f.until)) {\n      await plan.transition(rec.id, 'done', { note: 'Last one settled on ' + on });\n      after = '; that was the last one';\n    } else {\n      await plan.update(rec.id, { fields: { date: next, lastSettled: on }, note: 'Settled ' + money(cents) + ' on ' + on });\n      after = '; the next one is due ' + next;\n    }\n  } else {\n    await plan.update(rec.id, { fields: { settledOn: on, settledCents: cents } });\n    await plan.transition(rec.id, 'done', { note: (f.direction === 'in' ? 'Received ' : 'Paid ') + money(cents) + ' on ' + on });\n    after = '; it leaves the forecast';\n  }\n  let moved = '';\n  if (asOf && on >= asOf) {\n    const balance = file.balance.amountCents + (f.direction === 'in' ? cents : -cents);\n    await saveTop({ balance: { amountCents: balance, asOf } });\n    moved = ' Cash in the bank is now ' + money(balance) + '.';\n  }\n  note = String(f.name) + (f.direction === 'in' ? ' came in: ' : ' was paid: ') + money(cents) + ' on ' + on + after + '.' + moved;\n} else if (input.action === 'remove') {\n  const records = await plan.list();\n  const rec = resolveOne(records, input.item ?? input.name ?? '', 'the item to take out');\n  await plan.transition(rec.id, 'removed', { note: input.note ?? 'Taken out of the plan' });\n  note = 'Took ' + String(rec.fields.name) + ' (' + rec.id + ') out of the plan.';\n} else if (input.action === 'what_if') {\n  const records = await plan.list();\n  const raw = (input.scenario ?? '').trim();\n  if (!raw) throw new Error(\"what_if needs 'scenario': a short name, e.g. 'Hire an apprentice'.\");\n  const scenario = scenarioNames(records).find((n) => n.toLowerCase() === raw.toLowerCase()) ?? raw;\n  const change = String(input.change ?? '').trim().toLowerCase();\n  if (change === 'delay' || change === 'drop') {\n    const text = input.item ?? input.name ?? '';\n    const targets = text.trim() ? matches(records, text, ['expected']) : [];\n    if (!targets.length) throw new Error(\"A what-if \" + change + \" needs 'item': the id or name of something expected. Call action:'list' to see them.\");\n    const weeks = Math.round(Number(input.weeks));\n    if (change === 'delay' && (!isFinite(weeks) || weeks === 0)) throw new Error(\"A delay needs 'weeks', e.g. 4 for a month late.\");\n    for (const t of targets) {\n      const existing = records.find((r) => r.status === 'whatif' && r.fields.scenario === scenario && r.fields.change === change && r.fields.itemId === t.id);\n      if (existing) await plan.update(existing.id, { fields: change === 'delay' ? { weeks } : {} });\n      else await plan.add({ status: 'whatif', fields: { scenario, change, itemId: t.id, ...(change === 'delay' ? { weeks } : {}) } });\n    }\n    note = 'What-if ' + scenario + ': ' + change + ' ' + targets.map((t) => String(t.fields.name) + ' (' + t.id + ')').join(' and ') +\n      (change === 'delay' ? ' by ' + weeks + (weeks === 1 ? ' week' : ' weeks') : '') + '. The plan itself is unchanged.';\n  } else if (change === 'add') {\n    const name = (input.name ?? '').trim();\n    if (!name) throw new Error(\"A what-if add needs 'name', e.g. 'Apprentice wages'.\");\n    const existing = records.find((r) => r.status === 'whatif' && r.fields.scenario === scenario && r.fields.change === 'add' && String(r.fields.name).toLowerCase() === name.toLowerCase());\n    if (existing) await plan.update(existing.id, { fields: itemFields(false) });\n    else await plan.add({ status: 'whatif', fields: { scenario, change: 'add', name, ...itemFields(true) } });\n    note = 'What-if ' + scenario + ': add ' + name + '. The plan itself is unchanged.';\n  } else if (change === 'clear') {\n    const mine = records.filter((r) => r.status === 'whatif' && r.fields.scenario === scenario);\n    if (!mine.length) throw new Error(\"No what-if is named '\" + raw + \"'. What-ifs: \" + (scenarioNames(records).join(', ') || 'none') + '.');\n    for (const r of mine) await plan.transition(r.id, 'removed', { note: 'What-if cleared' });\n    note = 'Cleared the what-if ' + scenario + '.';\n  } else {\n    throw new Error(\"what_if needs 'change': delay, drop, add, or clear.\");\n  }\n  if (change !== 'clear') focus = scenario;\n} else if (input.action === 'status') {\n  if (input.scenario) {\n    const names = scenarioNames(await plan.list());\n    focus = names.find((n) => n.toLowerCase() === input.scenario!.trim().toLowerCase()) ?? null;\n    if (!focus) note = \"No what-if is named '\" + input.scenario + \"'; showing the plan. What-ifs: \" + (names.join(', ') || 'none') + '.';\n  }\n} else if (input.action !== 'list') {\n  throw new Error(\"Unknown action '\" + input.action + \"'. Use status, set_balance, add, settle, remove, what_if, or list.\");\n}\n\nconst file = await loadFile();\nconst view = cashPicture(file, now, focus);\nconst records = (file.records ?? []) as CashRecord[];\nconst listing =\n  input.action === 'list'\n    ? (file.balance ? 'Cash in the bank: ' + money(file.balance.amountCents) + ' as of ' + file.balance.asOf + '. Cushion: ' + money(file.cushionCents ?? 0) + '.\\n' : 'No bank balance yet.\\n') +\n      (records.filter((r) => r.status === 'expected' || r.status === 'whatif').map((r) => itemLine(r, records)).join('\\n') || 'Nothing is expected yet.')\n    : '';\n\ngezel.output({\n  balance: view.plan.balanceCents / 100,\n  lowestBalance: view.view.lowest.closeCents / 100,\n  lowWeek: view.view.lowest.start,\n  belowCushion: view.view.belowCushion,\n  endBalance: view.view.endCents / 100,\n  summary: listing || (note ? note + ' ' : '') + view.summary,\n});\n"
+  },
+  "tools": [
+    {
+      "name": "cash_forecast",
+      "description": "The 13-week cash forecast: the first week cash drops below the cushion (the warning week) and what goes out then, the tightest week, cash in the bank, late items, every week-end balance, and each what-if compared with the plan. Call it first for any question about cash.",
+      "script": "cashflow-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "scenario": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "status"
+      },
+      "state": true
+    },
+    {
+      "name": "set_balance",
+      "description": "Save the cash in the bank (amount in ordinary units, as of a date, default today) and, if given, the cushion to keep on hand. Call it as soon as the person says what is in the bank.",
+      "script": "cashflow-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "date": {
+            "type": "string"
+          },
+          "cushion": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "amount"
+        ]
+      },
+      "bind": {
+        "action": "set_balance"
+      }
+    },
+    {
+      "name": "add_cash_item",
+      "description": "Save money the business expects: an invoice coming in or a bill going out, once or repeating (weekly, biweekly, monthly, quarterly). An existing name is updated, never duplicated, so use it to move a date or change an amount for real. Call it as soon as one is mentioned, before you describe it. For a 'what if', use what_if instead.",
+      "script": "cashflow-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "in",
+              "out"
+            ]
+          },
+          "amount": {
+            "type": "number"
+          },
+          "date": {
+            "type": "string"
+          },
+          "recurs": {
+            "type": "string",
+            "enum": [
+              "none",
+              "weekly",
+              "biweekly",
+              "monthly",
+              "quarterly"
+            ]
+          },
+          "until": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "bind": {
+        "action": "add"
+      }
+    },
+    {
+      "name": "settle_cash_item",
+      "description": "Record that expected money came in or a bill was paid: a one-off leaves the forecast, a repeating one moves to its next date, and the bank balance moves by the amount. Call it the moment the person says it arrived or went out.",
+      "script": "cashflow-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "date": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item"
+        ]
+      },
+      "bind": {
+        "action": "settle"
+      }
+    },
+    {
+      "name": "remove_cash_item",
+      "description": "Take an expected item out of the plan for good, such as a cancelled job or a bill that ended.",
+      "script": "cashflow-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item"
+        ]
+      },
+      "bind": {
+        "action": "remove"
+      }
+    },
+    {
+      "name": "what_if",
+      "description": "Try a what-if without changing the plan, under a short scenario name: delay an expected item by some weeks (a month late is 4), drop one, or add a new cost or income such as a hire; 'clear' removes the scenario. The reply compares its warning week with the plan. Call it whenever the person asks 'what if'.",
+      "script": "cashflow-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "scenario": {
+            "type": "string"
+          },
+          "change": {
+            "type": "string",
+            "enum": [
+              "delay",
+              "drop",
+              "add",
+              "clear"
+            ]
+          },
+          "item": {
+            "type": "string"
+          },
+          "weeks": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "in",
+              "out"
+            ]
+          },
+          "amount": {
+            "type": "number"
+          },
+          "date": {
+            "type": "string"
+          },
+          "recurs": {
+            "type": "string",
+            "enum": [
+              "none",
+              "weekly",
+              "biweekly",
+              "monthly",
+              "quarterly"
+            ]
+          },
+          "until": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "scenario",
+          "change"
+        ]
+      },
+      "bind": {
+        "action": "what_if"
+      }
+    },
+    {
+      "name": "list_cash_items",
+      "description": "Every expected item and what-if change, with ids, amounts, dates and repeats.",
+      "script": "cashflow-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "list"
+      }
+    },
+    {
+      "name": "page_set_balance",
+      "description": "Save the cash in the bank and the cushion.",
+      "script": "cashflow-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "date": {
+            "type": "string"
+          },
+          "cushion": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "amount"
+        ]
+      },
+      "bind": {
+        "action": "set_balance"
+      }
+    },
+    {
+      "name": "page_add_cash_item",
+      "description": "Save an expected invoice or bill.",
+      "script": "cashflow-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "in",
+              "out"
+            ]
+          },
+          "amount": {
+            "type": "number"
+          },
+          "date": {
+            "type": "string"
+          },
+          "recurs": {
+            "type": "string",
+            "enum": [
+              "none",
+              "weekly",
+              "biweekly",
+              "monthly",
+              "quarterly"
+            ]
+          },
+          "until": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "bind": {
+        "action": "add"
+      }
+    },
+    {
+      "name": "page_settle_cash_item",
+      "description": "Record that expected money came in or a bill was paid.",
+      "script": "cashflow-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "date": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item"
+        ]
+      },
+      "bind": {
+        "action": "settle"
+      }
+    },
+    {
+      "name": "page_what_if",
+      "description": "Try a what-if without changing the plan.",
+      "script": "cashflow-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "scenario": {
+            "type": "string"
+          },
+          "change": {
+            "type": "string",
+            "enum": [
+              "delay",
+              "drop",
+              "add",
+              "clear"
+            ]
+          },
+          "item": {
+            "type": "string"
+          },
+          "weeks": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "in",
+              "out"
+            ]
+          },
+          "amount": {
+            "type": "number"
+          },
+          "date": {
+            "type": "string"
+          },
+          "recurs": {
+            "type": "string",
+            "enum": [
+              "none",
+              "weekly",
+              "biweekly",
+              "monthly",
+              "quarterly"
+            ]
+          },
+          "until": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "scenario",
+          "change"
+        ]
+      },
+      "bind": {
+        "action": "what_if"
+      },
+      "reaction": {
+        "gezel": "bookkeeper",
+        "hideSeed": true,
+        "prompt": "The person just tried a what-if on the cash flow page. The forecast now reads (the first sentence is what changed, the next is the scenario):\n{{output.summary}}\nIn two short sentences, say how the what-if moves the warning week or the tightest week compared with the plan, and whether cash stays above the cushion. Do not call tools."
+      }
+    }
+  ],
+  "craftbooks": [],
+  "schedules": [],
+  "pages": {
+    "entry": "forecast/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "cashflow.json"
+      }
+    ],
+    "tools": [
+      "page_set_balance",
+      "page_add_cash_item",
+      "page_settle_cash_item",
+      "page_what_if"
+    ]
+  },
+  "workspaceSeed": [
+    "cashflow.json"
+  ],
+  "minGezelVersion": "1.26280"
+}

@@ -1,0 +1,541 @@
+{
+  "schemaVersion": 1,
+  "version": "1.1.0",
+  "releasedAt": "2026-11-07T18:00:00.000Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "business": {
+        "type": "string",
+        "title": "What business is the content for?",
+        "description": "e.g. 'a six-person design studio', 'a small publisher'.",
+        "default": "the business"
+      },
+      "audience": {
+        "type": "string",
+        "title": "Who do you write for?",
+        "description": "e.g. 'small business owners planning a rebrand'.",
+        "default": "your readers"
+      }
+    },
+    "required": [
+      "business"
+    ]
+  },
+  "nameTemplate": "Content Studio",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "managing-editor",
+      "voorman": true
+    },
+    {
+      "templateId": "copywriter"
+    },
+    {
+      "templateId": "reviewer"
+    },
+    {
+      "templateId": "illustrator"
+    }
+  ],
+  "scripts": {
+    "content-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'content-store',\n  description:\n    \"Read and update the content studio: the long-form pieces (pieces.json) and the editorial calendar of what each piece spins off (calendar.json). action:'status' for the whole picture; 'add_piece' to save a piece (an existing title is updated, never duplicated); 'update_piece' to move a piece to another stage, reassign it or change its publish date; 'repurpose_piece' to plan a piece's newsletter, social posts or video chapters (count is how many of that format in all; only the missing ones are added, each dated after the piece); 'update_spinoff' to move or reschedule one of those; 'list' for everything.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'status', 'add_piece', 'update_piece', 'repurpose_piece', 'update_spinoff', or 'list'.\",\n      required: true,\n    },\n    id: { type: 'string', description: \"A piece id ('pc-3'), or for update_spinoff a spin-off id ('so-2').\" },\n    title: {\n      type: 'string',\n      description: \"The piece's title, e.g. 'How we price brand projects'. Also finds a piece (or a spin-off) when no id is given.\",\n    },\n    format: {\n      type: 'string',\n      description:\n        'For a piece: article, guide, case-study, interview, essay, video, podcast, or other. For repurpose_piece: newsletter, social-post, video-chapters, short-video, quote-card, or other.',\n    },\n    status: {\n      type: 'string',\n      description:\n        'A piece stage (idea, brief, draft, edit, design, published), or for a spin-off: planned, drafted, scheduled, published.',\n    },\n    assignee: { type: 'string', description: 'Who is writing or making it.' },\n    publishAt: { type: 'string', description: 'The day it publishes or goes out, YYYY-MM-DD.' },\n    shiftDays: {\n      type: 'number',\n      description: 'Move the date by this many days (7 = a week later, -2 = two days earlier). The studio does the date math.',\n    },\n    keyword: { type: 'string', description: 'The search phrase the piece targets.' },\n    angle: {\n      type: 'string',\n      description: \"One line on what it says. For several spin-offs at once, separate one line each with ' | '.\",\n    },\n    words: { type: 'number', description: 'Target length in words.' },\n    link: { type: 'string', description: 'Where it was published.' },\n    note: { type: 'string', description: 'What happened, in the person’s words.' },\n    count: {\n      type: 'number',\n      description: 'For repurpose_piece: how many of this format the piece should have in all (three posts = 3). Only the missing ones are added.',\n    },\n    startAt: { type: 'string', description: 'For repurpose_piece: the day the first new one goes out, YYYY-MM-DD (default: after the piece publishes).' },\n    channel: { type: 'string', description: \"Where a spin-off goes out, e.g. 'LinkedIn', 'Instagram', 'YouTube', 'the newsletter'.\" },\n    withinDays: { type: 'number', description: 'How many days ahead counts as publishing soon (default 14).' },\n  },\n  outputs: {\n    inPipeline: { type: 'number', description: 'Pieces not yet published.' },\n    dueSoon: { type: 'number', description: 'Pieces and spin-offs going out within the window.' },\n    late: { type: 'number', description: 'Pieces and spin-offs past their date and not published.' },\n    repurposed: { type: 'number', description: 'Published pieces with at least one spin-off.' },\n    summary: { type: 'string', description: 'What changed, then the studio picture; or the listing.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── content-rules-start ──\n// Pure derivations: local calendar days, spin-off dates after a piece\n// publishes, record lookup by id or name, and the studio picture the crew\n// reads. Kept self-contained between these sentinels so tests execute the\n// shipped bytes.\nvar DAY_MS = 86400000;\nvar STAGES = ['idea', 'brief', 'draft', 'edit', 'design', 'published'];\nvar FORMATS = ['article', 'guide', 'case-study', 'interview', 'essay', 'video', 'podcast', 'other'];\nvar SPIN_FORMATS = ['newsletter', 'social-post', 'video-chapters', 'short-video', 'quote-card', 'other'];\nvar SPIN_STAGES = ['planned', 'drafted', 'scheduled', 'published'];\nvar SPIN_ALIASES = {\n  post: 'social-post', posts: 'social-post', social: 'social-post', 'social post': 'social-post', 'social posts': 'social-post',\n  'social-posts': 'social-post', 'linkedin post': 'social-post', thread: 'social-post', email: 'newsletter', newsletters: 'newsletter',\n  'newsletter issue': 'newsletter', chapters: 'video-chapters', 'video chapters': 'video-chapters', 'youtube chapters': 'video-chapters',\n  reel: 'short-video', reels: 'short-video', short: 'short-video', shorts: 'short-video', clip: 'short-video', 'short video': 'short-video',\n  quote: 'quote-card', quotes: 'quote-card', 'quote card': 'quote-card', 'quote cards': 'quote-card',\n};\nvar SPIN_NOUN = {\n  newsletter: ['newsletter', 'newsletters'],\n  'social-post': ['social post', 'social posts'],\n  'video-chapters': ['set of video chapters', 'sets of video chapters'],\n  'short-video': ['short video', 'short videos'],\n  'quote-card': ['quote card', 'quote cards'],\n  other: ['spin-off', 'spin-offs'],\n};\nvar SPIN_LABEL = {\n  newsletter: 'Newsletter', 'social-post': 'Social post', 'video-chapters': 'Video chapters', 'short-video': 'Short video',\n  'quote-card': 'Quote card', other: 'Spin-off',\n};\n// Days after the piece publishes that the first of each format goes out; later ones follow every SPACING days.\nvar OFFSET = { newsletter: 3, 'social-post': 1, 'video-chapters': 7, 'short-video': 4, 'quote-card': 2, other: 7 };\nvar SPACING = 2;\nvar WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];\nvar MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];\nvar STOP = ['the', 'and', 'our', 'for', 'with', 'from', 'this', 'that', 'post', 'piece', 'article'];\n\nfunction pad(n) {\n  return n < 10 ? '0' + n : String(n);\n}\nfunction localDay(ms) {\n  var d = new Date(ms);\n  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());\n}\nfunction addDays(day, n) {\n  var d = new Date(String(day).slice(0, 10) + 'T12:00:00');\n  d.setDate(d.getDate() + n);\n  return localDay(d.getTime());\n}\nfunction daysLeft(day, nowMs) {\n  var due = Date.parse(String(day).slice(0, 10) + 'T00:00:00');\n  var today = Date.parse(localDay(nowMs) + 'T00:00:00');\n  return Math.round((due - today) / DAY_MS);\n}\n// YYYY-MM-DD, or today/tomorrow, or a weekday ('friday' is the next one).\nfunction normalizeDate(text, nowMs) {\n  var raw = String(text || '').trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(raw)) return raw;\n  var lower = raw.toLowerCase();\n  var today = localDay(nowMs);\n  if (lower === 'today') return today;\n  if (lower === 'tomorrow') return addDays(today, 1);\n  var m = lower.match(/^(next |this )?(sunday|monday|tuesday|wednesday|thursday|friday|saturday)$/);\n  if (m) {\n    var target = WEEKDAYS.map(function (w) { return w.toLowerCase(); }).indexOf(m[2]);\n    var dow = new Date(today + 'T12:00:00').getDay();\n    return addDays(today, ((target - dow + 6) % 7) + 1);\n  }\n  var parsed = Date.parse(raw);\n  if (!isFinite(parsed)) return null;\n  if (/\\d{4}/.test(raw)) return localDay(parsed);\n  // 'Nov 20' parses into some default year: take this year's, or next year's once it is well past.\n  var d = new Date(parsed);\n  var year = new Date(nowMs).getFullYear();\n  var guess = year + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());\n  return daysLeft(guess, nowMs) < -60 ? year + 1 + guess.slice(4) : guess;\n}\nfunction niceDay(day) {\n  var d = new Date(String(day).slice(0, 10) + 'T12:00:00');\n  return WEEKDAYS[d.getDay()].slice(0, 3) + ' ' + MONTHS[d.getMonth()] + ' ' + d.getDate();\n}\nfunction when(days) {\n  if (days < 0) return -days + (days === -1 ? ' day late' : ' days late');\n  if (days === 0) return 'today';\n  return 'in ' + days + (days === 1 ? ' day' : ' days');\n}\nfunction wholeNumber(value) {\n  var n = typeof value === 'string' ? Number(String(value).replace(/,/g, '')) : value;\n  return typeof n === 'number' && isFinite(n) && n >= 0 ? Math.round(n) : null;\n}\nfunction spinFormat(text) {\n  var key = String(text || '').trim().toLowerCase();\n  if (!key) return null;\n  if (SPIN_FORMATS.indexOf(key) >= 0) return key;\n  return SPIN_ALIASES[key] || null;\n}\nfunction stem(word) {\n  return word.replace(/(ing|ed|es|s|e)$/, '');\n}\nfunction words(text) {\n  return (String(text || '').toLowerCase().match(/[a-z0-9]+/g) || []).map(stem).filter(function (w) {\n    return w.length > 2 && STOP.indexOf(w) < 0;\n  });\n}\n// The record a person means: its id, its exact title, a unique part of its\n// title, or the title sharing the most words with what they wrote.\nfunction findRecord(records, key) {\n  var text = String(key || '').trim();\n  if (!text) return { record: null, matches: [] };\n  var lower = text.toLowerCase();\n  var titleOf = function (r) { return String((r.fields && r.fields.title) || '').toLowerCase(); };\n  var byId = records.filter(function (r) { return String(r.id).toLowerCase() === lower; });\n  if (byId.length) return { record: byId[0], matches: byId };\n  var exact = records.filter(function (r) { return titleOf(r) === lower; });\n  if (exact.length === 1) return { record: exact[0], matches: exact };\n  var partial = records.filter(function (r) { return titleOf(r).indexOf(lower) >= 0; });\n  if (partial.length === 1) return { record: partial[0], matches: partial };\n  if (partial.length > 1) return { record: null, matches: partial };\n  var want = words(text);\n  var best = 0;\n  var hits = [];\n  records.forEach(function (r) {\n    var have = words(titleOf(r));\n    var score = want.filter(function (w) { return have.indexOf(w) >= 0; }).length;\n    if (score > best) { best = score; hits = [r]; } else if (score === best && score > 0) hits.push(r);\n  });\n  return { record: hits.length === 1 ? hits[0] : null, matches: hits };\n}\n// The dates for the spin-offs a piece still needs: after it publishes (or from today), one every SPACING days.\nfunction spinoffDates(piece, format, already, missing, startAt, nowMs) {\n  var today = localDay(nowMs);\n  var f = piece.fields || {};\n  var published = piece.status === 'published';\n  var base = f.publishAt && !published && f.publishAt >= today ? f.publishAt : today;\n  var first = startAt || addDays(base, (OFFSET[format] || 7) + already * SPACING);\n  var out = [];\n  for (var i = 0; i < missing; i++) out.push(addDays(first, i * SPACING));\n  return out;\n}\nfunction spinoffTitle(format, index, total, pieceTitle) {\n  return SPIN_LABEL[format] + (total > 1 || index > 0 ? ' ' + (index + 1) : '') + ': ' + pieceTitle;\n}\nfunction dateOf(r) {\n  var f = r.fields || {};\n  return r.status === 'published' ? f.publishedAt || f.publishAt || '' : f.publishAt || '';\n}\nfunction pieceLine(r, nowMs) {\n  var f = r.fields || {};\n  var d = dateOf(r);\n  return (\n    f.title + ' (' + r.id + ', ' + (f.format || 'article') + ', ' + (r.status === 'published' ? 'published' : 'in ' + r.status) +\n    ', ' + (f.assignee || 'unassigned') + ')' + (d ? ' ' + niceDay(d) + (r.status === 'published' ? '' : ', ' + when(daysLeft(d, nowMs))) : ', no date yet')\n  );\n}\nfunction spinoffLine(s, pieces, nowMs) {\n  var f = s.fields || {};\n  var piece = pieces.find(function (p) { return p.id === f.pieceId; });\n  return (\n    f.title + ' (' + s.id + ', ' + f.format + ' for ' + (piece ? piece.id : 'a removed piece') + ', ' + s.status +\n    (f.channel ? ', ' + f.channel : '') + (f.assignee ? ', ' + f.assignee : '') + ')' +\n    (f.publishAt ? ' ' + niceDay(f.publishAt) + (s.status === 'published' ? '' : ', ' + when(daysLeft(f.publishAt, nowMs))) : ', no date yet')\n  );\n}\nfunction spinoffSummary(list) {\n  return SPIN_FORMATS.map(function (format) {\n    var mine = list.filter(function (s) { return s.fields.format === format; });\n    if (!mine.length) return '';\n    var byStage = SPIN_STAGES.map(function (st) {\n      var n = mine.filter(function (s) { return s.status === st; }).length;\n      return n ? (mine.length === 1 ? st : n + ' ' + st) : '';\n    }).filter(Boolean).join(', ');\n    return mine.length === 1 ? SPIN_NOUN[format][0] + ' ' + byStage : mine.length + ' ' + SPIN_NOUN[format][1] + ' (' + byStage + ')';\n  }).filter(Boolean).join(', ');\n}\nfunction studioPicture(pieces, spinoffs, nowMs, withinDays) {\n  var parts = [];\n  var open = pieces.filter(function (p) { return p.status !== 'published'; });\n  var stageCounts = STAGES.map(function (s) {\n    var n = pieces.filter(function (p) { return p.status === s; }).length;\n    return n ? n + ' ' + s : '';\n  }).filter(Boolean);\n  parts.push(pieces.length ? 'Pipeline: ' + pieces.length + (pieces.length === 1 ? ' piece' : ' pieces') + ' (' + stageCounts.join(', ') + ').' : 'No pieces yet.');\n  var items = [];\n  open.forEach(function (p) { if (p.fields.publishAt) items.push({ day: p.fields.publishAt, line: pieceLine(p, nowMs) }); });\n  spinoffs.forEach(function (s) {\n    if (s.status !== 'published' && s.fields.publishAt) items.push({ day: s.fields.publishAt, line: spinoffLine(s, pieces, nowMs) });\n  });\n  items.sort(function (a, b) { return a.day.localeCompare(b.day); });\n  var late = items.filter(function (i) { return daysLeft(i.day, nowMs) < 0; });\n  var soon = items.filter(function (i) { var d = daysLeft(i.day, nowMs); return d >= 0 && d <= withinDays; });\n  var later = items.filter(function (i) { return daysLeft(i.day, nowMs) > withinDays; });\n  // One list, late items first: asked what is publishing soon, a model must see what slipped.\n  var due = late.concat(soon);\n  parts.push(\n    due.length\n      ? 'Publishing in the next ' + withinDays + ' days, late items first: ' + due.map(function (i) { return i.line; }).join(' | ') + '.'\n      : 'Nothing publishing in the next ' + withinDays + ' days.',\n  );\n  if (later.length) parts.push('Next after that: ' + later[0].line + '.');\n  var undated = open.filter(function (p) { return !p.fields.publishAt; });\n  if (undated.length) parts.push('No publish date yet: ' + undated.map(function (p) { return p.fields.title + ' (' + p.id + ', ' + p.status + ')'; }).join(', ') + '.');\n  var people = {};\n  var unassigned = [];\n  open.forEach(function (p) {\n    var who = p.fields.assignee;\n    var entry = p.fields.title + ' (' + p.id + ', ' + p.status + (p.fields.publishAt ? ', ' + niceDay(p.fields.publishAt) : '') + ')';\n    if (!who) unassigned.push(entry);\n    else (people[who] = people[who] || []).push(entry);\n  });\n  spinoffs.forEach(function (s) {\n    if (s.status === 'published' || !s.fields.assignee) return;\n    (people[s.fields.assignee] = people[s.fields.assignee] || []).push(s.fields.title + ' (' + s.id + ', ' + s.status + (s.fields.publishAt ? ', ' + niceDay(s.fields.publishAt) : '') + ')');\n  });\n  var names = Object.keys(people).sort(function (a, b) { return people[b].length - people[a].length || a.localeCompare(b); });\n  parts.push(\n    names.length || unassigned.length\n      ? 'Who has what, most first: ' + names.map(function (n) { return n + ' ' + people[n].length + ': ' + people[n].join(', '); }).join(' | ') +\n        (unassigned.length ? (names.length ? ' | ' : '') + 'unassigned ' + unassigned.length + ': ' + unassigned.join(', ') : '') + '.'\n      : 'Nobody has open work.',\n  );\n  var shown = pieces\n    .filter(function (p) {\n      return p.status === 'published' || spinoffs.some(function (s) { return s.fields.pieceId === p.id; });\n    })\n    .sort(function (a, b) { return String(dateOf(b)).localeCompare(String(dateOf(a))); })\n    .slice(0, 8);\n  parts.push(\n    shown.length\n      ? 'Repurposing, newest first: ' + shown.map(function (p) {\n          var mine = spinoffs.filter(function (s) { return s.fields.pieceId === p.id; });\n          return p.fields.title + ' (' + p.id + ', ' + (p.status === 'published' ? 'published ' + (dateOf(p) ? niceDay(dateOf(p)) : '') : 'in ' + p.status) + '): ' +\n            (mine.length ? spinoffSummary(mine) : 'nothing repurposed yet');\n        }).join(' | ') + '.'\n      : 'Nothing published or repurposed yet.',\n  );\n  var published = pieces.filter(function (p) { return p.status === 'published'; });\n  return {\n    inPipeline: open.length,\n    dueSoon: soon.length,\n    late: late.length,\n    repurposed: published.filter(function (p) { return spinoffs.some(function (s) { return s.fields.pieceId === p.id; }); }).length,\n    summary: parts.join(' '),\n  };\n}\n// ── content-rules-end ──\n\nconst pieces = rosterStore(gezel.fs, 'pieces.json', {\n  stages: ['idea', 'brief', 'draft', 'edit', 'design', 'published'],\n  idPrefix: 'pc',\n});\nconst calendar = rosterStore(gezel.fs, 'calendar.json', {\n  stages: ['planned', 'drafted', 'scheduled', 'published'],\n  idPrefix: 'so',\n});\n\nasync function resolveIn(store: typeof pieces, noun: string, example: string) {\n  const all = await store.list();\n  const keys = [input.id, input.title].filter((k): k is string => typeof k === 'string' && k.trim() !== '');\n  for (const key of keys) {\n    const found = findRecord(all, key);\n    if (found.record) return found.record;\n    if (found.matches.length > 1) {\n      throw new Error(\n        'More than one ' + noun + \" matches '\" + key + \"': \" + found.matches.map((r) => r.id + ' ' + String(r.fields.title)).join(', ') + '. Pass id.',\n      );\n    }\n  }\n  const known = all.map((r) => r.id + ' ' + String(r.fields.title)).join(', ') || 'none yet';\n  throw new Error(\n    (keys.length ? 'No ' + noun + \" matches '\" + keys.join(\"' or '\") + \"'. \" : \"Pass 'id' (e.g. '\" + example + \"') or the \" + noun + \"'s 'title'. \") + 'Known: ' + known + '.',\n  );\n}\n\nconst now = Date.now();\nconst today = localDay(now);\nconst withinDays = typeof input.withinDays === 'number' && input.withinDays > 0 ? Math.round(input.withinDays) : 14;\n\nfunction dateInput(value: string | undefined, label: string): string | null {\n  if (value === undefined || String(value).trim() === '') return null;\n  const day = normalizeDate(value, now);\n  if (!day) throw new Error(label + \" must be a date, e.g. '2026-12-01'.\");\n  return day;\n}\nfunction shifted(from: unknown, title: unknown): string | null {\n  if (typeof input.shiftDays !== 'number' || input.shiftDays === 0) return null;\n  if (typeof from !== 'string' || !from) throw new Error(String(title) + ' has no date yet; pass publishAt instead of shiftDays.');\n  return addDays(from, Math.round(input.shiftDays));\n}\n\nlet note = '';\n\nif (input.action === 'add_piece') {\n  if (!input.title || !input.title.trim()) throw new Error(\"add_piece needs 'title'.\");\n  const publishAt = dateInput(input.publishAt, 'publishAt');\n  const format = input.format ? String(input.format).toLowerCase() : undefined;\n  if (format && !FORMATS.includes(format)) throw new Error('format must be one of ' + FORMATS.join(', ') + '.');\n  const status = input.status ? String(input.status).toLowerCase() : undefined;\n  if (status && !STAGES.includes(status)) throw new Error('status must be one of ' + STAGES.join(', ') + '.');\n  const wanted = input.title.trim().toLowerCase();\n  const existing = (await pieces.list()).find((r) => String(r.fields.title ?? '').toLowerCase() === wanted);\n  const wordTarget = wholeNumber(input.words);\n  const fields: Record<string, unknown> = {\n    ...(format ? { format } : {}),\n    ...(publishAt ? { publishAt } : {}),\n    ...(input.assignee ? { assignee: input.assignee.trim() } : {}),\n    ...(input.keyword ? { keyword: input.keyword.trim() } : {}),\n    ...(input.angle ? { angle: input.angle.trim() } : {}),\n    ...(wordTarget ? { words: wordTarget } : {}),\n    ...(input.link ? { link: input.link.trim() } : {}),\n    ...(input.note ? { notes: input.note.trim() } : {}),\n    ...(status === 'published' ? { publishedAt: publishAt ?? today } : {}),\n  };\n  if (existing) {\n    await pieces.update(existing.id, { fields });\n    if (status && status !== existing.status) await pieces.transition(existing.id, status, { note: 'Updated from the plan' });\n    note = 'Updated ' + String(existing.fields.title) + ' (' + existing.id + ').';\n  } else {\n    const record = await pieces.add({\n      status: status ?? 'idea',\n      fields: { title: input.title.trim(), format: format ?? 'article', ...fields },\n    });\n    note = 'Added ' + record.id + ' ' + String(record.fields.title) + ' as ' + record.status + (publishAt ? ', publishing ' + niceDay(publishAt) : '') + '.';\n  }\n} else if (input.action === 'update_piece') {\n  const record = await resolveIn(pieces, 'piece', 'pc-3');\n  const fields: Record<string, unknown> = {};\n  const publishAt = dateInput(input.publishAt, 'publishAt') ?? shifted(record.fields.publishAt, record.fields.title);\n  if (publishAt) fields.publishAt = publishAt;\n  if (input.assignee) fields.assignee = input.assignee.trim();\n  if (input.keyword) fields.keyword = input.keyword.trim();\n  if (input.angle) fields.angle = input.angle.trim();\n  if (input.link) fields.link = input.link.trim();\n  const wordTarget = wholeNumber(input.words);\n  if (wordTarget) fields.words = wordTarget;\n  const format = input.format ? String(input.format).toLowerCase() : undefined;\n  if (format) {\n    if (!FORMATS.includes(format)) throw new Error('format must be one of ' + FORMATS.join(', ') + '.');\n    fields.format = format;\n  }\n  const status = input.status ? String(input.status).toLowerCase() : undefined;\n  if (status && !STAGES.includes(status)) throw new Error('status must be one of ' + STAGES.join(', ') + '.');\n  if (status === 'published' && record.status !== 'published') fields.publishedAt = today;\n  if (!Object.keys(fields).length && !status && !input.note) {\n    throw new Error('update_piece needs status, assignee, publishAt, shiftDays, keyword, angle, link, words, format, or note.');\n  }\n  if (Object.keys(fields).length) await pieces.update(record.id, { fields });\n  if (status && status !== record.status) await pieces.transition(record.id, status, input.note ? { note: input.note } : {});\n  else if (input.note) await pieces.update(record.id, { note: input.note });\n  note =\n    String(record.fields.title) + ' (' + record.id + ')' +\n    (status && status !== record.status ? ' moved from ' + record.status + ' to ' + status : ' updated') +\n    (fields.publishAt ? ', publishing ' + niceDay(String(fields.publishAt)) : '') +\n    (fields.assignee ? ', now with ' + String(fields.assignee) : '') + '.';\n} else if (input.action === 'repurpose_piece') {\n  const piece = await resolveIn(pieces, 'piece', 'pc-3');\n  const format = spinFormat(input.format);\n  if (!format) throw new Error('repurpose_piece needs format: ' + SPIN_FORMATS.join(', ') + '.');\n  const want = Math.min(10, wholeNumber(input.count) || 1);\n  const already = (await calendar.list()).filter((s) => s.fields.pieceId === piece.id && s.fields.format === format);\n  const missing = want - already.length;\n  const nouns = SPIN_NOUN[format] as string[];\n  if (missing <= 0) {\n    note =\n      String(piece.fields.title) + ' (' + piece.id + ') already has ' + already.length + ' ' + (already.length === 1 ? nouns[0] : nouns[1]) +\n      '; nothing added. Pass a higher count for more.';\n  } else {\n    const startAt = dateInput(input.startAt, 'startAt');\n    const dates = spinoffDates(piece, format, already.length, missing, startAt, now) as string[];\n    const angles = String(input.angle ?? '').split(/\\s*\\|\\s*|\\n+/).map((a) => a.trim()).filter(Boolean);\n    const added: string[] = [];\n    for (let i = 0; i < missing; i++) {\n      const index = already.length + i;\n      const record = await calendar.add({\n        status: 'planned',\n        fields: {\n          title: spinoffTitle(format, index, Math.max(want, index + 1), String(piece.fields.title)),\n          pieceId: piece.id,\n          format,\n          publishAt: dates[i],\n          ...(input.channel ? { channel: input.channel.trim() } : {}),\n          ...(input.assignee || piece.fields.assignee ? { assignee: (input.assignee ?? String(piece.fields.assignee)).trim() } : {}),\n          ...(angles[i] ? { angle: angles[i] } : {}),\n        },\n      });\n      added.push(record.id + ' ' + niceDay(dates[i]!));\n    }\n    note =\n      'Planned ' + missing + ' ' + (missing === 1 ? nouns[0] : nouns[1]) + ' for ' + String(piece.fields.title) + ' (' + piece.id + '): ' + added.join(', ') + '.';\n  }\n} else if (input.action === 'update_spinoff') {\n  const record = await resolveIn(calendar, 'spin-off', 'so-2');\n  const fields: Record<string, unknown> = {};\n  const publishAt = dateInput(input.publishAt, 'publishAt') ?? shifted(record.fields.publishAt, record.fields.title);\n  if (publishAt) fields.publishAt = publishAt;\n  if (input.channel) fields.channel = input.channel.trim();\n  if (input.assignee) fields.assignee = input.assignee.trim();\n  if (input.angle) fields.angle = input.angle.trim();\n  if (input.link) fields.link = input.link.trim();\n  const status = input.status ? String(input.status).toLowerCase() : undefined;\n  if (status && !SPIN_STAGES.includes(status)) throw new Error('status must be one of ' + SPIN_STAGES.join(', ') + '.');\n  if (!Object.keys(fields).length && !status && !input.note) {\n    throw new Error('update_spinoff needs status, publishAt, shiftDays, channel, assignee, angle, link, or note.');\n  }\n  if (Object.keys(fields).length) await calendar.update(record.id, { fields });\n  if (status && status !== record.status) await calendar.transition(record.id, status, input.note ? { note: input.note } : {});\n  else if (input.note) await calendar.update(record.id, { note: input.note });\n  note =\n    String(record.fields.title) + ' (' + record.id + ')' +\n    (status && status !== record.status ? ' moved from ' + record.status + ' to ' + status : ' updated') +\n    (fields.publishAt ? ', going out ' + niceDay(String(fields.publishAt)) : '') + '.';\n} else if (input.action !== 'status' && input.action !== 'list') {\n  throw new Error(\n    \"Unknown action '\" + input.action + \"'. Use status, add_piece, update_piece, repurpose_piece, update_spinoff, or list.\",\n  );\n}\n\nconst allPieces = await pieces.list();\nconst allSpinoffs = await calendar.list();\nconst view = studioPicture(allPieces, allSpinoffs, now, withinDays);\n\ngezel.output({\n  inPipeline: view.inPipeline,\n  dueSoon: view.dueSoon,\n  late: view.late,\n  repurposed: view.repurposed,\n  summary:\n    input.action === 'list'\n      ? [\n          ...allPieces.map((p) => '[' + p.status + '] ' + pieceLine(p, now)),\n          ...allSpinoffs.map((s) => '  [' + s.status + '] ' + spinoffLine(s, allPieces, now)),\n        ].join('\\n') || 'The studio is empty.'\n      : (note ? note + ' ' : '') + view.summary,\n});\n"
+  },
+  "tools": [
+    {
+      "name": "studio_status",
+      "description": "The whole studio: the pipeline by stage, everything publishing in the next 14 days (late items first) with ids, stages and owners, who has what, and what each published piece has been repurposed into. Call it first when asked what is coming, who is on what, or what a piece still needs.",
+      "script": "content-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "withinDays": {
+            "type": "number"
+          }
+        }
+      },
+      "bind": {
+        "action": "status"
+      },
+      "state": true
+    },
+    {
+      "name": "add_piece",
+      "description": "Save a long-form piece: title, format, stage, who writes it, publish date (YYYY-MM-DD), the search keyword and one line on its angle. An existing title is updated, never duplicated. Call it as soon as a piece is pitched or mentioned, before you describe it.",
+      "script": "content-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "article",
+              "guide",
+              "case-study",
+              "interview",
+              "essay",
+              "video",
+              "podcast",
+              "other"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "idea",
+              "brief",
+              "draft",
+              "edit",
+              "design",
+              "published"
+            ]
+          },
+          "assignee": {
+            "type": "string"
+          },
+          "publishAt": {
+            "type": "string"
+          },
+          "keyword": {
+            "type": "string"
+          },
+          "angle": {
+            "type": "string"
+          },
+          "words": {
+            "type": "number"
+          },
+          "link": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add_piece"
+      }
+    },
+    {
+      "name": "update_piece",
+      "description": "Move a piece to another stage (idea, brief, draft, edit, design, published), hand it to someone else, or change its publish date. To push it later or earlier pass shiftDays and the studio does the date math. Call it the moment the person says a piece moved.",
+      "script": "content-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "idea",
+              "brief",
+              "draft",
+              "edit",
+              "design",
+              "published"
+            ]
+          },
+          "assignee": {
+            "type": "string"
+          },
+          "publishAt": {
+            "type": "string"
+          },
+          "shiftDays": {
+            "type": "number"
+          },
+          "keyword": {
+            "type": "string"
+          },
+          "angle": {
+            "type": "string"
+          },
+          "link": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "update_piece"
+      }
+    },
+    {
+      "name": "repurpose_piece",
+      "description": "Plan what a piece spins off: a newsletter, social posts, video chapters, short videos or quote cards. One call per format; count is how many of that format the piece should have in all (three posts = count 3), and the studio dates each one after the piece publishes. Call it as soon as repurposing is asked for, before you write any of it.",
+      "script": "content-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "newsletter",
+              "social-post",
+              "video-chapters",
+              "short-video",
+              "quote-card",
+              "other"
+            ]
+          },
+          "count": {
+            "type": "number"
+          },
+          "startAt": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "assignee": {
+            "type": "string"
+          },
+          "angle": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "format"
+        ]
+      },
+      "bind": {
+        "action": "repurpose_piece"
+      }
+    },
+    {
+      "name": "update_spinoff",
+      "description": "Move one of a piece's spin-offs (planned, drafted, scheduled, published), or change its date, channel or owner. To push it later or earlier pass shiftDays.",
+      "script": "content-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "planned",
+              "drafted",
+              "scheduled",
+              "published"
+            ]
+          },
+          "publishAt": {
+            "type": "string"
+          },
+          "shiftDays": {
+            "type": "number"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "assignee": {
+            "type": "string"
+          },
+          "angle": {
+            "type": "string"
+          },
+          "link": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "update_spinoff"
+      }
+    },
+    {
+      "name": "list_pieces",
+      "description": "Every piece and spin-off with its stage, date and owner.",
+      "script": "content-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "list"
+      }
+    },
+    {
+      "name": "page_add_piece",
+      "description": "Add or update a piece.",
+      "script": "content-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "article",
+              "guide",
+              "case-study",
+              "interview",
+              "essay",
+              "video",
+              "podcast",
+              "other"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "idea",
+              "brief",
+              "draft",
+              "edit",
+              "design",
+              "published"
+            ]
+          },
+          "assignee": {
+            "type": "string"
+          },
+          "publishAt": {
+            "type": "string"
+          },
+          "keyword": {
+            "type": "string"
+          },
+          "angle": {
+            "type": "string"
+          },
+          "words": {
+            "type": "number"
+          },
+          "link": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add_piece"
+      }
+    },
+    {
+      "name": "page_update_piece",
+      "description": "Move a piece to another stage.",
+      "script": "content-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "idea",
+              "brief",
+              "draft",
+              "edit",
+              "design",
+              "published"
+            ]
+          },
+          "assignee": {
+            "type": "string"
+          },
+          "publishAt": {
+            "type": "string"
+          },
+          "shiftDays": {
+            "type": "number"
+          },
+          "keyword": {
+            "type": "string"
+          },
+          "angle": {
+            "type": "string"
+          },
+          "link": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "update_piece"
+      },
+      "reaction": {
+        "gezel": "managing-editor",
+        "hideSeed": true,
+        "prompt": "The person just moved a piece on the studio board. The studio now reads (its first sentence is what changed):\n{{output.summary}}\nIn two short sentences, confirm the move and name the next step for that piece; if it was just published, name the repurposing it has not had yet. Do not call tools."
+      }
+    },
+    {
+      "name": "page_repurpose_piece",
+      "description": "Plan what a piece spins off.",
+      "script": "content-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "newsletter",
+              "social-post",
+              "video-chapters",
+              "short-video",
+              "quote-card",
+              "other"
+            ]
+          },
+          "count": {
+            "type": "number"
+          },
+          "startAt": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "assignee": {
+            "type": "string"
+          },
+          "angle": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "format"
+        ]
+      },
+      "bind": {
+        "action": "repurpose_piece"
+      }
+    },
+    {
+      "name": "page_update_spinoff",
+      "description": "Move a spin-off to another stage.",
+      "script": "content-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "planned",
+              "drafted",
+              "scheduled",
+              "published"
+            ]
+          },
+          "publishAt": {
+            "type": "string"
+          },
+          "shiftDays": {
+            "type": "number"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "assignee": {
+            "type": "string"
+          },
+          "angle": {
+            "type": "string"
+          },
+          "link": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "update_spinoff"
+      }
+    }
+  ],
+  "craftbooks": [
+    "blog-post",
+    "newsletter-issue",
+    "case-study",
+    "seo-meta-pack",
+    "copy-review",
+    "social-thread"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "studio/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "pieces.json"
+      },
+      {
+        "source": "workspace",
+        "path": "calendar.json"
+      }
+    ],
+    "tools": [
+      "page_add_piece",
+      "page_update_piece",
+      "page_repurpose_piece",
+      "page_update_spinoff"
+    ]
+  },
+  "workspaceSeed": [
+    "pieces.json",
+    "calendar.json"
+  ],
+  "minGezelVersion": "1.26280"
+}

@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Household budget</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf7f2; --card: #fff; --ink: #2b2620; --muted: #7a7166;
+        --accent: #b5651d; --track: #ece5da; --good: #4a7c59; --warn: #a4552e;
+      }
+      :root[data-theme='dark'] {
+        --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+        --accent: #e0894a; --track: #3a352f; --good: #7fae8d; --warn: #d98a63;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #1c1a17; --card: #262320; --ink: #efe9e0; --muted: #a59a8c;
+          --accent: #e0894a; --track: #3a352f; --good: #7fae8d; --warn: #d98a63;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 16px/1.5 var(--font-body, system-ui, sans-serif); background: var(--bg); color: var(--ink); padding: 1.5rem 1.25rem; }
+      main { max-width: 760px; margin: 0 auto; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.35rem; font-weight: 600; margin: 0 0 0.15rem; }
+      .sub { color: var(--muted); font-size: 0.95rem; margin: 0 0 1rem; }
+      .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; margin-bottom: 1rem; }
+      .tile { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.7rem 0.85rem; }
+      .tile .n { font-size: 1.35rem; font-weight: 700; color: var(--ink); line-height: 1.2; font-variant-numeric: tabular-nums; }
+      .tile .n.good { color: var(--good); }
+      .tile .n.warn { color: var(--warn); }
+      .tile .l { font-family: var(--font-ui, system-ui, sans-serif); font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+      .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+      .panel { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 0.85rem 1rem; font-size: 0.95rem; margin: 0 0 0.75rem; }
+      .panel h2 { font-family: var(--font-ui, system-ui, sans-serif); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 0.5rem; }
+      .bar-row { display: grid; grid-template-columns: 7.5rem 1fr 4.5rem; gap: 0.5rem; align-items: center; margin: 0.3rem 0; }
+      .bar-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .bar { background: var(--track); border-radius: 4px; height: 10px; overflow: hidden; }
+      .bar > span { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+      .bar-row .amt { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+      .entries { margin: 0; padding-left: 0; list-style: none; }
+      .entries li { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr) auto; gap: 0.6rem; align-items: baseline; padding: 0.35rem 0; margin: 0; border-bottom: 1px solid var(--track); }
+      .entries li.month { display: block; border-bottom: 0; padding: 0.9rem 0 0.15rem; font-family: var(--font-ui, system-ui, sans-serif); font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+      .entries li.month:first-child { padding-top: 0; }
+      .entries .when { color: var(--muted); font-variant-numeric: tabular-nums; }
+      .entries .what .memo { color: var(--muted); }
+      .entries .amt { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+      .entries .amt.in { color: var(--good); }
+      .note { margin: 0 0 0.85rem; padding: 0.5rem 0.65rem; border: 1px solid var(--track); border-radius: 6px; background: var(--card); color: var(--muted); font-size: 0.8rem; }
+      .empty { color: var(--muted); font-style: italic; }
+      @media (max-width: 640px) { .cols { grid-template-columns: 1fr; } .tiles { grid-template-columns: 1fr 1fr; } .tiles .tile:last-child:nth-child(3) { grid-column: 1 / -1; } .bar-row { grid-template-columns: 6rem 1fr 5rem; } }
+      .demo-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0 0 0.85rem;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--card) 88%, var(--accent));
+        color: var(--ink);
+        font-size: 0.8rem;
+      }
+      .demo-banner[hidden] { display: none; }
+      .demo-banner strong { font-weight: 700; }
+      .demo-reset {
+        flex: none;
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: var(--card);
+        color: var(--ink);
+        cursor: pointer;
+        font: inherit;
+      }
+      .demo-reset:hover { border-color: var(--ink); }
+    </style>
+  <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:20px 0;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--border,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}html[data-gezel-fullscreen=true] .board{min-width:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}.tiles,.stats,.summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}.board,.columns{max-width:100%;overflow-x:auto}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+    <style data-app-shell="2">
+    /* Shared app furniture from the Gezel app UX guide. The page owns everything else. */
+    :root{--app-action:var(--gezel-component-accent,#805128);--app-on-action:#fffaf3;--app-banner-bg:#f3eddf;--app-banner-line:#d6cbb8}
+    :root[data-theme=dark]{--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}
+    @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}}
+    main h1{font-weight:400}
+    html[data-gezel-fullscreen=true] main h1{font-size:clamp(28px,3vw,40px);margin-top:0}
+    .app-tabs{margin:20px 0 24px}
+    .app-actionbar{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin:16px 0 24px}
+    .app-panel>.app-actionbar:first-child{margin-top:0}
+    .app-settings{display:grid;gap:16px;max-width:760px;margin:0 0 24px}
+    .app-search{margin:0}
+    .app-search gezel-collection-filter{margin:0 0 12px;max-width:540px}
+    .app-primary{min-height:44px;padding:8px 16px;border:1px solid var(--app-action);border-radius:6px;background:var(--app-action);color:var(--app-on-action);font-weight:600}
+    .app-primary:disabled{display:none}
+    main li.empty{display:block;grid-column:1/-1}
+    html[data-app-legacy] [data-app-action]{display:none!important}
+    [data-gezel-demo-banner]:not([hidden]){display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin:0 0 16px;padding:8px 8px 8px 14px;border:1px solid var(--app-banner-line);border-radius:10px;background:var(--app-banner-bg);color:inherit;font-size:14px;line-height:1.4}
+    [data-gezel-demo-banner] button{min-height:32px;padding:4px 12px;border:1px solid var(--app-banner-line);border-radius:6px;background:transparent;color:inherit;font-size:13px}
+    @media(max-width:620px){.tiles,.stats,.summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:nth-child(3):last-child){grid-template-columns:repeat(3,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:only-child){grid-template-columns:minmax(0,1fr)!important}}
+    </style>
+  <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script></head>
+  <body>
+    <main>
+<p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong> — sample data stays in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <p class="note" id="browser-note" hidden>
+        Viewing from a browser tab — the ledger stays live, but adding entries happens in the app's Output pane.
+      </p>
+      <h1>Household budget</h1>
+      <p class="sub" id="sub">Loading the ledger…</p>
+      <div class="tiles">
+        <div class="tile"><div class="n good" id="t-in">—</div><div class="l">In this month</div></div>
+        <div class="tile"><div class="n warn" id="t-out">—</div><div class="l">Out this month</div></div>
+        <div class="tile"><div class="n" id="t-net">—</div><div class="l">Net</div></div>
+      </div>
+      <section class="panel" id="cats-section">
+        <h2>Where it goes this month</h2>
+        <div id="cats"><p class="empty">No spending recorded this month.</p></div>
+      </section>
+      <section class="panel" id="entries-section">
+        <h2>Every entry</h2>
+        <ul class="entries" id="entries"><li class="empty">Nothing yet — tell your household treasurer, or add an expense.</li></ul>
+      </section>
+    </main>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+
+        // ── demo ledger (used only when the page opens as a raw file) ──
+        var demoLedger = { currency: 'USD', entries: [
+          { kind: 'in', amountCents: 520000, category: 'Income', note: 'Monthly pay', at: new Date().toISOString() },
+          { kind: 'out', amountCents: 146000, category: 'Housing', note: 'Rent', at: new Date().toISOString() },
+          { kind: 'out', amountCents: 9640, category: 'Utilities', note: 'Electric bill', at: new Date().toISOString() },
+          { kind: 'out', amountCents: 1549, category: 'Subscriptions', note: 'Video streaming', at: new Date().toISOString() },
+          { kind: 'out', amountCents: 1099, category: 'Subscriptions', note: 'Music streaming', at: new Date().toISOString() },
+          { kind: 'out', amountCents: 58200, category: 'Groceries', note: 'Weekly shops', at: new Date().toISOString() },
+          { kind: 'out', amountCents: 1199, category: 'Subscriptions', note: 'Second video streaming service', at: new Date().toISOString() },
+          { kind: 'out', amountCents: 22400, category: 'Transport', note: 'Train and fuel', at: new Date().toISOString() },
+          { kind: 'out', amountCents: 299, category: 'Subscriptions', note: 'Cloud storage', at: new Date().toISOString() },
+          { kind: 'out', amountCents: 18900, category: 'Eating out', note: 'Dinner with friends', at: new Date().toISOString() },
+        ] };
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'dashboard/index.html', typeName: 'Household Budget', params: { currency: 'USD' } },
+          tools: (function () {
+            // Mirrors the budget-store script: one ledger, cents, and the same month line.
+            function cents(input) {
+              var amount = Number(input && input.amount);
+              if (!(amount > 0) || !isFinite(amount)) throw new Error('Give an amount above zero, like 12.50.');
+              if (!input.category || !String(input.category).trim()) throw new Error('Give a category, like groceries.');
+              return Math.round(amount * 100);
+            }
+            // The live script lowercases categories; the sample keeps one spelling per category.
+            function category(name) {
+              var wanted = String(name).trim();
+              var known = demoLedger.entries.find(function (e) { return e.category.toLowerCase() === wanted.toLowerCase(); });
+              return known ? known.category : wanted.charAt(0).toUpperCase() + wanted.slice(1);
+            }
+            function add(kind, input) {
+              var amountCents = cents(input);
+              var entry = { kind: kind, amountCents: amountCents, category: category(input.category), at: new Date().toISOString() };
+              if (input.note && String(input.note).trim()) entry.note = String(input.note).trim();
+              demoLedger.entries.push(entry);
+              return status();
+            }
+            function money(c) { var abs = Math.abs(c); return (c < 0 ? '-' : '') + Math.floor(abs / 100) + '.' + String(abs % 100).padStart(2, '0'); }
+            function status() {
+              var month = new Date().toISOString().slice(0, 7), inC = 0, outC = 0, by = {};
+              demoLedger.entries.forEach(function (e) {
+                if (e.at.slice(0, 7) !== month) return;
+                if (e.kind === 'in') inC += e.amountCents;
+                else { outC += e.amountCents; by[e.category.toLowerCase()] = (by[e.category.toLowerCase()] || 0) + e.amountCents; }
+              });
+              var top = Object.keys(by).sort(function (a, b) { return by[b] - by[a]; }).slice(0, 3)
+                .map(function (k) { return k + ' ' + money(by[k]); }).join(', ');
+              return {
+                entries: demoLedger.entries.length,
+                summary: month + ': in ' + money(inC) + ', out ' + money(outC) + ', net ' + money(inC - outC) + (top ? '. Biggest: ' + top + '.' : '. No spending recorded.'),
+                netCents: inC - outC,
+              };
+            }
+            return {
+              record_expense: function (input) { return add('out', input); },
+              page_add_income: function (input) { return add('in', input); },
+              add_expense: function (input) { return add('out', input); },
+              budget_status: function () { return status(); },
+            };
+          })(),
+          data: {
+            'ledger.json': function () { return demoLedger; },
+          },
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+        var browserMode = gezel.page.mode === 'browser';
+
+        function applyTheme(mode) {
+          document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light');
+        }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+        if (browserMode) document.getElementById('browser-note').hidden = false;
+
+        function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+        // Money in the ledger's currency ("$1,460"), cents only when there are some.
+        var ledgerCurrency = '';
+        function fmt(cents) {
+          var whole = cents % 100 === 0, opts = { minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: 2 };
+          if (/^[A-Z]{3}$/.test(ledgerCurrency)) {
+            try { return (cents / 100).toLocaleString('en-US', Object.assign({ style: 'currency', currency: ledgerCurrency }, opts)); } catch (e) { /* unknown code: plain number */ }
+          }
+          return (cents / 100).toLocaleString('en-US', opts);
+        }
+        function cap(s) { s = String(s || ''); return s.charAt(0).toUpperCase() + s.slice(1); }
+        // Months and days are the person's own, not UTC: an evening entry on the 31st stays in its month.
+        function monthKey(value) { var d = new Date(value); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+        function monthLabel(key) { var p = key.split('-'); return new Date(Number(p[0]), Number(p[1]) - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }); }
+        function dayLabel(value) { var d = new Date(value); return isFinite(d.getTime()) ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''; }
+        function node(tag, text, className) { var n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (className) n.className = className; return n; }
+
+        function render(ledger) {
+          ledgerCurrency = String(ledger.currency || '');
+          var month = monthKey(Date.now());
+          var entries = (ledger.entries || []).filter(function (e) { return typeof e.at === 'string' && isFinite(Date.parse(e.at)); });
+          var monthEntries = entries.filter(function (e) { return monthKey(e.at) === month; });
+          var inC = 0, outC = 0; var byCat = {};
+          monthEntries.forEach(function (e) {
+            var key = cap(e.category || 'other');
+            if (e.kind === 'in') inC += e.amountCents;
+            else { outC += e.amountCents; byCat[key] = (byCat[key] || 0) + e.amountCents; }
+          });
+          document.getElementById('sub').textContent = monthLabel(month);
+          var tIn = document.getElementById('t-in');
+          tIn.textContent = fmt(inC);
+          tIn.className = 'n' + (inC > 0 ? ' good' : '');
+          document.getElementById('t-out').textContent = fmt(outC);
+          document.getElementById('t-out').className = 'n';
+          var net = document.getElementById('t-net');
+          net.textContent = fmt(inC - outC);
+          net.className = 'n' + (inC - outC > 0 ? ' good' : inC - outC < 0 ? ' warn' : '');
+
+          var cats = Object.entries(byCat).sort(function (a, b) { return b[1] - a[1]; });
+          var max = cats.length ? cats[0][1] : 1;
+          document.getElementById('cats').innerHTML = cats.length
+            ? cats.map(function (pair) {
+                return '<div class="bar-row"><span class="name">' + esc(pair[0]) + '</span><span class="bar"><span style="width:' + Math.max(4, Math.round((pair[1] / max) * 100)) + '%"></span></span><span class="amt">' + fmt(pair[1]) + '</span></div>';
+              }).join('')
+            : '<p class="empty">No spending recorded this month.</p>';
+
+          // Every entry, newest first, under a heading per month.
+          var list = document.getElementById('entries'), rows = [], shownMonth = '';
+          entries.slice().sort(function (a, b) { return Date.parse(b.at) - Date.parse(a.at); }).forEach(function (e) {
+            var key = monthKey(e.at);
+            if (key !== shownMonth) { shownMonth = key; rows.push(node('li', monthLabel(key), 'month')); }
+            var li = node('li', undefined, 'entry'), what = node('span', cap(e.category || 'other'), 'what');
+            if (e.note) what.append(node('span', ' · ' + e.note, 'memo'));
+            li.append(node('span', dayLabel(e.at), 'when'), what, node('span', (e.kind === 'in' ? '+' : '−') + fmt(e.amountCents), 'amt' + (e.kind === 'in' ? ' in' : '')));
+            rows.push(li);
+          });
+          if (!rows.length) rows.push(node('li', 'Nothing yet — tell your household treasurer, or add an expense.', 'empty'));
+          list.replaceChildren.apply(list, rows);
+        }
+
+        window.addEventListener('gezel-app-data-changed', function(){ loadLedger(); });
+        function loadLedger(){
+var revision=++appLoadRevision;
+return Promise.all([gezel.data.read('ledger.json')]).then(function(values){if(appDisposed||revision!==appLoadRevision)return;reportAppError(null);render(values[0]||{});}).catch(function(error){if(!appDisposed&&revision===appLoadRevision)reportAppError(error);});
+}
+
+        loadLedger();
+        appSubscriptions.push(gezel.data.watch('ledger.json', function () { loadLedger(); }));
+      })();
+    </script>
+  <script src="application.js" defer></script>
+  </body>
+</html>

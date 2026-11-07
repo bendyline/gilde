@@ -1,0 +1,361 @@
+{
+  "schemaVersion": 1,
+  "version": "1.1.0",
+  "releasedAt": "2026-11-07T18:00:00.000Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "business": {
+        "type": "string",
+        "title": "What kind of business is this?",
+        "description": "e.g. 'a café in Portland', 'a two-person electrical contractor'.",
+        "default": "the business"
+      }
+    },
+    "required": [
+      "business"
+    ]
+  },
+  "nameTemplate": "Compliance Register",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "compliance-officer",
+      "voorman": true
+    },
+    {
+      "templateId": "archivaris"
+    }
+  ],
+  "scripts": {
+    "compliance-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { logStore, rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'compliance-store',\n  description:\n    \"Read and update the compliance register (obligations.json) and its evidence log (evidence.json). action:'status' for what is overdue and due soon; 'add' to record an obligation (an existing title is updated, never duplicated); 'complete' when one is done (a recurring one rolls to its next due date); 'set_status' to mark one in progress; 'log_evidence' to file proof; 'list' for the whole register.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'status', 'add', 'complete', 'set_status', 'log_evidence', or 'list'.\",\n      required: true,\n    },\n    id: { type: 'string', description: \"Obligation id, e.g. 'ob-3'.\" },\n    title: {\n      type: 'string',\n      description: \"The obligation's name, e.g. 'Food service permit'. Also finds it when no id is given.\",\n    },\n    category: {\n      type: 'string',\n      description: 'license, permit, filing, insurance, certification, inspection, policy, or other.',\n    },\n    dueAt: { type: 'string', description: 'The next due date, YYYY-MM-DD.' },\n    recurs: { type: 'string', description: 'none, monthly, quarterly, or yearly.' },\n    owner: { type: 'string', description: 'Who is responsible.' },\n    authority: { type: 'string', description: 'Who issues or checks it, e.g. County Health Department.' },\n    status: { type: 'string', description: 'For set_status: open or in-progress.' },\n    note: { type: 'string', description: 'What happened, with any reference number exactly as written.' },\n    file: { type: 'string', description: \"Workspace path of an evidence file, e.g. 'evidence/permit-2026.pdf'.\" },\n    withinDays: { type: 'number', description: 'How many days ahead counts as due soon (default 60).' },\n  },\n  outputs: {\n    overdue: { type: 'number', description: 'Open obligations past their due date.' },\n    dueSoon: { type: 'number', description: 'Open obligations due within the window.' },\n    tracked: { type: 'number', description: 'Obligations on the register.' },\n    summary: { type: 'string', description: 'The register picture, or the listing.' },\n  },\n  requires: ['workspace.read', 'workspace.write', 'reminders'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── compliance-rules-start ──\n// Pure derivations: days left in local calendar days, the next due date of a\n// recurring obligation, and the register line the crew reads. Kept\n// self-contained between these sentinels so unit tests execute the shipped\n// bytes.\nvar DAY_MS = 86400000;\nvar CATEGORIES = ['license', 'permit', 'filing', 'insurance', 'certification', 'inspection', 'policy', 'other'];\nvar RECURS = ['none', 'monthly', 'quarterly', 'yearly'];\n\nfunction pad(n) {\n  return n < 10 ? '0' + n : String(n);\n}\nfunction localDay(ms) {\n  var d = new Date(ms);\n  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());\n}\nfunction normalizeDate(text) {\n  var raw = String(text || '').trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(raw)) return raw;\n  var parsed = Date.parse(raw);\n  return isFinite(parsed) ? localDay(parsed) : null;\n}\nfunction daysLeft(dueAt, nowMs) {\n  var due = Date.parse(String(dueAt).slice(0, 10) + 'T00:00:00');\n  var today = Date.parse(localDay(nowMs) + 'T00:00:00');\n  return Math.round((due - today) / DAY_MS);\n}\nfunction rollForward(dueAt, recurs) {\n  var months = recurs === 'monthly' ? 1 : recurs === 'quarterly' ? 3 : recurs === 'yearly' ? 12 : 0;\n  if (!months) return null;\n  var d = new Date(String(dueAt).slice(0, 10) + 'T12:00:00');\n  var day = d.getDate();\n  d.setDate(1);\n  d.setMonth(d.getMonth() + months);\n  // The 31st of a month rolls to the last day of a shorter one, not into the next.\n  var last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();\n  d.setDate(Math.min(day, last));\n  return localDay(d.getTime());\n}\nfunction when(days) {\n  if (days < 0) return -days + (days === -1 ? ' day late' : ' days late');\n  if (days === 0) return 'due today';\n  return 'in ' + days + (days === 1 ? ' day' : ' days');\n}\nfunction proofOf(record, events) {\n  return events.filter(function (e) {\n    return e.data && e.data.obligationId === record.id;\n  });\n}\nfunction line(record, events, nowMs) {\n  var f = record.fields || {};\n  var proof = proofOf(record, events);\n  var last = proof.length ? proof[proof.length - 1] : null;\n  return (\n    f.title +\n    ' (' + record.id + ', ' + (f.category || 'other') + ', owner ' + (f.owner || 'unassigned') + ') ' +\n    when(daysLeft(f.dueAt, nowMs)) + ', due ' + f.dueAt +\n    (record.status === 'in-progress' ? ', in progress' : '') +\n    (f.recurs && f.recurs !== 'none' ? ', ' + f.recurs : '') +\n    '; ' + (last ? 'last proof ' + String(last.at).slice(0, 10) + ': ' + (last.note || last.data.file) : 'no proof on file')\n  );\n}\nfunction picture(records, events, nowMs, withinDays) {\n  var open = records.filter(function (r) {\n    return r.status !== 'done' && r.fields && r.fields.dueAt;\n  });\n  var byDue = function (a, b) {\n    return String(a.fields.dueAt).localeCompare(String(b.fields.dueAt));\n  };\n  var overdue = open.filter(function (r) { return daysLeft(r.fields.dueAt, nowMs) < 0; }).sort(byDue);\n  var soon = open\n    .filter(function (r) {\n      var d = daysLeft(r.fields.dueAt, nowMs);\n      return d >= 0 && d <= withinDays;\n    })\n    .sort(byDue);\n  var later = open.filter(function (r) { return daysLeft(r.fields.dueAt, nowMs) > withinDays; }).sort(byDue);\n  var parts = [records.length + (records.length === 1 ? ' obligation' : ' obligations') + ' on the register, ' + overdue.length + ' overdue.'];\n  // One list, overdue first: asked \"what's due in 60 days\", a model read a separate overdue list as out of scope.\n  var due = overdue.concat(soon);\n  parts.push(\n    due.length\n      ? 'Due within ' + withinDays + ' days, overdue first: ' + due.map(function (r) { return line(r, events, nowMs); }).join(' | ') + '.'\n      : 'Nothing due in the next ' + withinDays + ' days.',\n  );\n  if (later.length) parts.push('Next after that: ' + later[0].fields.title + ', due ' + later[0].fields.dueAt + '.');\n  return { overdue: overdue.length, dueSoon: soon.length, summary: parts.join(' ') };\n}\n// ── compliance-rules-end ──\n\nconst obligations = rosterStore(gezel.fs, 'obligations.json', {\n  stages: ['open', 'in-progress', 'done'],\n  idPrefix: 'ob',\n});\nconst evidence = logStore(gezel.fs, 'evidence.json');\n\nasync function resolve(): Promise<string> {\n  if (input.id) return input.id;\n  if (input.title) {\n    const wanted = input.title.trim().toLowerCase();\n    const all = await obligations.list();\n    const exact = all.filter((r) => String(r.fields.title ?? '').toLowerCase() === wanted);\n    if (exact.length === 1) return exact[0]!.id;\n    const partial = all.filter((r) => String(r.fields.title ?? '').toLowerCase().includes(wanted));\n    if (partial.length === 1) return partial[0]!.id;\n    if (partial.length > 1) {\n      throw new Error(\"More than one obligation matches '\" + input.title + \"': \" + partial.map((r) => r.id + ' ' + String(r.fields.title)).join(', ') + '. Pass id.');\n    }\n  }\n  throw new Error(\"Pass 'id' (e.g. 'ob-3') or the obligation's 'title'. Call action:'list' to see them.\");\n}\n\n// The register's one reminder sits on the soonest open obligation, 14 days ahead of it.\nasync function remindNextDue(): Promise<void> {\n  const now = Date.now();\n  const lead = 14 * DAY_MS;\n  const next = (await obligations.list())\n    .filter((r) => r.status !== 'done' && typeof r.fields.dueAt === 'string')\n    .map((r) => ({ title: String(r.fields.title), dueAt: String(r.fields.dueAt), at: Date.parse(String(r.fields.dueAt) + 'T09:00:00') - lead }))\n    .filter((r) => r.at > now)\n    .sort((a, b) => a.at - b.at)[0];\n  try {\n    if (!next || next.at - now > 30 * DAY_MS) await gezel.reminder.clear();\n    else await gezel.reminder.set({ at: new Date(next.at).toISOString(), title: next.title + ' is due in two weeks', body: 'Due ' + next.dueAt + '. Open the register to plan it.' });\n  } catch {\n    // Reminders are a convenience; the register is the record.\n  }\n}\n\nconst withinDays = typeof input.withinDays === 'number' && input.withinDays > 0 ? Math.round(input.withinDays) : 60;\nlet note = '';\n\nif (input.action === 'add') {\n  if (!input.title) throw new Error(\"add needs 'title'.\");\n  const dueAt = input.dueAt ? normalizeDate(input.dueAt) : null;\n  if (input.dueAt && !dueAt) throw new Error(\"dueAt must be a date, e.g. '2026-12-01'.\");\n  const category = CATEGORIES.includes(String(input.category)) ? String(input.category) : undefined;\n  const recurs = RECURS.includes(String(input.recurs)) ? String(input.recurs) : undefined;\n  const wanted = input.title.trim().toLowerCase();\n  const existing = (await obligations.list()).find((r) => String(r.fields.title ?? '').toLowerCase() === wanted);\n  const fields: Record<string, unknown> = {\n    ...(dueAt ? { dueAt } : {}),\n    ...(category ? { category } : {}),\n    ...(recurs ? { recurs } : {}),\n    ...(input.owner ? { owner: input.owner.trim() } : {}),\n    ...(input.authority ? { authority: input.authority.trim() } : {}),\n    ...(input.note ? { notes: input.note.trim() } : {}),\n  };\n  if (existing) {\n    await obligations.update(existing.id, { fields });\n    note = 'Updated ' + String(existing.fields.title) + '.';\n  } else {\n    if (!dueAt) throw new Error(\"A new obligation needs 'dueAt' (YYYY-MM-DD).\");\n    const record = await obligations.add({\n      status: 'open',\n      fields: { title: input.title.trim(), category: category ?? 'other', recurs: recurs ?? 'none', ...fields },\n    });\n    note = 'Added ' + record.id + '.';\n  }\n} else if (input.action === 'complete') {\n  const id = await resolve();\n  const record = await obligations.get(id);\n  if (!record) throw new Error('No obligation ' + id + '.');\n  await evidence.append({\n    kind: 'completed',\n    note: input.note ?? 'Completed.',\n    data: { obligationId: id, ...(input.file ? { file: input.file } : {}) },\n  });\n  const next = rollForward(String(record.fields.dueAt ?? ''), String(record.fields.recurs ?? 'none'));\n  if (next) {\n    await obligations.update(id, { fields: { dueAt: next, lastCompletedAt: localDay(Date.now()) } });\n    if (record.status !== 'open') await obligations.transition(id, 'open', { note: 'Completed; next due ' + next });\n    note = String(record.fields.title) + ' completed; next due ' + next + '.';\n  } else {\n    await obligations.transition(id, 'done', { note: input.note ?? 'Completed' });\n    note = String(record.fields.title) + ' completed.';\n  }\n} else if (input.action === 'set_status') {\n  if (input.status !== 'open' && input.status !== 'in-progress') throw new Error(\"set_status needs status 'open' or 'in-progress'.\");\n  const id = await resolve();\n  await obligations.transition(id, input.status, input.note ? { note: input.note } : {});\n} else if (input.action === 'log_evidence') {\n  if (!input.note && !input.file) throw new Error(\"log_evidence needs 'note' or 'file'.\");\n  const id = await resolve();\n  await evidence.append({\n    kind: 'evidence',\n    note: input.note ?? 'Filed ' + input.file + '.',\n    data: { obligationId: id, ...(input.file ? { file: input.file } : {}) },\n  });\n} else if (input.action !== 'status' && input.action !== 'list') {\n  throw new Error(\"Unknown action '\" + input.action + \"'. Use status, add, complete, set_status, log_evidence, or list.\");\n}\n\nconst records = await obligations.list();\nconst events = await evidence.list();\nconst now = Date.now();\nconst view = picture(records, events, now, withinDays);\nawait remindNextDue();\n\ngezel.output({\n  overdue: view.overdue,\n  dueSoon: view.dueSoon,\n  tracked: records.length,\n  summary:\n    input.action === 'list'\n      ? records.map((r) => '[' + r.status + '] ' + line(r, events, now)).join('\\n') || 'The register is empty.'\n      : (note ? note + ' ' : '') + view.summary,\n});\n"
+  },
+  "tools": [
+    {
+      "name": "register_status",
+      "description": "What is overdue and due soon on the register, each with its owner, days left and the last proof on file. Call it first when asked what's due.",
+      "script": "compliance-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "withinDays": {
+            "type": "number"
+          }
+        }
+      },
+      "bind": {
+        "action": "status"
+      },
+      "state": true
+    },
+    {
+      "name": "add_obligation",
+      "description": "Save an obligation to the register: title, category, next due date (YYYY-MM-DD), how it recurs, owner and authority. An existing title is updated, never duplicated. Call it as soon as one is mentioned, before you describe it.",
+      "script": "compliance-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "license",
+              "permit",
+              "filing",
+              "insurance",
+              "certification",
+              "inspection",
+              "policy",
+              "other"
+            ]
+          },
+          "dueAt": {
+            "type": "string"
+          },
+          "recurs": {
+            "type": "string",
+            "enum": [
+              "none",
+              "monthly",
+              "quarterly",
+              "yearly"
+            ]
+          },
+          "owner": {
+            "type": "string"
+          },
+          "authority": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add"
+      }
+    },
+    {
+      "name": "complete_obligation",
+      "description": "Record that an obligation was done, with the reference number or certificate exactly as given. A recurring one rolls to its next due date. Call it the moment the person says it's done.",
+      "script": "compliance-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "complete"
+      }
+    },
+    {
+      "name": "set_obligation_status",
+      "description": "Mark an obligation in progress (or back to open).",
+      "script": "compliance-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "in-progress"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "bind": {
+        "action": "set_status"
+      }
+    },
+    {
+      "name": "log_evidence",
+      "description": "File proof against an obligation: a note with the reference number, or the path of an uploaded file under evidence/.",
+      "script": "compliance-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "log_evidence"
+      }
+    },
+    {
+      "name": "list_obligations",
+      "description": "Every obligation on the register with its status, due date and proof.",
+      "script": "compliance-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "list"
+      }
+    },
+    {
+      "name": "page_add_obligation",
+      "description": "Add or update an obligation.",
+      "script": "compliance-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "license",
+              "permit",
+              "filing",
+              "insurance",
+              "certification",
+              "inspection",
+              "policy",
+              "other"
+            ]
+          },
+          "dueAt": {
+            "type": "string"
+          },
+          "recurs": {
+            "type": "string",
+            "enum": [
+              "none",
+              "monthly",
+              "quarterly",
+              "yearly"
+            ]
+          },
+          "owner": {
+            "type": "string"
+          },
+          "authority": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add"
+      }
+    },
+    {
+      "name": "page_complete_obligation",
+      "description": "Record that an obligation was done.",
+      "script": "compliance-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "complete"
+      },
+      "reaction": {
+        "gezel": "compliance-officer",
+        "hideSeed": true,
+        "prompt": "The person just recorded a completion on the register page. The register now reads (its first sentence is what changed):\n{{output.summary}}\nIn two short sentences, confirm what changed, including the next due date if it recurs, and name the next item to plan. Do not call tools."
+      }
+    },
+    {
+      "name": "page_log_evidence",
+      "description": "File proof against an obligation.",
+      "script": "compliance-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "log_evidence"
+      }
+    }
+  ],
+  "craftbooks": [
+    "audit-evidence-pack"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "register/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "obligations.json"
+      },
+      {
+        "source": "workspace",
+        "path": "evidence.json"
+      },
+      {
+        "source": "workspace",
+        "path": "evidence",
+        "subtree": true
+      }
+    ],
+    "imports": [
+      {
+        "id": "evidence",
+        "source": "workspace",
+        "path": "evidence",
+        "accept": [
+          ".pdf",
+          ".png",
+          ".jpg",
+          ".jpeg",
+          ".webp",
+          ".heic",
+          ".docx",
+          ".txt",
+          ".md"
+        ],
+        "maxFileBytes": 26214400
+      }
+    ],
+    "tools": [
+      "page_add_obligation",
+      "page_complete_obligation",
+      "page_log_evidence"
+    ]
+  },
+  "workspaceSeed": [
+    "obligations.json",
+    "evidence.json"
+  ],
+  "minGezelVersion": "1.26280"
+}

@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="gezel-demo" content="standalone" />
+    <title>Team goals</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f4f3ef; --card: #fdfcf9; --ink: #25282b; --muted: #636a70; --line: #d9d8d1;
+        --accent: #36607e; --track: #e7e6df; --late: #a3341f; --late-bg: #f7e1da; --soon: #8a5a12; --soon-bg: #f6ead2;
+        --ok: #3f6b4a; --ok-bg: #e2eedf; --chip: #ebeae3; --marker: #25282b;
+      }
+      :root[data-theme='dark'] {
+        --bg: #151719; --card: #1e2124; --ink: #e9ebec; --muted: #9ea6ad; --line: #353a3f;
+        --accent: #8fb6d3; --track: #2b3035; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+        --ok: #8fc29b; --ok-bg: #22301f; --chip: #2a2e33; --marker: #e9ebec;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #151719; --card: #1e2124; --ink: #e9ebec; --muted: #9ea6ad; --line: #353a3f;
+          --accent: #8fb6d3; --track: #2b3035; --late: #f0927a; --late-bg: #3c231c; --soon: #e6bd72; --soon-bg: #3a2f1c;
+          --ok: #8fc29b; --ok-bg: #22301f; --chip: #2a2e33; --marker: #e9ebec;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body, system-ui, sans-serif); font-size: 15px; line-height: 1.5; padding: 1.5rem 1.25rem; }
+      main { max-width: 860px; margin: 0 auto; }
+      h1 { font-family: var(--font-heading, Georgia, serif); font-size: 1.5rem; font-weight: 400; margin: 0 0 0.2rem; }
+      h2 { font-family: var(--font-heading, Georgia, serif); font-size: 1.1rem; font-weight: 400; margin: 0 0 0.6rem; }
+      h3 { font-size: 0.78rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 0.5rem; }
+      section h3 { font-family: var(--font-ui, system-ui, sans-serif); }
+      .sub { color: var(--muted); margin: 0 0 1rem; }
+      .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; margin: 0 0 1.2rem; }
+      .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem 0.9rem; }
+      .tile b { display: block; font-size: 1.5rem; font-weight: 600; line-height: 1.1; }
+      .tile span { color: var(--muted); font-size: 0.85rem; }
+      .tile.ok b { color: var(--ok); }
+      .tile.late b { color: var(--late); }
+      .tile.soon b { color: var(--soon); }
+      section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin: 0 0 1rem; }
+      .goal-list { display: grid; gap: 0.75rem; }
+      .goal { border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem 0.9rem; display: grid; gap: 0.45rem; }
+      .goal header { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; }
+      .goal header b { font-weight: 600; overflow-wrap: anywhere; }
+      .meta { display: block; color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
+      .pace { flex: none; font-size: 0.78rem; font-weight: 600; padding: 0.1rem 0.45rem; border-radius: 4px; background: var(--chip); color: var(--muted); }
+      .pace.on-track, .pace.target-met { background: var(--ok-bg); color: var(--ok); }
+      .pace.at-risk { background: var(--soon-bg); color: var(--soon); }
+      .pace.behind, .pace.past-due { background: var(--late-bg); color: var(--late); }
+      .bar { position: relative; height: 8px; border-radius: 4px; background: var(--track); }
+      .bar span { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+      .bar i { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--marker); opacity: 0.55; }
+      .bar.thin { height: 5px; }
+      .bar.thin span { opacity: 0.5; }
+      .krs { list-style: none; margin: 0.1rem 0 0; padding: 0; display: grid; gap: 0.45rem; }
+      .krs li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 0.15rem 0.75rem; align-items: center; font-size: 0.9rem; }
+      .krs li .bar { grid-column: 1 / -1; }
+      .num { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+      .empty { color: var(--muted); font-style: italic; margin: 0; }
+      .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
+      .week, .log, .todo { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; font-size: 0.9rem; }
+      .week li { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) auto; gap: 0.6rem; align-items: start; }
+      .log time { color: var(--muted); font-size: 0.8rem; margin-right: 0.35rem; }
+      .when { justify-self: start; font-family: var(--font-ui, system-ui, sans-serif); font-size: 0.8rem; font-weight: 600; padding: 0.15rem 0.45rem; border-radius: 4px; text-align: center; background: var(--chip); color: var(--muted); }
+      .when.late { background: var(--late-bg); color: var(--late); }
+      .when.soon { background: var(--soon-bg); color: var(--soon); }
+      .when.ok { background: var(--ok-bg); color: var(--ok); }
+      .todo li { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) auto; gap: 0.6rem; align-items: start; }
+      .todo b { font-weight: 600; }
+      .done-btn { min-height: 36px; padding: 0.25rem 0.7rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; font-size: 0.85rem; }
+      .done-btn:hover { border-color: var(--accent); }
+      .done-btn:disabled { opacity: 0.6; cursor: wait; }
+      .closed { margin: 0.75rem 0 0; }
+      .goal-keys { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+      .key { min-height: 30px; padding: 0.2rem 0.65rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; font-size: 0.82rem; white-space: nowrap; }
+      .key:hover { border-color: var(--muted); }
+      .demo-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 0 0 1rem; padding: 0.5rem 0.65rem; border: 1px solid var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--card) 88%, var(--accent)); font-size: 0.85rem; }
+      .demo-banner[hidden] { display: none; }
+      .demo-reset { flex: none; min-height: 36px; padding: 0.3rem 0.7rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; }
+      .note { color: var(--muted); font-size: 0.85rem; margin: 0.75rem 0 0; }
+      @media (max-width: 640px) {
+        .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .split { grid-template-columns: minmax(0, 1fr); }
+        .week li { grid-template-columns: minmax(0, 1fr) auto; gap: 0.2rem 0.6rem; }
+        .week .when { grid-column: 1 / -1; }
+        .todo li { grid-template-columns: minmax(0, 1fr) auto; }
+        .todo .when { grid-column: 1 / -1; justify-self: start; }
+      }
+    </style>
+    <style>
+ [hidden]{display:none!important}body{font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}h1,h2,h3{font-family:var(--font-heading,Georgia,serif)}button,input,select,textarea{font-family:var(--font-ui,system-ui,sans-serif)}:focus-visible{outline:3px solid var(--accent,#a65334);outline-offset:3px}main{min-width:0}.app-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:24px 0;align-items:start}.app-search{margin:0 0 12px;max-width:540px}.app-problem{padding:12px;border:1px solid currentColor;border-radius:6px;overflow-wrap:anywhere}.app-section-nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.app-section-nav a{padding:8px 12px;border:1px solid var(--line,#92816a);border-radius:6px;color:inherit;text-decoration:none;font-size:14px}.app-section-nav a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}html[data-gezel-fullscreen=true] main>h1{font-size:clamp(28px,3vw,40px);margin-top:0}main section{scroll-margin-top:16px}@media(max-width:620px){main{padding:16px!important}h1{overflow-wrap:anywhere}button{min-height:40px}}</style>
+    <style data-app-shell="2">
+    /* Shared app furniture from the Gezel app UX guide. The page owns everything else. */
+    :root{--app-action:var(--gezel-component-accent,#805128);--app-on-action:#fffaf3;--app-banner-bg:#f3eddf;--app-banner-line:#d6cbb8}
+    :root[data-theme=dark]{--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}
+    @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--app-action:var(--gezel-component-accent,#e0b78b);--app-on-action:#1f1a16;--app-banner-bg:#25221f;--app-banner-line:#4a4238}}
+    main h1{font-weight:400}
+    html[data-gezel-fullscreen=true] main h1{font-size:clamp(28px,3vw,40px);margin-top:0}
+    .app-tabs{margin:20px 0 24px}
+    .app-actionbar{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin:16px 0 24px}
+    .app-panel>.app-actionbar:first-child{margin-top:0}
+    .app-settings{display:grid;gap:16px;max-width:760px;margin:0 0 24px}
+    .app-search{margin:0}
+    .app-search gezel-collection-filter{margin:0 0 12px;max-width:540px}
+    .app-primary{min-height:44px;padding:8px 16px;border:1px solid var(--app-action);border-radius:6px;background:var(--app-action);color:var(--app-on-action);font-weight:600}
+    .app-primary:disabled{display:none}
+    main li.empty{display:block;grid-column:1/-1}
+    html[data-app-legacy] [data-app-action]{display:none!important}
+    [data-gezel-demo-banner]:not([hidden]){display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin:0 0 16px;padding:8px 8px 8px 14px;border:1px solid var(--app-banner-line);border-radius:10px;background:var(--app-banner-bg);color:inherit;font-size:14px;line-height:1.4}
+    [data-gezel-demo-banner] button{min-height:32px;padding:4px 12px;border:1px solid var(--app-banner-line);border-radius:6px;background:transparent;color:inherit;font-size:13px}
+    @media(max-width:620px){.tiles,.stats,.summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:nth-child(3):last-child){grid-template-columns:repeat(3,minmax(0,1fr))!important}:is(.tiles,.stats,.summary):has(>:only-child){grid-template-columns:minmax(0,1fr)!important}}
+    </style>
+    <script>
+var appDisposed=false,appLoadRevision=0,appSubscriptions=[];
+function reportAppError(error){var output=document.getElementById('app-load-error');if(output){output.hidden=!error;output.textContent=error?'Could not refresh this view. '+(error.message||'Try again.'):'';}}
+window.addEventListener('pagehide',function(){appDisposed=true;appLoadRevision++;appSubscriptions.forEach(function(stop){stop();});},{once:true});
+</script>
+  </head>
+  <body>
+    <main>
+      <p class="app-problem" id="app-load-error" role="status" hidden></p>
+      <div class="demo-banner" data-gezel-demo-banner hidden>
+        <span><strong>Demo mode</strong>: Fernwood Studio’s sample goals. Changes stay in this page.</span>
+        <button type="button" class="demo-reset" onclick="location.reload()">Reset demo</button>
+      </div>
+      <h1>Team goals</h1>
+      <p class="sub" id="sub">Loading the goals…</p>
+      <div class="tiles">
+        <div class="tile"><b id="t-active">0</b><span>Active goals</span></div>
+        <div class="tile"><b id="t-ontrack">0</b><span>On track</span></div>
+        <div class="tile"><b id="t-offpace">0</b><span>At risk or behind</span></div>
+        <div class="tile"><b id="t-actions">0</b><span>Open actions</span></div>
+      </div>
+      <section id="goals-section">
+        <h2>Goals</h2>
+        <div class="goal-list" id="goal-list"></div>
+        <p class="meta closed" id="closed-goals" hidden></p>
+        <p class="note">The bar fills as the key results move; the thin line marks how much of the goal’s time has gone.</p>
+      </section>
+      <section id="checkins-section">
+        <h2>Check-ins</h2>
+        <div class="split">
+          <div>
+            <h3>This week</h3>
+            <ul class="week" id="week"></ul>
+          </div>
+          <div>
+            <h3>Latest</h3>
+            <ul class="log" id="checkin-log"></ul>
+          </div>
+        </div>
+      </section>
+      <section id="actions-section">
+        <h2>Meeting actions</h2>
+        <ul class="todo" id="action-list"></ul>
+        <p class="meta closed" id="actions-done" hidden></p>
+      </section>
+    </main>
+    <script src="demo-chat.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        var DAY = 86400000;
+        function pad(n) { return n < 10 ? '0' + n : String(n); }
+        function iso(ms) { var d = new Date(ms); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+        function daysFromNow(n) { return iso(Date.now() + n * DAY); }
+        function stampFromNow(n) { return new Date(Date.now() + n * DAY).toISOString(); }
+
+        // ── demo goals (used only when the page opens outside Gezel); dates are relative so it never goes stale ──
+        var demoGoals = { version: 1, stages: ['active', 'done', 'dropped'], records: [
+          { id: 'g-1', status: 'active', fields: { title: 'Win four new retainer clients', owner: 'Theo', startAt: daysFromNow(-33), dueAt: daysFromNow(59), why: 'Steadier months between big projects.' } },
+          { id: 'g-2', status: 'active', fields: { title: 'Publish three case studies', owner: 'Mara', startAt: daysFromNow(-33), dueAt: daysFromNow(59) } },
+          { id: 'g-3', status: 'active', fields: { title: 'Lift billable utilization', owner: 'Ines', startAt: daysFromNow(-33), dueAt: daysFromNow(59) } },
+          { id: 'g-4', status: 'active', fields: { title: 'Launch the new studio website', owner: 'Jonah', startAt: daysFromNow(-33), dueAt: daysFromNow(28) } },
+          { id: 'g-5', status: 'done', fields: { title: 'Move every project into the new tracker', owner: 'Sam', startAt: daysFromNow(-95), dueAt: daysFromNow(-20) } },
+        ] };
+        var demoKeyResults = { version: 1, stages: ['active', 'closed'], records: [
+          { id: 'kr-1', status: 'active', fields: { goalId: 'g-1', goal: 'Win four new retainer clients', title: 'New retainer clients', start: 0, current: 1, target: 4, unit: 'clients' } },
+          { id: 'kr-2', status: 'active', fields: { goalId: 'g-1', goal: 'Win four new retainer clients', title: 'Proposals sent', start: 0, current: 5, target: 10, unit: 'proposals' } },
+          { id: 'kr-3', status: 'active', fields: { goalId: 'g-2', goal: 'Publish three case studies', title: 'Case studies published', start: 0, current: 0, target: 3 } },
+          { id: 'kr-4', status: 'active', fields: { goalId: 'g-2', goal: 'Publish three case studies', title: 'Client sign-offs collected', start: 0, current: 1, target: 3 } },
+          { id: 'kr-5', status: 'active', fields: { goalId: 'g-3', goal: 'Lift billable utilization', title: 'Billable utilization', start: 62, current: 66, target: 75, unit: '%' } },
+          { id: 'kr-6', status: 'active', fields: { goalId: 'g-3', goal: 'Lift billable utilization', title: 'Hours logged the same day', start: 40, current: 71, target: 90, unit: '%' } },
+          { id: 'kr-7', status: 'active', fields: { goalId: 'g-4', goal: 'Launch the new studio website', title: 'Pages designed', start: 0, current: 3, target: 8, unit: 'pages' } },
+          { id: 'kr-8', status: 'active', fields: { goalId: 'g-4', goal: 'Launch the new studio website', title: 'Pages built', start: 0, current: 0, target: 8, unit: 'pages' } },
+          { id: 'kr-9', status: 'closed', fields: { goalId: 'g-5', goal: 'Move every project into the new tracker', title: 'Projects moved', start: 0, current: 14, target: 14, unit: 'projects' } },
+        ] };
+        var demoCheckins = { version: 1, events: [
+          { at: stampFromNow(-12), kind: 'progress', note: 'Harbor Street Café signed a monthly retainer.', data: { goalId: 'g-1', keyResultId: 'kr-1', from: 0, to: 1 } },
+          { at: stampFromNow(-9), kind: 'checkin', note: 'Waiting on client sign-offs before we can publish.', data: { goalId: 'g-2', who: 'Mara', confidence: 'at-risk' } },
+          { at: stampFromNow(-5), kind: 'checkin', note: 'The build slipped a week; development starts Monday.', data: { goalId: 'g-4', who: 'Jonah', confidence: 'off-track' } },
+          { at: stampFromNow(-3), kind: 'progress', note: 'Proposals out to Alder Co and Birchwood Bakery.', data: { goalId: 'g-1', keyResultId: 'kr-2', from: 3, to: 5 } },
+          { at: stampFromNow(-2), kind: 'checkin', note: 'Two proposals out; Alder Co looks likely.', data: { goalId: 'g-1', who: 'Theo', confidence: 'on-track' } },
+          { at: stampFromNow(-1), kind: 'checkin', note: 'Utilization is at 66%, and same-day logging is sticking.', data: { goalId: 'g-3', who: 'Ines', confidence: 'on-track' } },
+        ] };
+        var demoActions = { version: 1, stages: ['open', 'done'], records: [
+          { id: 'act-1', status: 'open', updatedAt: stampFromNow(-1), fields: { title: 'Send Alder Co the retainer proposal', owner: 'Theo', dueAt: daysFromNow(3), goalId: 'g-1', from: 'Monday team meeting' } },
+          { id: 'act-2', status: 'open', updatedAt: stampFromNow(-8), fields: { title: 'Ask Birchwood Bakery to sign off its case study', owner: 'Mara', dueAt: daysFromNow(-2), goalId: 'g-2', from: 'Monday team meeting' } },
+          { id: 'act-3', status: 'open', updatedAt: stampFromNow(-1), fields: { title: 'Book the website build kickoff', owner: 'Jonah', dueAt: daysFromNow(1), goalId: 'g-4', from: 'Monday team meeting' } },
+          { id: 'act-4', status: 'open', updatedAt: stampFromNow(-1), fields: { title: 'Share the utilization report with the team', owner: 'Ines', dueAt: daysFromNow(7), goalId: 'g-3', from: 'Monday team meeting' } },
+          { id: 'act-5', status: 'done', updatedAt: stampFromNow(-6), fields: { title: 'Draft the case study interview questions', owner: 'Mara', dueAt: daysFromNow(-7), goalId: 'g-2', from: 'Planning meeting' } },
+        ] };
+
+        // The goals-store rules, mirrored for the demo so the sample behaves like the live board.
+        function dayMs(day) { return Date.parse(String(day).slice(0, 10) + 'T00:00:00'); }
+        function daysLeft(day) { return Math.round((dayMs(day) - dayMs(iso(Date.now()))) / DAY); }
+        function round2(n) { return Math.round(n * 100) / 100; }
+        function krProgress(f) {
+          var start = Number(f.start) || 0, target = Number(f.target), current = Number(f.current) || 0;
+          if (!isFinite(target)) return 0;
+          if (target === start) return current >= target ? 1 : 0;
+          return Math.max(0, Math.min(1, (current - start) / (target - start)));
+        }
+        function timeGone(f) {
+          var due = dayMs(f.dueAt || ''), start = dayMs(f.startAt || ''), today = dayMs(iso(Date.now()));
+          if (!isFinite(due)) return null;
+          if (!isFinite(start) || due <= start) return today >= due ? 1 : 0;
+          return Math.max(0, Math.min(1, (today - start) / (due - start)));
+        }
+        function pace(p, gone) {
+          if (p === null) return 'no key results yet';
+          if (p >= 1) return 'target met';
+          if (gone === null) return 'no due date';
+          if (gone >= 1) return 'past due';
+          if (p >= gone - 0.1) return 'on track';
+          if (p >= gone - 0.25) return 'at risk';
+          return 'behind';
+        }
+        function goalKrs(goal, krs) { return krs.filter(function (k) { return k.fields.goalId === goal.id && k.status !== 'closed'; }); }
+        function goalProgress(goal, krs) { var mine = goalKrs(goal, krs); return mine.length ? mine.reduce(function (s, k) { return s + krProgress(k.fields); }, 0) / mine.length : null; }
+        function lag(goal, krs) { var p = goalProgress(goal, krs), gone = timeGone(goal.fields); return p === null ? -2 : gone === null ? -1 : gone - p; }
+        function nextId(list, prefix) { return prefix + '-' + (list.reduce(function (m, r) { return Math.max(m, Number(String(r.id).split('-')[1]) || 0); }, 0) + 1); }
+        function demoPick(list, wanted, label) {
+          var lower = String(wanted || '').trim().toLowerCase();
+          var hit = list.find(function (r) { return r.id === lower; }) || list.find(function (r) { return r.fields.title.toLowerCase() === lower; });
+          if (hit) return hit;
+          var partial = list.filter(function (r) { return lower && r.fields.title.toLowerCase().indexOf(lower) >= 0; });
+          if (partial.length === 1) return partial[0];
+          throw new Error('No ' + label + " matches '" + wanted + "'. Pass the id.");
+        }
+        function demoSummary(note) {
+          var active = demoGoals.records.filter(function (g) { return g.status === 'active'; });
+          var paces = active.map(function (g) { return pace(goalProgress(g, demoKeyResults.records), timeGone(g.fields)); });
+          var offPace = paces.filter(function (p) { return p === 'at risk' || p === 'behind' || p === 'past due'; }).length;
+          var open = demoActions.records.filter(function (a) { return a.status !== 'done'; }).length;
+          return { active: active.length, offPace: offPace, openActions: open, summary: (note ? note + ' ' : '') + active.length + ' active goals, ' + offPace + ' at risk or behind; ' + open + ' open actions.' };
+        }
+        function touch(r) { r.updatedAt = new Date().toISOString(); }
+        function demoAddGoal(input) {
+          var title = String(input.title || '').trim();
+          if (!title) throw new Error("add_goal needs 'title'.");
+          var g = demoGoals.records.find(function (x) { return x.fields.title.toLowerCase() === title.toLowerCase(); });
+          var fields = {};
+          ['owner', 'dueAt', 'startAt'].forEach(function (k) { if (input[k]) fields[k] = String(input[k]).trim(); });
+          if (input.note) fields.why = String(input.note).trim();
+          if (g) { Object.assign(g.fields, fields); touch(g); return demoSummary('Updated ' + g.id + ' ' + g.fields.title + '.'); }
+          var id = nextId(demoGoals.records, 'g');
+          demoGoals.records.push({ id: id, status: 'active', updatedAt: new Date().toISOString(), fields: Object.assign({ title: title, startAt: iso(Date.now()) }, fields) });
+          return demoSummary('Added ' + id + ' ' + title + '.');
+        }
+        function demoAddKeyResult(input) {
+          var goal = demoPick(demoGoals.records, input.goal, 'goal');
+          var title = String(input.title || '').trim();
+          if (!title) throw new Error("add_key_result needs 'title'.");
+          var k = demoKeyResults.records.find(function (x) { return x.fields.goalId === goal.id && x.fields.title.toLowerCase() === title.toLowerCase(); });
+          var num = function (v) { return typeof v === 'number' && isFinite(v); };
+          if (k) {
+            ['target', 'current', 'start'].forEach(function (f) { if (num(input[f])) k.fields[f] = round2(input[f]); });
+            if (input.unit) k.fields.unit = String(input.unit).trim();
+            return demoSummary('Updated ' + k.id + ' ' + k.fields.title + '.');
+          }
+          if (!num(input.target)) throw new Error("A new key result needs 'target'.");
+          var start = num(input.start) ? input.start : num(input.current) ? input.current : 0;
+          var id = nextId(demoKeyResults.records, 'kr');
+          demoKeyResults.records.push({ id: id, status: goal.status === 'active' ? 'active' : 'closed', fields: Object.assign({ goalId: goal.id, goal: goal.fields.title, title: title, start: round2(start), current: round2(num(input.current) ? input.current : start), target: round2(input.target) }, input.unit ? { unit: String(input.unit).trim() } : {}) });
+          return demoSummary('Added ' + id + ' ' + title + ' to ' + goal.id + '.');
+        }
+        function demoUpdateKeyResult(input) {
+          var pool = demoKeyResults.records;
+          if (input.goal) { var goal = demoPick(demoGoals.records, input.goal, 'goal'); pool = pool.filter(function (k) { return k.fields.goalId === goal.id; }); }
+          var k = input.keyResult || input.title ? demoPick(pool, input.keyResult || input.title, 'key result') : pool.length === 1 && input.goal ? pool[0] : null;
+          if (!k) throw new Error("update_key_result needs 'keyResult'.");
+          var hasChange = typeof input.change === 'number', hasValue = typeof input.value === 'number';
+          if (!hasChange && !hasValue) throw new Error("update_key_result needs 'change' or 'value'.");
+          var before = Number(k.fields.current) || 0, after = round2(hasChange ? before + input.change : input.value);
+          k.fields.current = after;
+          demoCheckins.events.push({ at: new Date().toISOString(), kind: 'progress', note: input.note || undefined, data: { goalId: k.fields.goalId, keyResultId: k.id, from: before, to: after } });
+          return demoSummary(k.fields.title + ' moved from ' + before + ' to ' + after + ' (target ' + k.fields.target + ').');
+        }
+        function demoCheckin(input) {
+          var conf = String(input.confidence || '').toLowerCase().replace(/\s+/g, '-');
+          if (input.confidence && ['on-track', 'at-risk', 'off-track'].indexOf(conf) < 0) throw new Error("confidence must be 'on-track', 'at-risk', or 'off-track'.");
+          if (!input.note && !conf) throw new Error("A check-in needs 'note' or 'confidence'.");
+          var goal = input.goal ? demoPick(demoGoals.records, input.goal, 'goal') : null;
+          var who = String(input.who || '').trim() || (goal ? goal.fields.owner || '' : '');
+          var data = {};
+          if (goal) data.goalId = goal.id;
+          if (who) data.who = who;
+          if (conf) data.confidence = conf;
+          demoCheckins.events.push({ at: new Date().toISOString(), kind: 'checkin', note: input.note || undefined, data: data });
+          return demoSummary('Logged ' + (who ? who + '’s check-in' : 'a check-in') + (goal ? ' on ' + goal.fields.title : '') + (conf ? ': ' + conf.replace('-', ' ') : '') + '.');
+        }
+        function demoAddAction(input) {
+          var title = String(input.title || '').trim();
+          if (!title) throw new Error("add_action needs 'title'.");
+          var fields = {};
+          if (input.owner) fields.owner = String(input.owner).trim();
+          if (input.dueAt) fields.dueAt = String(input.dueAt).trim();
+          if (input.from) fields.from = String(input.from).trim();
+          if (input.goal) { try { fields.goalId = demoPick(demoGoals.records, input.goal, 'goal').id; } catch (e) { /* left unlinked, as the script does */ } }
+          var a = demoActions.records.find(function (x) { return x.status !== 'done' && x.fields.title.toLowerCase() === title.toLowerCase(); });
+          if (a) { Object.assign(a.fields, fields); touch(a); return demoSummary('Updated ' + a.id + ' ' + a.fields.title + '.'); }
+          var id = nextId(demoActions.records, 'act');
+          demoActions.records.push({ id: id, status: 'open', updatedAt: new Date().toISOString(), fields: Object.assign({ title: title }, fields) });
+          return demoSummary('Added ' + id + ' ' + title + '.');
+        }
+        function demoCompleteAction(input) {
+          var open = demoActions.records.filter(function (a) { return a.status !== 'done'; });
+          var a = demoPick(open.length ? open : demoActions.records, input.id || input.title, 'action');
+          a.status = 'done'; touch(a);
+          return demoSummary('Done: ' + a.fields.title + '.');
+        }
+        function demoGoalStatus(input) {
+          var g = demoPick(demoGoals.records, input.goal, 'goal');
+          var status = String(input.status || '');
+          if (['active', 'done', 'dropped'].indexOf(status) < 0) throw new Error("set_goal_status needs status 'active', 'done', or 'dropped'.");
+          g.status = status; touch(g);
+          demoKeyResults.records.forEach(function (k) { if (k.fields.goalId === g.id) k.status = status === 'active' ? 'active' : 'closed'; });
+          return demoSummary(g.fields.title + ' is ' + status + '.');
+        }
+
+        window.gezel || window.makeDemoGezel({
+          page: { entry: 'goals/index.html', typeName: 'Team Goals', params: { team: 'Fernwood Studio' } },
+          tools: {
+            page_add_goal: demoAddGoal,
+            add_goal: demoAddGoal,
+            page_add_key_result: demoAddKeyResult,
+            add_key_result: demoAddKeyResult,
+            page_update_key_result: demoUpdateKeyResult,
+            update_key_result: demoUpdateKeyResult,
+            page_log_checkin: demoCheckin,
+            log_checkin: demoCheckin,
+            page_add_action: demoAddAction,
+            add_action: demoAddAction,
+            page_complete_action: demoCompleteAction,
+            complete_action: demoCompleteAction,
+            set_goal_status: demoGoalStatus,
+            goals_status: function () { return demoSummary(''); },
+          },
+          data: {
+            'goals.json': function () { return demoGoals; },
+            'keyresults.json': function () { return demoKeyResults; },
+            'checkins.json': function () { return demoCheckins; },
+            'actions.json': function () { return demoActions; },
+          },
+          chat: window.demoChat,
+        });
+
+        // ── one code path from here: window.gezel exists in every mode ──
+        var demoMode = gezel.page.mode === 'demo';
+        function applyTheme(mode) { document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light'); }
+        applyTheme(gezel.ui.theme.mode);
+        appSubscriptions.push(gezel.ui.onTheme(function (theme) { applyTheme(theme.mode); }));
+        if (demoMode) document.querySelector('[data-gezel-demo-banner]').hidden = false;
+
+        function el(tag, text, cls) { var e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
+        function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+        function niceDate(day) { var d = new Date(String(day).slice(0, 10) + 'T12:00:00'); return isFinite(d) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : String(day); }
+        function fmt(n) { var r = round2(Number(n) || 0); return r.toLocaleString(undefined, { maximumFractionDigits: 2 }); }
+        function amount(n, unit) {
+          var u = String(unit || '').trim();
+          if (u === '%' || /^percent/i.test(u)) return fmt(n) + '%';
+          if (u === '$' || /^(dollars?|usd)$/i.test(u)) return '$' + fmt(n);
+          return fmt(n);
+        }
+        function unitWord(unit) { var u = String(unit || '').trim(); return u && u !== '%' && u !== '$' && !/^(percent|dollars?|usd)$/i.test(u) ? ' ' + u : ''; }
+        function pct(p) { return Math.round(p * 100) + '%'; }
+        function bar(progress, gone, thin, label) {
+          var b = el('div', undefined, 'bar' + (thin ? ' thin' : ''));
+          b.setAttribute('role', 'img');
+          b.setAttribute('aria-label', label);
+          var fill = el('span'); fill.style.width = pct(progress); b.append(fill);
+          if (gone !== null && gone !== undefined) { var mark = el('i'); mark.style.left = pct(gone); b.append(mark); }
+          return b;
+        }
+        // A key on a goal or key result opens that action's dialog with it already chosen (the app shell wires data-app-action).
+        function rowKey(label, tool, values, aria) {
+          var b = el('button', label, 'key');
+          b.type = 'button';
+          b.setAttribute('aria-label', aria);
+          b.setAttribute('data-app-action', tool);
+          b.setAttribute('data-app-values', JSON.stringify(values));
+          return b;
+        }
+        function when(days) { return days < 0 ? -days + (days === -1 ? ' day late' : ' days late') : days === 0 ? 'Due today' : 'In ' + days + (days === 1 ? ' day' : ' days'); }
+
+        function render(goalsDoc, krDoc, logDoc, actionsDoc) {
+          var goals = Array.isArray(goalsDoc.records) ? goalsDoc.records : [];
+          var krs = Array.isArray(krDoc.records) ? krDoc.records : [];
+          var events = Array.isArray(logDoc.events) ? logDoc.events : [];
+          var actions = Array.isArray(actionsDoc.records) ? actionsDoc.records : [];
+          var active = goals.filter(function (g) { return g.status === 'active'; }).sort(function (a, b) { return lag(b, krs) - lag(a, krs); });
+          var paces = active.map(function (g) { return pace(goalProgress(g, krs), timeGone(g.fields || {})); });
+          var onTrack = paces.filter(function (p) { return p === 'on track' || p === 'target met'; }).length;
+          var offPace = paces.filter(function (p) { return p === 'at risk' || p === 'behind' || p === 'past due'; }).length;
+          var open = actions.filter(function (a) { return a.status !== 'done'; }).sort(function (a, b) { return String(a.fields.dueAt || '9999').localeCompare(String(b.fields.dueAt || '9999')); });
+          var lateActions = open.filter(function (a) { return a.fields.dueAt && daysLeft(a.fields.dueAt) < 0; });
+
+          document.getElementById('t-active').textContent = active.length;
+          document.getElementById('t-ontrack').textContent = onTrack;
+          document.getElementById('t-offpace').textContent = offPace;
+          document.getElementById('t-actions').textContent = open.length;
+          document.getElementById('t-ontrack').parentNode.classList.toggle('ok', onTrack > 0);
+          document.getElementById('t-offpace').parentNode.classList.toggle('late', offPace > 0);
+          document.getElementById('sub').textContent = !goals.length
+            ? 'No goals yet. Tell your planner what the team wants to reach this quarter, and the numbers that will show it.'
+            : (offPace ? plural(offPace, 'goal needs', 'goals need') + ' attention. ' : 'Every active goal is on track. ') +
+              (lateActions.length ? plural(lateActions.length, 'meeting action is', 'meeting actions are') + ' overdue.' : open.length ? 'No meeting action is overdue.' : 'No open meeting actions.');
+
+          var list = document.getElementById('goal-list');
+          list.replaceChildren();
+          if (!active.length) list.append(el('p', goals.length ? 'Every goal is closed. Add the next one when the team sets it.' : 'Goals you set appear here, each with its key results.', 'empty'));
+          active.forEach(function (g, index) {
+            var f = g.fields || {}, mine = goalKrs(g, krs), p = goalProgress(g, krs), gone = timeGone(f), status = paces[index];
+            var card = el('article', undefined, 'goal');
+            var head = el('header');
+            head.append(el('b', f.title), el('span', status.replace(/^./, function (c) { return c.toUpperCase(); }), 'pace ' + status.replace(/ /g, '-')));
+            card.append(head);
+            card.append(el('span', [f.owner ? 'Owner ' + f.owner : 'No owner yet', f.dueAt ? 'due ' + niceDate(f.dueAt) : 'no due date', p === null ? '' : pct(p) + ' done', gone === null ? '' : pct(gone) + ' of the time gone'].filter(Boolean).join(' · '), 'meta'));
+            if (p !== null) card.append(bar(p, gone, false, pct(p) + ' done, ' + (gone === null ? 'no due date' : pct(gone) + ' of the time gone')));
+            var ul = el('ul', undefined, 'krs');
+            if (!mine.length) ul.append(el('li', 'No key results yet. Add the numbers that will show this goal moving.', 'empty'));
+            mine.forEach(function (k) {
+              var kf = k.fields, li = el('li'), kp = krProgress(kf);
+              li.append(el('span', kf.title));
+              li.append(el('span', amount(kf.current, kf.unit) + ' of ' + amount(kf.target, kf.unit) + unitWord(kf.unit) + (Number(kf.start) ? ' (from ' + amount(kf.start, kf.unit) + ')' : ''), 'num'));
+              li.append(rowKey('Record', 'update_key_result', { keyResult: k.id }, 'Record progress on ' + kf.title));
+              li.append(bar(kp, null, true, kf.title + ': ' + pct(kp) + ' of the way'));
+              ul.append(li);
+            });
+            card.append(ul);
+            var last = events.filter(function (e) { return e.kind === 'checkin' && e.data && e.data.goalId === g.id; }).pop();
+            card.append(el('span', last ? 'Last check-in ' + niceDate(last.at) + (last.data.who ? ' by ' + last.data.who : '') + (last.data.confidence ? ', ' + last.data.confidence.replace('-', ' ') : '') + (last.note ? ': “' + last.note.replace(/[.\s]+$/, '') + '”' : '') : 'No check-in yet', 'meta'));
+            var keys = el('div', undefined, 'goal-keys');
+            keys.append(rowKey('Check in', 'log_checkin', { goal: g.id }, 'Log a check-in on ' + f.title), rowKey('Add key result', 'add_key_result', { goal: g.id }, 'Add a key result to ' + f.title));
+            card.append(keys);
+            list.append(card);
+          });
+          var closed = goals.filter(function (g) { return g.status !== 'active'; });
+          var closedLine = document.getElementById('closed-goals');
+          closedLine.hidden = !closed.length;
+          closedLine.textContent = closed.length ? 'Closed: ' + closed.map(function (g) { return g.fields.title + ' (' + g.status + ')'; }).join(' · ') : '';
+
+          var since = dayMs(iso(Date.now())) - 6 * DAY;
+          var week = document.getElementById('week');
+          week.replaceChildren();
+          if (!active.length) week.append(el('li', 'Check-ins on active goals appear here.', 'empty'));
+          active.forEach(function (g) {
+            var owner = String(g.fields.owner || '').toLowerCase();
+            var hits = events.filter(function (e) { return e.kind === 'checkin' && e.data && Date.parse(e.at) >= since && (e.data.goalId ? e.data.goalId === g.id : owner && String(e.data.who || '').toLowerCase() === owner); });
+            var hit = hits[hits.length - 1], li = el('li');
+            // The chip names the confidence its color shows; the date goes below.
+            var said = hit && hit.data.confidence ? hit.data.confidence.replace('-', ' ') : '';
+            li.append(el('span', hit ? (said ? said.charAt(0).toUpperCase() + said.slice(1) : 'Checked in') : 'Not yet', 'when ' + (hit ? (hit.data.confidence === 'off-track' ? 'late' : hit.data.confidence === 'at-risk' ? 'soon' : 'ok') : 'soon')));
+            var what = el('div');
+            what.append(el('span', (g.fields.owner || 'No owner') + ': ' + g.fields.title));
+            what.append(el('span', hit ? 'checked in ' + niceDate(hit.at) : 'no check-in in the last 7 days', 'meta'));
+            li.append(what, rowKey('Check in', 'log_checkin', { goal: g.id }, 'Log a check-in on ' + g.fields.title));
+            week.append(li);
+          });
+
+          var logList = document.getElementById('checkin-log');
+          logList.replaceChildren();
+          var recent = events.slice(-6).reverse();
+          if (!recent.length) logList.append(el('li', 'Check-ins and progress you record appear here.', 'empty'));
+          recent.forEach(function (e) {
+            var li = el('li'), d = e.data || {};
+            li.append(el('time', niceDate(e.at)));
+            if (e.kind === 'progress') {
+              var k = krs.find(function (x) { return x.id === d.keyResultId; });
+              li.append(document.createTextNode((k ? k.fields.title : 'A key result') + ' moved from ' + fmt(d.from) + ' to ' + fmt(d.to) + (e.note ? '. ' + e.note : '.')));
+            } else {
+              var goal = goals.find(function (x) { return x.id === d.goalId; });
+              li.append(document.createTextNode((d.who || 'Someone') + (goal ? ' on ' + goal.fields.title : '') + (d.confidence ? ', ' + d.confidence.replace('-', ' ') : '') + (e.note ? ': ' + e.note : '.')));
+            }
+            logList.append(li);
+          });
+
+          var todo = document.getElementById('action-list');
+          todo.replaceChildren();
+          if (!open.length) todo.append(el('li', 'No open meeting actions. Tell your planner what the next meeting agrees.', 'empty'));
+          open.forEach(function (a) {
+            var f = a.fields || {}, li = el('li'), d = f.dueAt ? daysLeft(f.dueAt) : null;
+            li.append(el('span', d === null ? 'No date' : when(d), 'when ' + (d === null ? '' : d < 0 ? 'late' : d <= 3 ? 'soon' : '')));
+            var what = el('div'), goal = goals.find(function (g) { return g.id === f.goalId; });
+            what.append(el('b', f.title));
+            what.append(el('span', [f.owner || 'No owner', f.dueAt ? niceDate(f.dueAt) : '', goal ? goal.fields.title : '', f.from || ''].filter(Boolean).join(' · '), 'meta'));
+            li.append(what);
+            var button = el('button', 'Done', 'done-btn');
+            button.type = 'button';
+            button.setAttribute('aria-label', 'Mark “' + f.title + '” done');
+            button.onclick = function () { completeAction(a.id, button); };
+            li.append(button);
+            todo.append(li);
+          });
+          var recentDone = actions.filter(function (a) { return a.status === 'done' && a.updatedAt && Date.parse(a.updatedAt) >= since; });
+          var doneLine = document.getElementById('actions-done');
+          doneLine.hidden = !recentDone.length;
+          doneLine.textContent = recentDone.length ? 'Done in the last 7 days: ' + recentDone.map(function (a) { return a.fields.title + (a.fields.owner ? ' (' + a.fields.owner + ')' : ''); }).join(' · ') : '';
+        }
+
+        function completeAction(id, button) {
+          button.disabled = true;
+          gezel.tools.invoke('page_complete_action', { id: id }).then(function () {
+            if (appDisposed) return;
+            loadGoals();
+          }, function (error) {
+            if (appDisposed) return;
+            button.disabled = false;
+            var output = document.getElementById('app-load-error');
+            output.hidden = false;
+            output.textContent = error && error.code === 'unavailable' ? 'Marking an action done happens in the app’s Output pane.' : 'Could not mark it done. ' + ((error && error.message) || 'Try again.');
+          });
+        }
+
+        window.addEventListener('gezel-app-data-changed', function () { loadGoals(); });
+        window.loadGoals = loadGoals;
+        function loadGoals() {
+          var revision = ++appLoadRevision;
+          return Promise.all([gezel.data.read('goals.json'), gezel.data.read('keyresults.json'), gezel.data.read('checkins.json'), gezel.data.read('actions.json')]).then(function (values) {
+            if (appDisposed || revision !== appLoadRevision) return;
+            reportAppError(null);
+            render(values[0] || {}, values[1] || {}, values[2] || {}, values[3] || {});
+          }).catch(function (error) { if (!appDisposed && revision === appLoadRevision) reportAppError(error); });
+        }
+
+        loadGoals();
+        ['goals.json', 'keyresults.json', 'checkins.json', 'actions.json'].forEach(function (path) {
+          appSubscriptions.push(gezel.data.watch(path, function () { loadGoals(); }));
+        });
+      })();
+    </script>
+    <script src="application.js" defer></script>
+  </body>
+</html>

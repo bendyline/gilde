@@ -1,0 +1,610 @@
+{
+  "schemaVersion": 1,
+  "version": "1.1.0",
+  "releasedAt": "2026-11-07T18:00:00.000Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "business": {
+        "type": "string",
+        "title": "What business is running the campaign?",
+        "description": "e.g. 'a small press in Portland', 'a three-person bakery'.",
+        "default": "the business"
+      },
+      "campaign": {
+        "type": "string",
+        "title": "What are you launching or promoting?",
+        "description": "e.g. 'our autumn novel', 'the new spring menu'.",
+        "default": "the next launch"
+      }
+    },
+    "required": [
+      "business"
+    ]
+  },
+  "nameTemplate": "Campaign Room",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "campaign-manager",
+      "voorman": true
+    },
+    {
+      "templateId": "omroeper"
+    },
+    {
+      "templateId": "copywriter"
+    },
+    {
+      "templateId": "designer"
+    }
+  ],
+  "scripts": {
+    "campaign-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { logStore, rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'campaign-store',\n  description:\n    \"Read and update the campaign room: the campaign (campaign.json), its assets (assets.json) and its results and spend (results.json). action:'status' for the whole picture; 'set_campaign' for the goal, audience, dates and budget (budgetChange adds to the budget); 'add_asset' to plan an asset (an existing title is updated, never duplicated); 'move_asset' to change an asset's stage, date or owner; 'log_result' for an asset's numbers on a day; 'log_spend' for money spent; 'list' for every asset.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description: \"One of 'status', 'set_campaign', 'add_asset', 'move_asset', 'log_result', 'log_spend', or 'list'.\",\n      required: true,\n    },\n    name: { type: 'string', description: \"The campaign's name, e.g. 'The Salt Road launch'.\" },\n    goal: { type: 'string', description: \"The goal in the person's words, e.g. '600 preorders by launch day'.\" },\n    audience: { type: 'string', description: 'Who the campaign is for.' },\n    goalMetric: { type: 'string', description: \"What the goal counts, e.g. 'preorders', 'signups', 'bookings'.\" },\n    goalTarget: { type: 'number', description: 'The number to reach, e.g. 600.' },\n    goalBy: { type: 'string', description: 'When the goal should be met, YYYY-MM-DD (defaults to the launch date).' },\n    launchAt: { type: 'string', description: 'Launch day, YYYY-MM-DD.' },\n    startAt: { type: 'string', description: 'First day of the campaign, YYYY-MM-DD.' },\n    endAt: { type: 'string', description: 'Last day of the campaign, YYYY-MM-DD.' },\n    budget: { type: 'number', description: 'The whole budget in dollars; replaces the current budget.' },\n    budgetChange: {\n      type: 'number',\n      description: 'Dollars to add to the current budget (negative to cut it). The campaign does the sum.',\n    },\n    id: { type: 'string', description: \"Asset id, e.g. 'as-3'.\" },\n    title: {\n      type: 'string',\n      description: \"The asset's name, e.g. 'Launch-day email'. Also finds an asset when no id is given.\",\n    },\n    channel: {\n      type: 'string',\n      description: 'email, instagram, facebook, linkedin, bluesky, x, tiktok, youtube, website, ads, print, press, event, or other.',\n    },\n    kind: {\n      type: 'string',\n      description: 'post, email, ad, landing-page, video, graphic, print, press-release, event, or other.',\n    },\n    goesOutAt: { type: 'string', description: 'The day the asset goes out, YYYY-MM-DD.' },\n    shiftDays: {\n      type: 'number',\n      description: \"Move the asset's date by this many days (2 = two days later, -1 = a day earlier).\",\n    },\n    owner: { type: 'string', description: 'Who makes or sends it.' },\n    status: { type: 'string', description: 'Asset stage: idea, draft, approved, scheduled, or live.' },\n    note: { type: 'string', description: 'What happened, in the person’s words.' },\n    day: { type: 'string', description: 'The day the numbers or the spend are for, YYYY-MM-DD (default today).' },\n    reach: { type: 'number', description: 'People reached: opens, views or impressions.' },\n    clicks: { type: 'number', description: 'Clicks through.' },\n    conversions: { type: 'number', description: \"What the goal counts (preorders, signups) on that day for that asset.\" },\n    amount: { type: 'number', description: 'Dollars spent, e.g. 250 or 249.99.' },\n    withinDays: { type: 'number', description: 'How many days ahead the calendar covers (default 14).' },\n  },\n  outputs: {\n    daysToLaunch: { type: 'number', description: 'Days until launch; negative once launched, 0 when no date is set.' },\n    assets: { type: 'number', description: 'Assets in the campaign.' },\n    ready: { type: 'number', description: 'Assets approved, scheduled or live.' },\n    budget: { type: 'number', description: 'The budget, in dollars.' },\n    spent: { type: 'number', description: 'Spent so far, in dollars.' },\n    conversions: { type: 'number', description: 'Goal results so far.' },\n    summary: { type: 'string', description: 'What changed, then the campaign picture; or the listing.' },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── campaign-rules-start ──\n// Pure derivations: local calendar days, money in integer cents, the newest\n// figures per asset and day, and the campaign picture the crew reads. Kept\n// self-contained between these sentinels so tests execute the shipped bytes.\nvar DAY_MS = 86400000;\nvar STAGES = ['idea', 'draft', 'approved', 'scheduled', 'live'];\nvar READY = ['approved', 'scheduled', 'live'];\nvar CHANNELS = ['email', 'instagram', 'facebook', 'linkedin', 'bluesky', 'x', 'tiktok', 'youtube', 'website', 'ads', 'print', 'press', 'event', 'other'];\nvar CHANNEL_ALIASES = {\n  newsletter: 'email', mail: 'email', 'e-mail': 'email', twitter: 'x', web: 'website', site: 'website', blog: 'website',\n  'landing page': 'website', ad: 'ads', paid: 'ads', 'paid ads': 'ads', 'google ads': 'ads', 'meta ads': 'ads',\n  'instagram ads': 'ads', 'facebook ads': 'ads', poster: 'print', flyer: 'print', pr: 'press', 'press release': 'press',\n  ig: 'instagram', insta: 'instagram', fb: 'facebook',\n};\nvar KINDS = ['post', 'email', 'ad', 'landing-page', 'video', 'graphic', 'print', 'press-release', 'event', 'other'];\nvar WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];\nvar MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];\nvar STOP = ['the', 'and', 'our', 'for', 'with', 'from', 'this', 'that', 'asset'];\n\nfunction pad(n) {\n  return n < 10 ? '0' + n : String(n);\n}\nfunction localDay(ms) {\n  var d = new Date(ms);\n  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());\n}\nfunction addDays(day, n) {\n  var d = new Date(String(day).slice(0, 10) + 'T12:00:00');\n  d.setDate(d.getDate() + n);\n  return localDay(d.getTime());\n}\nfunction daysLeft(day, nowMs) {\n  var due = Date.parse(String(day).slice(0, 10) + 'T00:00:00');\n  var today = Date.parse(localDay(nowMs) + 'T00:00:00');\n  return Math.round((due - today) / DAY_MS);\n}\n// YYYY-MM-DD, or today/tomorrow/yesterday, or a weekday ('friday' is the next one, 'last tuesday' the one before).\nfunction normalizeDate(text, nowMs) {\n  var raw = String(text || '').trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(raw)) return raw;\n  var lower = raw.toLowerCase();\n  var today = localDay(nowMs);\n  if (lower === 'today') return today;\n  if (lower === 'tomorrow') return addDays(today, 1);\n  if (lower === 'yesterday') return addDays(today, -1);\n  var m = lower.match(/^(next |this |last )?(sunday|monday|tuesday|wednesday|thursday|friday|saturday)$/);\n  if (m) {\n    var target = WEEKDAYS.map(function (w) { return w.toLowerCase(); }).indexOf(m[2]);\n    var dow = new Date(today + 'T12:00:00').getDay();\n    if (m[1] === 'last ') return addDays(today, -(((dow - target + 6) % 7) + 1));\n    return addDays(today, ((target - dow + 6) % 7) + 1);\n  }\n  var parsed = Date.parse(raw);\n  if (!isFinite(parsed)) return null;\n  if (/\\d{4}/.test(raw)) return localDay(parsed);\n  // 'Nov 20' parses into some default year: take this year's, or next year's once it is well past.\n  var d = new Date(parsed);\n  var year = new Date(nowMs).getFullYear();\n  var guess = year + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());\n  return daysLeft(guess, nowMs) < -60 ? year + 1 + guess.slice(4) : guess;\n}\nfunction monthDay(day) {\n  var d = new Date(String(day).slice(0, 10) + 'T12:00:00');\n  return MONTHS[d.getMonth()] + ' ' + d.getDate();\n}\nfunction weekday(day) {\n  return WEEKDAYS[new Date(String(day).slice(0, 10) + 'T12:00:00').getDay()];\n}\n// A day as a person says it, weekday included so 'how did Tuesday do' finds it:\n// 'yesterday, Tuesday (Nov 3)', 'Tuesday (Oct 27)', 'last Tuesday (Oct 20)', 'Fri Nov 6'.\nfunction dayLabel(day, nowMs) {\n  var d = daysLeft(day, nowMs);\n  if (d === 0) return 'today, ' + weekday(day) + ' (' + monthDay(day) + ')';\n  if (d === -1) return 'yesterday, ' + weekday(day) + ' (' + monthDay(day) + ')';\n  if (d === 1) return 'tomorrow, ' + weekday(day) + ' (' + monthDay(day) + ')';\n  if (d < -1 && d > -7) return weekday(day) + ' (' + monthDay(day) + ')';\n  if (d === -7) return 'last ' + weekday(day) + ' (' + monthDay(day) + ')';\n  return weekday(day).slice(0, 3) + ' ' + monthDay(day);\n}\nfunction inDays(d) {\n  if (d < 0) return -d + (d === -1 ? ' day ago' : ' days ago');\n  if (d === 0) return 'today';\n  return 'in ' + d + (d === 1 ? ' day' : ' days');\n}\nfunction toCents(value) {\n  if (typeof value === 'number') return isFinite(value) ? Math.round(value * 100) : null;\n  var text = String(value == null ? '' : value).replace(/[$,\\s]/g, '').replace(/^usd/i, '');\n  if (!/^[-+]?\\d+(\\.\\d+)?$/.test(text)) return null;\n  return Math.round(Number(text) * 100);\n}\nfunction money(cents) {\n  var abs = Math.abs(Math.round(cents));\n  var whole = String(Math.floor(abs / 100)).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',');\n  return (cents < 0 ? '-' : '') + '$' + whole + '.' + pad(abs % 100);\n}\nfunction count(n) {\n  return String(Math.round(n || 0)).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',');\n}\nfunction wholeNumber(value) {\n  var n = typeof value === 'string' ? Number(String(value).replace(/,/g, '')) : value;\n  return typeof n === 'number' && isFinite(n) && n >= 0 ? Math.round(n) : null;\n}\nfunction channelOf(text) {\n  var key = String(text || '').trim().toLowerCase();\n  if (!key) return null;\n  if (CHANNELS.indexOf(key) >= 0) return key;\n  return CHANNEL_ALIASES[key] || 'other';\n}\nfunction stem(word) {\n  return word.replace(/(ing|ed|es|s|e)$/, '');\n}\nfunction words(text) {\n  return (String(text || '').toLowerCase().match(/[a-z0-9]+/g) || []).map(stem).filter(function (w) {\n    return w.length > 2 && STOP.indexOf(w) < 0;\n  });\n}\n// The record a person means: its id, its exact title, a unique part of its\n// title, or the title sharing the most words with what they wrote.\nfunction findRecord(records, key) {\n  var text = String(key || '').trim();\n  if (!text) return { record: null, matches: [] };\n  var lower = text.toLowerCase();\n  var titleOf = function (r) { return String((r.fields && r.fields.title) || '').toLowerCase(); };\n  var byId = records.filter(function (r) { return String(r.id).toLowerCase() === lower; });\n  if (byId.length) return { record: byId[0], matches: byId };\n  var exact = records.filter(function (r) { return titleOf(r) === lower; });\n  if (exact.length === 1) return { record: exact[0], matches: exact };\n  var partial = records.filter(function (r) { return titleOf(r).indexOf(lower) >= 0; });\n  if (partial.length === 1) return { record: partial[0], matches: partial };\n  if (partial.length > 1) return { record: null, matches: partial };\n  var want = words(text);\n  var best = 0;\n  var hits = [];\n  records.forEach(function (r) {\n    var have = words(titleOf(r));\n    var score = want.filter(function (w) { return have.indexOf(w) >= 0; }).length;\n    if (score > best) { best = score; hits = [r]; } else if (score === best && score > 0) hits.push(r);\n  });\n  return { record: hits.length === 1 ? hits[0] : null, matches: hits };\n}\n// The newest figures per asset and day: a second report for the same day replaces the first.\nfunction latestResults(events) {\n  var byKey = {};\n  var order = [];\n  events.forEach(function (e) {\n    if (e.kind !== 'result' || !e.data || !e.data.day) return;\n    var key = (e.data.assetId || '-') + '@' + e.data.day;\n    if (!(key in byKey)) order.push(key);\n    byKey[key] = e;\n  });\n  return order.map(function (k) { return byKey[k]; });\n}\nfunction sumResults(list) {\n  var t = { reach: 0, clicks: 0, conversions: 0 };\n  list.forEach(function (e) {\n    t.reach += Number(e.data.reach) || 0;\n    t.clicks += Number(e.data.clicks) || 0;\n    t.conversions += Number(e.data.conversions) || 0;\n  });\n  return t;\n}\nfunction spendOf(events) {\n  var total = 0;\n  var byChannel = {};\n  events.forEach(function (e) {\n    if (e.kind !== 'spend' || !e.data) return;\n    var cents = Number(e.data.amountCents) || 0;\n    total += cents;\n    var ch = e.data.channel || 'other';\n    byChannel[ch] = (byChannel[ch] || 0) + cents;\n  });\n  return { totalCents: total, byChannel: byChannel };\n}\nfunction figures(t, metric) {\n  return count(t.conversions) + ' ' + metric + ', ' + count(t.reach) + ' reach, ' + count(t.clicks) + ' clicks';\n}\nfunction assetLine(r, results, metric, nowMs) {\n  var f = r.fields || {};\n  var mine = results.filter(function (e) { return e.data.assetId === r.id; });\n  return (\n    f.title + ' (' + r.id + ', ' + (f.channel || 'other') + ', ' + r.status +\n    (f.goesOutAt ? ', ' + dayLabel(f.goesOutAt, nowMs) : ', no date yet') +\n    ', owner ' + (f.owner || 'unassigned') + ')' +\n    (mine.length ? ': ' + figures(sumResults(mine), metric) : '')\n  );\n}\nfunction picture(campaign, records, events, nowMs, withinDays, focusDay) {\n  var metric = campaign.goalMetric || 'conversions';\n  var results = latestResults(events);\n  var totals = sumResults(results);\n  var spend = spendOf(events);\n  var today = localDay(nowMs);\n  var titleOf = function (id) {\n    var r = records.find(function (x) { return x.id === id; });\n    return r ? r.fields.title + ' (' + id + ')' : id;\n  };\n  var dayLine = function (day) {\n    var list = results.filter(function (e) { return e.data.day === day; });\n    if (!list.length) return dayLabel(day, nowMs) + ': no results logged';\n    return dayLabel(day, nowMs) + ': ' + figures(sumResults(list), metric) + ' (from ' + list.map(function (e) {\n      return titleOf(e.data.assetId) + ' ' + count(e.data.conversions);\n    }).join(', ') + ')';\n  };\n  var parts = [];\n  if (focusDay) parts.push('Results on ' + dayLine(focusDay) + '.');\n  var launchIn = campaign.launchAt ? daysLeft(campaign.launchAt, nowMs) : null;\n  if (!campaign.name && !campaign.goal) {\n    parts.push('No campaign set yet: call set_campaign with its name, goal, launch date and budget.');\n  } else {\n    parts.push(\n      (campaign.name || 'The campaign') + (campaign.goal ? '. Goal: ' + campaign.goal : '') + '.' +\n      (campaign.audience ? ' Audience: ' + campaign.audience + '.' : '') +\n      (campaign.launchAt ? ' Launch ' + dayLabel(campaign.launchAt, nowMs) + ', ' + inDays(launchIn) + '.' : ' No launch date yet.') +\n      (campaign.endAt ? ' Runs until ' + dayLabel(campaign.endAt, nowMs) + '.' : ''),\n    );\n  }\n  var target = Number(campaign.goalTarget) || 0;\n  parts.push(\n    'Results so far: ' + (target ? count(totals.conversions) + ' of ' + count(target) + ' ' + metric + ' (' + Math.round((totals.conversions / target) * 100) + '%)' : count(totals.conversions) + ' ' + metric) +\n    ', ' + count(totals.reach) + ' reach, ' + count(totals.clicks) + ' clicks.',\n  );\n  var goalBy = campaign.goalBy || campaign.launchAt || campaign.endAt;\n  if (target && goalBy) {\n    var toGo = target - totals.conversions;\n    var daysToGoal = daysLeft(goalBy, nowMs);\n    var firstDay = results.map(function (e) { return e.data.day; }).sort()[0];\n    var start = campaign.startAt && campaign.startAt <= today ? campaign.startAt : firstDay;\n    var elapsed = start ? Math.max(1, -daysLeft(start, nowMs) + 1) : 0;\n    if (toGo <= 0) parts.push('Goal met.');\n    else if (daysToGoal < 0) parts.push('The goal date passed ' + inDays(daysToGoal) + ' with ' + count(toGo) + ' ' + metric + ' still to go.');\n    else {\n      var pace = elapsed ? Math.round(totals.conversions / elapsed) : 0;\n      var need = Math.ceil(toGo / Math.max(1, daysToGoal));\n      parts.push(\n        'Pace: ' + count(totals.conversions) + ' ' + metric + (elapsed ? ' in ' + elapsed + (elapsed === 1 ? ' day' : ' days') + ', about ' + count(pace) + ' a day' : '') +\n        '; ' + count(toGo) + ' to go by ' + dayLabel(goalBy, nowMs) + ' needs ' + count(need) + ' a day. ' +\n        (pace >= need ? 'On pace.' : 'Behind pace.'),\n      );\n    }\n  }\n  var days = [];\n  for (var i = 0; i <= 7; i++) days.push(addDays(today, -i));\n  var logged = days.filter(function (day) { return results.some(function (e) { return e.data.day === day; }); });\n  parts.push(\n    logged.length\n      ? 'Results by day, last 8 days, newest first: ' + logged.map(dayLine).join(' | ') + '. Other days have no results logged.'\n      : 'No results logged in the last 8 days.',\n  );\n  var byDay = {};\n  results.forEach(function (e) { byDay[e.data.day] = (byDay[e.data.day] || 0) + (Number(e.data.conversions) || 0); });\n  var bestDay = Object.keys(byDay).sort(function (a, b) { return byDay[b] - byDay[a] || b.localeCompare(a); })[0];\n  if (bestDay) parts.push('Best day so far: ' + dayLabel(bestDay, nowMs) + ', ' + count(byDay[bestDay]) + ' ' + metric + '.');\n  var budget = Number(campaign.budgetCents) || 0;\n  var channels = Object.keys(spend.byChannel).sort(function (a, b) { return spend.byChannel[b] - spend.byChannel[a]; });\n  parts.push(\n    (budget\n      ? 'Budget ' + money(budget) + ': spent ' + money(spend.totalCents) + ' (' + Math.round((spend.totalCents / budget) * 100) + '%), ' +\n        (budget - spend.totalCents >= 0 ? money(budget - spend.totalCents) + ' left.' : money(spend.totalCents - budget) + ' over.')\n      : 'No budget set; spent ' + money(spend.totalCents) + '.') +\n    (channels.length ? ' Spent by channel: ' + channels.map(function (c) { return c + ' ' + money(spend.byChannel[c]); }).join(', ') + '.' : ''),\n  );\n  var dated = records.filter(function (r) { return r.fields && r.fields.goesOutAt; });\n  var overdue = dated.filter(function (r) { return r.status !== 'live' && daysLeft(r.fields.goesOutAt, nowMs) < 0; });\n  var upcoming = dated.filter(function (r) {\n    var d = daysLeft(r.fields.goesOutAt, nowMs);\n    return d >= 0 && d <= withinDays;\n  });\n  var byDate = function (a, b) { return String(a.fields.goesOutAt).localeCompare(String(b.fields.goesOutAt)); };\n  overdue.sort(byDate);\n  upcoming.sort(byDate);\n  // One list, late items first: a question about the coming days must see what slipped.\n  var calendar = overdue.concat(upcoming);\n  parts.push(\n    calendar.length\n      ? 'Calendar, next ' + withinDays + ' days, late items first: ' + calendar.map(function (r) {\n          var d = daysLeft(r.fields.goesOutAt, nowMs);\n          return assetLine(r, [], metric, nowMs) + (d < 0 && r.status !== 'live' ? ', ' + -d + (d === -1 ? ' day late' : ' days late') : '');\n        }).join(' | ') + '.'\n      : 'Nothing on the calendar in the next ' + withinDays + ' days.',\n  );\n  var later = dated.filter(function (r) { return daysLeft(r.fields.goesOutAt, nowMs) > withinDays; }).sort(byDate);\n  if (later.length) parts.push('Next after that: ' + later[0].fields.title + ' (' + later[0].id + ') on ' + dayLabel(later[0].fields.goesOutAt, nowMs) + '.');\n  var undated = records.filter(function (r) { return !r.fields || !r.fields.goesOutAt; });\n  if (undated.length) parts.push('Not dated yet: ' + undated.map(function (r) { return r.fields.title + ' (' + r.id + ', ' + r.status + ')'; }).join(', ') + '.');\n  var stageCounts = STAGES.map(function (s) {\n    var n = records.filter(function (r) { return r.status === s; }).length;\n    return n ? n + ' ' + s : '';\n  }).filter(Boolean);\n  parts.push(records.length ? 'Assets: ' + records.length + ' (' + stageCounts.join(', ') + ').' : 'No assets yet.');\n  return {\n    daysToLaunch: launchIn === null ? 0 : launchIn,\n    ready: records.filter(function (r) { return READY.indexOf(r.status) >= 0; }).length,\n    spentCents: spend.totalCents,\n    conversions: totals.conversions,\n    summary: parts.join(' '),\n  };\n}\n// ── campaign-rules-end ──\n\ninterface Campaign {\n  version: number;\n  name: string;\n  goal: string;\n  audience: string;\n  goalMetric: string;\n  goalTarget: number;\n  goalBy: string;\n  launchAt: string;\n  startAt: string;\n  endAt: string;\n  budgetCents: number;\n  updatedAt?: string;\n}\n\nconst CAMPAIGN_FILE = 'campaign.json';\nconst assets = rosterStore(gezel.fs, 'assets.json', {\n  stages: ['idea', 'draft', 'approved', 'scheduled', 'live'],\n  idPrefix: 'as',\n});\nconst results = logStore(gezel.fs, 'results.json');\n\nasync function loadCampaign(): Promise<Campaign> {\n  const blank: Campaign = {\n    version: 1,\n    name: '',\n    goal: '',\n    audience: '',\n    goalMetric: '',\n    goalTarget: 0,\n    goalBy: '',\n    launchAt: '',\n    startAt: '',\n    endAt: '',\n    budgetCents: 0,\n  };\n  let raw: string;\n  try {\n    raw = await gezel.fs.read(CAMPAIGN_FILE);\n  } catch {\n    return blank;\n  }\n  let parsed: Partial<Campaign>;\n  try {\n    parsed = JSON.parse(raw) as Partial<Campaign>;\n  } catch {\n    throw new Error('campaign.json is not valid JSON. Fix or remove it; it will not be overwritten.');\n  }\n  return {\n    ...blank,\n    ...parsed,\n    version: 1,\n    goalTarget: Number(parsed.goalTarget) || 0,\n    budgetCents: Number(parsed.budgetCents) || 0,\n  };\n}\n\nasync function saveCampaign(campaign: Campaign): Promise<void> {\n  campaign.updatedAt = new Date().toISOString();\n  await gezel.fs.write(CAMPAIGN_FILE, `${JSON.stringify(campaign, null, 2)}\\n`);\n}\n\nasync function resolve() {\n  const all = await assets.list();\n  const keys = [input.id, input.title].filter((k): k is string => typeof k === 'string' && k.trim() !== '');\n  for (const key of keys) {\n    const found = findRecord(all, key);\n    if (found.record) return found.record;\n    if (found.matches.length > 1) {\n      throw new Error(\n        \"More than one asset matches '\" + key + \"': \" + found.matches.map((r) => r.id + ' ' + String(r.fields.title)).join(', ') + '. Pass id.',\n      );\n    }\n  }\n  const known = all.map((r) => r.id + ' ' + String(r.fields.title)).join(', ') || 'none yet';\n  throw new Error(\n    (keys.length ? \"No asset matches '\" + keys.join(\"' or '\") + \"'. \" : \"Pass 'id' (e.g. 'as-3') or the asset's 'title'. \") + 'Assets: ' + known + '.',\n  );\n}\n\nfunction dateInput(value: string | undefined, label: string): string | null {\n  if (value === undefined || String(value).trim() === '') return null;\n  const day = normalizeDate(value, Date.now());\n  if (!day) throw new Error(label + \" must be a date, e.g. '2026-12-01'.\");\n  return day;\n}\n\nconst now = Date.now();\nconst today = localDay(now);\nconst withinDays = typeof input.withinDays === 'number' && input.withinDays > 0 ? Math.round(input.withinDays) : 14;\nlet note = '';\nlet focusDay: string | null = null;\n\nif (input.action === 'set_campaign') {\n  const campaign = await loadCampaign();\n  const changed: string[] = [];\n  for (const key of ['name', 'goal', 'audience', 'goalMetric'] as const) {\n    const value = input[key];\n    if (typeof value === 'string' && value.trim()) {\n      campaign[key] = value.trim();\n      changed.push(key === 'goalMetric' ? 'what the goal counts' : key);\n    }\n  }\n  for (const [key, label] of [\n    ['launchAt', 'launch date'],\n    ['startAt', 'start date'],\n    ['endAt', 'end date'],\n    ['goalBy', 'goal date'],\n  ] as const) {\n    const day = dateInput(input[key], key);\n    if (day) {\n      campaign[key] = day;\n      changed.push(label);\n    }\n  }\n  if (input.goalTarget !== undefined) {\n    const target = wholeNumber(input.goalTarget);\n    if (target === null) throw new Error('goalTarget must be a whole number, e.g. 600.');\n    campaign.goalTarget = target;\n    changed.push('goal number');\n  }\n  if (input.budget !== undefined) {\n    const cents = toCents(input.budget);\n    if (cents === null || cents < 0) throw new Error('budget must be an amount in dollars, e.g. 2400.');\n    campaign.budgetCents = cents;\n    changed.push('budget (' + money(cents) + ')');\n  }\n  if (input.budgetChange !== undefined) {\n    const cents = toCents(input.budgetChange);\n    if (cents === null || cents === 0) throw new Error('budgetChange must be dollars to add, e.g. 500 (or -200 to cut).');\n    const before = campaign.budgetCents;\n    campaign.budgetCents = Math.max(0, before + cents);\n    changed.push('budget ' + (cents > 0 ? 'raised by ' + money(cents) : 'cut by ' + money(-cents)) + ' from ' + money(before) + ' to ' + money(campaign.budgetCents));\n  }\n  if (!changed.length) {\n    throw new Error('set_campaign needs at least one of name, goal, audience, goalMetric, goalTarget, launchAt, startAt, endAt, goalBy, budget, or budgetChange.');\n  }\n  await saveCampaign(campaign);\n  note = 'Campaign updated: ' + changed.join(', ') + '.';\n} else if (input.action === 'add_asset') {\n  if (!input.title || !input.title.trim()) throw new Error(\"add_asset needs 'title'.\");\n  const goesOutAt = dateInput(input.goesOutAt, 'goesOutAt');\n  const channel = channelOf(input.channel);\n  const kind = KINDS.includes(String(input.kind)) ? String(input.kind) : undefined;\n  const status = input.status ? String(input.status).toLowerCase() : undefined;\n  if (status && !STAGES.includes(status)) throw new Error(\"status must be one of idea, draft, approved, scheduled, live.\");\n  const wanted = input.title.trim().toLowerCase();\n  const existing = (await assets.list()).find((r) => String(r.fields.title ?? '').toLowerCase() === wanted);\n  const fields: Record<string, unknown> = {\n    ...(goesOutAt ? { goesOutAt } : {}),\n    ...(channel ? { channel } : {}),\n    ...(kind ? { kind } : {}),\n    ...(input.owner ? { owner: input.owner.trim() } : {}),\n    ...(input.note ? { notes: input.note.trim() } : {}),\n  };\n  if (existing) {\n    await assets.update(existing.id, { fields });\n    if (status && status !== existing.status) await assets.transition(existing.id, status, { note: 'Updated from the plan' });\n    note = 'Updated ' + String(existing.fields.title) + ' (' + existing.id + ').';\n  } else {\n    const record = await assets.add({\n      status: status ?? 'idea',\n      fields: { title: input.title.trim(), channel: channel ?? 'other', kind: kind ?? 'post', ...fields },\n    });\n    note = 'Added ' + record.id + ' ' + String(record.fields.title) + (goesOutAt ? ' on ' + dayLabel(goesOutAt, now) : '') + '.';\n  }\n} else if (input.action === 'move_asset') {\n  const record = await resolve();\n  const fields: Record<string, unknown> = {};\n  const goesOutAt = dateInput(input.goesOutAt, 'goesOutAt');\n  if (goesOutAt) fields.goesOutAt = goesOutAt;\n  if (typeof input.shiftDays === 'number' && input.shiftDays !== 0) {\n    const from = goesOutAt ?? (typeof record.fields.goesOutAt === 'string' ? record.fields.goesOutAt : null);\n    if (!from) throw new Error(String(record.fields.title) + \" has no date yet; pass goesOutAt instead of shiftDays.\");\n    fields.goesOutAt = addDays(from, Math.round(input.shiftDays));\n  }\n  if (input.owner) fields.owner = input.owner.trim();\n  if (input.channel) fields.channel = channelOf(input.channel);\n  const status = input.status ? String(input.status).toLowerCase() : undefined;\n  if (status && !STAGES.includes(status)) throw new Error(\"status must be one of idea, draft, approved, scheduled, live.\");\n  if (!Object.keys(fields).length && !status && !input.note) {\n    throw new Error('move_asset needs status, goesOutAt, shiftDays, owner, channel, or note.');\n  }\n  if (Object.keys(fields).length) await assets.update(record.id, { fields });\n  if (status && status !== record.status) await assets.transition(record.id, status, input.note ? { note: input.note } : {});\n  else if (input.note) await assets.update(record.id, { note: input.note });\n  note =\n    String(record.fields.title) + ' (' + record.id + ')' +\n    (status && status !== record.status ? ' moved from ' + record.status + ' to ' + status : ' updated') +\n    (fields.goesOutAt ? ', now going out ' + dayLabel(String(fields.goesOutAt), now) : '') +\n    (fields.owner ? ', owner ' + String(fields.owner) : '') + '.';\n} else if (input.action === 'log_result') {\n  const record = await resolve();\n  const day = dateInput(input.day, 'day') ?? today;\n  const given: Record<string, number> = {};\n  for (const key of ['reach', 'clicks', 'conversions'] as const) {\n    if (input[key] === undefined) continue;\n    const n = wholeNumber(input[key]);\n    if (n === null) throw new Error(key + ' must be a whole number of 0 or more.');\n    given[key] = n;\n  }\n  if (!Object.keys(given).length) throw new Error('log_result needs at least one of reach, clicks, or conversions.');\n  const prior = latestResults(await results.list({ kind: 'result' })).find((e) => e.data.assetId === record.id && e.data.day === day);\n  const data = { ...(prior ? prior.data : {}), assetId: record.id, day, channel: record.fields.channel ?? 'other', ...given };\n  await results.append({ kind: 'result', note: input.note ?? 'Results for ' + String(record.fields.title) + '.', data });\n  if (record.status !== 'live') await assets.transition(record.id, 'live', { note: 'Results logged' });\n  const campaign = await loadCampaign();\n  note =\n    'Logged ' + dayLabel(day, now) + ' for ' + String(record.fields.title) + ' (' + record.id + '): ' +\n    figures({ reach: Number(data.reach) || 0, clicks: Number(data.clicks) || 0, conversions: Number(data.conversions) || 0 }, campaign.goalMetric || 'conversions') +\n    (prior ? ', replacing the earlier figures for that day' : '') + '.';\n  focusDay = day;\n} else if (input.action === 'log_spend') {\n  const cents = toCents(input.amount);\n  if (cents === null || cents <= 0) throw new Error('log_spend needs amount in dollars, e.g. 250.');\n  const record = input.id || input.title ? await resolve() : null;\n  const channel = channelOf(input.channel) ?? (record ? String(record.fields.channel ?? 'other') : 'other');\n  const day = dateInput(input.day, 'day') ?? today;\n  await results.append({\n    kind: 'spend',\n    note: input.note ?? 'Spent ' + money(cents) + ' on ' + channel + '.',\n    data: { day, channel, amountCents: cents, ...(record ? { assetId: record.id } : {}) },\n  });\n  note = 'Logged ' + money(cents) + ' spent on ' + channel + (record ? ' for ' + String(record.fields.title) : '') + ' ' + dayLabel(day, now) + '.';\n} else if (input.action === 'status') {\n  if (input.day) focusDay = dateInput(input.day, 'day');\n} else if (input.action !== 'list') {\n  throw new Error(\n    \"Unknown action '\" + input.action + \"'. Use status, set_campaign, add_asset, move_asset, log_result, log_spend, or list.\",\n  );\n}\n\nconst campaign = await loadCampaign();\nconst records = await assets.list();\nconst events = await results.list();\nconst view = picture(campaign, records, events, now, withinDays, focusDay);\nconst latest = latestResults(events);\nconst metric = campaign.goalMetric || 'conversions';\n\ngezel.output({\n  daysToLaunch: view.daysToLaunch,\n  assets: records.length,\n  ready: view.ready,\n  budget: campaign.budgetCents / 100,\n  spent: view.spentCents / 100,\n  conversions: view.conversions,\n  summary:\n    input.action === 'list'\n      ? records\n          .slice()\n          .sort((a, b) => String(a.fields.goesOutAt ?? '9999').localeCompare(String(b.fields.goesOutAt ?? '9999')))\n          .map((r) => assetLine(r, latest, metric, now))\n          .join('\\n') || 'No assets yet.'\n      : (note ? note + ' ' : '') + view.summary,\n});\n"
+  },
+  "tools": [
+    {
+      "name": "campaign_status",
+      "description": "The whole campaign: the goal and the pace toward it, results by day for the last 8 days with each asset's numbers, the budget against spend by channel, and the calendar for the next 14 days (late items first) with ids, owners and stages. Call it first when asked how the campaign or a day is doing, what is going out, or what is left to spend.",
+      "script": "campaign-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "day": {
+            "type": "string"
+          },
+          "withinDays": {
+            "type": "number"
+          }
+        }
+      },
+      "bind": {
+        "action": "status"
+      },
+      "state": true
+    },
+    {
+      "name": "set_campaign",
+      "description": "Save the campaign itself: name, goal, audience, what the goal counts and the number to reach, launch, start and end dates (YYYY-MM-DD), and the budget in dollars. For more or less money pass budgetChange (500 adds $500) and the campaign does the sum; pass budget only to replace the whole budget. Call it as soon as any of these is mentioned, before you describe it.",
+      "script": "campaign-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "goal": {
+            "type": "string"
+          },
+          "audience": {
+            "type": "string"
+          },
+          "goalMetric": {
+            "type": "string"
+          },
+          "goalTarget": {
+            "type": "number"
+          },
+          "goalBy": {
+            "type": "string"
+          },
+          "launchAt": {
+            "type": "string"
+          },
+          "startAt": {
+            "type": "string"
+          },
+          "endAt": {
+            "type": "string"
+          },
+          "budget": {
+            "type": "number"
+          },
+          "budgetChange": {
+            "type": "number"
+          }
+        }
+      },
+      "bind": {
+        "action": "set_campaign"
+      }
+    },
+    {
+      "name": "add_asset",
+      "description": "Put an asset on the campaign calendar: title, channel, the day it goes out (YYYY-MM-DD), owner and stage. An existing title is updated, never duplicated. When planning several, call it once per asset, as soon as each is decided and before you describe the plan.",
+      "script": "campaign-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "email",
+              "instagram",
+              "facebook",
+              "linkedin",
+              "bluesky",
+              "x",
+              "tiktok",
+              "youtube",
+              "website",
+              "ads",
+              "print",
+              "press",
+              "event",
+              "other"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "post",
+              "email",
+              "ad",
+              "landing-page",
+              "video",
+              "graphic",
+              "print",
+              "press-release",
+              "event",
+              "other"
+            ]
+          },
+          "goesOutAt": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "idea",
+              "draft",
+              "approved",
+              "scheduled",
+              "live"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add_asset"
+      }
+    },
+    {
+      "name": "move_asset",
+      "description": "Move an asset to another stage (idea, draft, approved, scheduled, live), or give it a new date or owner. To push it later or earlier pass shiftDays and the campaign does the date math. Call it the moment the person says an asset moved.",
+      "script": "campaign-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "idea",
+              "draft",
+              "approved",
+              "scheduled",
+              "live"
+            ]
+          },
+          "goesOutAt": {
+            "type": "string"
+          },
+          "shiftDays": {
+            "type": "number"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "move_asset"
+      }
+    },
+    {
+      "name": "log_result",
+      "description": "Record an asset's numbers for a day: reach (opens, views or impressions), clicks, and conversions (what the goal counts, such as preorders). day defaults to today. A second report for the same asset and day replaces the first. Call it as soon as the person shares numbers, before you comment on them.",
+      "script": "campaign-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "day": {
+            "type": "string"
+          },
+          "reach": {
+            "type": "number"
+          },
+          "clicks": {
+            "type": "number"
+          },
+          "conversions": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "log_result"
+      }
+    },
+    {
+      "name": "log_spend",
+      "description": "Record money spent, in dollars, on a channel (and an asset when one is named). Each call adds to what was spent; never pass a running total. Call it as soon as the person mentions spending, before you comment on the budget.",
+      "script": "campaign-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "email",
+              "instagram",
+              "facebook",
+              "linkedin",
+              "bluesky",
+              "x",
+              "tiktok",
+              "youtube",
+              "website",
+              "ads",
+              "print",
+              "press",
+              "event",
+              "other"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "day": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount"
+        ]
+      },
+      "bind": {
+        "action": "log_spend"
+      }
+    },
+    {
+      "name": "list_assets",
+      "description": "Every asset with its channel, date, stage, owner and results.",
+      "script": "campaign-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "list"
+      }
+    },
+    {
+      "name": "page_set_campaign",
+      "description": "Save the campaign details.",
+      "script": "campaign-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "goal": {
+            "type": "string"
+          },
+          "audience": {
+            "type": "string"
+          },
+          "goalMetric": {
+            "type": "string"
+          },
+          "goalTarget": {
+            "type": "number"
+          },
+          "goalBy": {
+            "type": "string"
+          },
+          "launchAt": {
+            "type": "string"
+          },
+          "startAt": {
+            "type": "string"
+          },
+          "endAt": {
+            "type": "string"
+          },
+          "budget": {
+            "type": "number"
+          },
+          "budgetChange": {
+            "type": "number"
+          }
+        }
+      },
+      "bind": {
+        "action": "set_campaign"
+      }
+    },
+    {
+      "name": "page_add_asset",
+      "description": "Add or update an asset.",
+      "script": "campaign-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "email",
+              "instagram",
+              "facebook",
+              "linkedin",
+              "bluesky",
+              "x",
+              "tiktok",
+              "youtube",
+              "website",
+              "ads",
+              "print",
+              "press",
+              "event",
+              "other"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "post",
+              "email",
+              "ad",
+              "landing-page",
+              "video",
+              "graphic",
+              "print",
+              "press-release",
+              "event",
+              "other"
+            ]
+          },
+          "goesOutAt": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "idea",
+              "draft",
+              "approved",
+              "scheduled",
+              "live"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "bind": {
+        "action": "add_asset"
+      }
+    },
+    {
+      "name": "page_move_asset",
+      "description": "Move an asset to another stage or date.",
+      "script": "campaign-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "idea",
+              "draft",
+              "approved",
+              "scheduled",
+              "live"
+            ]
+          },
+          "goesOutAt": {
+            "type": "string"
+          },
+          "shiftDays": {
+            "type": "number"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "move_asset"
+      },
+      "reaction": {
+        "gezel": "campaign-manager",
+        "hideSeed": true,
+        "prompt": "The person just moved an asset on the campaign page. The campaign now reads (its first sentence is what changed):\n{{output.summary}}\nIn two short sentences, confirm the move and name the next asset on the calendar that still needs work, or anything that is late. Do not call tools."
+      }
+    },
+    {
+      "name": "page_log_result",
+      "description": "Record an asset's numbers for a day.",
+      "script": "campaign-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "day": {
+            "type": "string"
+          },
+          "reach": {
+            "type": "number"
+          },
+          "clicks": {
+            "type": "number"
+          },
+          "conversions": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "log_result"
+      }
+    },
+    {
+      "name": "page_log_spend",
+      "description": "Record money spent.",
+      "script": "campaign-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "email",
+              "instagram",
+              "facebook",
+              "linkedin",
+              "bluesky",
+              "x",
+              "tiktok",
+              "youtube",
+              "website",
+              "ads",
+              "print",
+              "press",
+              "event",
+              "other"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "day": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount"
+        ]
+      },
+      "bind": {
+        "action": "log_spend"
+      }
+    }
+  ],
+  "craftbooks": [
+    "ad-variations",
+    "email-sequence",
+    "landing-copy",
+    "social-thread"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "campaign/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "campaign.json"
+      },
+      {
+        "source": "workspace",
+        "path": "assets.json"
+      },
+      {
+        "source": "workspace",
+        "path": "results.json"
+      }
+    ],
+    "tools": [
+      "page_set_campaign",
+      "page_add_asset",
+      "page_move_asset",
+      "page_log_result",
+      "page_log_spend"
+    ]
+  },
+  "workspaceSeed": [
+    "campaign.json",
+    "assets.json",
+    "results.json"
+  ],
+  "minGezelVersion": "1.26280"
+}

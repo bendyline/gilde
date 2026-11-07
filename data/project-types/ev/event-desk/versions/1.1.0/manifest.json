@@ -1,0 +1,785 @@
+{
+  "schemaVersion": 1,
+  "version": "1.1.0",
+  "releasedAt": "2026-11-07T18:00:00.000Z",
+  "meesterManaged": false,
+  "params": {
+    "type": "object",
+    "properties": {
+      "event": {
+        "type": "string",
+        "title": "What's the event?",
+        "description": "e.g. 'our client summit', 'the team offsite in March', 'the spring launch party'.",
+        "default": "our client summit"
+      },
+      "date": {
+        "type": "string",
+        "title": "When is it?",
+        "description": "The date, e.g. 2026-12-10. Leave it empty if it is not set yet; change it any time.",
+        "default": ""
+      }
+    },
+    "required": [
+      "event"
+    ]
+  },
+  "nameTemplate": "Event Desk",
+  "aboutTemplate": "about.md",
+  "missionTemplate": "mission.md",
+  "gezels": [
+    {
+      "templateId": "ceremoniemeester",
+      "voorman": true
+    },
+    {
+      "templateId": "kantoormeester"
+    },
+    {
+      "templateId": "copywriter"
+    }
+  ],
+  "scripts": {
+    "event-desk-store": "import { type InferredInput, defineScript, gezel } from '@bendyline/gezel-sdk';\nimport { type RosterRecord, ledgerStore, rosterStore } from '@bendyline/gezel-sdk/stores';\n\nexport const meta = defineScript({\n  name: 'event-desk-store',\n  description:\n    \"Read and update the event desk: event.json (the event's details and run of show), venues.json, vendors.json and guests.json (rosters), and budget.json (payments in integer cents). action:'status' for the whole picture; 'compare' to compare the venues for a headcount; 'add_venue', 'book_venue', 'add_vendor', 'pay', 'add_guest', 'rsvp', 'set_event' and 'program' to change it; 'guests' for the whole guest list. An add with an existing name updates that record, never duplicates it. Amounts are in dollars.\",\n  inputs: {\n    action: {\n      type: 'string',\n      description:\n        \"One of 'status', 'compare', 'add_venue', 'book_venue', 'add_vendor', 'pay', 'add_guest', 'rsvp', 'set_event', 'program', or 'guests'.\",\n      required: true,\n    },\n    id: { type: 'string', description: \"A record id: a venue 've-2', a vendor 'vn-3' or a guest 'gu-12'.\" },\n    name: {\n      type: 'string',\n      description: \"The venue's, vendor's or guest's name. Also finds the record when no id is given.\",\n    },\n    occasion: { type: 'string', description: \"The event's name, e.g. 'Fernwood Client Summit'.\" },\n    date: { type: 'string', description: 'The event date, YYYY-MM-DD.' },\n    time: {\n      type: 'string',\n      description:\n        \"For set_event, the event's hours as they should be printed ('3:00 to 8:30 pm'). For program, the item's start time ('4:30 pm' or '16:30').\",\n    },\n    host: { type: 'string', description: 'Who hosts the event.' },\n    rsvp: { type: 'string', description: 'How and by when guests reply, exactly as it should be printed.' },\n    headcount: { type: 'number', description: 'How many guests the event plans for.' },\n    budget: { type: 'number', description: 'The whole budget in dollars (replaces it).' },\n    budgetChange: { type: 'number', description: 'Dollars to add to the budget (negative to cut it).' },\n    capacity: { type: 'number', description: 'How many guests the venue holds.' },\n    fee: { type: 'number', description: \"The venue's hire fee in dollars.\" },\n    cateringPerHead: {\n      type: 'number',\n      description: 'In-house catering per guest in dollars; leave it out when you bring your own caterer.',\n    },\n    av: { type: 'string', description: \"Whether sound and screens come with the venue: 'included' or 'extra'.\" },\n    location: { type: 'string', description: 'Where the venue is.' },\n    category: {\n      type: 'string',\n      description: 'venue, catering, av, entertainment, photography, rentals, decor, transport, or other.',\n    },\n    contract: { type: 'number', description: \"The vendor's agreed or quoted total in dollars (replaces it).\" },\n    contractChange: {\n      type: 'number',\n      description: \"Dollars to add to the vendor's total (negative when it drops).\",\n    },\n    deposit: { type: 'number', description: 'The deposit in dollars.' },\n    depositDueAt: { type: 'string', description: 'When the deposit is due, YYYY-MM-DD.' },\n    contact: { type: 'string', description: 'Who to call at the vendor, with a number.' },\n    arrival: { type: 'string', description: \"When the vendor arrives on the day ('2 pm' or '14:00').\" },\n    amount: { type: 'number', description: 'A payment in dollars.' },\n    kind: { type: 'string', description: 'For pay: deposit, balance, or other.' },\n    company: { type: 'string', description: \"The guest's company.\" },\n    response: { type: 'string', description: 'invited, yes, or no.' },\n    dietary: {\n      type: 'string',\n      description: \"What the guest can't eat, as they said it ('vegetarian', 'nut allergy'), or 'none'.\",\n    },\n    partySize: {\n      type: 'number',\n      description: 'How many people the invitation covers, the guest included (replaces it).',\n    },\n    joining: { type: 'number', description: 'How many extra people come with this guest (added to their party).' },\n    item: { type: 'string', description: \"A run-of-show item, e.g. 'Welcome from Fernwood'.\" },\n    owner: { type: 'string', description: \"Who's on point for the item.\" },\n    remove: { type: 'boolean', description: 'For program: take the item off the run of show.' },\n    status: {\n      type: 'string',\n      description: 'A venue: shortlisted, visited, held, or declined. A vendor: quoted, booked, or dropped.',\n    },\n    note: { type: 'string', description: 'Anything to keep with it, with reference numbers exactly as written.' },\n    guests: {\n      type: 'number',\n      description: 'For compare: the headcount to compare for (default: the planned headcount).',\n    },\n  },\n  outputs: {\n    attending: { type: 'number', description: 'People coming: yes answers with the guests they bring.' },\n    noDietaryAnswer: { type: 'array', itemType: 'string', description: 'Every attending guest with no dietary answer yet, by name.' },\n    budgetLeft: { type: 'number', description: 'Budget not yet committed to booked vendors, in dollars.' },\n    summary: {\n      type: 'string',\n      description: 'What changed first, then the whole picture (or the venue comparison, or the guest list).',\n    },\n  },\n  requires: ['workspace.read', 'workspace.write'],\n} as const);\n\nconst input = gezel.input as InferredInput<typeof meta>;\n\n// ── event-desk-rules-start ──\n// Pure derivations: money in integer cents, local calendar days, clock times,\n// dietary answers, the venue comparison and the desk picture the crew reads.\n// Kept self-contained between these sentinels so tests (and the page's demo)\n// execute the shipped bytes.\nvar DAY_MS = 86400000;\nvar VENUE_STAGES = ['shortlisted', 'visited', 'held', 'booked', 'declined'];\nvar VENDOR_STAGES = ['quoted', 'booked', 'paid', 'dropped'];\nvar GUEST_STAGES = ['invited', 'yes', 'no'];\nvar VENDOR_KINDS = ['venue', 'catering', 'av', 'entertainment', 'photography', 'rentals', 'decor', 'transport', 'other'];\n\nfunction pad(n) {\n  return n < 10 ? '0' + n : String(n);\n}\nfunction localDay(ms) {\n  var d = new Date(ms);\n  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());\n}\nfunction isDay(text) {\n  return /^\\d{4}-\\d{2}-\\d{2}$/.test(String(text || ''));\n}\nfunction normalizeDate(text, nowMs) {\n  var raw = String(text || '').trim();\n  if (isDay(raw)) return raw;\n  // Only something that reads as a date: a month name with a day, or numbers like 12/10.\n  if (!/\\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?\\s+\\d|\\d\\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|\\d{1,4}[/.-]\\d{1,2}[/.-]\\d{1,4}/i.test(raw)) return null;\n  if (/\\d{4}/.test(raw)) {\n    var full = Date.parse(raw);\n    return isFinite(full) ? localDay(full) : null;\n  }\n  // 'December 10' names the next December 10, not one in 2001.\n  var now = new Date(nowMs || Date.now());\n  var parsed = Date.parse(raw + ' ' + now.getFullYear());\n  if (!isFinite(parsed)) return null;\n  if (parsed < now.getTime() - 31 * DAY_MS) parsed = Date.parse(raw + ' ' + (now.getFullYear() + 1));\n  return localDay(parsed);\n}\nfunction daysLeft(day, nowMs) {\n  var due = Date.parse(String(day).slice(0, 10) + 'T00:00:00');\n  var today = Date.parse(localDay(nowMs) + 'T00:00:00');\n  return Math.round((due - today) / DAY_MS);\n}\nfunction when(days) {\n  if (days < 0) return -days + (days === -1 ? ' day late' : ' days late');\n  if (days === 0) return 'due today';\n  return 'in ' + days + (days === 1 ? ' day' : ' days');\n}\nfunction key(text) {\n  return String(text || '')\n    .normalize('NFD')\n    .replace(/[̀-ͯ]/g, '')\n    .toLowerCase()\n    .replace(/[^a-z0-9&]+/g, ' ')\n    .trim();\n}\n// 'exact', 'partial' (the name starts with the words given, or contains them whole), or ''.\nfunction nameMatch(name, wanted) {\n  var have = key(name);\n  var want = key(wanted);\n  if (!have || !want) return '';\n  if (have === want) return 'exact';\n  return (' ' + have).indexOf(' ' + want) >= 0 || (' ' + want + ' ').indexOf(' ' + have + ' ') >= 0 ? 'partial' : '';\n}\nfunction toCents(amount) {\n  var n = typeof amount === 'string' ? Number(String(amount).replace(/[$,\\s]/g, '')) : amount;\n  return typeof n === 'number' && isFinite(n) ? Math.round(n * 100) : null;\n}\nfunction money(cents) {\n  var c = Math.round(Number(cents) || 0);\n  var sign = c < 0 ? '-' : '';\n  c = Math.abs(c);\n  var whole = String(Math.floor(c / 100)).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',');\n  return sign + '$' + whole + (c % 100 ? '.' + pad(c % 100) : '');\n}\nfunction normalizeTime(text) {\n  var m = String(text || '')\n    .trim()\n    .toLowerCase()\n    .replace(/\\s+/g, '')\n    .match(/^(\\d{1,2})(?:[:.h](\\d{2}))?(a\\.?m\\.?|p\\.?m\\.?)?$/);\n  if (!m) return null;\n  var h = Number(m[1]);\n  var min = m[2] ? Number(m[2]) : 0;\n  if (m[3]) {\n    if (h < 1 || h > 12) return null;\n    if (m[3].charAt(0) === 'p' && h !== 12) h += 12;\n    if (m[3].charAt(0) === 'a' && h === 12) h = 0;\n  }\n  if (h > 23 || min > 59) return null;\n  return pad(h) + ':' + pad(min);\n}\nfunction clock(hhmm) {\n  var parts = String(hhmm || '').split(':');\n  var h = Number(parts[0]);\n  if (!isFinite(h) || parts.length !== 2) return String(hhmm || '');\n  return ((h % 12) || 12) + (parts[1] === '00' ? '' : ':' + parts[1]) + (h < 12 ? ' am' : ' pm');\n}\nfunction normalizeDietary(text) {\n  var t = String(text || '').trim().toLowerCase().replace(/\\s+/g, ' ').replace(/[.!]+$/, '');\n  if (!t) return '';\n  if (/^(none|no|nothing|n\\/?a|no restrictions?|no needs|no dietary needs|nothing special|eats anything|anything)$/.test(t)) return 'none';\n  var aliases = {\n    veg: 'vegetarian',\n    veggie: 'vegetarian',\n    gf: 'gluten-free',\n    'gluten free': 'gluten-free',\n    'no gluten': 'gluten-free',\n    'dairy free': 'dairy-free',\n    'no dairy': 'dairy-free',\n    nuts: 'nut allergy',\n    'no nuts': 'nut allergy',\n    'nut free': 'nut allergy',\n  };\n  return aliases[t] || t;\n}\nfunction people(guest) {\n  var n = Number(guest && guest.fields && guest.fields.partySize);\n  return n >= 1 ? Math.round(n) : 1;\n}\nfunction paidFor(vendorId, entries) {\n  return entries\n    .filter(function (e) {\n      return e.kind === 'out' && e.data && e.data.vendorId === vendorId;\n    })\n    .reduce(function (sum, e) {\n      return sum + (Number(e.amountCents) || 0);\n    }, 0);\n}\nfunction blankEvent() {\n  return { version: 1, occasion: '', date: '', time: '', venue: '', host: '', rsvp: '', headcount: 0, budgetCents: 0, program: [] };\n}\nfunction guestTag(g, extra) {\n  var f = g.fields || {};\n  return f.name + ' (' + g.id + (f.company ? ', ' + f.company : '') + (extra ? ', ' + extra : '') + (people(g) > 1 ? ', party of ' + people(g) : '') + ')';\n}\nfunction venueCost(venue, guests) {\n  var f = venue.fields || {};\n  var fee = Number(f.feeCents) || 0;\n  var perHead = Number(f.cateringPerHeadCents) || 0;\n  var total = fee + perHead * guests;\n  return { fee: fee, perHead: perHead, total: total, each: guests > 0 ? Math.round(total / guests) : 0 };\n}\nfunction compareVenues(venues, guests) {\n  var live = venues.filter(function (v) {\n    return v.status !== 'declined';\n  });\n  if (!live.length) return { fits: 0, summary: 'No venues on the shortlist yet.' };\n  var rows = live.map(function (v) {\n    var f = v.fields || {};\n    var cap = Number(f.capacity) || 0;\n    var cost = venueCost(v, guests);\n    return { v: v, cap: cap, fits: cap >= guests, cost: cost };\n  });\n  rows.sort(function (a, b) {\n    return (b.fits ? 1 : 0) - (a.fits ? 1 : 0) || a.cost.each - b.cost.each;\n  });\n  var lines = rows.map(function (r) {\n    var f = r.v.fields || {};\n    return (\n      f.name + ' (' + r.v.id + ', ' + r.v.status + '): ' +\n      (r.cap ? 'holds ' + r.cap + (r.fits ? ', fits ' + guests : ', ' + (guests - r.cap) + ' short for ' + guests) : 'capacity unknown') +\n      '; hire ' + money(r.cost.fee) +\n      (r.cost.perHead\n        ? ' plus in-house catering at ' + money(r.cost.perHead) + ' a guest = ' + money(r.cost.total) + ' for ' + guests + ' (' + money(r.cost.each) + ' a guest)'\n        : ', bring your own caterer') +\n      '; sound and screens ' + (f.av === 'included' ? 'included' : 'extra') +\n      (f.location ? '; ' + f.location : '') +\n      (f.notes ? '; ' + f.notes : '')\n    );\n  });\n  var fit = rows.filter(function (r) { return r.fits; });\n  var small = rows.filter(function (r) { return r.cap && !r.fits; });\n  return {\n    fits: fit.length,\n    summary:\n      'Venues for ' + guests + ' guests, those that fit first: ' + lines.join(' | ') + '. ' +\n      (fit.length ? 'Fits ' + guests + ': ' + fit.map(function (r) { return r.v.fields.name; }).join(', ') + '.' : 'None of them holds ' + guests + '.') +\n      (small.length ? ' Too small: ' + small.map(function (r) { return r.v.fields.name; }).join(', ') + '.' : ''),\n  };\n}\nfunction deskPicture(event, venues, vendors, guests, entries, nowMs) {\n  var ev = event || blankEvent();\n  var parts = [];\n  var days = isDay(ev.date) ? daysLeft(ev.date, nowMs) : null;\n  parts.push(\n    (ev.occasion || 'The event') +\n      (days === null ? (ev.date ? ', date to confirm (' + ev.date + ')' : ', date not set') : ' on ' + ev.date + (days > 0 ? ' (' + days + (days === 1 ? ' day' : ' days') + ' to go)' : days === 0 ? ' (today)' : ' (' + -days + ' days ago)')) +\n      (ev.time ? ', ' + ev.time : '') +\n      (ev.venue ? ', at ' + ev.venue : ', venue not booked yet') +\n      (ev.host ? ', hosted by ' + ev.host : '') +\n      '.',\n  );\n  var yes = guests.filter(function (g) { return g.status === 'yes'; });\n  var no = guests.filter(function (g) { return g.status === 'no'; });\n  var waiting = guests.filter(function (g) { return g.status === 'invited'; });\n  var attending = yes.reduce(function (sum, g) { return sum + people(g); }, 0);\n  parts.push(\n    'RSVPs: ' + yes.length + ' yes (' + attending + (attending === 1 ? ' person' : ' people') + ' with the guests they bring), ' + no.length + ' no, ' + waiting.length + ' not replied yet' +\n      (ev.headcount ? '; planning for ' + ev.headcount : '') + '.',\n  );\n  // One list a dietary question selects: attending guests first, then those who have not replied.\n  var noAnswer = yes.filter(function (g) { return !g.fields.dietary; });\n  var pending = noAnswer.map(function (g) { return guestTag(g, 'attending'); }).concat(\n    waiting.filter(function (g) { return !g.fields.dietary; }).map(function (g) { return guestTag(g, 'not replied'); }),\n  );\n  parts.push(\n    !guests.length ? 'No guests on the list yet.' : pending.length ? 'No dietary answer yet, attending first: ' + pending.join(' | ') + '.' : 'Every guest has a dietary answer.',\n  );\n  var tally = {};\n  yes.forEach(function (g) {\n    var d = g.fields.dietary;\n    if (d && d !== 'none') tally[d] = (tally[d] || 0) + 1;\n  });\n  var needs = Object.keys(tally).sort().map(function (d) { return d + ' ' + tally[d]; });\n  parts.push(needs.length ? 'Dietary needs among those attending: ' + needs.join(', ') + '.' : 'No dietary needs among those attending so far.');\n  if (waiting.length) parts.push('Not replied yet: ' + waiting.map(function (g) { return guestTag(g, ''); }).join(', ') + '.');\n\n  var live = vendors.filter(function (v) { return v.status !== 'dropped'; });\n  var due = [];\n  live.forEach(function (v) {\n    var f = v.fields || {};\n    var paid = paidFor(v.id, entries);\n    var deposit = Number(f.depositCents) || 0;\n    if (v.status !== 'quoted' && deposit > paid) {\n      due.push({ at: f.depositDueAt || '9999-12-31', text: f.name + ' (' + v.id + ') deposit ' + money(deposit - paid) + (isDay(f.depositDueAt) ? ', due ' + f.depositDueAt + ' (' + when(daysLeft(f.depositDueAt, nowMs)) + ')' : ', no due date') });\n    }\n  });\n  due.sort(function (a, b) { return a.at.localeCompare(b.at); });\n  parts.push(due.length ? 'Deposits still to pay, soonest first: ' + due.map(function (d) { return d.text; }).join(' | ') + '.' : 'No deposits outstanding.');\n\n  var signed = live.filter(function (v) { return v.status === 'booked' || v.status === 'paid'; });\n  var contracted = signed.reduce(function (sum, v) { return sum + (Number(v.fields.contractCents) || 0); }, 0);\n  var paidTotal = entries.filter(function (e) { return e.kind === 'out'; }).reduce(function (sum, e) { return sum + (Number(e.amountCents) || 0); }, 0);\n  var budget = Number(ev.budgetCents) || 0;\n  var left = budget - contracted;\n  parts.push(\n    (budget ? 'Budget ' + money(budget) + ': ' : 'No budget set: ') +\n      money(contracted) + ' signed with booked vendors, ' + money(paidTotal) + ' paid, ' + money(contracted - paidTotal) + ' still owed on signed contracts' +\n      (budget ? ', ' + (left >= 0 ? money(left) + ' left to commit' : money(-left) + ' over budget') : '') + '.',\n  );\n  parts.push(\n    live.length\n      ? 'Vendors: ' + live.map(function (v) {\n          var f = v.fields || {};\n          return f.name + ' (' + v.id + ', ' + (f.category || 'other') + ', ' + v.status + (f.contractCents ? ', ' + money(f.contractCents) : '') + ', paid ' + money(paidFor(v.id, entries)) + (f.arrival ? ', arrives ' + clock(f.arrival) : '') + ')';\n        }).join(' | ') + '.'\n      : 'No vendors yet.',\n  );\n  parts.push(\n    venues.length\n      ? 'Venues: ' + venues.map(function (v) { return v.fields.name + ' (' + v.id + ', ' + v.status + (v.fields.capacity ? ', holds ' + v.fields.capacity : '') + ')'; }).join(', ') + '.'\n      : 'No venues on the shortlist yet.',\n  );\n  var program = (ev.program || []).slice().sort(function (a, b) { return String(a.time).localeCompare(String(b.time)); });\n  parts.push(\n    program.length\n      ? 'Run of show: ' + program.map(function (p) { return clock(p.time) + ' ' + p.item + (p.owner ? ' (' + p.owner + ')' : ''); }).join(' | ') + '.'\n      : 'The run of show is empty.',\n  );\n  return { attending: attending, noDietaryAnswer: noAnswer.map(function (g) { return String(g.fields.name); }), budgetLeftCents: left, summary: parts.join(' ') };\n}\n// ── event-desk-rules-end ──\n\nconst venues = rosterStore(gezel.fs, 'venues.json', {\n  stages: ['shortlisted', 'visited', 'held', 'booked', 'declined'],\n  idPrefix: 've',\n});\nconst vendors = rosterStore(gezel.fs, 'vendors.json', {\n  stages: ['quoted', 'booked', 'paid', 'dropped'],\n  idPrefix: 'vn',\n});\nconst guests = rosterStore(gezel.fs, 'guests.json', { stages: ['invited', 'yes', 'no'], idPrefix: 'gu' });\nconst budget = ledgerStore(gezel.fs, 'budget.json');\n\ninterface ProgramItem {\n  id: string;\n  time: string;\n  item: string;\n  owner?: string;\n  note?: string;\n}\ninterface EventDoc {\n  version: 1;\n  occasion: string;\n  date: string;\n  time: string;\n  venue: string;\n  venueId?: string;\n  host: string;\n  rsvp: string;\n  headcount: number;\n  budgetCents: number;\n  program: ProgramItem[];\n}\n\nasync function readEvent(): Promise<EventDoc> {\n  let raw: string;\n  try {\n    raw = await gezel.fs.read('event.json');\n  } catch {\n    return blankEvent() as EventDoc;\n  }\n  let doc: Partial<EventDoc>;\n  try {\n    doc = JSON.parse(raw);\n  } catch {\n    throw new Error('event.json is not valid JSON. Fix or remove it; it will not be overwritten automatically.');\n  }\n  if (doc.version !== 1) throw new Error('event.json has unsupported version ' + String(doc.version) + ' (expected 1).');\n  return { ...(blankEvent() as EventDoc), ...doc, program: Array.isArray(doc.program) ? doc.program : [] };\n}\n\n// A record by id or by (partial) name; a clear error names the matches.\nfunction pick(all: RosterRecord[], what: string, example: string): RosterRecord | null {\n  if (input.id) {\n    const byId = all.find((r) => r.id === input.id);\n    if (byId) return byId;\n    throw new Error('No ' + what + \" with id '\" + input.id + \"'. Known: \" + (all.map((r) => r.id + ' ' + String(r.fields.name)).join(', ') || 'none') + '.');\n  }\n  if (!input.name) throw new Error(\"Pass 'id' (e.g. '\" + example + \"') or the \" + what + \"'s 'name'.\");\n  const exact = all.filter((r) => nameMatch(r.fields.name, input.name) === 'exact');\n  if (exact.length === 1) return exact[0]!;\n  const partial = all.filter((r) => nameMatch(r.fields.name, input.name) === 'partial');\n  if (partial.length === 1) return partial[0]!;\n  if (partial.length > 1) {\n    throw new Error('More than one ' + what + \" matches '\" + input.name + \"': \" + partial.map((r) => r.id + ' ' + String(r.fields.name)).join(', ') + '. Pass id.');\n  }\n  return null;\n}\nfunction mustPick(all: RosterRecord[], what: string, example: string): RosterRecord {\n  const found = pick(all, what, example);\n  if (found) return found;\n  throw new Error('No ' + what + \" named '\" + input.name + \"'. Known: \" + (all.map((r) => r.id + ' ' + String(r.fields.name)).join(', ') || 'none') + '.');\n}\nfunction dollars(value: unknown, label: string, allowNegative = false): number | null {\n  if (value === undefined || value === null || value === '') return null;\n  const cents = toCents(value);\n  if (cents === null || (!allowNegative && cents < 0)) throw new Error(label + ' must be an amount in dollars, e.g. 1800.');\n  return cents;\n}\n\nconst event = await readEvent();\nlet eventChanged = false;\nlet note = '';\nlet reply = '';\n\nif (input.action === 'set_event') {\n  const given = ['occasion', 'date', 'time', 'host', 'rsvp', 'headcount', 'budget', 'budgetChange'].filter(\n    (k) => (input as Record<string, unknown>)[k] !== undefined && (input as Record<string, unknown>)[k] !== '',\n  );\n  if (!given.length) throw new Error('set_event needs at least one of occasion, date, time, host, rsvp, headcount, budget or budgetChange.');\n  if (input.occasion) event.occasion = input.occasion.trim();\n  if (input.date) {\n    const day = normalizeDate(input.date);\n    if (!day) throw new Error(\"date must be a date, e.g. '2026-12-10'.\");\n    event.date = day;\n  }\n  if (input.time) event.time = input.time.trim();\n  if (input.host) event.host = input.host.trim();\n  if (input.rsvp) event.rsvp = input.rsvp.trim();\n  if (typeof input.headcount === 'number') {\n    if (!(input.headcount >= 1)) throw new Error('headcount must be at least 1.');\n    event.headcount = Math.round(input.headcount);\n  }\n  const whole = dollars(input.budget, 'budget');\n  if (whole !== null) event.budgetCents = whole;\n  const change = dollars(input.budgetChange, 'budgetChange', true);\n  if (change !== null) event.budgetCents = Math.max(0, (Number(event.budgetCents) || 0) + change);\n  eventChanged = true;\n  note = 'Saved the event details' + (whole !== null || change !== null ? '; the budget is now ' + money(event.budgetCents) : '') + '.';\n} else if (input.action === 'add_venue') {\n  if (!input.name) throw new Error(\"add_venue needs 'name'.\");\n  if (input.status && !VENUE_STAGES.includes(input.status)) throw new Error(\"A venue's status is shortlisted, visited, held, or declined.\");\n  const fee = dollars(input.fee, 'fee');\n  const catering = dollars(input.cateringPerHead, 'cateringPerHead');\n  const fields: Record<string, unknown> = {\n    ...(typeof input.capacity === 'number' && input.capacity > 0 ? { capacity: Math.round(input.capacity) } : {}),\n    ...(fee !== null ? { feeCents: fee } : {}),\n    ...(catering !== null ? { cateringPerHeadCents: catering } : {}),\n    ...(input.av === 'included' || input.av === 'extra' ? { av: input.av } : {}),\n    ...(input.location ? { location: input.location.trim() } : {}),\n    ...(input.note ? { notes: input.note.trim() } : {}),\n  };\n  const existing = (await venues.list()).find((r) => key(r.fields.name) === key(input.name));\n  let record: RosterRecord;\n  if (existing) {\n    record = await venues.update(existing.id, { fields });\n    note = 'Updated ' + String(existing.fields.name) + '.';\n  } else {\n    record = await venues.add({ status: 'shortlisted', fields: { name: input.name.trim(), av: 'extra', ...fields } });\n    note = 'Added ' + input.name.trim() + ' (' + record.id + ') to the shortlist.';\n  }\n  if (input.status === 'booked') await bookVenue(record);\n  else if (input.status && input.status !== record.status) await venues.transition(record.id, input.status, input.note ? { note: input.note } : {});\n} else if (input.action === 'book_venue') {\n  await bookVenue(mustPick(await venues.list(), 'venue', 've-2'));\n} else if (input.action === 'add_vendor') {\n  if (!input.name) throw new Error(\"add_vendor needs 'name'.\");\n  if (input.status && !['quoted', 'booked', 'dropped'].includes(input.status)) throw new Error(\"A vendor's status is quoted, booked, or dropped.\");\n  const existing = (await vendors.list()).find((r) => key(r.fields.name) === key(input.name));\n  const contract = dollars(input.contract, 'contract');\n  const change = dollars(input.contractChange, 'contractChange', true);\n  const deposit = dollars(input.deposit, 'deposit');\n  const dueAt = input.depositDueAt ? normalizeDate(input.depositDueAt) : null;\n  if (input.depositDueAt && !dueAt) throw new Error(\"depositDueAt must be a date, e.g. '2026-11-12'.\");\n  const arrival = input.arrival ? normalizeTime(input.arrival) : null;\n  if (input.arrival && !arrival) throw new Error(\"arrival must be a time, e.g. '2 pm' or '14:00'.\");\n  let total = contract;\n  if (change !== null) total = Math.max(0, (total ?? (Number(existing?.fields.contractCents) || 0)) + change);\n  const fields: Record<string, unknown> = {\n    ...(input.category && VENDOR_KINDS.includes(input.category) ? { category: input.category } : {}),\n    ...(total !== null ? { contractCents: total } : {}),\n    ...(deposit !== null ? { depositCents: deposit } : {}),\n    ...(dueAt ? { depositDueAt: dueAt } : {}),\n    ...(input.contact ? { contact: input.contact.trim() } : {}),\n    ...(arrival ? { arrival } : {}),\n    ...(input.note ? { notes: input.note.trim() } : {}),\n  };\n  if (existing) {\n    await vendors.update(existing.id, { fields });\n    if (input.status && input.status !== existing.status) await vendors.transition(existing.id, input.status, input.note ? { note: input.note } : {});\n    note = 'Updated ' + String(existing.fields.name) + (total !== null ? '; total now ' + money(total) : '') + '.';\n  } else {\n    const record = await vendors.add({\n      status: input.status ?? 'quoted',\n      fields: { name: input.name.trim(), category: 'other', contractCents: 0, depositCents: 0, ...fields },\n    });\n    note = 'Added ' + input.name.trim() + ' (' + record.id + ', ' + record.status + ').';\n  }\n} else if (input.action === 'pay') {\n  const cents = dollars(input.amount, 'amount');\n  if (!cents || cents <= 0) throw new Error(\"pay needs a positive 'amount' in dollars.\");\n  const vendor = mustPick(await vendors.list(), 'vendor', 'vn-2');\n  const entries = await budget.list();\n  const before = paidFor(vendor.id, entries);\n  const deposit = Number(vendor.fields.depositCents) || 0;\n  const kind = ['deposit', 'balance', 'other'].includes(String(input.kind)) ? String(input.kind) : before < deposit ? 'deposit' : 'balance';\n  const today = localDay(Date.now());\n  const repeat = entries.find(\n    (e) => e.data && e.data.vendorId === vendor.id && e.amountCents === cents && e.data.payment === kind && localDay(Date.parse(e.at)) === today,\n  );\n  const name = String(vendor.fields.name);\n  if (repeat) {\n    note = 'Already recorded: ' + money(cents) + ' ' + kind + ' to ' + name + ' today.';\n  } else {\n    await budget.add({\n      amountCents: cents,\n      kind: 'out',\n      category: String(vendor.fields.category ?? 'other'),\n      note: input.note ? input.note.trim() : kind.charAt(0).toUpperCase() + kind.slice(1) + ' to ' + name,\n      data: { vendorId: vendor.id, vendor: name, payment: kind },\n    });\n    const paid = before + cents;\n    const contract = Number(vendor.fields.contractCents) || 0;\n    if (contract > 0 && paid >= contract && vendor.status !== 'paid') await vendors.transition(vendor.id, 'paid', { note: 'Paid in full' });\n    else if (vendor.status === 'quoted' || vendor.status === 'dropped') await vendors.transition(vendor.id, 'booked', { note: 'Booked with a payment' });\n    note =\n      'Paid ' + money(cents) + ' ' + kind + ' to ' + name + '; ' +\n      (contract ? money(paid) + ' of ' + money(contract) + ' paid' + (paid >= contract ? ', paid in full' : ', ' + money(contract - paid) + ' to go') : money(paid) + ' paid so far') + '.';\n  }\n} else if (input.action === 'add_guest' || input.action === 'rsvp') {\n  if (input.response && !GUEST_STAGES.includes(input.response)) throw new Error(\"response is invited, yes, or no.\");\n  const all = await guests.list();\n  let guest: RosterRecord | null;\n  if (input.action === 'add_guest') {\n    if (!input.name) throw new Error(\"add_guest needs 'name'.\");\n    guest = all.find((r) => key(r.fields.name) === key(input.name)) ?? null;\n  } else {\n    if (!input.response && !input.dietary && typeof input.joining !== 'number' && typeof input.partySize !== 'number') {\n      throw new Error(\"rsvp needs 'response' (yes or no), 'dietary', or 'joining'.\");\n    }\n    guest = pick(all, 'guest', 'gu-4');\n  }\n  const dietary = input.dietary ? normalizeDietary(input.dietary) : '';\n  const party =\n    typeof input.partySize === 'number' && input.partySize >= 1\n      ? Math.round(input.partySize)\n      : typeof input.joining === 'number' && input.joining > 0\n        ? (guest ? people(guest) : 1) + Math.round(input.joining)\n        : null;\n  const fields: Record<string, unknown> = {\n    ...(input.company ? { company: input.company.trim() } : {}),\n    ...(dietary ? { dietary } : {}),\n    ...(party !== null ? { partySize: party } : {}),\n    ...(input.note ? { notes: input.note.trim() } : {}),\n  };\n  if (guest) {\n    await guests.update(guest.id, { fields });\n    if (input.response && input.response !== guest.status) await guests.transition(guest.id, input.response, input.note ? { note: input.note } : {});\n  } else {\n    if (!input.name) throw new Error(\"Pass the guest's 'name'.\");\n    guest = await guests.add({ status: input.response ?? 'invited', fields: { name: input.name.trim(), partySize: 1, ...fields } });\n  }\n  const now = (await guests.get(guest.id))!;\n  const label = String(now.fields.name);\n  note =\n    (all.some((r) => r.id === now.id) ? '' : 'Added ' + label + ' (' + now.id + ') to the list. ') +\n    label + (now.status === 'yes' ? ' is coming' : now.status === 'no' ? \" can't come\" : ' is invited') +\n    (people(now) > 1 ? ' with ' + (people(now) - 1) + ' more (party of ' + people(now) + ')' : '') +\n    (now.fields.dietary ? '; dietary: ' + String(now.fields.dietary) : now.status === 'yes' ? '; no dietary answer yet' : '') + '.';\n} else if (input.action === 'program') {\n  if (!input.item) throw new Error(\"program needs 'item'.\");\n  const wanted = key(input.item);\n  const list = event.program;\n  let hits = list.filter((p) => key(p.item) === wanted);\n  if (!hits.length) hits = list.filter((p) => key(p.item).includes(wanted));\n  if (input.remove) {\n    if (hits.length !== 1) throw new Error(hits.length ? 'More than one item matches: ' + hits.map((p) => clock(p.time) + ' ' + p.item).join(', ') + '.' : \"No run-of-show item matches '\" + input.item + \"'.\");\n    event.program = list.filter((p) => p !== hits[0]);\n    note = 'Took ' + hits[0]!.item + ' off the run of show.';\n  } else {\n    const time = input.time ? normalizeTime(input.time) : null;\n    if (input.time && !time) throw new Error(\"time must be a clock time, e.g. '4:30 pm' or '16:30'.\");\n    const same = list.find((p) => key(p.item) === wanted);\n    if (same) {\n      if (time) same.time = time;\n      if (input.owner) same.owner = input.owner.trim();\n      if (input.note) same.note = input.note.trim();\n      note = 'Run of show: ' + clock(same.time) + ' ' + same.item + (same.owner ? ' (' + same.owner + ')' : '') + '.';\n    } else {\n      if (!time) throw new Error(\"A new run-of-show item needs 'time', e.g. '4:30 pm'.\");\n      const next = list.reduce((max, p) => Math.max(max, Number(String(p.id).split('-')[1]) || 0), 0) + 1;\n      list.push({ id: 'rs-' + next, time, item: input.item.trim(), ...(input.owner ? { owner: input.owner.trim() } : {}), ...(input.note ? { note: input.note.trim() } : {}) });\n      note = 'Added to the run of show: ' + clock(time) + ' ' + input.item.trim() + (input.owner ? ' (' + input.owner.trim() + ')' : '') + '.';\n    }\n    event.program.sort((a, b) => String(a.time).localeCompare(String(b.time)));\n  }\n  eventChanged = true;\n} else if (input.action === 'compare') {\n  const yes = (await guests.list()).filter((g) => g.status === 'yes').reduce((sum, g) => sum + people(g), 0);\n  const count = typeof input.guests === 'number' && input.guests > 0 ? Math.round(input.guests) : Number(event.headcount) || yes;\n  if (!count) throw new Error(\"Pass 'guests', the headcount to compare for.\");\n  reply = compareVenues(await venues.list(), count).summary;\n} else if (input.action === 'guests') {\n  const order = { yes: 0, invited: 1, no: 2 } as Record<string, number>;\n  reply =\n    (await guests.list())\n      .slice()\n      .sort((a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3) || String(a.fields.name).localeCompare(String(b.fields.name)))\n      .map((g) => '[' + g.status + '] ' + guestTag(g, '') + ': ' + (g.fields.dietary ? String(g.fields.dietary) : 'no dietary answer'))\n      .join('\\n') || 'The guest list is empty.';\n} else if (input.action !== 'status') {\n  throw new Error(\"Unknown action '\" + input.action + \"'. Use status, compare, add_venue, book_venue, add_vendor, pay, add_guest, rsvp, set_event, program, or guests.\");\n}\n\n// Booking a venue makes it the event's venue and puts its hire fee in the contracts.\nasync function bookVenue(record: RosterRecord): Promise<void> {\n  const released: string[] = [];\n  const entries = await budget.list();\n  for (const other of await venues.list()) {\n    if (other.id === record.id || other.status !== 'booked') continue;\n    await venues.transition(other.id, 'declined', { note: 'Released when ' + String(record.fields.name) + ' was booked' });\n    const line = (await vendors.list()).find((v) => v.fields.venueId === other.id);\n    if (line && line.status !== 'dropped' && paidFor(line.id, entries) === 0) await vendors.transition(line.id, 'dropped', { note: 'Venue released' });\n    released.push(String(other.fields.name));\n  }\n  if (record.status !== 'booked') await venues.transition(record.id, 'booked', input.note ? { note: input.note } : {});\n  const fee = Number(record.fields.feeCents) || 0;\n  const all = await vendors.list();\n  const line = all.find((v) => v.fields.venueId === record.id) ?? all.find((v) => key(v.fields.name) === key(record.fields.name));\n  if (line) {\n    await vendors.update(line.id, { fields: { category: 'venue', venueId: record.id, contractCents: fee } });\n    if (line.status === 'quoted' || line.status === 'dropped') await vendors.transition(line.id, 'booked', { note: 'Venue booked' });\n  } else {\n    await vendors.add({\n      status: 'booked',\n      fields: { name: String(record.fields.name), category: 'venue', venueId: record.id, contractCents: fee, depositCents: 0, notes: 'Venue hire' },\n    });\n  }\n  event.venue = String(record.fields.name);\n  event.venueId = record.id;\n  eventChanged = true;\n  const perHead = Number(record.fields.cateringPerHeadCents) || 0;\n  note =\n    'Booked ' + String(record.fields.name) + ' (' + record.id + '); its ' + money(fee) + ' hire fee is now with the signed contracts' +\n    (perHead ? ', and its in-house catering at ' + money(perHead) + ' a guest goes in as a vendor once the count is final' : '') +\n    (released.length ? '. Released ' + released.join(', ') : '') + '.';\n}\n\nif (eventChanged) await gezel.fs.write('event.json', JSON.stringify(event, null, 2) + '\\n');\n\nconst view = deskPicture(event, await venues.list(), await vendors.list(), await guests.list(), await budget.list(), Date.now());\n\ngezel.output({\n  attending: view.attending,\n  noDietaryAnswer: view.noDietaryAnswer,\n  budgetLeft: view.budgetLeftCents / 100,\n  summary: reply || (note ? note + ' ' : '') + view.summary,\n});\n"
+  },
+  "tools": [
+    {
+      "name": "event_status",
+      "description": "The whole event in one read, with ids: date and days to go, RSVPs, every guest still owing a dietary answer, deposits still to pay, the budget against signed contracts, vendors, venues and the run of show. Call it first when asked how things stand.",
+      "script": "event-desk-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "status"
+      },
+      "state": true
+    },
+    {
+      "name": "compare_venues",
+      "description": "Compare the shortlisted venues for a headcount: which hold it, the hire fee, catering, sound and screens, and the cost per guest. Call it when asked to compare venues and answer from it.",
+      "script": "event-desk-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "guests": {
+            "type": "number"
+          }
+        }
+      },
+      "bind": {
+        "action": "compare"
+      }
+    },
+    {
+      "name": "add_venue",
+      "description": "Save a venue to the shortlist: name, how many it holds, the hire fee in dollars, in-house catering per guest (leave it out when you bring your own caterer), whether sound and screens are included, and where it is. An existing name is updated, never duplicated. Call it as soon as a venue or its quote is mentioned, before you describe it.",
+      "script": "event-desk-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "capacity": {
+            "type": "number"
+          },
+          "fee": {
+            "type": "number"
+          },
+          "cateringPerHead": {
+            "type": "number"
+          },
+          "av": {
+            "type": "string",
+            "enum": [
+              "included",
+              "extra"
+            ]
+          },
+          "location": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "shortlisted",
+              "visited",
+              "held",
+              "declined"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "bind": {
+        "action": "add_venue"
+      }
+    },
+    {
+      "name": "book_venue",
+      "description": "Book a venue: it becomes the event's venue, its hire fee joins the signed contracts, and a venue booked before is released. Call it the moment the person chooses one.",
+      "script": "event-desk-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "book_venue"
+      }
+    },
+    {
+      "name": "add_vendor",
+      "description": "Save a vendor (caterer, sound and screens, entertainment, photographer, rentals): its total in dollars, deposit and when it is due, the contact and when they arrive on the day. Pass status booked once it is signed. Pass contract for a new total, or contractChange when it goes up or down by an amount. An existing name is updated, never duplicated. Call it as soon as a vendor is mentioned, before you describe it.",
+      "script": "event-desk-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "venue",
+              "catering",
+              "av",
+              "entertainment",
+              "photography",
+              "rentals",
+              "decor",
+              "transport",
+              "other"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "quoted",
+              "booked",
+              "dropped"
+            ]
+          },
+          "contract": {
+            "type": "number"
+          },
+          "contractChange": {
+            "type": "number"
+          },
+          "deposit": {
+            "type": "number"
+          },
+          "depositDueAt": {
+            "type": "string"
+          },
+          "contact": {
+            "type": "string"
+          },
+          "arrival": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "bind": {
+        "action": "add_vendor"
+      }
+    },
+    {
+      "name": "record_payment",
+      "description": "Record money paid to a vendor, in dollars, as a deposit or the balance, with any reference exactly as given. Call it the moment the person says they paid.",
+      "script": "event-desk-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "deposit",
+              "balance",
+              "other"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount"
+        ]
+      },
+      "bind": {
+        "action": "pay"
+      }
+    },
+    {
+      "name": "add_guest",
+      "description": "Add a guest to the invite list: name, company, RSVP and dietary needs. An existing name is updated, never duplicated. Call it as soon as a guest is mentioned, before you describe it.",
+      "script": "event-desk-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "company": {
+            "type": "string"
+          },
+          "response": {
+            "type": "string",
+            "enum": [
+              "invited",
+              "yes",
+              "no"
+            ]
+          },
+          "dietary": {
+            "type": "string"
+          },
+          "partySize": {
+            "type": "number"
+          },
+          "joining": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "bind": {
+        "action": "add_guest"
+      }
+    },
+    {
+      "name": "record_rsvp",
+      "description": "Record a guest's answer: yes or no, and what they can't eat (or 'none'). When they bring someone, pass joining with how many extra people and the desk adds them to the guest's party. A name not on the list is added. Call it the moment an answer comes in.",
+      "script": "event-desk-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "response": {
+            "type": "string",
+            "enum": [
+              "yes",
+              "no",
+              "invited"
+            ]
+          },
+          "dietary": {
+            "type": "string"
+          },
+          "joining": {
+            "type": "number"
+          },
+          "partySize": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "rsvp"
+      }
+    },
+    {
+      "name": "set_event",
+      "description": "Change the event's details: its name, date (YYYY-MM-DD), hours, host, the RSVP line exactly as it should be printed, the headcount to plan for, or the budget. Pass budget for the whole new budget, or budgetChange to add or cut an amount. Record their words; never choose a date for them.",
+      "script": "event-desk-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "occasion": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "rsvp": {
+            "type": "string"
+          },
+          "headcount": {
+            "type": "number"
+          },
+          "budget": {
+            "type": "number"
+          },
+          "budgetChange": {
+            "type": "number"
+          }
+        }
+      },
+      "bind": {
+        "action": "set_event"
+      }
+    },
+    {
+      "name": "set_program_item",
+      "description": "Put an item on the run of show at a start time ('4:30 pm'), with who's on point. The same item name is moved, never duplicated; pass remove to take it off.",
+      "script": "event-desk-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "time": {
+            "type": "string"
+          },
+          "item": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "remove": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "item"
+        ]
+      },
+      "bind": {
+        "action": "program"
+      }
+    },
+    {
+      "name": "guest_list",
+      "description": "The whole invite list with each RSVP, company, party size and dietary answer.",
+      "script": "event-desk-store",
+      "inputs": {
+        "type": "object",
+        "properties": {}
+      },
+      "bind": {
+        "action": "guests"
+      }
+    },
+    {
+      "name": "page_set_event",
+      "description": "Change the event's details.",
+      "script": "event-desk-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "occasion": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "rsvp": {
+            "type": "string"
+          },
+          "headcount": {
+            "type": "number"
+          },
+          "budget": {
+            "type": "number"
+          },
+          "budgetChange": {
+            "type": "number"
+          }
+        }
+      },
+      "bind": {
+        "action": "set_event"
+      }
+    },
+    {
+      "name": "page_add_venue",
+      "description": "Add or update a venue.",
+      "script": "event-desk-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "capacity": {
+            "type": "number"
+          },
+          "fee": {
+            "type": "number"
+          },
+          "cateringPerHead": {
+            "type": "number"
+          },
+          "av": {
+            "type": "string",
+            "enum": [
+              "included",
+              "extra"
+            ]
+          },
+          "location": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "shortlisted",
+              "visited",
+              "held",
+              "declined"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "bind": {
+        "action": "add_venue"
+      }
+    },
+    {
+      "name": "page_book_venue",
+      "description": "Book a venue.",
+      "script": "event-desk-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "book_venue"
+      },
+      "reaction": {
+        "gezel": "ceremoniemeester",
+        "hideSeed": true,
+        "prompt": "The person just booked a venue on the event desk page. The desk now reads (its first sentence is what changed):\n{{output.summary}}\nIn two short sentences, confirm the booking and what it adds to the signed contracts, and name the next thing to lock. Do not call tools."
+      }
+    },
+    {
+      "name": "page_add_vendor",
+      "description": "Add or update a vendor.",
+      "script": "event-desk-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "venue",
+              "catering",
+              "av",
+              "entertainment",
+              "photography",
+              "rentals",
+              "decor",
+              "transport",
+              "other"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "quoted",
+              "booked",
+              "dropped"
+            ]
+          },
+          "contract": {
+            "type": "number"
+          },
+          "contractChange": {
+            "type": "number"
+          },
+          "deposit": {
+            "type": "number"
+          },
+          "depositDueAt": {
+            "type": "string"
+          },
+          "contact": {
+            "type": "string"
+          },
+          "arrival": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "bind": {
+        "action": "add_vendor"
+      }
+    },
+    {
+      "name": "page_record_payment",
+      "description": "Record a payment to a vendor.",
+      "script": "event-desk-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "deposit",
+              "balance",
+              "other"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount"
+        ]
+      },
+      "bind": {
+        "action": "pay"
+      },
+      "reaction": {
+        "gezel": "ceremoniemeester",
+        "hideSeed": true,
+        "prompt": "The person just recorded a payment on the event desk page. The desk now reads (its first sentence is what changed):\n{{output.summary}}\nIn two short sentences, confirm the payment and what is still owed to that vendor, and name the next deposit due. Do not call tools."
+      }
+    },
+    {
+      "name": "page_add_guest",
+      "description": "Add or update a guest.",
+      "script": "event-desk-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "company": {
+            "type": "string"
+          },
+          "response": {
+            "type": "string",
+            "enum": [
+              "invited",
+              "yes",
+              "no"
+            ]
+          },
+          "dietary": {
+            "type": "string"
+          },
+          "partySize": {
+            "type": "number"
+          },
+          "joining": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "bind": {
+        "action": "add_guest"
+      }
+    },
+    {
+      "name": "page_record_rsvp",
+      "description": "Record a guest's answer.",
+      "script": "event-desk-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "response": {
+            "type": "string",
+            "enum": [
+              "yes",
+              "no",
+              "invited"
+            ]
+          },
+          "dietary": {
+            "type": "string"
+          },
+          "joining": {
+            "type": "number"
+          },
+          "partySize": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "bind": {
+        "action": "rsvp"
+      }
+    },
+    {
+      "name": "page_set_program_item",
+      "description": "Put an item on the run of show.",
+      "script": "event-desk-store",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "time": {
+            "type": "string"
+          },
+          "item": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "remove": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "item"
+        ]
+      },
+      "bind": {
+        "action": "program"
+      }
+    }
+  ],
+  "craftbooks": [
+    "run-of-show",
+    "invitation-design",
+    "comparison-matrix"
+  ],
+  "schedules": [],
+  "pages": {
+    "entry": "desk/index.html",
+    "api": 1,
+    "reads": [
+      {
+        "source": "workspace",
+        "path": "event.json"
+      },
+      {
+        "source": "workspace",
+        "path": "venues.json"
+      },
+      {
+        "source": "workspace",
+        "path": "vendors.json"
+      },
+      {
+        "source": "workspace",
+        "path": "guests.json"
+      },
+      {
+        "source": "workspace",
+        "path": "budget.json"
+      }
+    ],
+    "tools": [
+      "page_set_event",
+      "page_add_venue",
+      "page_book_venue",
+      "page_add_vendor",
+      "page_record_payment",
+      "page_add_guest",
+      "page_record_rsvp",
+      "page_set_program_item"
+    ]
+  },
+  "workspaceSeed": [
+    "event.json",
+    "venues.json",
+    "vendors.json",
+    "guests.json",
+    "budget.json"
+  ],
+  "minGezelVersion": "1.26280"
+}
