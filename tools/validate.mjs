@@ -416,6 +416,9 @@ function main() {
         if (kind === 'image-model' || kind === 'image-lora' || kind === 'video-model') {
           checkWeightTensors(kind, item.itemDir, onDiskVersions, identity.yankedVersions ?? []);
         }
+        if (kind === 'video-model') {
+          checkVideoModelEngine(manifestPath, identity, item.itemDir, onDiskVersions, identity.yankedVersions ?? []);
+        }
         if (kind === 'image-lora') checkImageLora(manifestPath, identity, tier.root);
         if (kind === 'knowledge-catalog') checkKnowledgeKeywords(item, onDiskVersions);
 
@@ -505,6 +508,101 @@ function main() {
           'safetensors weight file has no `tensors` facts - run `npm run pin-weight-tensors -- <this manifest>`',
         );
       }
+    }
+  }
+
+  /**
+   * A video model's engine and the fields that only make sense with it. An
+   * `sd-cpp` entry must carry a `minGezelVersion`: a build that predates the
+   * engine drops the field as not understood and would hand GGUF files to the
+   * diffusers server. Its newest version names the sd-server slot of every
+   * file, with the slots its family cannot render without.
+   */
+  function checkVideoModelEngine(manifestPath, identity, itemDir, versions, yankedVersions) {
+    const sdCpp = identity.engine === 'sd-cpp';
+    if (sdCpp) {
+      if (typeof identity.minGezelVersion !== 'string') {
+        c.error(manifestPath, '/minGezelVersion', 'video-sd-cpp-floor', 'an sd-cpp video model must set minGezelVersion; older builds would run it on diffusers');
+      }
+      if (identity.load !== undefined) {
+        c.error(manifestPath, '/load', 'video-load-diffusers-only', '`load` configures the diffusers server; an sd-cpp entry renders through sdCpp');
+      }
+      if (identity.family === 'ltx') {
+        c.error(manifestPath, '/family', 'video-sd-cpp-family', 'sd.cpp does not render LTX-Video 0.9.x');
+      }
+      if (identity.architecture === undefined) {
+        c.error(manifestPath, '/architecture', 'video-missing-architecture', 'an sd-cpp video model must name its architecture; gezel sizes and prices it from that');
+      }
+    } else {
+      for (const field of ['sdCpp', 'promptFormat']) {
+        if (identity[field] !== undefined) {
+          c.error(manifestPath, `/${field}`, 'video-sd-cpp-only', `\`${field}\` only applies to engine "sd-cpp"`);
+        }
+      }
+      if (identity.family === 'lingbot') {
+        c.error(manifestPath, '/family', 'video-sd-cpp-family', 'LingBot-Video renders only on engine "sd-cpp"');
+      }
+      if (identity.architecture === undefined) {
+        c.warn(manifestPath, '/architecture', 'video-missing-architecture', 'no architecture: gezel falls back to its family default when sizing and pricing it');
+      }
+    }
+    if (identity.imageToVideoOnly === true && identity.supportsImageToVideo !== true) {
+      c.error(manifestPath, '/imageToVideoOnly', 'video-i2v-only-needs-i2v', 'imageToVideoOnly implies supportsImageToVideo: true');
+    }
+    if (!sdCpp) return;
+
+    const live = versions.filter((v) => !yankedVersions.includes(v));
+    if (live.length === 0) return;
+    const newest = live.reduce((a, b) => (safeCompare(a, b) >= 0 ? a : b));
+    const versionPath = join(itemDir, 'versions', newest, 'manifest.json');
+    const parsed = readJson(versionPath);
+    if (!parsed.ok) return;
+    const files = Array.isArray(parsed.value.source?.files) ? parsed.value.source.files : [];
+    const roles = new Map();
+    const names = new Set();
+    for (const [i, file] of files.entries()) {
+      const pointer = `/source/files/${i}`;
+      if (typeof file.role !== 'string') {
+        c.error(versionPath, `${pointer}/role`, 'video-sd-cpp-role', 'every file of an sd-cpp video model names its sd-server slot');
+      } else if (roles.has(file.role)) {
+        c.error(versionPath, `${pointer}/role`, 'video-sd-cpp-duplicate-role', `role "${file.role}" is already filled by ${roles.get(file.role)}`);
+      } else {
+        roles.set(file.role, file.name);
+      }
+      if (names.has(file.name)) {
+        c.error(versionPath, `${pointer}/name`, 'video-sd-cpp-duplicate-name', `"${file.name}" is listed twice; files share one folder on disk`);
+      }
+      names.add(file.name);
+      if (!/\.(gguf|safetensors)$/i.test(file.name ?? '')) {
+        c.error(versionPath, `${pointer}/name`, 'video-sd-cpp-format', 'sd-cpp video files are GGUF or safetensors weights');
+      }
+    }
+    if (!roles.has('diffusion_model')) {
+      c.error(versionPath, '/source/files', 'video-sd-cpp-role', 'an sd-cpp video model needs a diffusion_model file');
+    }
+    const decoder = roles.has('vae') || roles.has('tae');
+    const required = {
+      wan: ['t5xxl'],
+      lingbot: ['llm'],
+      ltx2: ['llm', 'embeddings_connectors'],
+    }[identity.family] ?? [];
+    for (const role of required) {
+      if (!roles.has(role)) {
+        c.error(versionPath, '/source/files', 'video-sd-cpp-role', `family "${identity.family}" needs a ${role} file`);
+      }
+    }
+    if (!decoder) {
+      c.error(versionPath, '/source/files', 'video-sd-cpp-role', 'an sd-cpp video model needs a vae or tae file to decode frames');
+    }
+    // sd.cpp master-1050's tiny video decoder does not reorder a LingBot
+    // latent before decoding (TAEHV::decode lists only wan, hunyuan, ltx and
+    // minimax), so a LingBot render with a tae crashes after sampling. Gezel
+    // loads the tae alone on Metal, so the entry must not ship one.
+    if (identity.family === 'lingbot' && roles.has('tae')) {
+      c.error(versionPath, '/source/files', 'video-sd-cpp-role', 'a LingBot model cannot use a tae: sd.cpp crashes decoding it; ship the vae');
+    }
+    if (identity.family === 'lingbot' && !roles.has('vae')) {
+      c.error(versionPath, '/source/files', 'video-sd-cpp-role', 'a LingBot model needs the Wan 2.1 vae');
     }
   }
 

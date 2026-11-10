@@ -573,6 +573,10 @@ function mergeIdentityAndVersion(kind, identity, version, availableVersions) {
       version: version.version,
       releasedAt: version.releasedAt,
       family: identity.family,
+      ...(identity.engine !== undefined ? { engine: identity.engine } : {}),
+      ...(identity.architecture !== undefined ? { architecture: identity.architecture } : {}),
+      ...(identity.sdCpp !== undefined ? { sdCpp: identity.sdCpp } : {}),
+      ...(identity.promptFormat !== undefined ? { promptFormat: identity.promptFormat } : {}),
       ...(identity.load !== undefined ? { load: identity.load } : {}),
       source: version.source,
       approxSizeBytes: version.source.approxSizeBytes,
@@ -590,6 +594,9 @@ function mergeIdentityAndVersion(kind, identity, version, availableVersions) {
       ...(identity.defaultWidth !== undefined ? { defaultWidth: identity.defaultWidth } : {}),
       ...(identity.defaultHeight !== undefined ? { defaultHeight: identity.defaultHeight } : {}),
       supportsImageToVideo: identity.supportsImageToVideo,
+      ...(identity.imageToVideoOnly !== undefined
+        ? { imageToVideoOnly: identity.imageToVideoOnly }
+        : {}),
       ...(identity.upstream !== undefined ? { upstream: identity.upstream } : {}),
       hardwareTier: identity.hardwareTier,
       minVramGB: identity.minVramGB,
