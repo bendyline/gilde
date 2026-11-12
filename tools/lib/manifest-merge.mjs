@@ -429,6 +429,9 @@ function mergeIdentityAndVersion(kind, identity, version, availableVersions) {
       ...(identity.style ? { style: identity.style } : {}),
       ...(identity.behaviors ? { behaviors: identity.behaviors } : {}),
       ...(identity.tuning ? { tuning: identity.tuning } : {}),
+      // Measured results; forwarded in lockstep with gezel's merge in
+      // packages/catalog/src/source.ts, or they never reach a resolved manifest.
+      ...(identity.benchmarks ? { benchmarks: identity.benchmarks } : {}),
       ...(version.ollama ? { ollama: version.ollama } : {}),
       ...(version.llamaCpp ? { llamaCpp: version.llamaCpp } : {}),
       ...(version.mlx ? { mlx: version.mlx } : {}),

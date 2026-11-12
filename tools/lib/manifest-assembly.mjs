@@ -39,6 +39,16 @@ export const EDITORIAL_FIELDS = [
   'minGezelVersion',
 ];
 
+/**
+ * Measured results (docbench scores, by engine), written by gezel's
+ * `eval:docbench-publish` into both the recipe and the identity manifest.
+ * Unlike the eval-tuned editorial fields, the recipe wins here: a newer
+ * published round must replace an older one on the next rebuild, where the
+ * existing-manifest-wins rule would keep the stale score forever. A recipe
+ * without the field keeps whatever the manifest has.
+ */
+export const MEASURED_FIELDS = ['benchmarks'];
+
 export const PROVIDER_FIELDS = ['ollama', 'llamaCpp', 'mlx', 'ds4'];
 
 /** Insert a revision directly after huggingfaceRepo to keep disk diffs stable. */
@@ -108,6 +118,11 @@ export function assembleManifest(input) {
     } else if (hasCfg) {
       manifest[field] = fromCfg;
     }
+  }
+
+  for (const field of MEASURED_FIELDS) {
+    if (cfg[field] !== undefined) manifest[field] = cfg[field];
+    else if (existing?.[field] !== undefined) manifest[field] = existing[field];
   }
 
   // Yanks only accumulate. Gezel never serves a yanked version, so a rebuild

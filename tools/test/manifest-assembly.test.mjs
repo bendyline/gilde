@@ -69,6 +69,23 @@ test('assembleManifest preserves eval-tuned fields and revision pins', () => {
   assert.deepEqual(carriedRevisions, ['llamaCpp']);
 });
 
+test('assembleManifest lets a re-published benchmark in the recipe replace the old one', () => {
+  const score = (value, runId) => ({
+    docbench: { 'llama-cpp': { version: '0.2.1', score: value, runId } },
+  });
+  const existing = { ...cfg, benchmarks: score(61, 'round-a') };
+  // A newer round, written into the recipe, wins over the manifest's copy.
+  const republished = assembleManifest({
+    cfg: { ...cfg, benchmarks: score(72, 'round-b') },
+    providerBlocks: {},
+    existing,
+  }).manifest;
+  assert.deepEqual(republished.benchmarks, score(72, 'round-b'));
+  // A recipe that says nothing keeps what was published.
+  const kept = assembleManifest({ cfg, providerBlocks: {}, existing }).manifest;
+  assert.deepEqual(kept.benchmarks, score(61, 'round-a'));
+});
+
 test('assembleManifest keeps every yank from the manifest and the recipe', () => {
   const seeded = assembleManifest({ cfg, providerBlocks: {} }).manifest;
   assert.equal(seeded.yankedVersions, undefined);
