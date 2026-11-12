@@ -43,6 +43,10 @@ authoring/<family>/                                            generator inputs
 - Version directory names are valid semver and must equal the `version`
   field of the file(s) inside. Every version carries `releasedAt` (ISO
   8601).
+- A new project-type version reaches existing projects on its own within
+  its major (CONTRIBUTING.md, "Project type versions reach existing
+  projects"): keep seed format stamps within a major, give a param added
+  within a major a `default`, and make a data-shape change a new major.
 
 ## Identity vs version
 

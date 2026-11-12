@@ -113,6 +113,24 @@ versions (engine sources with pinned revisions and sha256s).
 - Every released version carries `releasedAt` (ISO date).
 - Never rewrite a released `versions/<v>/` — add a new version.
 
+### Project type versions reach existing projects
+
+Gezel moves a project made from an earlier version of a project type to the
+newest version of the **same major** on its own, keeping the person's data
+files, edits and settings; the page, tool declarations and scripts move
+together. Author new versions so that is safe:
+
+- A minor or patch version must read every data file an earlier version of
+  the same major wrote. Keep a seed's top-level `"version"` format stamp
+  unchanged within a major; a data-shape change is a new **major** version,
+  and existing projects stay on their major (nothing migrates app data yet).
+- A param added within a major needs a `default`; without one, projects made
+  earlier are not offered the update.
+- Ship a page change with the script it relies on in the same version.
+
+Gezel's `project-type-upgrade-contract.test.ts` checks the first two rules
+against the pinned release.
+
 ## Gezel version floors (`minGezelVersion`)
 
 Some content only works on a new-enough gezel build — a model that needs a

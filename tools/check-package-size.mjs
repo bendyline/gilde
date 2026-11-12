@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * Guardrail: refuse to publish an @bendyline/gilde tarball that has grown
- * past sane bounds (fat model blobs or an accidentally-included community
- * per-item tree would land here first), that has picked up build-time tooling
+ * past sane bounds (fat model blobs would land here first), that ships the
+ * community tier as loose files instead of its pack, that has picked up build-time tooling
  * the package is not meant to carry, or that is missing the authoring sources
  * downstream regeneration checks resolve from the installed package.
  *
@@ -86,10 +86,7 @@ const packagedPaths = new Set(packaged.map((entry) => entry.path));
 // Catalog indexes are generated during `prepack`, not committed to Git. Keep
 // the package contract explicit so an ignore-rule or lifecycle regression
 // cannot silently publish a tarball that the catalog loader cannot list.
-const catalogRoots = [
-  ...KINDS.map((kind) => `data/${KIND_DIR[kind]}`),
-  'data/community/toolsets',
-];
+const catalogRoots = KINDS.map((kind) => `data/${KIND_DIR[kind]}`);
 for (const root of catalogRoots) {
   for (const filename of ['raw-index.json', 'index.json']) {
     const required = `${root}/${filename}`;
@@ -98,6 +95,26 @@ for (const root of catalogRoots) {
       failed = true;
     }
   }
+}
+
+// The community tier ships as one content pack (tools/pack-community.mjs, which
+// also refuses to pack without its indexes). Its ~45k loose files were nearly
+// half of a Gezel npm install's files.
+if (!packagedPaths.has('data/community/content.pack')) {
+  console.error('FAIL: the community tier is missing its pack: data/community/content.pack');
+  failed = true;
+}
+// Gezel reads a packed directory only through its pack, and its bundle check
+// wants the pack alone in it.
+const looseCommunity = packaged.filter(
+  (entry) =>
+    entry.path.startsWith('data/community/') && entry.path !== 'data/community/content.pack',
+);
+if (looseCommunity.length > 0) {
+  console.error(
+    `FAIL: ${looseCommunity.length} loose community files would ship beside the pack (first: ${looseCommunity[0].path})`,
+  );
+  failed = true;
 }
 
 // `authoring/` ships on purpose: Gezel's regen fidelity suite resolves these
