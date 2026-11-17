@@ -25,7 +25,7 @@ without guessing.
   flags, weapons, religious or national symbols, protected emblems such as the
   red cross, sepia, aging, stains, torn edges, wax seals, or ornament.
 
-## Workshop Marks (craftbook templates and project types)
+## Workshop Marks (craftbook templates, project types and connector types)
 
 A Workshop Mark is **one bold cut-paper subject that names the job**: a sieve
 for a data-quality audit, a card-catalog drawer for a data dictionary, merging
@@ -87,6 +87,22 @@ Constraints: no text, letters, numbers, labels, logos, people, silhouettes of pe
 To regenerate one mark, put its `art.json` subject on a sheet with seven
 others from the same shelf (or redraw the whole shelf) and cut it out the same
 way.
+
+**Connector types** (`data/connector-types/`) use the same prompt and
+cut-out, on sheets named `connections-a` to `connections-d` (2026-11). Their
+subject is a physical thing for what the connection brings in, and **never
+the service's own logo or a drawing of it**: a kite for Bluesky, a megaphone
+for X, a necktie for LinkedIn, a clapperboard for YouTube. Services of one
+kind get different objects rather than one object in different colors: the
+four mail connections are a sealed envelope, a curbside mailbox, a letter
+tray and an open envelope with its letter. Gezel reads the ground from the
+type's id and tags (`connectorTypeGround`), one tone per family: teal for the
+web, terracotta for mail, rose for calendars, ochre for files, indigo for
+code, plum for social, slate for data, forest for devices. A sheet may carry
+a second take of a doubtful subject; `art.json` records the cell that was
+kept. The first take of the sealed envelope came back with a round red seal,
+which the shared rules forbid, so the prompt for a plain object that often
+carries one should say "no seal, sticker or stamp".
 
 The v2 marks (`workshop-mark-1910-v2`, 2026-10) were circa-1910 still-lifes:
 the job printed on a card resting on a book, often with a magnifier, on a
