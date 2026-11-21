@@ -33,8 +33,8 @@ authoring/<family>/                                            generator inputs
 ```
 
 - `<kind-dir>` is one of: `chat-models`, `image-models`, `image-loras`,
-  `video-models`, `knowledge-catalogs`, `toolsets`, `connector-types`, `project-types`,
-  `gezel-templates`, `craftbook-templates`. The community tier mirrors this under
+  `video-models`, `knowledge-catalogs`, `page-libraries`, `toolsets`,
+  `connector-types`, `project-types`, `gezel-templates`, `craftbook-templates`. The community tier mirrors this under
   `data/community/toolsets/`.
 - `<id>`: lowercase, matches `[a-z0-9][a-z0-9-]*`. The item's directory
   name must equal the `id` field inside its manifests.
@@ -210,6 +210,35 @@ catalog already ships. People see them as **Styles** and **Fast mode**.
   - a person has looked at its outputs and at its card's sample images;
   - the version's `notes` say where and when it was checked: hardware, date,
     and what the bench showed.
+
+## Page libraries
+
+A `page-libraries` item is a JavaScript library that pages a gezel writes load
+from the person's computer, with no network (gezel `docs/page-libraries.md`).
+One item per library. Each version of the item lists its **lines**: one pinned
+npm release each, answering a range of the versions a page may ask for.
+
+- **Lines follow what models write.** A line answers `answers.from` up to
+  `answers.before`, in the forms a page loads it in: `module` (an ES module),
+  `classic` (a plain `<script>` setting a global), `style`. At most one line per
+  form is the `default`. three has a current module line and a 0.128 line for
+  the plain-script `r128` pattern models still emit.
+- **Pins.** `source` names the npm package, exact version and the tarball's
+  SHA-256. The line's `version` equals the package version: it is the address
+  pages load from.
+- **Files.** `include` lists the files and folders taken from the package;
+  nothing else is installed. Leave out wasm decoders, Node builds and other
+  weight a page never loads. Every request a form maps must be included.
+- **Spellings.** `packages` (npm names), `paths` and `cdnjs.files` (other
+  spellings of a file), `urls` (whole addresses such as `d3js.org/d3.v7.min.js`).
+- **Requires.** A line's module files may import only the line's own packages
+  and what `requires` lists. A package whose module build re-exports other
+  packages (d3's `.mjs`) is offered as a plain script until a build of our own
+  exists.
+- **License.** MIT, ISC, BSD or Apache-2.0 only, with `notice` naming the
+  license file, which is copied into every exported page.
+- **A new release** is a new item version listing every line it keeps; never
+  edit a released version.
 
 ## Validation loop
 

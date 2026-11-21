@@ -29,6 +29,11 @@ import { communityPolicyViolation, loadCommunityToolset } from './lib/community-
 import { PERMISSIVE_LICENSES } from './lib/licenses.mjs';
 import { discoverVersionFolders, loadIdentity } from './lib/manifest-merge.mjs';
 import { loadSchema, zodParse } from './lib/jsonshape.mjs';
+
+// Page libraries run inside every page that loads them and are copied into
+// exported pages, so only permissive licenses, and every line must say which
+// of its files carries the notice that travels with a copy.
+const PAGE_LIBRARY_LICENSES = new Set(['MIT', 'ISC', 'BSD-2-Clause', 'BSD-3-Clause', 'Apache-2.0', '0BSD']);
 import { makeCollector, render } from './lib/report.mjs';
 import { safetensorsWeightFiles } from './lib/safetensors.mjs';
 import { collectSeedExemptFiles } from './lib/seeds.mjs';
@@ -421,6 +426,7 @@ function main() {
         }
         if (kind === 'image-lora') checkImageLora(manifestPath, identity, tier.root);
         if (kind === 'knowledge-catalog') checkKnowledgeKeywords(item, onDiskVersions);
+        if (kind === 'page-library') checkPageLibraryIdentity(manifestPath, identity);
 
         // yankedVersions must reference on-disk versions; minSupported
         // must not exceed the highest on-disk version.
@@ -613,6 +619,90 @@ function main() {
    * policy in AGENTS.md: styles and speed only, nothing explicit, nothing
    * that copies a real person.
    */
+  function checkPageLibraryIdentity(manifestPath, identity) {
+    if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(identity.id)) {
+      c.error(manifestPath, '/id', 'page-library-id', 'a page library id is lowercase letters, digits, . _ - (it is a path segment pages load from)');
+    }
+  }
+
+  function checkPageLibraryVersion(manifestPath, version) {
+    const lines = Array.isArray(version.lines) ? version.lines : [];
+    const versions = new Set();
+    const defaults = { module: 0, classic: 0, style: 0 };
+    for (const [i, line] of lines.entries()) {
+      const at = `/lines/${i}`;
+      if (versions.has(line.version)) {
+        c.error(manifestPath, `${at}/version`, 'page-library-duplicate-line', `two lines are ${line.version}; a page's address names one`);
+      }
+      versions.add(line.version);
+      if (line.source?.version !== line.version) {
+        c.error(manifestPath, `${at}/source/version`, 'page-library-source-version', 'the line is served under its version, so it must be the package version it installs');
+      }
+      if (!PAGE_LIBRARY_LICENSES.has(line.license)) {
+        c.error(manifestPath, `${at}/license`, 'page-library-license', `"${line.license}" is not a permissive license this catalog accepts for page libraries`);
+      }
+      if (!line.notice) {
+        c.error(manifestPath, `${at}/notice`, 'page-library-notice', 'name the license file inside the package; it is copied with every exported page');
+      }
+      if (!line.module && !line.classic && !line.style) {
+        c.error(manifestPath, at, 'page-library-no-form', 'a line needs a module, classic or style form');
+      }
+      for (const form of ['module', 'classic', 'style']) {
+        if (line[form]?.default) defaults[form] += 1;
+        for (const [request, path] of Object.entries(line[form]?.entries ?? {})) {
+          if (request.endsWith('/') !== String(path).endsWith('/')) {
+            c.error(manifestPath, `${at}/${form}/entries`, 'page-library-folder-entry', `"${request}" and "${path}" must both name folders or both name files`);
+          }
+          // A folder entry may be taken in part: three's `examples/jsm/` leaves out the wasm decoders.
+          const included = (line.include ?? []).some((entry) =>
+            entry.endsWith('/') ? String(path).startsWith(entry) || entry.startsWith(String(path)) : entry === path || (String(path).endsWith('/') && entry.startsWith(String(path))),
+          );
+          if (!included) {
+            c.error(manifestPath, `${at}/${form}/entries`, 'page-library-entry-not-included', `"${path}" is not in include, so it would never be installed`);
+          }
+        }
+      }
+    }
+    for (const [i, line] of lines.entries()) {
+      for (const [request, spec] of Object.entries(line.globals ?? {})) {
+        const included = (line.include ?? []).some((entry) => (entry.endsWith('/') ? String(spec.file).startsWith(entry) : entry === spec.file));
+        if (!included) {
+          c.error(manifestPath, `/lines/${i}/globals/${request}`, 'page-library-global-not-included', `"${spec.file}" is not in include, so the module written over it would load nothing`);
+        }
+        if (!line.module) {
+          c.error(manifestPath, `/lines/${i}/globals`, 'page-library-global-no-module', 'a line with globals needs a module form, which they answer');
+        }
+      }
+      // A CommonJS file runs inside a module the shelf writes; its requires
+      // must be answerable on the page.
+      const answered = new Set([...(line.packages ?? []), ...Object.keys(line.requires ?? {})]);
+      for (const [request, spec] of Object.entries(line.commonjs ?? {})) {
+        const where = `/lines/${i}/commonjs/${request}`;
+        const included = (line.include ?? []).some((entry) => (entry.endsWith('/') ? String(spec.file).startsWith(entry) : entry === spec.file));
+        if (!included) {
+          c.error(manifestPath, where, 'page-library-commonjs-not-included', `"${spec.file}" is not in include, so the module written around it would load nothing`);
+        }
+        if (line.globals?.[request]) {
+          c.error(manifestPath, where, 'page-library-commonjs-duplicate', `"${request}" is also a global module; a request is written one way`);
+        }
+        if (!line.module) {
+          c.error(manifestPath, `/lines/${i}/commonjs`, 'page-library-commonjs-no-module', 'a line with commonjs needs a module form, which they answer');
+        }
+        for (const name of spec.imports ?? []) {
+          const pkg = name.startsWith('@') ? name.split('/').slice(0, 2).join('/') : name.split('/')[0];
+          if (!answered.has(pkg)) {
+            c.error(manifestPath, `${where}/imports`, 'page-library-commonjs-import', `"${name}" is neither this line's package nor in its requires`);
+          }
+        }
+      }
+    }
+    for (const [form, count] of Object.entries(defaults)) {
+      if (count > 1) {
+        c.error(manifestPath, '/lines', 'page-library-default', `${count} lines are the ${form} default; at most one may be`);
+      }
+    }
+  }
+
   function checkImageLora(manifestPath, identity, tierRoot) {
     const imageModelIds = new Set(listItems(tierRoot, 'image-model').map((m) => m.id));
     for (const [i, base] of (identity.baseModels ?? []).entries()) {
@@ -708,6 +798,7 @@ function main() {
     if (kind === 'chat-model' && !version.ollama && !version.llamaCpp && !version.mlx && !version.ds4) {
       c.error(manifestPath, '', 'chat-model-no-engine-source', 'no ollama / llamaCpp / mlx / ds4 source - the runtime skips the item');
     }
+    if (kind === 'page-library') checkPageLibraryVersion(manifestPath, version);
     if (kind === 'knowledge-catalog') {
       const hf = version.huggingface ?? {};
       if (!/^[0-9a-f]{40}$/.test(String(hf.revision ?? ''))) {

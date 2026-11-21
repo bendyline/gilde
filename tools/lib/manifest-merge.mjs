@@ -516,6 +516,32 @@ function mergeIdentityAndVersion(kind, identity, version, availableVersions) {
       availableVersions,
     };
   }
+  if (kind === 'page-library') {
+    return {
+      schemaVersion: 1,
+      kind: 'page-library',
+      id: identity.id,
+      name: identity.name,
+      description: identity.description,
+      tags: identity.tags,
+      maintainer: identity.maintainer,
+      ...(identity.logo !== undefined ? { logo: identity.logo } : {}),
+      ...(identity.license !== undefined ? { license: identity.license } : {}),
+      ...(identity.licenseClass !== undefined ? { licenseClass: identity.licenseClass } : {}),
+      ...(identity.licenseShortName !== undefined
+        ? { licenseShortName: identity.licenseShortName }
+        : {}),
+      ...(identity.licenseUrl !== undefined ? { licenseUrl: identity.licenseUrl } : {}),
+      ...(identity.recoScore !== undefined ? { recoScore: identity.recoScore } : {}),
+      ...(minGezelVersion !== undefined ? { minGezelVersion } : {}),
+      ...(identity.homepage !== undefined ? { homepage: identity.homepage } : {}),
+      version: version.version,
+      releasedAt: version.releasedAt,
+      lines: version.lines.map((line) => ({ ...line, library: identity.id, name: identity.name })),
+      ...(version.notes !== undefined ? { notes: version.notes } : {}),
+      availableVersions,
+    };
+  }
   if (kind === 'knowledge-catalog') {
     return {
       schemaVersion: 1,
